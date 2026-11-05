@@ -24,6 +24,34 @@ describe('narrow-down form', () => {
   })
 })
 
+describe('narrow-down speed windows', () => {
+  it('builds SRC and SWATH observations, swapping reversed band edges', () => {
+    const o = toObservations({ ...EMPTY_NARROW, srcHz: '30', srcKts: '6', swathLoHz: '400', swathHiHz: '300' })
+    expect(o.speedWindows).toEqual([{ kind: 'SRC', hz: 30, speedKts: 6 }, { kind: 'SWATH', loHz: 300, hiHz: 400 }])
+    expect(constraintCount(o)).toBe(2)
+  })
+  it('needs both swath edges', () => {
+    expect(toObservations({ ...EMPTY_NARROW, swathLoHz: '300' }).speedWindows).toBeUndefined()
+  })
+  it('matchClasses reports them under SRC / SWATH keys with operator labels', () => {
+    const [best] = matchClasses(toObservations({ ...EMPTY_NARROW, srcHz: '30' }))
+    expect([...best.matched, ...best.ruledOutBy]).toContain('SRC')
+    expect(keyLabel('SWATH')).toBe('SWATH WINDOW')
+  })
+  it('a class own swath band agrees', () => {
+    const c = buildCompendium().classes.find((x) => x.idKeys.speedWindows.some((w) => w.kind === 'SWATH'))!
+    const w = c.idKeys.speedWindows.find((x) => x.kind === 'SWATH')!
+    const m = matchClasses(toObservations({ ...EMPTY_NARROW, swathLoHz: String(w.loHz), swathHiHz: String(w.hiHz) })).find((x) => x.id === c.id)!
+    expect(m.matched).toContain('SWATH')
+  })
+  it('a class own SRC window agrees', () => {
+    const c = buildCompendium().classes.find((x) => x.idKeys.speedWindows.some((w) => w.kind === 'SRC'))!
+    const w = c.idKeys.speedWindows.find((x) => x.kind === 'SRC')!
+    const m = matchClasses(toObservations({ ...EMPTY_NARROW, srcHz: String((w.loHz + w.hiHz) / 2) })).find((x) => x.id === c.id)!
+    expect(m.matched).toContain('SRC')
+  })
+})
+
 describe('narrow-down ranking', () => {
   const classes = buildCompendium().classes
   const ids = classes.map((c) => c.id)

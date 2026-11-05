@@ -9,12 +9,14 @@ export interface NarrowForm {
   blades: string; efrToCsr: string; gearRatio: string; msrToMotorShaft: string; tpk: string
   turbineRateHz: string; reductionRatio: string; gearMeshHz: string; turboGenHz: string; hydpHz: string
   edaCfrMultiples: string
+  srcHz: string; srcKts: string; swathLoHz: string; swathHiHz: string; swathKts: string
 }
 
 export const EMPTY_NARROW: NarrowForm = {
   gridHz: '', mode: '', lineFamilies: [], csrHz: '', cfrHz: '', psrHz: '',
   blades: '', efrToCsr: '', gearRatio: '', msrToMotorShaft: '', tpk: '',
   turbineRateHz: '', reductionRatio: '', gearMeshHz: '', turboGenHz: '', hydpHz: '', edaCfrMultiples: '',
+  srcHz: '', srcKts: '', swathLoHz: '', swathHiHz: '', swathKts: '',
 }
 
 export const NARROW_MODES = OPERATING_MODES
@@ -46,6 +48,16 @@ export function toObservations(f: NarrowForm): ClassObservations {
   set('gearMeshHz', f.gearMeshHz); set('turboGenHz', f.turboGenHz); set('hydpHz', f.hydpHz)
   const edas = f.edaCfrMultiples.split(/[\s,;]+/).map(num).filter((v): v is number => v !== undefined)
   if (edas.length) o.edaCfrMultiples = edas
+  type SW = NonNullable<ClassObservations['speedWindows']>[number]
+  const windows: SW[] = []
+  const srcHz = num(f.srcHz), srcKts = num(f.srcKts)
+  if (srcHz) windows.push(srcKts ? { kind: 'SRC', hz: srcHz, speedKts: srcKts } : { kind: 'SRC', hz: srcHz })
+  const a = num(f.swathLoHz), b = num(f.swathHiHz), swKts = num(f.swathKts)
+  if (a && b && a !== b) {
+    const sw: SW = { kind: 'SWATH', loHz: Math.min(a, b), hiHz: Math.max(a, b) }
+    windows.push(swKts ? { ...sw, speedKts: swKts } : sw)
+  }
+  if (windows.length) o.speedWindows = windows
   return o
 }
 
@@ -53,7 +65,7 @@ export const constraintCount = (o: ClassObservations): number => {
   let n = 0
   for (const [k, v] of Object.entries(o)) {
     if (v === undefined) continue
-    n += k === 'lineFamilies' || k === 'edaCfrMultiples' ? (v as unknown[]).length : k === 'familyFundamentalsHz' ? Object.keys(v as object).length : 1
+    n += k === 'lineFamilies' || k === 'edaCfrMultiples' || k === 'speedWindows' ? (v as unknown[]).length : k === 'familyFundamentalsHz' ? Object.keys(v as object).length : 1
   }
   return n
 }
@@ -61,7 +73,7 @@ export const constraintCount = (o: ClassObservations): number => {
 const KEY_LABEL: Record<string, string> = {
   gridHz: 'GRID', mode: 'MODE', brToPsr: 'BLADES (BR÷PSR)', msrToMotorShaft: 'MOTOR SLOTS', msrToPsr: 'MSR÷PSR',
   gearRatio: 'GEAR', efrToCsr: 'EFR÷CSR', tpk: 'TPK', turbineRateHz: 'TURBINE', reductionRatio: 'REDUCTION',
-  gearMeshHz: 'MESH', turboGenHz: 'TG', hydpHz: 'HYDP',
+  gearMeshHz: 'MESH', turboGenHz: 'TG', hydpHz: 'HYDP', SRC: 'SRC WINDOW', SWATH: 'SWATH WINDOW',
 }
 /** Operator-style label for a matchClasses key such as `lineFamily:MSR` or `edaCfrMultiple:10.5`. */
 export function keyLabel(k: string): string {
