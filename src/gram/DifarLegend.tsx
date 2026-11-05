@@ -1,8 +1,8 @@
-import { DIFAR_ANCHORS } from '../gl/colormap'
+import { difarRgb } from '../gl/colormap'
 
 const css = (r: number, g: number, b: number) => `rgb(${r} ${g} ${b})`
-/** CSS conic gradient matching difarRgb: sRGB-linear between the anchors, clockwise from north. */
-export const DIFAR_CONIC = `conic-gradient(from 0deg, ${DIFAR_ANCHORS.map(([d, r, g, b]) => `${css(r, g, b)} ${d}deg`).join(', ')})`
+/** CSS conic gradient sampled from difarRgb every 10° (the same full 360° wheel the gram uses), clockwise from north. */
+export const DIFAR_CONIC = `conic-gradient(from 0deg, ${Array.from({ length: 37 }, (_, i) => { const [r, g, b] = difarRgb(i * 10); return `${css(r, g, b)} ${i * 10}deg` }).join(', ')})`
 
 /** Small compass legend for the DIFAR gram: bearing hue wheel with N/E/S/W ticks. */
 export function DifarLegend({ omni = false }: { omni?: boolean }) {
