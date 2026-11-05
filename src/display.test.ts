@@ -450,3 +450,28 @@ describe('truth speed-gated rows', () => {
     expect(truthRows({ ...base, speedGated: [{ name: 'B', kind: 'SWATH', loHz: 1, hiHz: 2, active: false }] }).at(-1)).toBe('SWATH/SRC NONE AT THIS SPEED')
   })
 })
+
+import { truthRowDim } from './gram/truthFamilies'
+describe('truth panel propulsion rows (m3-lines)', () => {
+  const base = (tpkValid: boolean): TruthContactLite => ({ id: 1, label: 'FX-1', spdMps: 2, crsDeg: 10, spdKts: 3.9,
+    propulsion: { kind: 'dieselElectric', ratio: 1, ratioLabel: '1.00:1', shafts: [{ rpm: 60, hz: 1 }], engines: [],
+      mode: 'BATT', drivetrainLabel: 'Diesel Electric', tpk: 11.5, tpkValid, tpkMinKts: 4,
+      propulsor: { shafts: 1, blades: 7, bladeType: 'cpp', brHz: 7 }, motor: { rpm: 60, slots: 48, msrHz: 48 },
+      aip: { kind: 'stirling', active: false } },
+    speedGated: [{ name: 'A', kind: 'SRC', hz: 512, active: false, gain: 0 }] })
+  it('shows mode, propulsor, TPK, MSR and speed-gated state', () => {
+    const r = truthRows(base(true)).join('\n')
+    expect(r).toMatch(/MODE BATT/)
+    expect(r).toMatch(/PLANT DIESEL ELECTRIC  AIP STIRLING OFF/)
+    expect(r).toMatch(/PROP 1 SHAFT  7-BLADE VARIABLE PITCH  BR 7.00 HZ = PSR × 7/)
+    expect(r).toMatch(/TPK 11.50 RPM\/KT  SPD = PSRPM ÷ TPK/); expect(truthRowDim(r.split('\n').find((x) => x.startsWith('TPK'))!)).toBe(false)
+    expect(r).toMatch(/MSR 48.0 HZ \(48 SLOTS\)/)
+    expect(r).toMatch(/SWATH\/SRC NONE AT THIS SPEED/)
+  })
+  it('flags TPK as not valid inside the pitch-control range and hides it when zero', () => {
+    const bad = truthRows(base(false)).find((r) => r.startsWith('TPK'))!
+    expect(bad).toBe('TPK 11.50 RPM/KT  VALID ABOVE 4 KT'); expect(truthRowDim(bad)).toBe(true)
+    const c = base(true); c.propulsion!.tpk = 0
+    expect(truthRows(c).join('\n')).not.toMatch(/TPK/)
+  })
+})

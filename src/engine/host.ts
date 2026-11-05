@@ -219,6 +219,10 @@ export class SimHost {
       }
     }
     t.bearings = bearings
+    // m3-lines engines publish full truth (propulsion, TPK, propulsor, speed-gated lines); use it as is.
+    // The engine reuses those records, and postMessage clones them, so this allocates nothing per step.
+    const et = (engine as unknown as { tactical?: () => { truth?: { contacts: TruthContact[] } } }).tactical?.().truth
+    if (et?.contacts) { t.truth = et; return }
     // Contacts can be added/removed at runtime (v1.1 surface traffic); resync the truth list when the count changes.
     if (t.truth!.contacts.length !== s.contacts.length)
       t.truth!.contacts = s.contacts.map((c, i) => ({ id: i + 1, label: c.params?.label ?? `C${i + 1}`, x: c.x, y: c.y, crsDeg: 0, spdMps: 0 }))

@@ -15,7 +15,7 @@ import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
-import { familyFundamentals, familyLabel, snapToFamily, truthRows, truthEdaName } from './gram/truthFamilies'
+import { familyFundamentals, familyLabel, snapToFamily, truthRows, truthRowDim, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 
@@ -260,7 +260,7 @@ export default function App() {
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} />
             {truth && st.tactical?.truth && <div className="truth-panel readout" data-testid="truth-panel">
               {st.tactical.truth.contacts.filter((c) => c.active !== false).map((c) => <div key={c.id} className="truth-contact">
-                {truthRows(c).map((r, i) => <div key={i} className={i ? 'truth-row' : 'truth-head'}>{r}</div>)}
+                {truthRows(c).map((r, i) => <div key={i} className={i ? `truth-row${truthRowDim(r) ? ' dim' : ''}` : 'truth-head'}>{r}</div>)}
               </div>)}
             </div>}
           </div>
