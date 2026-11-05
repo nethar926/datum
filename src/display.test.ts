@@ -333,3 +333,26 @@ describe('scenario list', () => {
     expect(msgs.some((m) => m.type === 'gramRows')).toBe(true)
   })
 })
+
+describe('LOFAR cursors', () => {
+  it('level history returns the right row and bin, NaN outside', async () => {
+    const { LevelHistory } = await import('./gram/levelHistory')
+    const h = new LevelHistory(3, 4)
+    const row = (v: number) => new Float32Array([v, v + 1, v + 2, v + 3])
+    expect(Number.isNaN(h.at(0, 0))).toBe(true)
+    h.push(row(10), 0); h.push(row(20), 0); h.push(row(30), 0); h.push(row(40), 0) // wraps, 10 dropped
+    expect(h.at(0, 0)).toBe(40); expect(h.at(1, 2)).toBe(32); expect(h.at(2, 3)).toBe(23)
+    expect(Number.isNaN(h.at(3, 0))).toBe(true); expect(Number.isNaN(h.at(0, 4))).toBe(true)
+    h.clear(); expect(h.size).toBe(0)
+  })
+  it('harmonic drag: grabbing marker k and moving to hz sets f0 = hz/k', async () => {
+    const H = await import('./gram/harmonics')
+    expect(H.nearestHarmonic(50, 148)).toBe(3)
+    expect(H.nearestHarmonic(50, 10)).toBe(1)
+    const k = H.nearestHarmonic(50, 151), f0 = 156 / k
+    expect(f0).toBeCloseTo(52, 9)
+    expect(H.harmonicSeries(f0, 1000).length).toBe(19)
+    expect(H.harmText(f0, k, 1000)).toBe('HARM F0 52.00 HZ  19 MARKERS  H3 156.00 HZ')
+    expect(H.harmText(null, null, 1000)).toMatch(/CLICK A LINE/)
+  })
+})

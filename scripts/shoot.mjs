@@ -48,6 +48,14 @@ try {
     console.log('lm:', t)
     await page.waitForTimeout(300)
   }
+  if (process.env.HARM) {
+    await page.click('button:has-text("HARM")')
+    const c = await page.locator('[data-testid="lofar"]').boundingBox()
+    await page.mouse.click(c.x + c.width * 0.072, c.y + c.height * 0.5)
+    await page.click('button:has-text("CROSS")')
+    await page.mouse.move(c.x + c.width * 0.3, c.y + c.height * 0.35)
+    await page.waitForTimeout(300)
+  }
   if (process.env.SETTINGS) {
     await page.getByRole('button', { name: 'Settings' }).click()
     await page.locator('#traffic').fill('1')

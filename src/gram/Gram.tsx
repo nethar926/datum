@@ -5,6 +5,7 @@ import { WaterfallRenderer } from '../gl/waterfall'
 import type { PaletteId } from '../gl/colormap'
 import { AutoLevel } from './autoLevel'
 import { SplitWindowNormalizer } from './whiten'
+import { LevelHistory } from './levelHistory'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 
 
@@ -19,6 +20,8 @@ interface Props {
   onPickPoint?: (hz: number, agoS: number) => void
   /** When set, pointer drags on the waterfall call this (overlay dragging); clicks are suppressed. */
   onDragPoint?: (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => void
+  /** Full-width time / full-height frequency crosshair with time, frequency and level readout. */
+  crosshair?: boolean; nowS?: number
   auto?: boolean; normalized?: boolean; palette?: PaletteId; selectedHz?: number | null; onSelectHz?: (hz: number) => void
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
@@ -31,12 +34,14 @@ const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', selectedHz = null, onSelectHz,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0 }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
   const [glError, setGlError] = useState<string | null>(null)
   const [cursor, setCursor] = useState<number | null>(null)
+  const [cross, setCross] = useState<{ hz: number; agoS: number; x: number } | null>(null)
+  const histRef = useRef<LevelHistory | null>(null)
   const [width, setWidth] = useState(800)
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
@@ -58,14 +63,18 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     rendererRef.current = r
     const level = new AutoLevel(N)
     const norm = new SplitWindowNormalizer(bins), scratch = new Float32Array(bins)
+    const hist = new LevelHistory(HISTORY_ROWS, bins); histRef.current = hist
+    let histStream = viewRef.current.streamIndex
     let dirty = true, raf = 0
     const off = client.onRows((rows) => {
+      if (viewRef.current.streamIndex !== histStream) { hist.clear(); histStream = viewRef.current.streamIndex }
       const n = rows.streamIds.length
       if (!n || rows.data.length !== n * bins) return // another pane's streams (different bin count)
       for (let k = 0; k < n; k++) {
         const s = local.get(rows.streamIds[k])
         if (s === undefined) continue
         r.pushRow(s, rows.data, k * bins); level.update(s, rows.data, k * bins, bins)
+        if (s === histStream) hist.push(rows.data, k * bins)
         norm.apply(rows.data, k * bins, scratch, 0); r.pushRow(N + s, scratch, 0)
       }
       dirty = true
@@ -87,7 +96,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
-    return () => { cancelAnimationFrame(raf); off(); ro.disconnect(); r.dispose(); rendererRef.current = null }
+    return () => { cancelAnimationFrame(raf); off(); ro.disconnect(); r.dispose(); rendererRef.current = null; histRef.current = null }
   }, [client, bins, configs.length, configs.map((c) => c.streamId).join(','), HISTORY_ROWS])
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
@@ -108,13 +117,22 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   }
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
-    setCursor(xToFreq(e.clientX - rect.left, view, rect.width))
+    const hz = xToFreq(e.clientX - rect.left, view, rect.width)
+    setCursor(hz)
+    if (crosshair) setCross({ hz, agoS: Math.max(0, ((e.clientY - rect.top) / rect.height) * historyS), x: e.clientX - rect.left })
   }
+  const crossText = (() => {
+    if (!cross || !cfg) return ''
+    const t = nowS - cross.agoS, h = histRef.current
+    const db = h ? h.at(cross.agoS * rowRate, (cross.hz - cfg.f0) / fBin) : NaN
+    const mm = Math.floor(Math.max(0, t) / 60), ss = Math.floor(Math.max(0, t) % 60)
+    return `T+${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')} (-${cross.agoS.toFixed(0)}s)  ${cross.hz.toFixed(fBin < 0.1 ? 2 : 1)} ${unit}  ${Number.isFinite(db) ? `${db.toFixed(1)} dB` : '-- dB'}`
+  })()
 
   return (
     <div className="gram">
       {glError ? <div className="gl-error">{glError}</div> : (
-        <canvas ref={canvasRef} data-testid={testId} onWheel={onWheel} onMouseMove={onMove} onMouseLeave={() => setCursor(null)}
+        <canvas ref={canvasRef} data-testid={testId} onWheel={onWheel} onMouseMove={onMove} onMouseLeave={() => { setCursor(null); setCross(null) }}
           onPointerDown={onDragPoint ? (e) => { e.currentTarget.setPointerCapture(e.pointerId); drag(e, 'start') } : undefined}
           onPointerMove={onDragPoint ? (e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) drag(e, 'move') } : undefined}
           onPointerUp={onDragPoint ? (e) => { drag(e, 'end'); e.currentTarget.releasePointerCapture(e.pointerId) } : undefined}
@@ -139,7 +157,13 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(1)}</span></div>
       )}
       {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS })}</div>}
-      {cursor !== null && <div className="cursor-readout">{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}</div>}
+      {crosshair && cross && (
+        <div className="gram-layer cross-layer" style={{ width }} aria-hidden>
+          <div className="cross-h" style={{ top: `${(cross.agoS / historyS) * 100}%` }} />
+          <div className="cross-v" style={{ left: cross.x }} />
+        </div>
+      )}
+      {crosshair && cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}</div> : cursor !== null && <div className="cursor-readout">{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}</div>}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
@@ -13,6 +13,8 @@ import { TacticalPlot } from './tactical/TacticalPlot'
 import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
+import { harmText, harmonicSeries, nearestHarmonic } from './gram/harmonics'
+import { freqToX } from './gram/axis'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 
 const RATES = [1, 4, 16]
@@ -45,7 +47,20 @@ export default function App() {
   const [selHz, setSelHz] = useState<number | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [tool, setTool] = useState<'select' | 'cpa' | 'lm'>('select')
+  const [tool, setTool] = useState<'select' | 'cpa' | 'lm' | 'harm'>('select')
+  const [crossOn, setCrossOn] = useState(false)
+  const [harmF0, setHarmF0] = useState<number | null>(null)
+  const [harmK, setHarmK] = useState<number | null>(null)
+  const harmGrab = useRef<number | null>(null)
+  const harmDrag = (phase: 'start' | 'move' | 'end', hz: number) => {
+    if (phase === 'start') {
+      if (harmF0 === null) { setHarmF0(hz); harmGrab.current = 1; setHarmK(1); return }
+      const k = nearestHarmonic(harmF0, hz); harmGrab.current = k; setHarmK(k); return
+    }
+    const k = harmGrab.current
+    if (k !== null && hz > 0) setHarmF0(hz / k)
+    if (phase === 'end') harmGrab.current = null
+  }
   const cpaMode = tool === 'cpa'
   const setCpaMode = (on: boolean) => setTool(on ? 'cpa' : 'select')
   const [lm, setLm] = useState<LloydState>({ basis: 'cpaFit', k: 40, tCpaS: 0, tauS: 300, manRangeM: 2000, manSpeedMps: 4 })
@@ -142,6 +157,13 @@ export default function App() {
               {cpaMarks.length > 0 && <button onClick={() => setCpaMarks((m) => m.slice(0, -1))} title="Remove last mark">Undo</button>}
               {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
             </div>
+            <div className="seg" role="group" aria-label="Harmonic cursor">
+              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust">HARM</button>
+              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null) }}>Clear</button>}
+            </div>
+            <div className="seg" role="group" aria-label="Cross cursor">
+              <button aria-pressed={crossOn} onClick={() => setCrossOn(!crossOn)} title="Time / frequency crosshair with level readout">CROSS</button>
+            </div>
             <div className="seg" role="group" aria-label="Lloyd's mirror">
               <button aria-pressed={tool === 'lm'} onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)">LM</button>
             </div>
@@ -156,12 +178,16 @@ export default function App() {
                 onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
                 normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz}
                 onPickPoint={cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
-                onDragPoint={tool === 'lm' ? lmDrag : undefined}
-                overlay={cpaMarks.length || tool === 'lm' ? (ctx) => (<>
+                onDragPoint={tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
+                crosshair={crossOn} nowS={st.simT}
+                overlay={cpaMarks.length || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
+                  {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
+                    <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
                   {cpaMarks.length > 0 && <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} />}
                 </>) : undefined} />
             )}
+            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, BAND_MAX[st.band])}</div>}
             {(cpaMode || cpaMarks.length > 0) && <div className="gram-note readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</div>}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">
