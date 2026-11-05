@@ -262,3 +262,29 @@ describe('surface traffic', () => {
     expect(msgs.at(-1)?.type).toBe('error')
   })
 })
+
+describe('host DEMON streams (v1.1 engines)', () => {
+  it('posts DEMON rows in their own gramRows message and recycles both pools', async () => {
+    const { SimHost } = await import('./engine/host')
+    type M = { type: string; configs?: { kind: string; bins: number; streamId: number }[]; streamIds?: Int32Array; rowIndex?: Uint32Array; data?: Float32Array; message?: string }
+    const msgs: M[] = []
+    const h = new SimHost((m) => msgs.push(m as M))
+    h.handle({ type: 'init', seed: 3, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2 })
+    const cfgs = msgs.find((m) => m.type === 'streams')!.configs!
+    const demon = cfgs.filter((c) => c.kind === 'demon')
+    if (!demon.length) return // v1 engine: no DEMON, nothing to check
+    for (let k = 0; k < 8; k++) {
+      msgs.length = 0
+      h.handle({ type: 'step' })
+      const rows = msgs.filter((m) => m.type === 'gramRows')
+      expect(msgs.some((m) => m.type === 'error')).toBe(false)
+      for (const r of rows) h.handle({ type: 'release', buffers: [r.streamIds!.buffer, r.rowIndex!.buffer, r.data!.buffer] as ArrayBuffer[] })
+      if (k > 2) {
+        const d = rows.find((r) => r.data!.length === demon.length * demon[0].bins)
+        expect(d, 'demon rows').toBeTruthy()
+        expect(Array.from(d!.streamIds!)).toEqual(demon.map((c) => c.streamId))
+      }
+    }
+    expect(msgs.some((m) => m.type === 'error')).toBe(false)
+  })
+})

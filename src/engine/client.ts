@@ -84,7 +84,6 @@ export class SimClient {
     switch (m.type) {
       case 'streams': this.setStatus({ configs: m.configs, error: undefined }); break
       case 'gramRows': {
-        this.inFlight = false
         for (const l of this.rowsListeners) l(m)
         const bufs = this.releaseBufs
         bufs.length = 0
@@ -92,7 +91,8 @@ export class SimClient {
         this.send({ type: 'release', buffers: bufs }, bufs)
         break
       }
-      case 'tactical':
+      case 'tactical': // last message of a step (after every gramRows), so it ends the in-flight step
+        this.inFlight = false
         this.track.push(m.aircraft.x, m.aircraft.y)
         this.setStatus({ simT: m.simT, tactical: m })
         break

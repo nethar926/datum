@@ -19,6 +19,10 @@ const rad2deg = (r: number) => ((((r * 180) / Math.PI) % 360) + 360) % 360
 export class SimHost {
   private engine?: AcousticEngine
   private pool: Frame[] = []
+  /** DEMON streams (v1.1 engines): own pool and own gramRows message, since bins differ from LOFAR. */
+  private demonPool: Frame[] = []
+  private demonIds: number[] = []
+  private demonBins = 0
   private bins = 0
   private n = 0
   private dt = 0.5
@@ -58,6 +62,24 @@ export class SimHost {
       v: 1, type: 'gramConfig', streamId: i + 1, kind: 'lofar', channel: b.rfChannel,
       bins: band.bins, f0: 0, fBin, rowRateHz: msg.rowRateHz, dbFloor: 40, dbCeil: 110,
     }))
+    this.demonIds = []; this.demonPool = []; this.demonBins = 0
+    const sub = (engine as unknown as { subscribe?: (r: { kind: 'demon'; buoyId: number }) => number }).subscribe
+    const all = (engine as unknown as { configs?: () => GramConfig[] }).configs
+    if (typeof sub === 'function' && typeof all === 'function') {
+      try {
+        engine.scenario.buoys.forEach((b, i) => {
+          const id = (b as { id?: string }).id
+          this.demonIds.push(sub.call(engine, { kind: 'demon', buoyId: Number(String(id ?? '').replace(/\D/g, '')) || i + 1 }))
+        })
+        const dc = all.call(engine).filter((c) => c.kind === 'demon' && this.demonIds.includes(c.streamId))
+        if (dc.length === this.demonIds.length && dc.length) {
+          this.demonBins = dc[0].bins
+          // Rows are emitted once per host step, so the display's time axis uses the host row rate.
+          for (const c of dc) configs.push({ v: 1, type: 'gramConfig', streamId: c.streamId, kind: 'demon', channel: c.channel, bins: c.bins, f0: c.f0, fBin: c.fBin, rowRateHz: msg.rowRateHz, dbFloor: c.dbFloor, dbCeil: c.dbCeil })
+          for (let k = 0; k < POOL_FRAMES; k++) this.demonPool.push(this.newDemonFrame())
+        } else this.demonIds = []
+      } catch { this.demonIds = []; this.demonBins = 0 }
+    }
     this.post({ v: 1, type: 'streams', configs })
     this.post(this.tactical)
     if (msg.surfaceTraffic !== undefined) this.setSurfaceTraffic(msg.surfaceTraffic)
@@ -76,11 +98,22 @@ export class SimHost {
     return { streamIds, rowIndex: new Uint32Array(this.n), data: new Float32Array(this.n * this.bins) }
   }
 
+  private newDemonFrame(): Frame {
+    const n = this.demonIds.length
+    return { streamIds: Int32Array.from(this.demonIds), rowIndex: new Uint32Array(n), data: new Float32Array(n * this.demonBins) }
+  }
+
   private release(buffers: ArrayBuffer[]): void {
     if (buffers.length % 3 !== 0) throw new Error('Release must return whole frames')
-    if (this.pool.length + buffers.length / 3 > POOL_FRAMES) throw new Error('Pool capacity exceeded')
     for (let k = 0; k < buffers.length; k += 3) {
       const [s, r, d] = [buffers[k], buffers[k + 1], buffers[k + 2]]
+      const dn = this.demonIds.length
+      if (dn && s.byteLength === dn * 4 && r.byteLength === dn * 4 && d.byteLength === dn * this.demonBins * 4 && d.byteLength !== this.n * this.bins * 4) {
+        if (this.demonPool.length >= POOL_FRAMES) throw new Error('Pool capacity exceeded')
+        this.demonPool.push({ streamIds: new Int32Array(s), rowIndex: new Uint32Array(r), data: new Float32Array(d) })
+        continue
+      }
+      if (this.pool.length >= POOL_FRAMES) throw new Error('Pool capacity exceeded')
       // Stale buffers from a previous init (different size) are silently dropped.
       if (s.byteLength !== this.n * 4 || r.byteLength !== this.n * 4 || d.byteLength !== this.n * this.bins * 4) continue
       this.pool.push({ streamIds: new Int32Array(s), rowIndex: new Uint32Array(r), data: new Float32Array(d) })
@@ -102,8 +135,30 @@ export class SimHost {
     this.rowCount++
     const rows: GramRows = { v: 1, type: 'gramRows', simT: engine.time, ...frame }
     this.post(rows, [frame.streamIds.buffer, frame.rowIndex.buffer, frame.data.buffer])
+    this.stepDemon()
     this.updateTactical()
     this.post(this.tactical!)
+  }
+
+  /** One DEMON row per stream per step (draining any extra ready rows so the display stays current). Skipped if no frame is free. */
+  private stepDemon(): void {
+    if (!this.demonIds.length) return
+    const frame = this.demonPool.pop()
+    if (!frame) return
+    const e = this.engine as unknown as { writeRow: (id: number, out: Float32Array, off: number) => number; rowsReady?: (id: number) => number }
+    let any = false
+    for (let i = 0; i < this.demonIds.length; i++) {
+      const id = this.demonIds[i], off = i * this.demonBins
+      frame.streamIds[i] = id
+      let idx = -1
+      do { const r = e.writeRow(id, frame.data, off); if (r < 0) break; idx = r } while ((e.rowsReady?.(id) ?? 0) > 0)
+      if (idx < 0) frame.data.fill(NaN, off, off + this.demonBins)
+      else any = true
+      frame.rowIndex[i] = Math.max(0, idx)
+    }
+    if (!any) { this.demonPool.push(frame); return }
+    const rows: GramRows = { v: 1, type: 'gramRows', simT: this.engine!.time, ...frame }
+    this.post(rows, [frame.streamIds.buffer, frame.rowIndex.buffer, frame.data.buffer])
   }
 
   /** Simple clockwise orbit autopilot around the field centre for the fictional aircraft. */
