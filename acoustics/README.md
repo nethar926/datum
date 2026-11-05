@@ -767,6 +767,9 @@ interface ClassObservations {
   gearRatio?: number; efrToCsr?: number; tpk?: number;
   turbineRateHz?: number; reductionRatio?: number; gearMeshHz?: number;
   turboGenHz?: number; hydpHz?: number; edaCfrMultiples?: readonly number[];
+  speedWindows?: readonly {
+    kind: 'SWATH' | 'SRC'; hz?: number; loHz?: number; hiHz?: number; speedKts?: number;
+  }[];
 }
 interface ClassMatch { id:string; score:number; matched:string[]; ruledOutBy:string[] }
 matchClasses(observations: ClassObservations,
@@ -778,6 +781,15 @@ It ranks by fraction of supplied constraints agreeing, then ASCII class ID; scor
 not a probability. Empty observations score zero; nonfinite numeric observations contradict.
 `matched` lists supporting constraint names; `ruledOutBy` lists contradictions, which callers
 can filter explicitly. Overlapping fictional envelopes intentionally leave ambiguous matches.
+
+Optional `speedWindows` observations classify against `idKeys.speedWindows`. An observed SRC
+`hz` matches if it falls in any class SRC `[loHz,hiHz]` (same inclusive range check as other
+Hz keys); a SWATH `{loHz,hiHz}` matches if it overlaps a class SWATH band by ≥50% of the
+observed width. When `speedKts` is supplied it must also lie in that window's `speedKts` with
+the same one-knot edge fade used by truth gain. Matched / ruled-out key names are `SRC` and
+`SWATH`. A class with no window of that kind is ruled out by that key. SRC idKeys envelopes
+keep the usual ±2% wander pad across the design speed span; SWATH bands stay exact (hash-
+spaced teaching intervals with no per-hull jitter).
 
 Coverage: `m3Followup.test.ts` pins all six modes, TPK/CPP/propulsor shape and record reuse,
 CFR-order EDA/LOP arithmetic and truth metadata, data-only HYDP/duty, one-knot fades, 50 seeded
