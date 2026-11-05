@@ -13,6 +13,7 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
   await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&palette=${process.env.PALETTE ?? "green"}`)
   await page.waitForSelector('[data-testid=lofar]')
+  if (process.env.SCN) { await page.waitForTimeout(1500); await page.selectOption('[data-testid="scenario-select"]', process.env.SCN) }
   await page.waitForTimeout(Number(process.env.SHOOT_MS ?? 20000))
   if (await page.locator('.gl-error').count()) errors.push(await page.locator('.gl-error').innerText())
   if (process.env.DRAG) {
@@ -45,6 +46,14 @@ try {
     const t = await page.locator('[data-testid=lm-readout]').innerText()
     if (!/RELATIVE/.test(t)) errors.push('lm readout should be relative with no basis: ' + t)
     console.log('lm:', t)
+    await page.waitForTimeout(300)
+  }
+  if (process.env.HARM) {
+    await page.click('button:has-text("HARM")')
+    const c = await page.locator('[data-testid="lofar"]').boundingBox()
+    await page.mouse.click(c.x + c.width * 0.072, c.y + c.height * 0.5)
+    await page.click('button:has-text("CROSS")')
+    await page.mouse.move(c.x + c.width * 0.3, c.y + c.height * 0.35)
     await page.waitForTimeout(300)
   }
   if (process.env.SETTINGS) {

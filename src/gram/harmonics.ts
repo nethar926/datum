@@ -26,3 +26,24 @@ export function bladeReadout(shaftHz: number, bladeHz: number | null): BladeRead
   if (n >= 2 && n <= MAX_BLADES && r.ratioErr <= BLADE_TOL) r.blades = n
   return r
 }
+
+/** Harmonic number (≥1) nearest to hz for fundamental f0. */
+export function nearestHarmonic(f0: number, hz: number): number {
+  return f0 > 0 && hz > 0 ? Math.max(1, Math.round(hz / f0)) : 1
+}
+
+/** LOFAR harmonic cursor readout. */
+export function harmText(f0: number | null, k: number | null, fMax: number, family?: string): string {
+  if (f0 === null) return 'HARM  CLICK A LINE TO SET THE FUNDAMENTAL'
+  const n = harmonicSeries(f0, fMax).length
+  const kk = k ?? 1
+  return `HARM ${family ? family + '  ' : ''}F0 ${f0.toFixed(2)} HZ  ${n} MARKERS  H${kk} ${(kk * f0).toFixed(2)} HZ`
+}
+
+/** Fractional-ratio probe for EDAs measured against a fundamental (e.g. LOP = CFR × 27.75). */
+export function ratioText(f0: number, probeHz: number): string {
+  if (!(f0 > 0) || !(probeHz > 0)) return ''
+  const r = probeHz / f0, lo = Math.floor(r), frac = r - lo
+  const where = frac < 0.02 || frac > 0.98 ? `ON H${Math.round(r)}` : `H${lo}+${Math.round(frac * 100)}%`
+  return `R ${probeHz.toFixed(2)} HZ = F0 ×${r.toFixed(2)} (${where})`
+}

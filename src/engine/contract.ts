@@ -14,9 +14,15 @@ export type BuoyKind = 'omni' | 'difar' | 'dicass' | 'vlad' | 'bt'
 export interface TacticalBuoy {
   id: number; channel: number; kind: BuoyKind; x: number; y: number; hydrophoneDepthM: number
   batteryFrac: number; lifeRemainingS: number; state: 'falling' | 'live' | 'dead'
+  /** Receiver front end: AGC gain relative to settled (dB) and whether the last row clipped. */
+  rx?: { gainDb: number; overload: boolean }
 }
 export interface Bearing { buoyId: number; freqHz: number; brgDeg: number; quality: number }
-export interface TruthContact { id: number; label: string; x: number; y: number; crsDeg: number; spdMps: number }
+export interface TruthContact { id: number; label: string; x: number; y: number; crsDeg: number; spdMps: number
+  /** v1.2 (m3-lines) fields, optional so older engines still work. */
+  active?: boolean; depthM?: number; spdKts?: number
+  propulsion?: import('../gram/truthFamilies').PropulsionTruthLite; lines?: import('../gram/truthFamilies').TruthLineLite[]
+}
 export interface Tactical {
   v: 1; type: 'tactical'; simT: number
   aircraft: { x: number; y: number; altM: number; hdgDeg: number; gsMps: number }
@@ -30,6 +36,7 @@ import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'
 export type ToWorker =
   | { type: 'init'; seed: number; scenarioId: string; band: Band; rowRateHz: number; params?: ScenarioParams; surfaceTraffic?: number }
+  | { type: 'setReceiver'; enabled: boolean }
   | { type: 'setSurfaceTraffic'; value: number }      // 0 none … 1 heavy
   | { type: 'step' }                                    // advance one row period of sim time
   | { type: 'release'; buffers: ArrayBuffer[] }

@@ -16,12 +16,15 @@ interface V11 {
   presetToParams: (d: Difficulty, seed: number) => ScenarioParams
   clampParams: (v: unknown) => ScenarioParams
   fitCpaFromDoppler: (samples: { tS: number; fHz: number }[]) => { ok: boolean; f0: number; speed: number; tCPA: number; rCPA: number }
+  fitLloydsMirror: (samples: { simT: number; spacingHz: number }[], opts: { zrM: number; cMps?: number; rangeSource?: { kind: 'cpaFit' | 'manual'; rCPA: number; speed: number; tCPA?: number } | 'none' }) =>
+    { ok: boolean; basis: 'cpaFit' | 'manual' | 'none'; zs: number; depthRatio: number; rCPA: number; speed: number; tCPA: number; residualRms: number }
 }
 const ns = Acoustics as unknown as Partial<V11>
 export const acousticsV11 = {
   presetToParams: typeof ns.presetToParams === 'function' ? ns.presetToParams : null,
   clampParams: typeof ns.clampParams === 'function' ? ns.clampParams : null,
   fitCpaFromDoppler: typeof ns.fitCpaFromDoppler === 'function' ? ns.fitCpaFromDoppler : null,
+  fitLloydsMirror: typeof ns.fitLloydsMirror === 'function' ? ns.fitLloydsMirror : null,
 }
 
 /** Surface traffic slider stops (display labels; the engine takes the 0..1 value). */

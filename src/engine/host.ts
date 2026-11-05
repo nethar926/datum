@@ -1,4 +1,5 @@
 import * as Acoustics from '@acoustics'
+import { Receiver } from './receiver'
 import { AcousticEngine, isAlive } from '@acoustics'
 import type { Band, Bearing, FromWorker, GramConfig, GramRows, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
 import { buildScenario } from '../scenarios/training'
@@ -28,6 +29,9 @@ export class SimHost {
   private dt = 0.5
   private rowCount = 0
   private tactical?: Tactical
+  /** One receiver front end per LOFAR stream; rxEnabled=false gives an ideal (infinite-range) receiver. */
+  private rx: Receiver[] = []
+  private rxEnabled = true
   constructor(private readonly post: Post) {}
 
   handle(msg: ToWorker): void {
@@ -37,6 +41,7 @@ export class SimHost {
       if (msg.type === 'release') return this.release(msg.buffers)
       if (msg.type === 'step') return this.step()
       if (msg.type === 'setSurfaceTraffic') return this.setSurfaceTraffic(msg.value)
+      if (msg.type === 'setReceiver') { this.rxEnabled = !!msg.enabled; for (const r of this.rx) r.reset(); return }
       throw new Error('Unknown message')
     } catch (e) {
       this.post({ v: 1, type: 'error', message: e instanceof Error ? e.message : String(e) })
@@ -56,6 +61,7 @@ export class SimHost {
     this.rowCount = 0
     this.pool = []
     for (let i = 0; i < POOL_FRAMES; i++) this.pool.push(this.newFrame())
+    this.rx = Array.from({ length: this.n }, () => new Receiver())
     this.tactical = this.makeTactical()
     const fBin = band.fmax / (band.bins - 1)
     const configs: GramConfig[] = engine.scenario.buoys.map((b, i) => ({
@@ -131,6 +137,7 @@ export class SimHost {
       frame.streamIds[i] = i + 1
       frame.rowIndex[i] = this.rowCount
       engine.writeRow(i + 1, frame.data, i * this.bins)
+      if (this.rxEnabled) this.rx[i].process(frame.data, i * this.bins, this.bins, this.dt)
     }
     this.rowCount++
     const rows: GramRows = { v: 1, type: 'gramRows', simT: engine.time, ...frame }
@@ -198,6 +205,8 @@ export class SimHost {
       const alive = isAlive(b, s.time)
       const remaining = Math.max(0, b.deployedAt + b.life - s.time)
       tb.x = b.x; tb.y = b.y; tb.hydrophoneDepthM = b.depth
+      const r = this.rx[i]
+      if (r && this.rxEnabled) { if (tb.rx) { tb.rx.gainDb = r.gainDb; tb.rx.overload = r.overload } else tb.rx = { gainDb: r.gainDb, overload: r.overload } } else tb.rx = undefined
       tb.state = s.time < b.deployedAt ? 'falling' : alive ? 'live' : 'dead'
       tb.lifeRemainingS = s.time < b.deployedAt ? b.life : remaining
       tb.batteryFrac = Math.min(1, tb.lifeRemainingS / b.life)

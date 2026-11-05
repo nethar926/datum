@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import { freqToX } from './axis'
 import type { OverlayCtx } from './Gram'
-import { BASIS_LABEL, kThrough, lloydReadout, nearestNull, striationHz, type LloydBasis, type Striation } from './lloyds'
+import { BASIS_LABEL, kThrough, lloydReadout, nearestNull, overlaySpacingSamples, striationHz, type LloydBasis, type Striation } from './lloyds'
+import { acousticsV11 } from '../scenarios/acousticsApi'
 
 export const LM_MAX_N = 30
 /** Skip drawing when null spacing at CPA is below this many pixels (curves would just be hatching). */
@@ -37,14 +38,31 @@ export function useLloydDrag(st: LloydState, set: (s: LloydState) => void, cpa: 
   }
 }
 
-export function lloydText(st: LloydState, cpa: CpaGeom | null, zrM: number | null): string {
+/** Fit the overlay's measured Δf(t) with acoustics' fitLloydsMirror (null when the API isn't available or the fit fails). */
+export function fitOverlay(st: LloydState, cpa: CpaGeom | null, zrM: number, window: { t0: number; t1: number }) {
+  const fit = acousticsV11.fitLloydsMirror
+  if (!fit || !(window.t1 > window.t0)) return null
+  const { s, rCpaM } = effective(st, cpa)
+  const basis = st.basis === 'cpaFit' && !cpa ? 'none' : st.basis
+  const speed = basis === 'cpaFit' && cpa ? cpa.speedMps : st.manSpeedMps
+  const rangeSource = basis === 'none' || rCpaM === null ? 'none' as const : { kind: basis, rCPA: rCpaM, speed, tCPA: s.tCpaS }
+  try {
+    const r = fit(overlaySpacingSamples(s, window.t0, window.t1), { zrM, rangeSource })
+    return r.ok && r.depthRatio > 0 ? r : null
+  } catch { return null }
+}
+
+export function lloydText(st: LloydState, cpa: CpaGeom | null, zrM: number | null, window?: { t0: number; t1: number }): string {
   const { rCpaM } = effective(st, cpa)
   const basis = st.basis === 'cpaFit' && !cpa ? 'none' : st.basis
   if (!zrM) return `LM BASIS ${BASIS_LABEL[basis]}  NO HYDROPHONE DEPTH`
   const rd = lloydReadout(basis, st.k, zrM, rCpaM)
+  const f = window ? fitOverlay(st, cpa, zrM, window) : null
+  const ratio = f ? f.depthRatio : rd.depthRatio
+  const zs = f && Number.isFinite(f.zs) ? f.zs : rd.zsM
   return basis === 'none'
-    ? `LM BASIS NONE  zs/R ${rd.depthRatio.toFixed(3)} (RELATIVE)`
-    : `LM BASIS ${BASIS_LABEL[basis]}  ZS ${rd.zsM.toFixed(0)} M`
+    ? `LM BASIS NONE  R/zs ${ratio.toFixed(1)} (RELATIVE)`
+    : `LM BASIS ${BASIS_LABEL[basis]}  ZS ${zs.toFixed(0)} M  R/zs ${ratio.toFixed(1)}`
 }
 
 /** Striation hyperbolas (n = 1..) drawn over the scrolling waterfall. */

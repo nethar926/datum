@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
@@ -12,6 +13,10 @@ import { clampView, type FreqView } from './gram/axis'
 import { TacticalPlot } from './tactical/TacticalPlot'
 import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
+import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
+import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
+import { familyFundamentals, familyLabel, snapToFamily, truthRows, truthEdaName } from './gram/truthFamilies'
+import { freqToX } from './gram/axis'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 
 const RATES = [1, 4, 16]
@@ -44,7 +49,30 @@ export default function App() {
   const [selHz, setSelHz] = useState<number | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [tool, setTool] = useState<'select' | 'cpa' | 'lm'>('select')
+  const [showCmp, setShowCmp] = useState(false)
+  const [tool, setTool] = useState<'select' | 'cpa' | 'lm' | 'harm'>('select')
+  const [crossOn, setCrossOn] = useState(false)
+  const [harmF0, setHarmF0] = useState<number | null>(null)
+  const [harmK, setHarmK] = useState<number | null>(null)
+  const [harmFam, setHarmFam] = useState<string | null>(null)
+  const harmGrab = useRef<number | null>(null)
+  const [harmProbe, setHarmProbe] = useState<number | null>(null)
+  const harmDrag = (phase: 'start' | 'move' | 'end', hz: number, _ago = 0, shift = false) => {
+    // Shift-click with a fundamental set drops a ratio probe instead of moving harmonics (EDA ×27.75 etc.).
+    if (shift && harmF0 !== null) { if (hz > 0) setHarmProbe(hz); harmGrab.current = null; return }
+    if (phase === 'start') {
+      if (harmF0 === null) {
+        // Truth on: snap to the nearest engine line family (CSR/CFR/EFR/EDA) whose harmonic is under the click.
+        const snap = truth ? snapToFamily(hz, familyFundamentals(st.tactical?.truth?.contacts), Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
+        if (snap) { setHarmF0(snap.fund.hz); setHarmK(snap.k); setHarmFam(familyLabel(snap.fund)); harmGrab.current = null; return }
+        setHarmF0(hz); harmGrab.current = 1; setHarmK(1); setHarmFam(null); return
+      }
+      const k = nearestHarmonic(harmF0, hz); harmGrab.current = k; setHarmK(k); return
+    }
+    const k = harmGrab.current
+    if (k !== null && hz > 0) { setHarmF0(hz / k); setHarmFam(null) }
+    if (phase === 'end') harmGrab.current = null
+  }
   const cpaMode = tool === 'cpa'
   const setCpaMode = (on: boolean) => setTool(on ? 'cpa' : 'select')
   const [lm, setLm] = useState<LloydState>({ basis: 'cpaFit', k: 40, tCpaS: 0, tauS: 300, manRangeM: 2000, manSpeedMps: 4 })
@@ -71,6 +99,7 @@ export default function App() {
   const lofarCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'lofar'), [st.configs])
   const demonCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'demon'), [st.configs])
   const cfg = lofarCfgs[stream]
+  const probeName = truth && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
   const buoy = st.tactical?.buoys[stream]
 
   return (
@@ -80,6 +109,12 @@ export default function App() {
         <div className="brand">DATUM<small>Acoustic operator trainer · fictional patrol aircraft</small></div>
         <div className="group">
           <button className="btn" onClick={() => setShowNew(true)}>New</button>
+          <select className="btn scn-select" data-testid="scenario-select" aria-label="Scenario"
+            value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
+            onChange={(e) => { setCpaMarks([]); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
+            {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
+            {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
+          </select>
           <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
             {st.playing ? 'Pause' : 'Play'}
           </button>
@@ -103,6 +138,9 @@ export default function App() {
             <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
           </label>
         </div>
+        <div className="group">
+          <button className="btn" data-testid="cmp-open" onClick={() => setShowCmp(true)} title="Recognition guide for every fictional class">Compendium</button>
+        </div>
         <div className="group" style={{ position: 'relative' }}>
           <button className="btn" aria-expanded={showSettings} onClick={() => setShowSettings(!showSettings)}>Settings</button>
         </div>
@@ -110,9 +148,13 @@ export default function App() {
         {showSettings && (
           <div className="popover" role="dialog" aria-label="Settings" data-testid="settings">
             <TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} />
+            <label className="check" title="Off = ideal receiver with unlimited dynamic range (for comparison)">
+              <input type="checkbox" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /> Realistic receiver (AGC, limited range)
+            </label>
           </div>
         )}
       </header>
+      {showCmp && <Compendium onClose={() => setShowCmp(false)} />}
 
       <main className="workspace">
         <div className="workspace-left">
@@ -135,13 +177,22 @@ export default function App() {
               {cpaMarks.length > 0 && <button onClick={() => setCpaMarks((m) => m.slice(0, -1))} title="Remove last mark">Undo</button>}
               {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
             </div>
+            <div className="seg" role="group" aria-label="Harmonic cursor">
+              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
+              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null) }}>Clear</button>}
+            </div>
+            <div className="seg" role="group" aria-label="Cross cursor">
+              <button aria-pressed={crossOn} onClick={() => setCrossOn(!crossOn)} title="Time / frequency crosshair with level readout">CROSS</button>
+            </div>
             <div className="seg" role="group" aria-label="Lloyd's mirror">
               <button aria-pressed={tool === 'lm'} onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)">LM</button>
             </div>
             <span className="readout">
               {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} HZ  Δf ${cfg.fBin.toFixed(2)}` : 'STARTING'}
               {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
+              {buoy?.rx ? `  AGC ${buoy.rx.gainDb >= 0 ? '+' : ''}${buoy.rx.gainDb.toFixed(0)}` : ''}
             </span>
+            {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
           </div>
           <div className="panel-body">
             {lofarCfgs.length > 0 && (
@@ -149,12 +200,18 @@ export default function App() {
                 onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
                 normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz}
                 onPickPoint={cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
-                onDragPoint={tool === 'lm' ? lmDrag : undefined}
-                overlay={cpaMarks.length || tool === 'lm' ? (ctx) => (<>
+                onDragPoint={tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
+                crosshair={crossOn} nowS={st.simT}
+                overlay={cpaMarks.length || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
+                  {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
+                    <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
+                  {harmF0 !== null && harmProbe !== null && harmProbe >= ctx.view.lo && harmProbe <= ctx.view.hi && (
+                    <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(harmProbe, ctx.view, ctx.width) }}><span>×{(harmProbe / harmF0).toFixed(2)}</span></div>)}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
                   {cpaMarks.length > 0 && <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} />}
                 </>) : undefined} />
             )}
+            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
             {(cpaMode || cpaMarks.length > 0) && <div className="gram-note readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</div>}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">
@@ -169,7 +226,7 @@ export default function App() {
                 </>}
                 {(lm.basis === 'none' || (lm.basis === 'cpaFit' && !cpaGeom)) &&
                   <label>Width s <input type="number" step={10} min={10} value={lm.tauS.toFixed(0)} onChange={(e) => setLm({ ...lm, tauS: Math.max(10, Number(e.target.value)) })} /></label>}
-                <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null)}</span>
+                <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
               </div>
             )}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
@@ -201,6 +258,11 @@ export default function App() {
               {`A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</div>}
             <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} />
+            {truth && st.tactical?.truth && <div className="truth-panel readout" data-testid="truth-panel">
+              {st.tactical.truth.contacts.filter((c) => c.active !== false).map((c) => <div key={c.id} className="truth-contact">
+                {truthRows(c).map((r, i) => <div key={i} className={i ? 'truth-row' : 'truth-head'}>{r}</div>)}
+              </div>)}
+            </div>}
           </div>
         </section>
       </main>
