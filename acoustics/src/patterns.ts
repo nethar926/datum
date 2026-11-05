@@ -34,8 +34,8 @@ function finite(value: number, name: string): number {
 }
 
 /** Pure training planner; no engine state, deployments or worker protocol changes.
- * Passive FOM = SL - NL + DI - DT. Fictional defaults 130/65/0/10 dB,
- * 200 Hz, spherical TL (including existing Thorp absorption). */
+ * Passive FOM = SL - NL + DI - DT. Fictional defaults 140/60/0/10 dB,
+ * 200 Hz, hybrid TL (including existing Thorp absorption). */
 export function planPattern(opts: PatternOptions): PatternPlan {
   finite(opts.center.x, 'center.x');
   finite(opts.center.y, 'center.y');
@@ -45,11 +45,11 @@ export function planPattern(opts: PatternOptions): PatternPlan {
     throw new RangeError('Unknown pattern kind');
   // A ring has no threat axis when AUTO was called with a nonfinite axis.
   const axis = (hasAxis ? opts.axisDeg % 360 : opts.kind === 'auto' ? 0 : finite(opts.axisDeg, 'axisDeg')) * Math.PI / 180;
-  const sl = finite(opts.slDb ?? 130, 'slDb'), nl = finite(opts.nlDb ?? 65, 'nlDb');
+  const sl = finite(opts.slDb ?? 140, 'slDb'), nl = finite(opts.nlDb ?? 60, 'nlDb');
   const di = finite(opts.diDb ?? 0, 'diDb'), dt = finite(opts.dtDb ?? 10, 'dtDb');
   const f = finite(opts.fHz ?? 200, 'fHz');
   if (f < 0) throw new RangeError('fHz must be nonnegative');
-  const spreading = opts.spreading ?? 'spherical';
+  const spreading = opts.spreading ?? 'hybrid';
   if (!['spherical', 'cylindrical', 'hybrid'].includes(spreading))
     throw new RangeError('Unknown spreading mode');
   const fom = sl - nl + di - dt;

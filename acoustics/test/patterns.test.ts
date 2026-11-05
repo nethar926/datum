@@ -75,13 +75,13 @@ describe('passive sonar range and spacing', () => {
     expect(Math.abs(plan.detectionRangeM - target)).toBeLessThan(1);
     expect(transmissionLoss(plan.detectionRangeM, fHz, spreading)).toBeCloseTo(slDb - nlDb + diDb - dtDb, 9);
   });
-  it('uses fictional 130/65/0/10 dB, 200Hz and spherical defaults', () => {
-    expect(planPattern({ ...defaults, kind: 'barrier' })).toEqual(planPattern({ ...defaults, kind: 'barrier', slDb: 130, nlDb: 65, diDb: 0, dtDb: 10, fHz: 200, spreading: 'spherical' }));
-    // Default FOM=55 dB is still below spherical TL(1km) (~60 dB).
-    // Without the 1km clamp the root is ~562m, not 5.6km.
+  it('uses fictional 140/60/0/10 dB, 200Hz and hybrid defaults', () => {
+    expect(planPattern({ ...defaults, kind: 'barrier' })).toEqual(planPattern({ ...defaults, kind: 'barrier', slDb: 140, nlDb: 60, diDb: 0, dtDb: 10, fHz: 200, spreading: 'hybrid' }));
+    // FOM=70 dB with hybrid spreading produces an interior root near 9.83km.
     const plan = planPattern({ ...defaults, kind: 'barrier' });
-    expect(plan.detectionRangeM).toBe(1000);
-    expect(transmissionLoss(plan.detectionRangeM, 200)).toBeGreaterThan(55);
+    expect(plan.detectionRangeM).toBeGreaterThan(9800);
+    expect(plan.detectionRangeM).toBeLessThan(9900);
+    expect(transmissionLoss(plan.detectionRangeM, 200, 'hybrid')).toBeCloseTo(70, 9);
   });
   it.each([[0, 1000], [250, 30000]])('clamps source level %s to range %s', (slDb, r) => {
     expect(planPattern({ ...defaults, kind: 'single', slDb }).detectionRangeM).toBe(r);
@@ -92,7 +92,7 @@ describe('passive sonar range and spacing', () => {
     expect(planPattern({ ...opts, spacingM: 5 * r }).spacingM).toBe(3 * r);
   });
   it('explicit grid spacing overrides the geometric default', () => {
-    expect(planPattern({ ...defaults, kind: 'grid', spacingM: 1000 }).spacingM).toBe(1000);
+    expect(planPattern({ ...defaults, kind: 'grid', spacingM: 10000 }).spacingM).toBe(10000);
   });
 });
 

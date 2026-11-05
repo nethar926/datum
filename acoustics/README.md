@@ -861,18 +861,18 @@ Options: `kind: 'barrier'|'ring'|'grid'|'wedge'|'single'|'auto'`, `center:{x,y}`
 Resolved kind excludes auto; a finite threat axis gives **auto → barrier across axisDeg**.
 A nonfinite auto axis falls back to a north-oriented ring; other kinds require finite axes.
 
-Fictional training defaults (not real platform performance): **SL=130 dB re 1 µPa @ 1 m,
-NL=65 dB in-band, DI=0 dB for every pattern (including DIFAR), DT=10 dB, f=200 Hz**.
+Fictional training defaults (not real platform performance): **SL=140 dB re 1 µPa @ 1 m,
+NL=60 dB in-band, DI=0 dB for every pattern (including DIFAR), DT=10 dB, f=200 Hz**.
 DT is an illustrative conservative threshold. Callers may explicitly supply DIFAR DI
 (e.g. 7.8 dB); receiver type alone does not silently change the range budget.
 Solve `TL(R)=SL-NL+DI-DT` by 48 binary-search iterations in **1–30 km**, using the existing
-`transmissionLoss` (including `thorp`) and its default **spherical** spreading; hybrid and
-cylindrical may be selected. Out-of-budget ranges clamp to the endpoints, where equality
-cannot hold. The above numbers give FOM=**55 dB**, but measured default **R=1000 m** after clamping:
-spherical spreading is `20log10(R)` with R in metres, so TL(1 km) is already about 60 dB.
-The unclamped root is about 562 m, **not 5.6 km**. Reaching 5–6 km would require FOM
-about 74–75.6 dB (SL about 149–150.6 dB with NL=65, DI=0, DT=10). Only the approved
-SL/NL defaults have changed; the TL model and 1–30 km range bounds are unchanged.
+`transmissionLoss` (including `thorp`) with planner-default **hybrid** spreading; spherical
+and cylindrical may be selected explicitly. The underlying `transmissionLoss` function
+still defaults to spherical; only the planner default changes. Hybrid transitions at the
+existing 1000 m default: `20log10(1000)+10log10(R/1000)` beyond 1 km, plus absorption.
+Out-of-budget ranges clamp to the endpoints, where equality cannot hold. These defaults
+give FOM=**70 dB** and measured **R=9827.922764 m (about 9.83 km)** at 200 Hz, with
+`TL(R)=70 dB`, rather than the estimated 8.5 km. The TL model and 1–30 km bounds are unchanged.
 
 Spacing S defaults to 1.5R, except grid's specified √2R. Overrides clamp to
 `[max(500,0.5R),3R]` (at least 500 m). Ring radius is always R, independent of S;
