@@ -80,7 +80,16 @@ export class AcousticEngine {
     if(!Number.isInteger(offset)||offset<0||out.length<offset+bins)throw new Error('Row size mismatch');
     if(sub&&this.rowsReady(streamId)===0)return -1;
     const rowIndex=sub?sub.read++:this.legacyIndices.get(streamId)??0;if(!sub)this.legacyIndices.set(streamId,rowIndex+1);
-    const b=this.scenario.buoys[i];if(!isAlive(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
+    const b=this.scenario.buoys[i];if(!isAlive(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
+  }
+  /** Copy the last generated per-bin DIFAR bearings (call after writeRow). NaN for omni/DEMON/dead. */
+  writeBearingRow(streamId:number,out:Float32Array,offset=0):void {
+    const i=this.streams.get(streamId);if(i===undefined)throw new Error('Unknown streamId');
+    const sub=this.subscriptions.get(streamId),bins=sub?.config.bins??this.scenario.bins;
+    if(!Number.isInteger(offset)||offset<0||out.length<offset+bins)throw new Error('Row size mismatch');
+    const b=this.scenario.buoys[i];
+    if(sub?.renderer||b.type!=='difar'||!isAlive(b,this.time)){out.fill(NaN,offset,offset+bins);return;}
+    out.set((sub?.lofar??this.generators[i]).bearingRow,offset);
   }
   dropBuoy(spec:DropBuoy):number {
     if(spec.kind!=='omni'&&spec.kind!=='difar')throw new Error('Receiver type pending approved plan');

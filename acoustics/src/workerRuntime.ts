@@ -60,17 +60,17 @@ export class WorkerRuntime {
     const e=this.engine!;while(this.configs.some(c=>c.streamId===this.nextId))this.nextId++;const id=this.nextId++;e.registerStream(id,channel);const config:GramConfig={v:1,type:'gramConfig',simT:e.time,streamId:id,kind:'lofar',channel,bins:e.scenario.bins,f0:0,fBin:e.scenario.fmax/(e.scenario.bins-1),rowRateHz:4,dbFloor:40,dbCeil:110};
     this.configs.push(config);this.indices.set(id,0);this.emit(config);
   }
-  private frame(ids:Int32Array,indices:Uint32Array,data:Float32Array):Frame{return {message:{v:1,type:'gramRows',simT:this.simT,streamIds:ids,rowIndex:indices,data},transfer:[ids.buffer as ArrayBuffer,indices.buffer as ArrayBuffer,data.buffer as ArrayBuffer]};}
+  private frame(ids:Int32Array,indices:Uint32Array,data:Float32Array,bearingDeg:Float32Array):Frame{return {message:{v:1,type:'gramRows',simT:this.simT,streamIds:ids,rowIndex:indices,data,bearingDeg},transfer:[ids.buffer as ArrayBuffer,indices.buffer as ArrayBuffer,data.buffer as ArrayBuffer,bearingDeg.buffer as ArrayBuffer]};}
   private rebuildPool():void{
-    for(const g of this.groups){g.pool.length=0;g.configs.length=0;for(const c of this.configs)if(c.bins===g.bins)g.configs.push(c);const n=g.configs.length;if(n)for(let i=0;i<3;i++)g.pool.push(this.frame(new Int32Array(n),new Uint32Array(n),new Float32Array(n*g.bins)));}
+    for(const g of this.groups){g.pool.length=0;g.configs.length=0;for(const c of this.configs)if(c.bins===g.bins)g.configs.push(c);const n=g.configs.length;if(n)for(let i=0;i<3;i++)g.pool.push(this.frame(new Int32Array(n),new Uint32Array(n),new Float32Array(n*g.bins),new Float32Array(n*g.bins)));}
   }
   private release(buffers:ArrayBuffer[]):void{
-    if(buffers.length%3!==0)throw new Error('Release complete batches: ids, rowIndex, data');
-    for(let i=0;i<buffers.length;i+=3){const a=buffers[i],b=buffers[i+1],c=buffers[i+2];
-      if(!(a instanceof ArrayBuffer)||!(b instanceof ArrayBuffer)||!(c instanceof ArrayBuffer))throw new Error('Invalid release buffer');
-      const n=a.byteLength/4;if(!n||b.byteLength!==a.byteLength)continue;
+    if(buffers.length%4!==0)throw new Error('Release complete batches: ids, rowIndex, data, bearingDeg');
+    for(let i=0;i<buffers.length;i+=4){const a=buffers[i],b=buffers[i+1],c=buffers[i+2],d=buffers[i+3];
+      if(!(a instanceof ArrayBuffer)||!(b instanceof ArrayBuffer)||!(c instanceof ArrayBuffer)||!(d instanceof ArrayBuffer))throw new Error('Invalid release buffer');
+      const n=a.byteLength/4;if(!n||b.byteLength!==a.byteLength||d.byteLength!==c.byteLength)continue;
       const bins=c.byteLength/(n*4),g=this.groups.find(g=>g.bins===bins);if(!g||g.configs.length!==n||g.pool.length>=3)continue;
-      g.pool.push(this.frame(new Int32Array(a),new Uint32Array(b),new Float32Array(c)));
+      g.pool.push(this.frame(new Int32Array(a),new Uint32Array(b),new Float32Array(c),new Float32Array(d)));
     }
   }
   /** Exactly one incremental row per subscribed stream. Pool starvation drops rows but keeps sim time. */
@@ -81,7 +81,7 @@ export class WorkerRuntime {
     while(this.nextRow<=target){e.advance(this.nextRow-e.time);this.nextRow+=.25;
       for(const c of this.configs)this.indices.set(c.streamId,(this.indices.get(c.streamId)??0)+1);
       for(const g of this.groups){if(!g.configs.length)continue;const frame=g.pool.pop();
-        if(frame){const m=frame.message;m.simT=e.time;for(let i=0;i<g.configs.length;i++){const c=g.configs[i];m.streamIds[i]=c.streamId;m.rowIndex[i]=this.indices.get(c.streamId)!-1;e.writeRow(c.streamId,m.data,i*g.bins);}this.emit(m,frame.transfer);}
+        if(frame){const m=frame.message;m.simT=e.time;for(let i=0;i<g.configs.length;i++){const c=g.configs[i];m.streamIds[i]=c.streamId;m.rowIndex[i]=this.indices.get(c.streamId)!-1;e.writeRow(c.streamId,m.data,i*g.bins);e.writeBearingRow(c.streamId,m.bearingDeg!,i*g.bins);}this.emit(m,frame.transfer);}
         else for(const c of g.configs)e.writeRow(c.streamId,this.scratch);
       }
     }

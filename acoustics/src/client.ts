@@ -10,6 +10,6 @@ export class AcousticClient {
   play():void{this.command({type:'play'});}
   pause():void{this.command({type:'pause'});}
   seek(simT:number):void{this.simT=simT;this.command({type:'seek'});}
-  release(batch:GramRows):void{const buffers=[batch.streamIds.buffer,batch.rowIndex.buffer,batch.data.buffer] as ArrayBuffer[];this.command({type:'release',buffers},buffers);}
+  release(batch:GramRows):void{const buffers=[batch.streamIds.buffer,batch.rowIndex.buffer,batch.data.buffer] as ArrayBuffer[];if(batch.bearingDeg)buffers.push(batch.bearingDeg.buffer as ArrayBuffer);this.command({type:'release',buffers},buffers);}
   dispose():void{this.worker.terminate();}
 }

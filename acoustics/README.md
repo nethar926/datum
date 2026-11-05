@@ -12,7 +12,7 @@ npm run build
 npm run bench
 ```
 
-No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 129 tests;
+No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 152+ tests;
 benchmark: 12 warmup + 200 full 60-contact × 32-buoy × 1024-bin steps, mean/p95,
 no timing assertion. `busyScenario()` is a test/benchmark fixture only. No PNG preview.
 
@@ -66,12 +66,14 @@ The default client worker URL targets built ESM `dist/worker.js`.
 - `dropBuoy {id?,channel,kind:'omni'|'difar',x,y,hydrophoneDepthM,lifeS?}` (life default
   7200 s). RF channels unique. Then `subscribe {channel,kind:'lofar',bins?:1024,
   band?:[0,500]}`; `unsubscribe {streamId}`. Drops do not auto-subscribe.
-- `gramRows` transfers `[streamIds.buffer,rowIndex.buffer,data.buffer]`: Int32 stream IDs,
-  Uint32 per-stream indexes starting at 0, packed N×1024 Float32 data. Three full batches
-  pooled. After upload, `client.release(batch)` sends `release {buffers}` in that order;
-  views detach. Starvation advances time/seeded fluctuations but drops rows with index gaps.
-  Config changes allocate; hot ticks allocate no sample arrays. Release rewraps returned
-  buffers in typed views. Late old-config buffers may be discarded.
+- `gramRows` transfers `[streamIds.buffer,rowIndex.buffer,data.buffer,bearingDeg.buffer]`:
+  Int32 stream IDs, Uint32 per-stream indexes starting at 0, packed N×bins Float32 LOFAR/DEMON
+  `data`, and packed N×bins Float32 `bearingDeg` (degrees true 0..360 for DIFAR LOFAR bins;
+  NaN for omni, DEMON, or dead). Three full batches pooled. After upload, `client.release(batch)`
+  sends `release {buffers}` in that order; views detach. Starvation advances time/seeded
+  fluctuations but drops rows with index gaps. Config changes allocate; hot ticks allocate no
+  sample arrays. Release rewraps returned buffers in typed views. Late old-config buffers may
+  be discarded.
 - `tactical` at each clock tick/change: aircraft ENU/heading/groundspeed (illustrative altitude
   300 m); buoy RF/depth/battery/state; strongest K≤8 DIFAR lines per buoy:
   `{buoyId,freqHz,brgDeg,quality}` (quality=SNR dB). Numeric IDs map `buoy-N`. Fixed-length truth contacts include active flags and source-line tags (see M3 below).
@@ -108,6 +110,12 @@ not physically valid), bins 2..16384. Worker M1 is fixed to 1024 bins.
   fluctuations, not sampled FFT leakage or correlated ocean noise.
 - DIFAR primitive: atan2 of omni×east/north cross terms; worker lines approximate geometric
   bearing plus seeded SNR-dependent Gaussian error, not multi-source localization.
+  Per-bin `bearingRow`/`GramRows.bearingDeg` accumulate the same signal power as the LOFAR
+  PSD (broadband/cavitation with Lloyd gain, flow, swaths, tonal kernels) into east/north
+  resultants, then `atan2` plus Gaussian noise `σ°=min(90, 20/√SNR)` with SNR=signal/ambient
+  (linear). Below 0 dB SNR the bin draws a uniform bearing (isotropic ambient). Bearing noise
+  uses an independent `deriveSeed(seed,'bearing:'+buoy.id)` stream so LOFAR power bytes stay
+  unchanged. Omni fills NaN and skips the accumulators.
 - Standalone DEMON: square-law, four low-pass poles, DC removal, Hann/radix-2 FFT; actual
   acoustic AM synth. Independent blocks, linear power output; future stream adapter must
   convert to median-relative dB. Mackenzie clamps to published validity bounds. Constant
@@ -423,10 +431,11 @@ if (engine.rowsReady(config.streamId) > 0)
   engine.writeRow(config.streamId, packed, 4);
 ```
 
-Worker gramRows have `streamIds:Int32Array`, `rowIndex:Uint32Array` and packed Float32Array
-data `[stream][bin]`, length streamIds.length*bins. Different bin counts use separate
-messages/pools, never a mixed 1024-bin LOFAR/512-bin DEMON batch. Return each batch's three
-ArrayBuffers in IDs/indexes/data order using release after upload; transfer detaches views.
+Worker gramRows have `streamIds:Int32Array`, `rowIndex:Uint32Array`, packed Float32Array
+data `[stream][bin]`, and optional packed `bearingDeg?:Float32Array` of the same length
+(NaN where the stream is not DIFAR LOFAR). Different bin counts use separate messages/pools,
+never a mixed 1024-bin LOFAR/512-bin DEMON batch. Return each batch's four ArrayBuffers in
+IDs/indexes/data/bearingDeg order using release after upload; transfer detaches views.
 
 ### Additive log category
 
