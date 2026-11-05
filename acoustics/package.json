@@ -1,0 +1,27 @@
+{
+  "name": "@sonar-sim/acoustics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "bench": "tsx bench/engine.bench.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "tsx": "^4.20.6",
+    "@types/node": "^22.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": "./dist/worker.js"
+  }
+}
