@@ -1,15 +1,22 @@
 import type { Scenario } from '@acoustics'
-import { fictionalSignature } from '@acoustics'
+import { fictionalSignature, lloydsCpaScenario } from '@acoustics'
 
 // Seeded training scenarios. Everything is fictional: invented hulls, nations and signatures.
 // The operator flies a generic, unnamed maritime patrol aircraft.
-export const SCENARIOS = ['ridgeline-field'] as const
+export const SCENARIOS = ['ridgeline-field', 'm2-lloyds-cpa'] as const
+export const SCENARIO_LABEL: Record<ScenarioId, string> = { 'ridgeline-field': 'Ridgeline field', 'm2-lloyds-cpa': "Lloyd's / CPA pass" }
 export type ScenarioId = (typeof SCENARIOS)[number]
 
 const kn = (k: number) => k * 0.5144444444444445
 const deg = (d: number) => (d * Math.PI) / 180
 
 export function buildScenario(id: string, seed: number, fmax: number, bins: number): Scenario {
+  if (id === 'm2-lloyds-cpa') {
+    // Acoustics' fictional cavitating CPA pass, re-binned to the selected display band.
+    const s = lloydsCpaScenario(seed)
+    s.bins = bins; s.fmax = s.fMax = fmax; s.fBin = fmax / (bins - 1); s.band = [0, fmax]
+    return s
+  }
   if (id !== 'ridgeline-field') throw new Error(`Unknown scenario ${id}`)
   const contact = (cid: string, x: number, y: number, depth: number, crs: number, spdKn: number, p: Partial<typeof fictionalSignature>) => ({
     id: cid, x, y, depth, course: deg(crs), speed: kn(spdKn),

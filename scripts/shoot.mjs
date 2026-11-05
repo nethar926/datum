@@ -13,6 +13,7 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
   await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&palette=${process.env.PALETTE ?? "green"}`)
   await page.waitForSelector('[data-testid=lofar]')
+  if (process.env.SCN) { await page.waitForTimeout(1500); await page.selectOption('[data-testid="scenario-select"]', process.env.SCN) }
   await page.waitForTimeout(Number(process.env.SHOOT_MS ?? 20000))
   if (await page.locator('.gl-error').count()) errors.push(await page.locator('.gl-error').innerText())
   if (process.env.DRAG) {

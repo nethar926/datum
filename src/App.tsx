@@ -12,6 +12,7 @@ import { clampView, type FreqView } from './gram/axis'
 import { TacticalPlot } from './tactical/TacticalPlot'
 import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
+import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 
 const RATES = [1, 4, 16]
@@ -80,6 +81,12 @@ export default function App() {
         <div className="brand">DATUM<small>Acoustic operator trainer · fictional patrol aircraft</small></div>
         <div className="group">
           <button className="btn" onClick={() => setShowNew(true)}>New</button>
+          <select className="btn scn-select" data-testid="scenario-select" aria-label="Scenario"
+            value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
+            onChange={(e) => { setCpaMarks([]); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
+            {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
+            {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
+          </select>
           <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
             {st.playing ? 'Pause' : 'Play'}
           </button>
@@ -169,7 +176,7 @@ export default function App() {
                 </>}
                 {(lm.basis === 'none' || (lm.basis === 'cpaFit' && !cpaGeom)) &&
                   <label>Width s <input type="number" step={10} min={10} value={lm.tauS.toFixed(0)} onChange={(e) => setLm({ ...lm, tauS: Math.max(10, Number(e.target.value)) })} /></label>}
-                <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null)}</span>
+                <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
               </div>
             )}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}

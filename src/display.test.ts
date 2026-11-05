@@ -226,7 +226,7 @@ describe("Lloyd's mirror overlay", () => {
     expect(k).toBeCloseTo((c * R) / (2 * zs * zr), 6)
     const rd = L.lloydReadout('cpaFit', k, zr, R)
     expect(rd.zsM).toBeCloseTo(zs, 6)
-    expect(rd.depthRatio).toBeCloseTo(zs / R, 9)
+    expect(rd.depthRatio).toBeCloseTo(R / zs, 9)
   })
   it('basis none never reports a depth', async () => {
     const L = await import('./gram/lloyds')
@@ -299,5 +299,37 @@ describe('host with changing contact count', () => {
     h.handle({ type: 'setSurfaceTraffic', value: 0 })
     h.handle({ type: 'step' })
     expect(msgs.filter((m) => m.type === 'error').map((m) => m.message)).toEqual([])
+  })
+})
+
+describe('Lloyd fit uses spacings and R/zs', () => {
+  it('overlay samples are null spacing, not null frequency, and fitLloydsMirror recovers zs', async () => {
+    const L = await import('./gram/lloyds')
+    const O = await import('./gram/LloydsOverlay')
+    const R = 2000, zs = 60, zr = 30, v = 7, tc = 500
+    const k = L.kFromGeometry(R, zs, zr), s = { k, tCpaS: tc, tauS: R / v }
+    const sm = L.overlaySpacingSamples(s, 200, 800, 12)
+    for (const p of sm) {
+      expect(p.spacingHz).toBeCloseTo(L.striationHz(s, 1, p.simT), 6)
+      expect(p.spacingHz).not.toBeCloseTo(L.striationHz(s, 3, p.simT), 1)
+    }
+    const st = { basis: 'cpaFit' as const, k, tCpaS: tc, tauS: R / v, manRangeM: R, manSpeedMps: v }
+    const f = O.fitOverlay(st, { tCpaS: tc, rCpaM: R, speedMps: v }, zr, { t0: 200, t1: 800 })
+    expect(f).not.toBeNull()
+    expect(f!.zs).toBeCloseTo(zs, 0)
+    expect(f!.depthRatio).toBeCloseTo(R / zs, 1)
+    expect(O.lloydText({ ...st, basis: 'none' }, null, zr, { t0: 200, t1: 800 })).toMatch(/R\/zs [\d.]+ \(RELATIVE\)/)
+  })
+})
+
+describe('scenario list', () => {
+  it('m2-lloyds-cpa runs in SimHost on the selected band', async () => {
+    const { SimHost } = await import('./engine/host')
+    const msgs: { type: string; message?: string; configs?: { bins: number }[] }[] = []
+    const h = new SimHost((m) => msgs.push(m as never))
+    h.handle({ type: 'init', seed: 3, scenarioId: 'm2-lloyds-cpa', band: 'lofar1k', rowRateHz: 2 })
+    for (let k = 0; k < 4; k++) h.handle({ type: 'step' })
+    expect(msgs.filter((m) => m.type === 'error').map((m) => m.message)).toEqual([])
+    expect(msgs.some((m) => m.type === 'gramRows')).toBe(true)
   })
 })
