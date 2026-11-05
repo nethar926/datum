@@ -171,16 +171,20 @@ export class SimHost {
     this.steerOrbit()
     engine.advance(this.dt)
     const wb = (engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void }).writeBearingRow
-    // RES streams share settings, so their rows fall due together; skip the post until they do.
-    if (this.resMode && (engine as unknown as { rowsReady: (id: number) => number }).rowsReady(1) === 0) {
-      this.pool.push(frame); this.updateTactical(); this.post(this.tactical!); return
+    // RES streams are phase-staggered (rowPhaseS), so only some fall due each step. Streams without a row
+    // this step get streamId -1 (the display skips them); skip the post when none is due.
+    const ready = (engine as unknown as { rowsReady: (id: number) => number }).rowsReady
+    if (this.resMode) {
+      let any = false
+      for (let i = 0; i < this.n; i++) if (ready.call(engine, i + 1) > 0) { any = true; break }
+      if (!any) { this.pool.push(frame); this.updateTactical(); this.post(this.tactical!); return }
     }
     // NB rows are already TPSW-normalised; the AGC model only applies to absolute (BB / legacy) levels.
     const rxOn = this.rxEnabled && (!this.resMode || this.filter === 'BB')
     for (let i = 0; i < this.n; i++) {
       frame.streamIds[i] = i + 1
       const idx = engine.writeRow(i + 1, frame.data, i * this.bins)
-      if (this.resMode && idx < 0) frame.data.fill(NaN, i * this.bins, (i + 1) * this.bins)
+      if (this.resMode && idx < 0) { frame.streamIds[i] = -1; frame.rowIndex[i] = 0; continue }
       frame.rowIndex[i] = this.resMode ? Math.max(0, idx) : this.rowCount
       if (frame.bearingDeg) {
         if (wb) wb.call(engine, i + 1, frame.bearingDeg, i * this.bins)

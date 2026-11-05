@@ -267,7 +267,7 @@ export default function App() {
 
       <main className="workspace">
         <div className="workspace-left">
-        <section className="panel">
+        <section className="panel gram-panel">
           <div className="panel-head">
             <h2 data-testid="gram-title">{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'} · {filter}</h2>
             <div className="seg" role="group" aria-label="Gram mode">

@@ -4,9 +4,11 @@ import type { FromWorker, GramRows, StreamSet } from './contract'
 
 function harness(filter: 'NB' | 'BB' = 'NB', res = 5) {
   const out: FromWorker[] = []
-  const host = new SimHost((m) => out.push(m))
+  // Pool frames are reused after release, so keep a copy of each posted rows message plus its live buffers.
+  const live = new WeakMap<object, GramRows>()
+  const host = new SimHost((m) => { if (m.type === 'gramRows') { const c = { ...m, streamIds: m.streamIds.slice(), rowIndex: m.rowIndex.slice() }; live.set(c, m); out.push(c) } else out.push(m) })
   host.handle({ type: 'init', seed: 7, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2, demon: false, gram: { res, filter } })
-  const release = (r: GramRows) => host.handle({ type: 'release', buffers: [r.streamIds.buffer, r.rowIndex.buffer, r.data.buffer, r.bearingDeg!.buffer] as ArrayBuffer[] })
+  const release = (c: GramRows) => { const r = live.get(c)!; host.handle({ type: 'release', buffers: [r.streamIds.buffer, r.rowIndex.buffer, r.data.buffer, r.bearingDeg!.buffer] as ArrayBuffer[] }) }
   return { host, out, release }
 }
 const streams = (out: FromWorker[]) => out.filter((m): m is StreamSet => m.type === 'streams')
@@ -28,8 +30,12 @@ describe('SimHost RES mode', () => {
     const { host, out, release } = harness()
     for (let i = 0; i < 16; i++) { host.handle({ type: 'step' }); const r = rows(out).at(-1); if (r && !(r as { _r?: 1 })._r) { (r as { _r?: 1 })._r = 1; release(r) } }
     const rs = rows(out)
-    expect(rs.map((r) => r.simT)).toEqual([2, 4, 6, 8]) // 8 s of sim at P = 2 s
-    expect(Array.from(rs[3].rowIndex)).toEqual([3, 3, 3, 3, 3, 3])
+    // Phase-staggered: each buoy gets exactly one row per P = 2 s, spread over the steps.
+    const per = new Map<number, number[]>()
+    for (const r of rs) r.streamIds.forEach((id, k) => { if (id > 0) per.set(id, [...(per.get(id) ?? []), r.rowIndex[k]]) })
+    expect(per.size).toBe(6)
+    for (const idx of per.values()) { expect(idx.length).toBeGreaterThanOrEqual(3); expect(idx.length).toBeLessThanOrEqual(4); expect(idx).toEqual(idx.map((_, j) => idx[0] + j)) }
+    expect(Math.max(...rs.map((r) => Array.from(r.streamIds).filter((id) => id > 0).length))).toBeLessThan(6) // no burst frame
     expect(rs[0].data.length).toBe(6 * 1024)
     expect(out.filter((m) => m.type === 'tactical').length).toBeGreaterThanOrEqual(16) // tactical still every step
   })

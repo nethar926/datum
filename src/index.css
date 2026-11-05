@@ -284,3 +284,6 @@ button, select { font: inherit; color: inherit; }
 .layout-phonePortrait .res-step .res-read { min-width: 13ch; }
 .layout-phonePortrait .panel-head.gram-tools { border-top: 1px solid var(--line, #22262c); border-bottom: 0; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
 @media (prefers-reduced-motion: reduce) { .res-step .res-read, .gram .gram-veil, .btn.vernier.pick { animation: none; } .gram .band-limit { transition: none; } }
+/* LOFAR panel has two head rows (view + tools); on phone portrait the tools row sits below the gram. */
+.panel.gram-panel { grid-template-rows: auto auto minmax(0, 1fr); }
+.layout-phonePortrait .panel.gram-panel { grid-template-rows: auto minmax(0, 1fr) auto; }

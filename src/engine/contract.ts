@@ -7,6 +7,8 @@ export interface GramConfig {
   bins: number; f0: number; fBin: number; rowRateHz: number; dbFloor: number; dbCeil: number
   /** m3-res fields: present only on RES grams. dB scale comes from dbFloor/dbCeil (NB 0–30, BB 40–110). */
   res?: number; filter?: GramFilter; bandHz?: number; fcHz?: number; enbwHz?: number; bandLimited?: boolean; liveBins?: number
+  /** m3-res row phase: this stream's rows fall at k·P + rowPhaseS. */
+  rowPhaseS?: number
 }
 export type GramFilter = 'NB' | 'BB'
 export interface GramSettings { res: number; filter: GramFilter }

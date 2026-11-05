@@ -42,7 +42,7 @@ try {
     { const p = pt(0.5, 0.5); await touch('pointerdown', 1, p); await page.waitForTimeout(650)
       ok(await page.locator('[data-testid=lofar-cross]').count() === 1, F('long-press: no crosshair readout')); await touch('pointerup', 1, p) }
     // Pinch: spread two fingers → narrower band in the readout.
-    const span = async () => { const t = await page.locator('.panel-head .readout').first().innerText(); const m = t.match(/(\d+)–(\d+) HZ/); return m ? +m[2] - +m[1] : NaN }
+    const span = async () => { const t = await page.locator('.panel-head .readout').first().innerText(); const m = t.match(/([\d.]+)–([\d.]+) HZ/); return m ? +m[2] - +m[1] : NaN }
     const s0 = await span()
     { const a = pt(0.45, 0.5), b = pt(0.55, 0.5); await touch('pointerdown', 1, a); await touch('pointerdown', 2, b)
       for (let k = 1; k <= 5; k++) { await touch('pointermove', 1, { x: a.x - k * 15, y: a.y }); await touch('pointermove', 2, { x: b.x + k * 15, y: b.y }) }
@@ -52,6 +52,15 @@ try {
     // Double-tap resets the band.
     { const p = pt(0.6, 0.6); await page.touchscreen.tap(p.x, p.y); await page.touchscreen.tap(p.x, p.y); await page.waitForTimeout(150) }
     ok(await span() === s0, F(`double-tap did not reset (${await span()})`))
+    // RES stepper / NB|BB from gramConfig.
+    ok(/^RES 5 · 0\.5 Hz/.test(await page.locator('[data-testid=res-readout]').innerText()), F('RES: default readout'))
+    const bbox = async (sel) => page.locator(sel).first().boundingBox()
+    for (const sel of ['[data-testid=res-step] button', '[data-testid=filter-seg] button', '[data-testid=vernier]']) { const b = await bbox(sel); ok(b && b.height >= 44 && b.width >= 44, F(`RES: ${sel} under 44`)) }
+    await page.locator('[data-testid=res-step] button').last().tap()
+    await page.waitForFunction(() => /^RES 6 · 1 Hz/.test(document.querySelector('[data-testid=res-readout]')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => ok(false, F('RES: + did not step to RES 6')))
+    await page.locator('[data-testid=filter-seg] button').last().tap()
+    await page.waitForFunction(() => /· BB/.test(document.querySelector('[data-testid=gram-title]')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => ok(false, F('RES: BB did not apply')))
+    await page.locator('[data-testid=filter-seg] button').first().tap(); await page.locator('[data-testid=res-step] button').first().tap()
     // HARM drag: tap HARM, drag on the gram, readout shows the fundamental.
     await page.getByRole('button', { name: 'HARM', exact: true }).evaluate((b) => b.scrollIntoView({ inline: 'center' }))
     await page.getByRole('button', { name: 'HARM', exact: true }).tap()
