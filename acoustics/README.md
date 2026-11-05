@@ -838,3 +838,94 @@ Window display labels are `SRC-1`, `SWATH-1` (numbered within each kind). The cl
 truth regression covers all 22 classes x 12 seeded hull/variant draws x four speeds (1056
 states), checking nominal CSR/CFR/EFR and every shaft's BR harmonics to absolute 1e-9.
 Wandered `freqHz` is deliberately not substituted for nominal machinery rates in this test.
+
+## RES 1–9 zoom-FFT LOFAR, vernier, NB/BB filters (m3-res)
+
+Additive v1 extension. Public DSP/physics only (Harris 1978; Welch 1967; Struzinski & Lowe 1984;
+Marsaglia & Tsang 2000; Lyons zoom-FFT); all platforms fictional, no real system modelled.
+Modules: `src/res.ts` (table, band placement, EDOF, gamma draw, TPSW bias), `src/resGram.ts`
+(`ResLofarGenerator`), Hann kernels in `src/lineKernel.ts` (`hannAmplitude`, `depositHannLine`,
+`depositGaussianLine`).
+
+| RES | Δf (Hz) | Band B=1024Δf (Hz) | T=1/Δf (s) | Row period P=max(2,T/4) (s) | K=P/(T/4) | Decimation 16384/(1.25B) | Welch EDOF ν | Noise model |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0.03125 | 32 | 32 | 8 | 1 | 409.6 | 2.000 | AR(1) Exp, ρ=0.4345 |
+| 2 | 0.0625 | 64 | 16 | 4 | 1 | 204.8 | 2.000 | AR(1) Exp, ρ=0.4345 |
+| 3 | 0.125 | 128 | 8 | 2 | 1 | 102.4 | 2.000 | AR(1) Exp, ρ=0.4345 |
+| 4 | 0.25 | 256 | 4 | 2 | 2 | 51.2 | 2.788 | χ²_ν gamma |
+| 5 (default) | 0.5 | 512 | 2 | 2 | 4 | 25.6 | 4.763 | χ²_ν gamma |
+| 6 | 1 | 1024 | 1 | 2 | 8 | 12.8 | 8.879 | χ²_ν gamma |
+| 7 | 2 | 2048 | 0.5 | 2 | 16 | 6.4 | 17.173 | χ²_ν gamma |
+| 8 | 4 | 4096 | 0.25 | 2 | 32 | 3.2 | 33.791 | χ²_ν gamma |
+| 9 | 8 | 8192 | 0.125 | 2 | 64 | 1.6 | 67.040 | χ²_ν gamma |
+
+**Modeled chain.** 16384 Hz source → complex mix to the centre fc → lowpass → decimate to 1.25·B →
+1280-pt Hann FFT → keep the centre 1024 bins. Bin k is at `fc + (k − 512)·Δf`, so fc is bin 512.
+Rows are rendered analytically (no time series): ambient/broadband/swath PSD × ENBW (1.5·Δf Hz) per
+bin; tonals deposit `v·|W(x)|²` with the peak-normalized Hann main lobe (|x|<2 bins,
+`W(x)=sin πx / (πx(1−x²))`, scallop 1.42 dB, Σ|W|²=1.5) on the current Δf grid, so a tonal peaks
+within ½ bin of its (Doppler-shifted) frequency. Diffuse lines use a Gaussian of σ = sigmaBins × 0.5 Hz
+(reference bin), broadened by the Hann main lobe and normalized to the same 1.5 ENBW sum. A
+test-only time-domain zoom-FFT (synthesize, mix, lowpass, decimate, Hann, DFT) agrees with the
+analytic peak to <0.001 bin at every RES. Rows are rendered at the row instant (no intra-row sweep
+smearing); adjacent-bin Hann noise correlation is not modelled.
+
+**Noise statistics.** Harris amplitude overlap correlation `c(m)=Σw[n]w[n+mD]/Σw²` for hop D=N/4:
+c(1)=0.659 (75 %), c(2)=0.167 (50 %), c(3)=0.0075, 0 beyond; power correlation ρ(m)=c(m)².
+Welch (1967) EDOF for K averaged segments: `ν = 2K / (1 + 2 Σ_{m=1}^{K−1} (1 − m/K) ρ(m))`.
+Bin power = expected × X, X ~ Gamma(ν/2, scale 2/ν) (unit-mean χ²_ν/ν, Marsaglia–Tsang, seeded,
+allocation-free). When K=1 (RES1–3: P = T/4, consecutive rows are single 75 %-overlapped FFTs) rows
+are **correlated**: complex bin amplitudes follow `z ← c·z + √(1−c²)·e`, e ~ CN(0,1), c = 0.659, so
+|z|² stays Exp(1) and consecutive-row power correlation is c² = 0.4345 (the spec named RES1–2; RES3
+also has K=1 by the same formula). K≥2 rows are drawn independently; their residual Welch row
+correlation (0.17 at RES4, 0.07 at RES5, `welchRowCorrelation`) is neglected.
+
+**Vernier / band limit.** No vernier → f0 = 0. With `vernierHz` (caller snaps it to the Δf grid):
+f0 = fc − 512Δf; if the band would exceed the simulated fmax it slides down (Δf kept), if it would go
+below 0 Hz it slides up; the actual `f0`/`fcHz` are reported (fcHz is always bin 512). A band wider
+than fmax (e.g. RES9, or RES5 on the 500 Hz M1 scenario) clamps at f0 = 0: bins at/after `liveBins`
+(`f0 + k·Δf > fmax`) are NaN in both `data` and `bearingDeg`, and `bandLimited:true`. fmax is never
+raised (`scenario.fMax ?? scenario.fmax`).
+
+**NB (default).** Per row, two-pass split-window mean (TPSW, Struzinski & Lowe 1984) over live bins:
+window ±32 bins, centre gap ±3 bins (Hann main lobe ±2 + guard), pass-1 cells above 2.5 × pass-1 mean
+are replaced by that mean, pass-2 mean divided by the analytic clip bias for χ²_ν noise
+`b = P(ν/2+1, να/2) + 1 − P(ν/2, να/2)` (0.795 at ν=2 … 1.000 at RES8–9). Output
+`10·log10(power / background)`; display `dbFloor 0, dbCeil 30`. A line 10 dB over background reads
+≈9.5–9.7 dB (the line slightly raises its neighbours' pass-1 means; classic TPSW behaviour).
+DIFAR: per-bin bearing exactly as fb2318b (σ = 20°/√SNR, uniform below 0 dB SNR).
+
+**BB.** No normalization: absolute spectrum level `10·log10(mean power / (1.5Δf))` dB re 1 µPa²/Hz,
+averaged over a 1/24-octave window centred on each bin (half-width round(f·(2^{1/48}−2^{−1/48})/(2Δf))
+bins, prefix sums, allocation-free); display `dbFloor 40, dbCeil 110`. DIFAR: east/north/signal and
+ambient powers are summed over the same window before atan2, and the same σ = 20°/√SNR model is
+applied to the smoothed SNR.
+
+### Contract (additive)
+
+```ts
+// subscribe: any of res/filter/vernierHz selects a RES gram (defaults res 5, 'NB', full band).
+{type:'subscribe'; channel:number; kind?:'lofar'; res?:1|2|3|4|5|6|7|8|9; filter?:'NB'|'BB'; vernierHz?:number}
+// change an existing LOFAR stream (legacy or RES); omitted fields keep current settings
+// (legacy streams start from res 5/NB/full band); vernierHz:null → full band. Re-emits gramConfig.
+{type:'setGram'; streamId:number; res?:ResLevel; filter?:'NB'|'BB'; vernierHz?:number|null}
+// gramConfig for RES grams (legacy/DEMON configs omit the RES fields):
+{v:1; type:'gramConfig'; simT; streamId; kind:'lofar'; channel; bins:1024; f0; fBin; rowRateHz /* 1/P */;
+ dbFloor; dbCeil; res; filter; bandHz; fcHz? /* vernier only */; enbwHz; bandLimited; liveBins}
+```
+
+`GramRows` layout is unchanged (`data` + `bearingDeg`, 1024 per stream). RES streams are packed in
+their own batch groups by row period (8/4/2 s); rows are emitted at sim times that are multiples of
+P. Engine API: `subscribe({channel,res?,filter?,vernierHz?})`, `setGram(streamId,patch)`,
+`gramSettings(streamId)`; client: `subscribe(channel,opts)`, `setGram(streamId,opts)`. `setGram`
+restarts the stream's row clock on the new P grid (engine row counter restarts; worker rowIndex stays
+monotonic). Worker `seek` replays RES streams as if their settings were applied at t=0.
+
+**Backward compatibility.** A plain `subscribe({channel})` and the worker's auto-subscribed init
+streams keep the legacy 4 Hz analytic gram (`rowRateHz 4`, `fBin = fmax/(bins−1)`, 40–110 dB) that
+existing tests and the frontend rely on; RES mode is opt-in per stream. No existing default changed.
+
+**Benchmark** (`npm run bench`, 60 contacts × 32 buoys): legacy path unchanged (≈34–36 ms/step
+legacy contacts, ≈46–48 ms catalog). RES5 NB, all 32 buoys subscribed: 4.4 ms mean per 0.25 s frame
+(legacy contacts) / 5.9 ms (catalog); the frame on which all 32 rows are due costs ≈34 / 46 ms
+(every 2 s). RES5 BB 6.7 ms mean; RES1 2.4 ms mean (72 ms row frame every 8 s); RES9 2.1 ms mean.

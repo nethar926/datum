@@ -30,3 +30,28 @@ export class LineKernel {
 const kernels=new Map<string,LineKernel>();
 /** Configuration-time cache shared by all buoy renderers. */
 export function lineKernel(width:LineWidth='discrete',sigmaBins=2.5):LineKernel{const key=width==='discrete'?'discrete':`diffuse:${sigmaBins}`;let k=kernels.get(key);if(!k){k=new LineKernel(width,sigmaBins);kernels.set(key,k);}return k;}
+/** Continuous-limit Hann amplitude response at x bins (Harris 1978): sin(πx)/(πx(1−x²)), peak 1.
+ * |W(±0.5)|² = 0.7205 (−1.42 dB scallop); Σ_k |W(k−x)|² = 1.5 (ENBW) for any fractional x. */
+export function hannAmplitude(x:number):number{const ax=Math.abs(x);if(ax<1e-9)return 1;if(Math.abs(ax-1)<1e-9)return .5;return Math.sin(Math.PI*x)/(Math.PI*x*(1-x*x));}
+/** RES-mode discrete tonal: peak-normalized Hann main lobe (|x|<2 bins) so a tone of power v reads
+ * v·|W(x)|² in each bin of the current RES grid (bin spacing Δf). Bins at or beyond `limit` (dead,
+ * above fmax) are skipped. DIFAR accumulators get the same energy weighted by sin/cos bearing. */
+export function depositHannLine(powerOut:Float64Array,limit:number,bin:number,power:number,difar:boolean,eastOut:Float64Array,northOut:Float64Array,signalOut:Float64Array,sinB:number,cosB:number):void{
+ if(!Number.isFinite(bin)||!Number.isFinite(power)||power<=0)return;
+ const lo=Math.max(0,Math.ceil(bin-2+1e-9)),hi=Math.min(limit-1,Math.floor(bin+2-1e-9));
+ for(let i=lo;i<=hi;i++){const a=hannAmplitude(i-bin),w=power*a*a;powerOut[i]+=w;if(difar){signalOut[i]+=w;eastOut[i]+=w*sinB;northOut[i]+=w*cosB;}}
+}
+/** RES-mode diffuse line: Gaussian in bins (σ_eff=√(σ²+0.6²), 0.6 ≈ Hann power main-lobe σ) whose
+ * full-grid sum is the Hann ENBW (1.5) so diffuse and discrete lines of equal power agree in BB.
+ * Gaussian evaluated by an allocation-free multiplicative recurrence. */
+export function depositGaussianLine(powerOut:Float64Array,limit:number,bin:number,power:number,sigmaBins:number,difar:boolean,eastOut:Float64Array,northOut:Float64Array,signalOut:Float64Array,sinB:number,cosB:number):void{
+ if(!Number.isFinite(bin)||!Number.isFinite(power)||power<=0)return;
+ const s=Math.sqrt(sigmaBins*sigmaBins+.36),r=Math.ceil(4*s),c=Math.round(bin),start=c-r,inv=1/(2*s*s);
+ // weights w_j = exp(-(j-bin)²/2s²), j=start..c+r; ratio w_{j+1}/w_j = exp(-(2(j-bin)+1)/2s²)
+ let x=start-bin,w=Math.exp(-x*x*inv),q=Math.exp(-(2*x+1)*inv);const qq=Math.exp(-2*inv);let total=0;
+ for(let j=start;j<=c+r;j++){total+=w;w*=q;q*=qq;}
+ if(!(total>0))return;const scale=HANN_ENBW*power/total;
+ x=start-bin;w=Math.exp(-x*x*inv);q=Math.exp(-(2*x+1)*inv);
+ for(let j=start;j<=c+r;j++){if(j>=0&&j<limit){const v=scale*w;powerOut[j]+=v;if(difar){signalOut[j]+=v;eastOut[j]+=v*sinB;northOut[j]+=v*cosB;}}w*=q;q*=qq;}
+}
+const HANN_ENBW=1.5;

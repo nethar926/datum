@@ -8,6 +8,8 @@ export * from './ambientNoise.js';
 export * from './sourceModel.js';
 export * from './buoys.js';
 export * from './lofar.js';
+export * from './res.js';
+export * from './resGram.js';
 export * from './demon.js';
 export * from './scenario.js';
 export * from './engine.js';

@@ -1,4 +1,4 @@
-import type {Command,GramRows,WorkerRequest,WorkerResponse} from './protocol.js';
+import type {Command,GramRows,WorkerRequest,WorkerResponse,ResLevel,GramFilter} from './protocol.js';
 /** Pass a Vite-created worker when importing TS sources. Default URL targets built ESM dist/. */
 export class AcousticClient {
   simT=0;
@@ -10,6 +10,10 @@ export class AcousticClient {
   play():void{this.command({type:'play'});}
   pause():void{this.command({type:'pause'});}
   seek(simT:number):void{this.simT=simT;this.command({type:'seek'});}
+  /** LOFAR subscribe; pass res/filter/vernierHz for a RES 1–9 gram (defaults res 5, NB, full band). */
+  subscribe(channel:number,opts:{res?:ResLevel;filter?:GramFilter;vernierHz?:number}={}):void{this.command({type:'subscribe',kind:'lofar',channel,...opts});}
+  /** Change RES/filter/vernier on an existing LOFAR stream; the worker re-emits gramConfig. vernierHz:null → full band. */
+  setGram(streamId:number,opts:{res?:ResLevel;filter?:GramFilter;vernierHz?:number|null}):void{this.command({type:'setGram',streamId,...opts});}
   release(batch:GramRows):void{const buffers=[batch.streamIds.buffer,batch.rowIndex.buffer,batch.data.buffer] as ArrayBuffer[];if(batch.bearingDeg)buffers.push(batch.bearingDeg.buffer as ArrayBuffer);this.command({type:'release',buffers},buffers);}
   dispose():void{this.worker.terminate();}
 }

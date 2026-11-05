@@ -3,6 +3,9 @@ import {cpaScenario,lloydsCpaScenario} from './scenario.js';
 import {isAlive} from './buoys.js';
 import type {GramConfig,GramRows,Tactical,WorkerRequest,WorkerResponse} from './protocol.js';
 type Frame={message:GramRows;transfer:ArrayBuffer[]};
+/** Row period: legacy grams 0.25 s; RES grams P=1/rowRateHz (exact: 8, 4 or 2 s). */
+const periodOf=(c:GramConfig):number=>c.res===undefined?.25:1/c.rowRateHz;
+const due=(period:number,t:number):boolean=>period===.25||Math.abs(t/period-Math.round(t/period))<1e-9;
 /** M1 worker controller, independently testable without Worker/Node APIs. Fixed three-batch pool.
  * Commands/config changes may allocate; tick/writeRow allocate no sample/row arrays. */
 export class WorkerRuntime {
@@ -10,7 +13,9 @@ export class WorkerRuntime {
   private seed=42;private rate=1;private nextId=1;private nextRow=.25;
   private readonly configs:GramConfig[]=[];
   private readonly indices=new Map<number,number>();
-  private readonly groups=[{bins:1024,configs:[] as GramConfig[],pool:[] as Frame[]},{bins:512,configs:[] as GramConfig[],pool:[] as Frame[]},{bins:4096,configs:[] as GramConfig[],pool:[] as Frame[]}];
+  /** Packed batch groups: legacy 4 Hz LOFAR/DEMON by bin count, then RES 1024-bin grams by row
+   * period P (8/4/2 s). Every stream in a group is due on the same 0.25 s tick (rows at multiples of P). */
+  private readonly groups=[{bins:1024,period:.25},{bins:512,period:.25},{bins:4096,period:.25},{bins:1024,period:8},{bins:1024,period:4},{bins:1024,period:2}].map(g=>({...g,configs:[] as GramConfig[],pool:[] as Frame[]}));
   private readonly scratch=new Float32Array(4096);
   private timer:ReturnType<typeof setInterval>|undefined;
   private readonly bearingStore=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
@@ -47,8 +52,17 @@ export class WorkerRuntime {
         }
         if(m.kind!==undefined&&m.kind!=='lofar')throw new Error('Unsupported gram kind');
         if(m.channel===undefined)throw new Error('LOFAR requires channel');
-        const band=m.band??e.scenario.band??[0,e.scenario.fMax??e.scenario.fmax],existing=this.configs.find(c=>c.channel===m.channel&&c.kind==='lofar'&&c.f0===band[0]&&Math.abs(c.f0+c.fBin*(c.bins-1)-band[1])<1e-8);
+        if(m.res!==undefined||m.filter!==undefined||m.vernierHz!==undefined){
+          const config=e.subscribe({channel:m.channel,kind:'lofar',bins:m.bins,band:m.band,res:m.res,filter:m.filter,vernierHz:m.vernierHz});
+          const existing=this.configs.find(c=>c.channel===config.channel&&c.res===config.res&&c.filter===config.filter&&c.f0===config.f0&&c.fcHz===config.fcHz);
+          if(existing){e.unsubscribe(config.streamId);this.emit({...existing,simT:e.time});}else{this.configs.push(config);this.indices.set(config.streamId,0);this.emit(config);this.rebuildPool();}break;
+        }
+        const band=m.band??e.scenario.band??[0,e.scenario.fMax??e.scenario.fmax],existing=this.configs.find(c=>c.res===undefined&&c.channel===m.channel&&c.kind==='lofar'&&c.f0===band[0]&&Math.abs(c.f0+c.fBin*(c.bins-1)-band[1])<1e-8);
         if(existing)this.emit({...existing,simT:e.time});else{const config=e.subscribe({channel:m.channel,kind:'lofar',bins:m.bins,band});this.configs.push(config);this.indices.set(config.streamId,0);this.emit(config);this.rebuildPool();}break;
+      }
+      case 'setGram':{
+        const i=this.configs.findIndex(c=>c.streamId===m.streamId);if(i<0)throw new Error('Unknown streamId');if(this.configs[i].kind!=='lofar')throw new Error('setGram applies to LOFAR streams only');
+        const config=e.setGram(m.streamId,{res:m.res,filter:m.filter,vernierHz:m.vernierHz});this.configs[i]=config;this.emit(config);this.rebuildPool();break;
       }
       case 'unsubscribe':{const i=this.configs.findIndex(c=>c.streamId===m.streamId);if(i>=0){this.configs.splice(i,1);this.indices.delete(m.streamId);e.unsubscribe(m.streamId);this.rebuildPool();}break;}
       case 'release':this.release(m.buffers);break;
@@ -62,14 +76,14 @@ export class WorkerRuntime {
   }
   private frame(ids:Int32Array,indices:Uint32Array,data:Float32Array,bearingDeg:Float32Array):Frame{return {message:{v:1,type:'gramRows',simT:this.simT,streamIds:ids,rowIndex:indices,data,bearingDeg},transfer:[ids.buffer as ArrayBuffer,indices.buffer as ArrayBuffer,data.buffer as ArrayBuffer,bearingDeg.buffer as ArrayBuffer]};}
   private rebuildPool():void{
-    for(const g of this.groups){g.pool.length=0;g.configs.length=0;for(const c of this.configs)if(c.bins===g.bins)g.configs.push(c);const n=g.configs.length;if(n)for(let i=0;i<3;i++)g.pool.push(this.frame(new Int32Array(n),new Uint32Array(n),new Float32Array(n*g.bins),new Float32Array(n*g.bins)));}
+    for(const g of this.groups){g.pool.length=0;g.configs.length=0;for(const c of this.configs)if(c.bins===g.bins&&periodOf(c)===g.period)g.configs.push(c);const n=g.configs.length;if(n)for(let i=0;i<3;i++)g.pool.push(this.frame(new Int32Array(n),new Uint32Array(n),new Float32Array(n*g.bins),new Float32Array(n*g.bins)));}
   }
   private release(buffers:ArrayBuffer[]):void{
     if(buffers.length%4!==0)throw new Error('Release complete batches: ids, rowIndex, data, bearingDeg');
     for(let i=0;i<buffers.length;i+=4){const a=buffers[i],b=buffers[i+1],c=buffers[i+2],d=buffers[i+3];
       if(!(a instanceof ArrayBuffer)||!(b instanceof ArrayBuffer)||!(c instanceof ArrayBuffer)||!(d instanceof ArrayBuffer))throw new Error('Invalid release buffer');
       const n=a.byteLength/4;if(!n||b.byteLength!==a.byteLength||d.byteLength!==c.byteLength)continue;
-      const bins=c.byteLength/(n*4),g=this.groups.find(g=>g.bins===bins);if(!g||g.configs.length!==n||g.pool.length>=3)continue;
+      const bins=c.byteLength/(n*4),g=this.groups.find(g=>g.bins===bins&&g.configs.length===n&&g.pool.length<3);if(!g)continue;
       g.pool.push(this.frame(new Int32Array(a),new Uint32Array(b),new Float32Array(c),new Float32Array(d)));
     }
   }
@@ -78,9 +92,9 @@ export class WorkerRuntime {
     const e=this.engine;if(!e)throw new Error('Initialize first');
     if(!Number.isFinite(dt)||dt<0||dt>1e6||e.time+dt>1e9)throw new Error('Invalid tick dt');
     const target=e.time+dt;
-    while(this.nextRow<=target){e.advance(this.nextRow-e.time);this.nextRow+=.25;
-      for(const c of this.configs)this.indices.set(c.streamId,(this.indices.get(c.streamId)??0)+1);
-      for(const g of this.groups){if(!g.configs.length)continue;const frame=g.pool.pop();
+    while(this.nextRow<=target){const t=this.nextRow;e.advance(t-e.time);this.nextRow+=.25;
+      for(const c of this.configs)if(due(periodOf(c),t))this.indices.set(c.streamId,(this.indices.get(c.streamId)??0)+1);
+      for(const g of this.groups){if(!g.configs.length||!due(g.period,t))continue;const frame=g.pool.pop();
         if(frame){const m=frame.message;m.simT=e.time;for(let i=0;i<g.configs.length;i++){const c=g.configs[i];m.streamIds[i]=c.streamId;m.rowIndex[i]=this.indices.get(c.streamId)!-1;e.writeRow(c.streamId,m.data,i*g.bins);e.writeBearingRow(c.streamId,m.bearingDeg!,i*g.bins);}this.emit(m,frame.transfer);}
         else for(const c of g.configs)e.writeRow(c.streamId,this.scratch);
       }
@@ -96,13 +110,15 @@ export class WorkerRuntime {
     }t.bearings.length=count;t.truth=e.tactical().truth;this.emit(t);
   }
   private seek(target:number):void{
-    if(this.configs.some(c=>c.kind==='demon'||c.f0!==0||Math.abs(c.fBin*(c.bins-1)-500)>1e-8))throw new Error('Seek with DEMON awaits analysis-window replay');
+    if(this.configs.some(c=>c.kind==='demon'||(c.res===undefined&&(c.f0!==0||Math.abs(c.fBin*(c.bins-1)-500)>1e-8))))throw new Error('Seek with DEMON awaits analysis-window replay');
     if(target<0||target>3600)throw new Error('M1 seek range is 0..3600 seconds');
     if(this.engine!.scenario.buoys.length!==1)throw new Error('Seek after drops awaits scenario event log');
     // Replay the seeded row schedule, preserving fluctuations exactly at 4 rows/s.
-    this.dispose();const s=cpaScenario();s.seed=this.seed;this.engine=new AcousticEngine(s);for(const c of this.configs)this.engine.registerStream(c.streamId,c.channel);
-    const scratch=new Float32Array(1024);const steps=Math.floor(target*4);for(let i=0;i<steps;i++){this.engine.advance(.25);for(const c of this.configs)this.engine.writeRow(c.streamId,scratch);}
+    // RES streams replay as if their gram settings were applied at t=0 (rows on the P grid).
+    this.dispose();const s=cpaScenario();s.seed=this.seed;this.engine=new AcousticEngine(s);
+    for(let k=0;k<this.configs.length;k++){const c=this.configs[k];this.engine.registerStream(c.streamId,c.channel);if(c.res!==undefined)this.configs[k]=this.engine.setGram(c.streamId,{res:c.res,filter:c.filter,vernierHz:c.fcHz});}
+    const scratch=new Float32Array(1024);const steps=Math.floor(target*4);for(let i=0;i<steps;i++){this.engine.advance(.25);const t=(i+1)*.25;for(const c of this.configs)if(due(periodOf(c),t))this.engine.writeRow(c.streamId,scratch);}
     if(target>this.engine.time)this.engine.advance(target-this.engine.time);
-    this.nextRow=(steps+1)*.25;for(const c of this.configs){this.indices.set(c.streamId,steps);c.simT=target;this.emit(c);}this.rebuildPool();this.rebuildTactical();this.sendTactical();
+    this.nextRow=(steps+1)*.25;for(const c of this.configs){const p=periodOf(c);this.indices.set(c.streamId,Math.floor(steps*.25/p+1e-9));c.simT=target;this.emit(c);}this.rebuildPool();this.rebuildTactical();this.sendTactical();
   }
 }
