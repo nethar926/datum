@@ -24,6 +24,13 @@ function Card({ c }: { c: CompendiumCard }) {
         {c.quietKts && <><dt>Quiet</dt><dd>{c.quietKts[0]}–{c.quietKts[1]} kt</dd></>}
         {c.cavitationKts && <><dt>Cavitation</dt><dd>onset ≈ {c.cavitationKts} kt at surface, later with depth</dd></>}
       </dl>
+      {(c.edas.length > 0 || c.hydpHz) && <>
+        <h4>Classifying lines</h4>
+        <ul className="cmp-classify">
+          {c.edas.map((e) => <li key={e.name}>{e.name} (EDA) = CFR × {e.cfrMultiple}, engine running only</li>)}
+          {c.hydpHz && <li>HYDP ≈ {c.hydpHz.toFixed(2)} Hz, fixed; short pair curving down onto it on a planes or rudder move</li>}
+        </ul>
+      </>}
       <h4>Lines by mode</h4>
       <table className="cmp-modes"><tbody>
         {c.modes.map((m) => <tr key={m.mode}><th>{m.mode}</th><td>{m.lines.join(', ')}</td></tr>)}

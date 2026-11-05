@@ -146,3 +146,4 @@ button, select { font: inherit; color: inherit; }
   .cmp-card { background: #fff; color: #000; border-color: #999; margin-bottom: 10px; display: inline-block; width: 100%; }
   .cmp-tag, .cmp-card dt, .cmp-card h4, .cmp-foot { color: #444; } .cmp-modes th { color: #000; }
 }
+.harm-marker.probe { border-left-style: dashed; border-left-color: #ffcc55; } .harm-marker.probe span { color: #ffcc55; }

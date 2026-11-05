@@ -39,3 +39,11 @@ export function harmText(f0: number | null, k: number | null, fMax: number, fami
   const kk = k ?? 1
   return `HARM ${family ? family + '  ' : ''}F0 ${f0.toFixed(2)} HZ  ${n} MARKERS  H${kk} ${(kk * f0).toFixed(2)} HZ`
 }
+
+/** Fractional-ratio probe for EDAs measured against a fundamental (e.g. LOP = CFR × 27.75). */
+export function ratioText(f0: number, probeHz: number): string {
+  if (!(f0 > 0) || !(probeHz > 0)) return ''
+  const r = probeHz / f0, lo = Math.floor(r), frac = r - lo
+  const where = frac < 0.02 || frac > 0.98 ? `ON H${Math.round(r)}` : `H${lo}+${Math.round(frac * 100)}%`
+  return `R ${probeHz.toFixed(2)} HZ = F0 ×${r.toFixed(2)} (${where})`
+}

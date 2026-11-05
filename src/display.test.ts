@@ -422,3 +422,12 @@ describe('engine line families (truth)', () => {
     expect(truthRows(dd(false)).join('\n')).toMatch(/STOPPED[\s\S]*DECOUPLED/)
   })
 })
+
+import { ratioText } from './gram/harmonics'
+describe('HARM ratio probe', () => {
+  it('reads a fractional EDA multiple', () => {
+    expect(ratioText(10, 277.5)).toBe('R 277.50 HZ = F0 ×27.75 (H27+75%)')
+    expect(ratioText(10, 280.1)).toContain('ON H28')
+    expect(ratioText(0, 5)).toBe('')
+  })
+})

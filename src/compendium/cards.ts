@@ -8,6 +8,7 @@ export type PlantKind = 'diesel' | 'nuclear'
 export type ModeCode = 'SURF' | 'SNORT' | 'D/E' | 'BATT' | 'AIP' | 'NUC'
 
 export interface CardEngine { count: number; stroke: 2 | 4; cylinders: number; erpm: [number, number] }
+export interface ClassifyingLine { name: string; cfrMultiple: number }
 export interface ModeKeys { mode: ModeCode; lines: string[] }
 export interface CompendiumCard {
   id: string; name: string; country: string; force: 'Red' | 'Blue' | 'Green'; gridHz: 50 | 60
@@ -18,6 +19,7 @@ export interface CompendiumCard {
   speeds: { label: string; kts: number }[]; quietKts?: [number, number]
   cavitationKts?: number; emergency?: string
   modes: ModeKeys[]; ratios: string[]; demon: string; hulls: number
+  edas: ClassifyingLine[]; hydpHz?: number
 }
 
 const PROP_LABEL: Record<string, string> = { flat: 'FLAT', skewed: 'SKEWED', cpp: 'VARIABLE PITCH' }
@@ -51,6 +53,20 @@ function modesFor(plant: PlantKind, dt: string, hasMotor: boolean, slots: number
     { mode: 'BATT', lines: [...shaft, ...motor, 'no engine lines'] },
   ]
   if (aip) out.push({ mode: 'AIP', lines: [...shaft, ...motor, 'AIP auxiliaries', 'no engine lines'] })
+  return out
+}
+
+/** EDA multiples of CFR. Prefers idKeys, then catalog `eda {name, cfrMultiple}`, then converts the older
+ * per-crank-revolution field using the first engine's firing order. */
+function edasFor(x: Any, engines: CardEngine[]): ClassifyingLine[] {
+  const src: Any[] = Array.isArray(x.idKeys?.edas) ? x.idKeys.edas : Array.isArray(x.edas) ? x.edas : []
+  const e0 = engines[0], perRev = e0 ? e0.cylinders * (e0.stroke === 2 ? 1 : 0.5) : 0
+  const out: ClassifyingLine[] = []
+  for (const e of src) {
+    const name = String(e.eda?.name ?? e.name ?? e.id ?? 'EDA').toUpperCase()
+    const m = e.eda?.cfrMultiple ?? e.cfrMultiple ?? (perRev && typeof e.perCrankRev === 'number' ? e.perCrankRev / perRev : undefined)
+    if (typeof m === 'number' && m > 0) out.push({ name, cfrMultiple: Math.round(m * 100) / 100 })
+  }
   return out
 }
 
@@ -105,8 +121,10 @@ export function compendiumCards(catalog: { classes: readonly unknown[] } | undef
       speeds, quietKts: x.quietSpeedKts ? [r1(x.quietSpeedKts[0]), r1(x.quietSpeedKts[1])] : undefined,
       cavitationKts: p.cavitation?.surfaceInceptionKn,
       emergency: ep ? `${ep.blades}-blade emergency propulsor, ≤${ep.maxSpeedKts} kt (off unless ordered)` : undefined,
+      edas: [], hydpHz: typeof x.idKeys?.hydpHz === 'number' ? x.idKeys.hydpHz : typeof x.idKeys?.hydp?.nominalHz === 'number' ? x.idKeys.hydp.nominalHz : typeof x.hydp?.nominalHz === 'number' ? x.hydp.nominalHz : undefined,
       modes: [], ratios: [], demon: '', hulls: Array.isArray(x.hulls) ? x.hulls.length : 0,
     }
+    card.edas = edasFor(x, card.engines)
     card.modes = Array.isArray(x.idKeys?.modes) && x.idKeys.modes.every((m: Any) => typeof m?.mode === 'string' && Array.isArray(m.lines)) ? x.idKeys.modes
       : modesFor(plant, dtCode, !!m?.motor || dtCode === 'DEL' || dtCode === 'NEL', card.motorSlots, !!card.aip, Array.isArray(x.edas) && x.edas.length > 0)
     card.ratios = Array.isArray(x.idKeys?.ratios) && x.idKeys.ratios.every((r: unknown) => typeof r === 'string') ? x.idKeys.ratios : ratiosFor(card)
@@ -120,5 +138,5 @@ export interface CardFilter { query: string; country: string; plant: '' | PlantK
 export function filterCards(cards: readonly CompendiumCard[], f: CardFilter): CompendiumCard[] {
   const q = f.query.trim().toLowerCase()
   return cards.filter((c) => (!f.country || c.country === f.country) && (!f.plant || c.plant === f.plant)
-    && (!q || [c.name, c.country, c.force, c.drivetrain, c.aip ?? '', c.propType ?? '', ...c.ratios, ...c.modes.flatMap((m) => m.lines)].join(' ').toLowerCase().includes(q)))
+    && (!q || [c.name, c.country, c.force, c.drivetrain, c.aip ?? '', c.propType ?? '', ...c.edas.map((e) => `${e.name} EDA ×${e.cfrMultiple}`), c.hydpHz ? 'HYDP' : '', ...c.ratios, ...c.modes.flatMap((m) => m.lines)].join(' ').toLowerCase().includes(q)))
 }

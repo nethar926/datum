@@ -14,7 +14,7 @@ import { TacticalPlot } from './tactical/TacticalPlot'
 import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
-import { harmText, harmonicSeries, nearestHarmonic } from './gram/harmonics'
+import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
 import { familyFundamentals, familyLabel, snapToFamily, truthRows } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
@@ -56,7 +56,10 @@ export default function App() {
   const [harmK, setHarmK] = useState<number | null>(null)
   const [harmFam, setHarmFam] = useState<string | null>(null)
   const harmGrab = useRef<number | null>(null)
-  const harmDrag = (phase: 'start' | 'move' | 'end', hz: number) => {
+  const [harmProbe, setHarmProbe] = useState<number | null>(null)
+  const harmDrag = (phase: 'start' | 'move' | 'end', hz: number, _ago = 0, shift = false) => {
+    // Shift-click with a fundamental set drops a ratio probe instead of moving harmonics (EDA ×27.75 etc.).
+    if (shift && harmF0 !== null) { if (hz > 0) setHarmProbe(hz); harmGrab.current = null; return }
     if (phase === 'start') {
       if (harmF0 === null) {
         // Truth on: snap to the nearest engine line family (CSR/CFR/EFR/EDA) whose harmonic is under the click.
@@ -174,8 +177,8 @@ export default function App() {
               {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
             </div>
             <div className="seg" role="group" aria-label="Harmonic cursor">
-              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust">HARM</button>
-              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null) }}>Clear</button>}
+              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
+              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null) }}>Clear</button>}
             </div>
             <div className="seg" role="group" aria-label="Cross cursor">
               <button aria-pressed={crossOn} onClick={() => setCrossOn(!crossOn)} title="Time / frequency crosshair with level readout">CROSS</button>
@@ -201,11 +204,13 @@ export default function App() {
                 overlay={cpaMarks.length || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
                     <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
+                  {harmF0 !== null && harmProbe !== null && harmProbe >= ctx.view.lo && harmProbe <= ctx.view.hi && (
+                    <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(harmProbe, ctx.view, ctx.width) }}><span>×{(harmProbe / harmF0).toFixed(2)}</span></div>)}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
                   {cpaMarks.length > 0 && <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} />}
                 </>) : undefined} />
             )}
-            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, BAND_MAX[st.band], harmFam ?? undefined)}</div>}
+            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}`}</div>}
             {(cpaMode || cpaMarks.length > 0) && <div className="gram-note readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</div>}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">

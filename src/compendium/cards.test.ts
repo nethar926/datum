@@ -34,6 +34,7 @@ describe('compendium cards', () => {
     const [c] = compendiumCards({ classes: [{ id: 'x', name: 'Fictional Test', country: 'Kaelun Republic', force: 'Red', plant: 'diesel', drivetrainCode: 'DEL', drivetrainLabel: 'DIESEL ELECTRIC',
       motorSlots: 124, tpk: 9, tpkMinKts: 4, propeller: { shafts: 1, blades: 7, type: 'cpp' }, aip: { kind: 'stirling', maxSpeedKts: 4 },
       emergencyPropulsor: { blades: 5, maxSpeedKts: 3 }, machinery: { engines: [{ stroke: 4, cylinders: 12, erpm: { obsMin: 600, obsMax: 900 } }, { stroke: 4, cylinders: 12, erpm: { obsMin: 600, obsMax: 900 } }], motor: {} },
+      edas: [{ id: 'lop', name: 'LOP', cfrMultiple: 27.75 }, { id: 'old', perCrankRev: 6 * 10.5 }], idKeys: { hydpHz: 367.77 },
       params: { electricalHz: 50 } }] })
     expect(c.engines).toEqual([{ count: 2, stroke: 4, cylinders: 12, erpm: [600, 900] }])
     expect(c.propType).toBe('VARIABLE PITCH')
@@ -43,5 +44,8 @@ describe('compendium cards', () => {
     expect(c.modes.find((m) => m.mode === 'BATT')?.lines).toContain('MSR')
     expect(c.modes.some((m) => m.mode === 'AIP')).toBe(true)
     expect(c.emergency).toMatch(/5-blade/)
+    expect(c.edas).toEqual([{ name: 'LOP', cfrMultiple: 27.75 }, { name: 'OLD', cfrMultiple: 10.5 }])
+    expect(c.hydpHz).toBe(367.77)
+    expect(filterCards([c], { query: 'hydp', country: '', plant: '' })).toHaveLength(1)
   })
 })
