@@ -12,7 +12,7 @@ npm run build
 npm run bench
 ```
 
-No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 88 tests;
+No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 93 tests;
 benchmark: 12 warmup + 200 full 60-contact × 32-buoy × 1024-bin steps, mean/p95,
 no timing assertion. `busyScenario()` is a test/benchmark fixture only. No PNG preview.
 
@@ -258,3 +258,186 @@ predicted gain, >12 dB null contrast, rough-sea contrast reduction); `catalog.te
 batch packing; `pinnedApi.test.ts` covers pinned fits/defaults/traffic/bands.
 `npm run bench` measures 60-contact/32-buoy legacy and catalog fields plus all 32 DEMON
 streams on the catalog case (51 subs + 9 ships), 200 steps after warmup, at 4 rows/s sim time.
+
+## v1.1 API shapes
+
+All functions below are exported by `src/index.ts`. Units: sim time seconds, lengths metres,
+speed m/s unless a field ends in `Kn`, frequencies Hz, LOFAR PSD dB re 1 µPa²/Hz,
+DEMON dB relative to that row's median. Inputs are not mutated by the fitting helpers.
+
+### Doppler CPA fit
+
+```ts
+interface DopplerSample { tS: number; fHz: number }
+interface CpaFit {
+  ok: boolean; f0: number; speed: number; tCPA: number;
+  rCPA: number; residualRms: number;
+}
+function fitCpaFromDoppler(
+  samples: readonly DopplerSample[],
+  opts?: { c?: number; maxSpeed?: number }
+): CpaFit;
+```
+
+Input fHz is a tracked **tonal frequency**, tS is sim seconds. Output f0 Hz, speed m/s,
+tCPA sim seconds, rCPA metres, residualRms Hz. Defaults c=1500 m/s, maxSpeed=100 m/s.
+The model assumes a straight constant-speed pass and stationary receiver. Failure gives
+ok=false with NaN estimates; a flat tone does not provide an identifiable CPA fit.
+
+### Lloyd spacing fit — not a tonal-frequency fit
+
+**Input fHz means STRIATION SPACING: null-to-null Δf measured at tS. Do not pass the
+frequency of an arbitrary tonal or a single higher-order null as though it were Δf.**
+
+```ts
+interface LloydSpacingSample { simT: number; spacingHz: number } // legacy alias
+interface LloydRangeSource {
+  kind: 'cpaFit' | 'manual'; rCPA: number; speed: number; tCPA?: number;
+}
+interface LegacyLloydRangeSource {
+  kind: 'cpaFit' | 'manual'; rCpaM: number; speedMps: number; tCpa?: number;
+}
+interface LloydFitOptions {
+  zrM?: number; zr?: number; cMps?: number; c?: number;
+  rangeSource?: LloydRangeSource | LegacyLloydRangeSource | 'none' | null;
+  basis?: LloydRangeSource | LegacyLloydRangeSource | 'none' | null;
+}
+interface LloydFit {
+  ok: boolean; basis: 'cpaFit' | 'manual' | 'none'; zs: number;
+  depthRatio: number; rCPA: number; speed: number; tCPA: number; residualRms: number;
+}
+function fitLloydsMirror(
+  samples: readonly (LloydSpacingSample | { tS: number; fHz: number })[],
+  opts: LloydFitOptions
+): LloydFit;
+```
+
+zrM/zr is buoy hydrophone depth (default 40 m); cMps/c is sound speed (default 1500 m/s).
+basis takes precedence over rangeSource. A CPA result can be passed as
+`basis:{kind:'cpaFit',...cpaFit}`; manual uses the same rCPA/speed/tCPA units as CpaFit.
+Output zs and rCPA are metres, speed m/s, tCPA sim seconds, residualRms spacing Hz.
+With no basis, zs/rCPA/speed are NaN; depthRatio=rCPA/zs is explicitly **relative and
+unitless**, not an estimated source depth. A good relative ratio fit may have ok=true.
+
+### Striation curve overlay
+
+```ts
+interface StriationParams {
+  rCPA: number; speed: number; tCPA: number; zs: number; zr: number; c?: number;
+}
+function striationCurves(
+  p: StriationParams, nMax: number,
+  tS: Float64Array | Float32Array | readonly number[], out: Float32Array
+): Float32Array;
+interface RelativeStriationParams {
+  basis: 'none'; depthRatio: number; speedOverRange: number;
+  tCPA: number; zr: number; c?: number;
+}
+function striationCurves(
+  p: RelativeStriationParams, nMax: number,
+  tS: Float64Array | Float32Array | readonly number[], out: Float32Array
+): Float32Array;
+```
+
+Absolute parameters use metres, m/s and sim seconds; c defaults to 1500 m/s. Relative
+mode uses depthRatio=rCPA/zs and speedOverRange=speed/rCPA in s⁻¹, without inventing
+an absolute source depth. Both draw the far-field curves, not an exact shallow-range model.
+For N=tS.length, out is row-major `[n-1][i]`: `out[(n-1)*N+i]` is null-order n frequency
+`n*c*sqrt(rCPA²+speed²*(tS[i]-tCPA)²)/(2*zs*zr)` Hz, for n=1..nMax.
+Relative mode substitutes `r(t)/zs=depthRatio*sqrt(1+(speedOverRange*(t-tCPA))²)`.
+No allocation: the identical out buffer is returned. Only its first nMax*N values are
+written; excess storage stays untouched. Invalid physics/time or nonrepresentable Float32
+frequencies yield NaN. Too-short output or invalid nMax dimensions throw RangeError.
+
+### Editable scenario generation
+
+```ts
+type Difficulty = 'easy' | 'regular' | 'difficult';
+type RarityWeights = Record<
+  'dieselDirect' | 'dieselGearReduction' | 'dieselElectric' |
+  'nuclearGearReduction' | 'nuclearElectric' | 'aip', number
+>;
+interface ScenarioParams {
+  subCount: number;
+  rarityWeights: RarityWeights;
+  opState: {
+    speedKn: [number, number]; depthM: [number, number];
+    quietProb: number; cavitationAllowed: boolean;
+  };
+  seaState: number; surfaceTraffic: number;
+  cpaRangeKm: [number, number]; buoyLifeMin: number; seed: number;
+}
+function presetToParams(difficulty: Difficulty, seed: number): ScenarioParams;
+function clampParams(value: unknown): ScenarioParams;
+function generateScenario(params: ScenarioParams, seed?: number): Scenario;
+```
+
+Ranges are inclusive operator inputs: knots, metres, horizontal CPA km, buoy life minutes;
+quietProb/surfaceTraffic are 0..1, seaState 0..6. subCount counts subs/classification targets,
+not the additional active surface pool. 'aip' is a rarity bucket/mode, not a propulsion type.
+The plain object round-trips through JSON. clampParams repairs nonfinite/out-of-bound edits;
+generateScenario uses params.seed unless overridden. The returned Scenario is accepted by
+`new AcousticEngine(scenario)` and includes default fMax=500, bins=1024, fBin=500/1023,
+band=[0,500], plus legacy fmax. Explicit LOFAR subscribe band overrides defaults; fBin is
+computed metadata. Surface ships never change the independently seeded sub draws.
+
+### Live traffic and DEMON host loop
+
+```ts
+// AcousticEngine methods:
+setSurfaceTraffic(v: number): void;
+advance(dt: number): void;
+subscribe(req: { kind: 'demon'; buoyId: number; band?: [number, number] }): number;
+configs(): GramConfig[];
+rowsReady(streamId: number): number;
+writeRow(streamId: number, out: Float32Array, offset?: number): number;
+interface GramConfig {
+  v: 1; type: 'gramConfig'; simT: number; streamId: number;
+  kind: 'lofar' | 'demon' | 'bearing'; channel: number; bins: number;
+  f0: number; fBin: number; rowRateHz: number; dbFloor: number; dbCeil: number;
+  demodBandHz?: [number, number];
+}
+```
+
+Traffic clamps to 0..1 (nonfinite -> 0.5), toggles a preseeded ship prefix without resetting
+tracks/seeds, and scales ambient shipping. Matching worker command is
+`{v:1,type:'setSurfaceTraffic',simT,value}`. DEMON buoyId is the numeric buoy ID; its band is
+the acoustic demodulation band (default [1000,4000] Hz), not the envelope frequency axis.
+DEMON configs use kind='demon', the buoy channel, bins=512, f0=0, fBin=100/511 Hz,
+rowRateHz=4 and demodBandHz. Returned samples are median-relative dB, not linear power.
+writeRow writes bins samples starting at offset, returning zero-based rowIndex, or -1
+without writing when no row is ready. Output buffers belong to the caller; no row allocation.
+Drain after each 0.25 sim-second advance for time-correct geometry. The exact host loop
+below is covered by `test/striationCurves.test.ts`:
+
+```ts
+engine.subscribe({ kind: 'demon', buoyId: 1 });
+const config = engine.configs().find(c => c.kind === 'demon')!;
+const packed = new Float32Array(config.bins + 4); // once, outside frame loop
+// Each host tick:
+engine.advance(0.25);
+if (engine.rowsReady(config.streamId) > 0)
+  engine.writeRow(config.streamId, packed, 4);
+```
+
+Worker gramRows have `streamIds:Int32Array`, `rowIndex:Uint32Array` and packed Float32Array
+data `[stream][bin]`, length streamIds.length*bins. Different bin counts use separate
+messages/pools, never a mixed 1024-bin LOFAR/512-bin DEMON batch. Return each batch's three
+ArrayBuffers in IDs/indexes/data order using release after upload; transfer detaches views.
+
+### Additive log category
+
+```ts
+type Confidence = 'possible' | 'probable' | 'certain';
+type LogEventType = 'contact' | 'classification' | 'buoyDrop' |
+  'buoyLive' | 'buoyDead' | 'bearing' | 'note';
+interface LogEvent {
+  v: 1.1 | 1; type: 'log'; simT: number; kind: LogEventType;
+  category?: 'surface' | 'subsurface'; contactId?: number; buoyId?: number;
+  class?: string; confidence?: Confidence; data?: Record<string, unknown>;
+}
+```
+
+simT is simulation seconds. category is optional for v1 compatibility; surface contacts
+can be logged without becoming classification targets. These are data types, not automatic
+message-sending or logging behavior.
