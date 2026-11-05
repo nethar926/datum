@@ -4,6 +4,7 @@
  * This file only holds the UI-side types, the adapter, and the curve sampling used to draw a fit.
  */
 import { doppler } from '@acoustics'
+import { acousticsV11 } from '../scenarios/acousticsApi'
 
 export interface CpaSample { tS: number; fHz: number }
 export interface CpaFit { ok: boolean; f0: number; speedMps: number; tCpaS: number; rCpaM: number; reason?: string }
@@ -27,7 +28,10 @@ export function addSample(list: readonly CpaSample[], s: CpaSample, minDtS = 1):
 }
 
 /** Pending fitter until acoustics ships fitCpaFromDoppler; swap in with setCpaFitter. */
-let fitter: CpaFitter | null = null
+const v11 = acousticsV11.fitCpaFromDoppler
+let fitter: CpaFitter | null = v11
+  ? (smp) => { const r = v11(smp.map((p) => ({ tS: p.tS, fHz: p.fHz }))); return { ok: r.ok, f0: r.f0, speedMps: r.speed, tCpaS: r.tCPA, rCpaM: r.rCPA } }
+  : null
 export const setCpaFitter = (f: CpaFitter | null) => { fitter = f }
 export function runCpaFit(samples: readonly CpaSample[]): CpaFit | null {
   if (samples.length < MIN_CPA_SAMPLES || !fitter) return null

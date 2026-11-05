@@ -1,7 +1,8 @@
 import type { Band, FromWorker, GramConfig, GramRows, Tactical, ToWorker } from './contract'
+import type { ScenarioParams } from '../scenarios/acousticsApi'
 
 type RowsListener = (rows: GramRows) => void
-export interface SimStatus { simT: number; playing: boolean; rate: number; band: Band; configs: GramConfig[]; error?: string; tactical?: Tactical }
+export interface SimStatus { surfaceTraffic: number; params?: ScenarioParams; simT: number; playing: boolean; rate: number; band: Band; configs: GramConfig[]; error?: string; tactical?: Tactical }
 
 /** Track history for the plot: fixed-size ring of x,y pairs. */
 export class TrackRing {
@@ -28,24 +29,31 @@ export class SimClient {
   private rowRateHz = 2
   private releaseBufs: ArrayBuffer[] = []
   readonly track = new TrackRing(1200)
-  status: SimStatus = { simT: 0, playing: false, rate: 4, band: 'lofar1k', configs: [] }
+  status: SimStatus = { surfaceTraffic: 0.5, simT: 0, playing: false, rate: 4, band: 'lofar1k', configs: [] }
 
   constructor(private readonly makeWorker: () => Worker = () => new Worker(new URL('./sim.worker.ts', import.meta.url), { type: 'module' })) {}
 
-  start(seed = 7, scenarioId = 'ridgeline-field', band: Band = this.status.band): void {
+  start(seed = 7, scenarioId = 'ridgeline-field', band: Band = this.status.band, params: ScenarioParams | undefined = this.status.params): void {
     this.stopWorker()
     this.track.clear()
     this.worker = this.makeWorker()
     this.worker.onmessage = (e: MessageEvent<FromWorker>) => this.onMessage(e.data)
     this.worker.onerror = (e) => this.setStatus({ error: e.message || 'Worker failed', playing: false })
     this.inFlight = false; this.acc = 0
-    this.setStatus({ band, simT: 0, configs: [], error: undefined, tactical: undefined })
-    this.send({ type: 'init', seed, scenarioId, band, rowRateHz: this.rowRateHz })
+    const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
+    this.setStatus({ band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic })
+    this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic })
     if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(this.tick) }
   }
 
   setPlaying(playing: boolean): void { this.setStatus({ playing }) }
   setRate(rate: number): void { this.setStatus({ rate: Math.max(0.25, Math.min(32, rate)) }) }
+  /** Live surface-traffic (shipping noise) level, 0 none … 1 heavy. */
+  setSurfaceTraffic(value: number): void {
+    const v = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0.5))
+    this.setStatus({ surfaceTraffic: v })
+    this.send({ type: 'setSurfaceTraffic', value: v })
+  }
   setBand(band: Band): void { if (band !== this.status.band) this.start(7, 'ridgeline-field', band) }
 
   onRows(cb: RowsListener): () => void { this.rowsListeners.add(cb); return () => this.rowsListeners.delete(cb) }

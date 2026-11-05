@@ -243,3 +243,22 @@ describe("Lloyd's mirror overlay", () => {
     expect(L.striationHz({ ...s, k }, n, 800)).toBeCloseTo(290, 9)
   })
 })
+
+describe('surface traffic', () => {
+  it('labels the stops', async () => {
+    const { trafficLabel } = await import('./scenarios/acousticsApi')
+    expect(trafficLabel(0)).toBe('None'); expect(trafficLabel(0.25)).toBe('Light')
+    expect(trafficLabel(0.5)).toBe('Moderate'); expect(trafficLabel(1)).toBe('Heavy')
+    expect(trafficLabel(0.35)).toBe('Light~')
+  })
+  it('host accepts setSurfaceTraffic and rejects NaN', async () => {
+    const { SimHost } = await import('./engine/host')
+    const msgs: { type: string; message?: string }[] = []
+    const h = new SimHost((m) => msgs.push(m as never))
+    h.handle({ type: 'init', seed: 1, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2, surfaceTraffic: 0.25 })
+    h.handle({ type: 'setSurfaceTraffic', value: 1 })
+    expect(msgs.some((m) => m.type === 'error')).toBe(false)
+    h.handle({ type: 'setSurfaceTraffic', value: NaN })
+    expect(msgs.at(-1)?.type).toBe('error')
+  })
+})

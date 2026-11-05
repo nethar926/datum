@@ -47,6 +47,17 @@ try {
     console.log('lm:', t)
     await page.waitForTimeout(300)
   }
+  if (process.env.SETTINGS) {
+    await page.getByRole('button', { name: 'Settings' }).click()
+    await page.locator('#traffic').fill('1')
+    const t = await page.locator('[data-testid=traffic-label]').innerText()
+    if (t !== 'Heavy') errors.push('traffic label ' + t)
+    console.log('traffic:', t)
+  }
+  if (process.env.NEWSCN) {
+    await page.getByRole('button', { name: 'New', exact: true }).click()
+    await page.waitForSelector('.modal')
+  }
   await page.screenshot({ path: process.env.SHOT ?? 'docs/m1.png' })
   await browser.close()
   console.log(JSON.stringify({ errors }))

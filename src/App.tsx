@@ -3,6 +3,8 @@ import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
 import { DemonPane } from './gram/DemonPane'
+import { NewScenario } from './settings/NewScenario'
+import { TrafficSlider } from './settings/TrafficSlider'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
 import { CpaOverlay, cpaReadout } from './gram/CpaOverlay'
 import { addSample, cpaFitterReady, MIN_CPA_SAMPLES, runCpaFit, type CpaSample } from './gram/cpa'
@@ -40,6 +42,8 @@ export default function App() {
     if (final) log.add({ simT: client.status.simT, kind: 'bearing', buoyId, data: deg === null ? { source: 'manual', cleared: true } : { source: 'manual', brgDeg: Math.round(deg * 10) / 10 } })
   }
   const [selHz, setSelHz] = useState<number | null>(null)
+  const [showNew, setShowNew] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [tool, setTool] = useState<'select' | 'cpa' | 'lm'>('select')
   const cpaMode = tool === 'cpa'
   const setCpaMode = (on: boolean) => setTool(on ? 'cpa' : 'select')
@@ -71,9 +75,11 @@ export default function App() {
 
   return (
     <div className="app">
+      {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       <header className="toolbar">
         <div className="brand">DATUM<small>Acoustic operator trainer · fictional patrol aircraft</small></div>
         <div className="group">
+          <button className="btn" onClick={() => setShowNew(true)}>New</button>
           <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
             {st.playing ? 'Pause' : 'Play'}
           </button>
@@ -97,7 +103,15 @@ export default function App() {
             <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
           </label>
         </div>
+        <div className="group" style={{ position: 'relative' }}>
+          <button className="btn" aria-expanded={showSettings} onClick={() => setShowSettings(!showSettings)}>Settings</button>
+        </div>
         <span className="readout">LOG {logCount}  T+{fmtT(st.simT)}</span>
+        {showSettings && (
+          <div className="popover" role="dialog" aria-label="Settings" data-testid="settings">
+            <TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} />
+          </div>
+        )}
       </header>
 
       <main className="workspace">

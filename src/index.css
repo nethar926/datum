@@ -10,7 +10,7 @@ body {
 button, select { font: inherit; color: inherit; }
 
 .app { display: grid; grid-template-rows: auto 1fr; height: 100%; gap: var(--space-3); padding: var(--space-3); }
-.toolbar {
+.toolbar { position: relative;
   display: flex; align-items: center; gap: var(--space-4); padding: var(--space-2) var(--space-4);
   background: var(--bg-1); border: 1px solid var(--hairline); border-radius: var(--radius-l); box-shadow: var(--shadow-panel);
 }
@@ -80,3 +80,23 @@ button, select { font: inherit; color: inherit; }
 .lm-panel label { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
 .lm-panel input[type=number] { width: 64px; background: #0b0c0e; color: inherit; border: 1px solid #2a2c31; border-radius: 4px; padding: 2px 4px; font: inherit; }
 .lm-panel .lm-read { color: #ff9ad5; }
+.modal-scrim { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 20; }
+.modal { width: min(640px, 94vw); max-height: 90vh; overflow: auto; background: var(--surface-1, #121316); border: 1px solid #2a2c31; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.modal-head, .modal-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.modal-foot { justify-content: flex-end; }
+.modal h2 { font-size: 14px; margin: 0; }
+.modal button.primary { background: var(--accent, #3d7cff); color: #fff; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+.field { display: flex; flex-direction: column; gap: 6px; position: relative; font-size: 12px; color: var(--text-2); }
+.field label { display: flex; justify-content: space-between; }
+.field b { color: var(--text-1, #e8e9ec); font: 11px var(--font-mono); font-weight: 500; }
+.field input[type=range] { width: 100%; accent-color: var(--accent, #3d7cff); }
+.field .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.field .stops { position: relative; height: 12px; font: 9px/1 var(--font-mono); }
+.field .stops span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.field .stops span:first-child { transform: none; }
+.field .stops span:last-child { transform: translateX(-100%); }
+.check { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-2); }
+.seg.big button { padding: 6px 16px; }
+.empty-note.static { position: static; }
+.popover { position: absolute; top: 44px; right: 12px; width: 280px; z-index: 15; background: var(--surface-1, #121316); border: 1px solid #2a2c31; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
