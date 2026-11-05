@@ -93,7 +93,7 @@ export class WorkerRuntime {
     const e=this.engine!,s=e.scenario,t=this.tactical;t.simT=e.time;t.aircraft.x=s.ownship.x;t.aircraft.y=s.ownship.y;t.aircraft.hdgDeg=(s.ownship.course*180/Math.PI+360)%360;t.aircraft.gsMps=s.ownship.speed;
     let count=0;for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],out=t.buoys[i];out.x=b.x;out.y=b.y;out.hydrophoneDepthM=b.depth;out.lifeRemainingS=Math.max(0,b.deployedAt+b.life-e.time);out.batteryFrac=Math.max(0,Math.min(1,out.lifeRemainingS/b.life));out.state=e.time<b.deployedAt?'falling':isAlive(b,e.time)?'live':'dead';
       if(b.type==='difar'&&isAlive(b,e.time)){const g=e.generators[i];for(let j=0;j<g.lineCount;j++){const src=g.lines[j],dst=this.bearingStore[count];dst.buoyId=out.id;dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;t.bearings[count++]=dst;}}
-    }t.bearings.length=count;this.emit(t);
+    }t.bearings.length=count;t.truth=e.tactical().truth;this.emit(t);
   }
   private seek(target:number):void{
     if(this.configs.some(c=>c.kind==='demon'||c.f0!==0||Math.abs(c.fBin*(c.bins-1)-500)>1e-8))throw new Error('Seek with DEMON awaits analysis-window replay');

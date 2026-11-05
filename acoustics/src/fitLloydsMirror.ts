@@ -4,7 +4,7 @@ export interface LloydSpacingSample {simT:number;spacingHz:number}
 export interface LegacyLloydRangeSource {kind:'cpaFit'|'manual';rCpaM:number;speedMps:number;tCpa?:number}
 export interface LloydRangeSource {kind:'cpaFit'|'manual';rCPA:number;speed:number;tCPA?:number}
 export interface LloydFitOptions {zrM?:number;zr?:number;cMps?:number;c?:number;rangeSource?:LloydRangeSource|LegacyLloydRangeSource|'none'|null;basis?:LloydRangeSource|LegacyLloydRangeSource|'none'|null}
-export interface LloydFit {ok:boolean;basis:'cpaFit'|'manual'|'none';zs:number;depthRatio:number;rCPA:number;speed:number;tCPA:number;residualRms:number}
+export interface LloydFit {ok:boolean;basis:'cpaFit'|'manual'|'none';zs:number;/** R/zs: horizontal CPA range over source depth, dimensionless; zs/R is its reciprocal. */ depthRatio:number;rCPA:number;speed:number;tCPA:number;residualRms:number}
 export function fitLloydsMirror(inputSamples:readonly (LloydSpacingSample|{tS:number;fHz:number})[],opts:LloydFitOptions):LloydFit {
  const samples=inputSamples.map(s=>'simT' in s?s:{simT:s.tS,spacingHz:s.fHz}),input=opts.basis??opts.rangeSource,raw=input&&input!=='none'?input:undefined,source=raw?('rCPA' in raw?{kind:raw.kind,rCpaM:raw.rCPA,speedMps:raw.speed,tCpa:raw.tCPA}:raw):undefined,basis=source?.kind??'none',zr=opts.zrM??opts.zr??40;
  const bad=():LloydFit=>({ok:false,basis,zs:NaN,depthRatio:NaN,rCPA:source?.rCpaM??NaN,speed:source?.speedMps??NaN,tCPA:NaN,residualRms:NaN}),c=opts.cMps??opts.c??1500;

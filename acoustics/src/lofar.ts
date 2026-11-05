@@ -1,3 +1,4 @@
+import {lineKernel,type LineKernel} from './lineKernel.js';
 import { deriveSeed, mulberry32, gaussian, type Random } from './prng.js';
 import { dbToPower, powerToDb } from './units.js';
 import { geometry, createGeometry } from './kinematics.js';
@@ -5,13 +6,13 @@ import { doppler } from './doppler.js';
 import { exactGain,pathDifference,seaSurfaceSigma } from './lloydsMirror.js';
 import { spreadingLoss, thorp } from './transmissionLoss.js';
 import { ambientLevel } from './ambientNoise.js';
-import { sourceLevel, fillTonals } from './sourceModel.js';
+import { sourceLevel, fillTonals,sourceLines } from './sourceModel.js';
 import type { Contact, Environment } from './scenario.js';
 import type { Buoy } from './buoys.js';
-interface CachedContact { contact:Contact; frequencies:Float64Array; powers:Float64Array; gain:number }
+interface CachedContact { contact:Contact; frequencies:Float64Array; powers:Float64Array; kernels:LineKernel[]; gain:number }
 /** Incremental incoherent PSD renderer (Urick/Wenz). Output is PSD in dB re 1 µPa²/Hz; tonal power divided by df.
  * Independent exponential power (chi-square, 2 DOF) fluctuations per time-frequency cell.
- * Tonals deposit linearly in adjacent bins; no FFT leakage emulation. No row-time allocations. */
+ * Tonals use normalized precomputed Hann/Gaussian window kernels. No row-time allocations. */
 export class LofarGenerator {
   readonly row:Float32Array;
   readonly lines=Array.from({length:8},()=>({freqHz:0,brgDeg:0,quality:-300}));
@@ -31,7 +32,7 @@ export class LofarGenerator {
   constructor(readonly buoy:Buoy, contacts:Contact[],readonly bins:number,readonly fmax:number,seed:number,environment:Environment,readonly f0=0){
     this.row=new Float32Array(bins);this.power=new Float64Array(bins);this.ambient=new Float64Array(bins);this.absorption=new Float64Array(bins);this.shape=new Float64Array(bins);this.absorptionExponent=new Float64Array(bins);this.coherenceExponent=new Float64Array(bins);
     this.baseSeed=deriveSeed(seed,`buoy:${buoy.id}`);this.rng=mulberry32(this.baseSeed);this.environment={...environment};
-    this.contacts=contacts.map(contact=>{const frequencies=new Float64Array(contact.params.tonals?.length??6),powers=new Float64Array(contact.params.tonals?.length??6);fillTonals(contact.params,frequencies,powers);return {contact,frequencies,powers,gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
+    this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const frequencies=new Float64Array(contact.lines.length),powers=new Float64Array(contact.lines.length);fillTonals(contact.params,frequencies,powers,contact.lines);return {contact,frequencies,powers,kernels:contact.lines.map(l=>lineKernel(l.width,l.sigmaBins)),gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
     this.setEnvironment(environment);
   }
   setEnvironment(e:Environment):void {
@@ -43,7 +44,7 @@ export class LofarGenerator {
     this.rng.reset!((this.baseSeed+Math.imul(this.rowIndex++,0x9e3779b9))>>>0);this.lineCount=0;this.power.set(this.ambient);const e=this.environment,df=(this.fmax-this.f0)/(this.bins-1);let east=0,north=0;
     for(let j=0;j<this.contacts.length;j++){
       const item=this.contacts[j],c=item.contact;if(c.active===false)continue;const g=geometry(c,this.buoy,this.g);
-      if(c.params.tonals)fillTonals(c.params,item.frequencies,item.powers);
+      fillTonals(c.params,item.frequencies,item.powers,c.lines);
       const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
       const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread;
       // Smooth fictional broadband PSD; absorption per bin cached, range factor updated.
@@ -55,9 +56,9 @@ export class LofarGenerator {
       for(let k=0;k<item.frequencies.length;k++){
         const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-this.f0)/df;
         if(bin<0||bin>this.bins-1)continue;
-        const i=Math.floor(bin),a=bin-i;
+        const i=Math.floor(bin);
         const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,this.buoy.depth,e.soundSpeed,this.sigma);
-        this.power[i]+=v*(1-a)/df;if(i+1<this.bins)this.power[i+1]+=v*a/df;
+        item.kernels[k].deposit(this.power,bin,v/df);
         const quality=powerToDb(v/df/this.ambient[i]);
         if(quality>0){let pos=0;while(pos<this.lineCount&&this.lines[pos].quality>quality)pos++;if(pos<8){this.lineCount=Math.min(8,this.lineCount+1);for(let h=this.lineCount-1;h>pos;h--){const dst=this.lines[h],src=this.lines[h-1];dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;}const line=this.lines[pos];line.freqHz=f;line.quality=quality;line.brgDeg=(g.bearing*180/Math.PI+Math.min(90,20*10**(-quality/20))*gaussian(this.rng)+720)%360;}}
         east+=v*Math.sin(g.bearing);north+=v*Math.cos(g.bearing);

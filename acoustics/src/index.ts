@@ -24,3 +24,5 @@ export * from './fitLloydsMirror.js';
 export * from './fitCpaFromDoppler.js';
 export * from './catalog/surface.js';
 export * from './striationCurves.js';
+export * from './lineModel.js';
+export * from './lineKernel.js';

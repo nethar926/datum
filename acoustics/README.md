@@ -12,7 +12,7 @@ npm run build
 npm run bench
 ```
 
-No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 93 tests;
+No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 105 tests;
 benchmark: 12 warmup + 200 full 60-contact × 32-buoy × 1024-bin steps, mean/p95,
 no timing assertion. `busyScenario()` is a test/benchmark fixture only. No PNG preview.
 
@@ -74,7 +74,7 @@ The default client worker URL targets built ESM `dist/worker.js`.
   buffers in typed views. Late old-config buffers may be discarded.
 - `tactical` at each clock tick/change: aircraft ENU/heading/groundspeed (illustrative altitude
   300 m); buoy RF/depth/battery/state; strongest K≤8 DIFAR lines per buoy:
-  `{buoyId,freqHz,brgDeg,quality}` (quality=SNR dB). Numeric IDs map `buoy-N`. Truth omitted.
+  `{buoyId,freqHz,brgDeg,quality}` (quality=SNR dB). Numeric IDs map `buoy-N`. Fixed-length truth contacts include active flags and source-line tags (see M3 below).
 - `error {message}` is a diagnostic extension. Wideband, azigram, DICASS,
   VLAD, BT/SSP are reserved/rejected, not implemented. DEMON streams are enabled as described below.
 
@@ -104,7 +104,7 @@ not physically valid), bins 2..16384. Worker M1 is fixed to 1024 bins.
   Wind-dominated spectrum decreases 1..10 kHz; thermal noise eventually rises.
 - Fictional source: shaft/blade/machinery harmonics, speed/depth-dependent cavitation/level.
   Tonals apply Doppler/absorption/Lloyd; broadband includes coherent Lloyd fringes and excludes Doppler warping.
-  Incoherent contacts; two-bin tone deposition; independent exponential/chi-square 2-DOF
+  Incoherent contacts; normalized Hann/Gaussian tone kernels; independent exponential/chi-square 2-DOF
   fluctuations, not sampled FFT leakage or correlated ocean noise.
 - DIFAR primitive: atan2 of omni×east/north cross terms; worker lines approximate geometric
   bearing plus seeded SNR-dependent Gaussian error, not multi-source localization.
@@ -317,7 +317,10 @@ basis takes precedence over rangeSource. A CPA result can be passed as
 `basis:{kind:'cpaFit',...cpaFit}`; manual uses the same rCPA/speed/tCPA units as CpaFit.
 Output zs and rCPA are metres, speed m/s, tCPA sim seconds, residualRms spacing Hz.
 With no basis, zs/rCPA/speed are NaN; depthRatio=rCPA/zs is explicitly **relative and
-unitless**, not an estimated source depth. A good relative ratio fit may have ok=true.
+unitless**, not an estimated source depth. Here **depthRatio = R/zs** (horizontal range
+over source depth), evaluated at the fitted CPA; **zs/R is its reciprocal**. In basis
+none, the far-field spacing relation is R/zs = 2*zr*Δf/c. A good relative ratio fit
+may have ok=true.
 
 ### Striation curve overlay
 
@@ -441,3 +444,76 @@ interface LogEvent {
 simT is simulation seconds. category is optional for v1 compatibility; surface contacts
 can be logged without becoming classification targets. These are data types, not automatic
 message-sending or logging behavior.
+
+
+## M3 lines and fixed-capacity truth (additive v1.1)
+
+```ts
+type LineStability = 'stable' | 'unstable';
+type LineWidth = 'discrete' | 'diffuse';
+interface LineProfile {
+  stability: LineStability; width: LineWidth; sigmaBins?: number;
+}
+type LineProfiles = Partial<Record<TonalFamily, LineProfile>>;
+interface TonalLine {
+  family: TonalFamily; hz: number; power: number;
+  id?: string; stability?: LineStability; width?: LineWidth;
+  sigmaBins?: number; frequencyHz?: number;
+}
+interface TruthLine {
+  id: string; family: TonalFamily; f0Hz: number; freqHz: number; power: number;
+  stability: LineStability; width: LineWidth; sigmaBins: number;
+}
+interface TruthContact {
+  id: number; sourceId: string; active: boolean;
+  category: 'surface' | 'subsurface'; classificationTarget: boolean;
+  x: number; y: number; depthM: number; crsDeg: number; spdMps: number;
+  lines: TruthLine[];
+}
+// Existing optional Tactical.truth now contains these extended records:
+// truth?: { contacts: TruthContact[] }
+```
+
+Signature and catalog ClassParams accept optional `lineProfiles`, keyed by tonal family;
+auxiliary entries may override stability/width/sigmaBins. Explicit per-line tags win.
+Omitted IDs become family:index. Plant/electrical lines default stable/discrete; selected
+auxiliaries unstable; blade/SRC lines unstable/diffuse. These are fictional oscillator
+characteristics, not calibrated platform observations. Runtime `Contact.lines` exposes the
+resolved lines. `hz`/truth `f0Hz` are nominal Hz; `frequencyHz`/truth `freqHz` are actual
+source-frame Hz **before receiver Doppler**. Power is relative linear tonal power.
+
+Seed/contact/line-ID substreams drive a stationary Gaussian OU process (20 s time constant).
+Stable drift is bounded below 0.009% of nominal; unstable drift has stationary standard
+deviation 0.2% plus uniform ±0.015% row jitter. The engine updates once per advance,
+including inactive contacts: subscribing another buoy cannot change source wander.
+Standalone users can construct `new LineWander(signature,seed,contactId)` and call
+`advance(dt)` on the source clock before rendering; generators alone do not advance time.
+Same seed/scenario/advance schedule gives identical rows; arbitrary time subdivisions
+are not promised to give identical stochastic histories.
+
+`LineKernel(width?,sigmaBins?)` and cached `lineKernel(width?,sigmaBins?)` precompute 128
+fractional-bin phases. `deposit(out,bin,power):void` adds into caller Float32/Float64 storage
+without allocation. Discrete lines use squared Hann Fourier response (sampled bin-centred
+-3 dB width 1.33 bins; continuous width about 1.44). Diffuse Gaussian **power** kernels use
+sigmaBins 0.75..16, default 2.5; FWHM = 2*sqrt(2*ln(2))*sigmaBins. Finite kernels and
+clipped band edges are normalized, preserving integrated tonal energy to within 1% versus
+discrete deposition. LOFAR divides this integrated power by fBin to retain PSD units.
+Independent chi-square fluctuations can obscure a single row's measured width/energy.
+Kernel caches and oscillator state allocate only during configuration.
+
+`engine.tactical().truth.contacts` and worker tactical truth have **constant scenario
+capacity**, base contacts plus the maximum seeded surface pool, not only live contacts.
+Ordering/IDs and engine-side array/record/line-array identities stay fixed; hosts must filter
+`active`, never infer activity from membership. Existing truth id/x/y/crsDeg/spdMps fields
+remain; sourceId is the scenario contact string ID, id is its stable numeric truth ID.
+Positions/depth are metres, heading degrees clockwise from north, speed m/s.
+Changing traffic toggles flags without resizing truth; inactive tracks/wander continue.
+`scenario.contacts` retains its legacy active-surface view and is not the truth list.
+`tactical()` reuses records; clone only if a historical snapshot is needed.
+
+DEMON removes envelope DC and Hann-windows before FFT in both standalone and all-contact
+streams. Additive `FFT.transform(input,window=true,removeDc=false):void` supports
+window-weighted DC removal, ensuring a pedestal does not leak into the low bins.
+`lines.test.ts` covers width, energy, stochastic bounds, row determinism, tags and fixed
+truth identities; `demonDc.test.ts` covers pedestal rejection and preserved modulation;
+`worker.test.ts` verifies fixed truth capacity through actual worker messages.

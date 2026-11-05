@@ -35,7 +35,7 @@ export class DemonStream {
   if(total<=1e-30){out.fill(NaN,offset,offset+512);return;}
   for(let j=0;j<this.contacts.length;j++){const w=this.weights[j]/total;if(w<=0)continue;const table=this.tables[j].table;for(let i=0;i<SIZE;i++)this.signal[i]+=w*table[i];}
   let mean=0;for(let i=0;i<SIZE;i++){this.signal[i]+=.0001*(this.rng()-.5);mean+=this.signal[i];}mean/=SIZE;for(let i=0;i<SIZE;i++)this.signal[i]-=mean;
-  this.fft.transform(this.signal);for(let i=0;i<512;i++)this.median[i]=this.spectrum[i]=(this.fft.real[i]**2+this.fft.imag[i]**2)/(SIZE*SIZE);
+  this.fft.transform(this.signal,true,true);for(let i=0;i<512;i++)this.median[i]=this.spectrum[i]=(this.fft.real[i]**2+this.fft.imag[i]**2)/(SIZE*SIZE);
   const median=Math.max(1e-30,(select(this.median,255)+select(this.median,256))/2);for(let i=0;i<512;i++)out[offset+i]=powerToDb(this.spectrum[i]/median);
  }
 }

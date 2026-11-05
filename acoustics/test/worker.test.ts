@@ -16,3 +16,9 @@ it('play pause rate seek, unsupported modes rejected without implementing them',
 it('seek replay produces identical seeded sample at the same row schedule',()=>{const a=setup(),b=setup();a.runtime.tick(.25);a.runtime.tick(.25);const expected=batches(a.messages).at(-1)!.data;b.send({type:'seek'},.25);b.runtime.tick(.25);expect(batches(b.messages).at(-1)!.data).toEqual(expected);});
 
 it('pool starvation does not change later seeded rows',()=>{const a=setup(),b=setup();const release=(s:ReturnType<typeof setup>)=>{const batch=batches(s.messages).at(-1)!;const buffers=[batch.streamIds.buffer,batch.rowIndex.buffer,batch.data.buffer] as ArrayBuffer[];s.send({type:'release',buffers:structuredClone(buffers,{transfer:buffers})});};for(let i=0;i<4;i++){a.runtime.tick(.25);release(a);b.runtime.tick(.25);}release(b);a.runtime.tick(.25);b.runtime.tick(.25);expect(batches(b.messages).at(-1)!.data).toEqual(batches(a.messages).at(-1)!.data);});
+
+it('worker tactical truth retains capacity and ids when contacts appear and disappear',()=>{
+ const {runtime,messages,send}=setup();const first=messages.at(-1);if(first?.type!=='tactical')throw new Error('Missing tactical');
+ const ids=first.truth!.contacts.map(c=>c.sourceId),size=ids.length;expect(size).toBe(19);
+ for(const value of [1,0,.5]){send({type:'setSurfaceTraffic',value});runtime.tick(.25);const t=messages.at(-1);if(t?.type!=='tactical')throw new Error('Missing tactical');expect(t.truth!.contacts).toHaveLength(size);expect(t.truth!.contacts.map(c=>c.sourceId)).toEqual(ids);expect(t.truth!.contacts.filter(c=>c.active&&c.category==='surface')).toHaveLength(Math.round(value*18));expect(t.truth!.contacts[0].lines[0].stability).toBe('stable');}
+});
