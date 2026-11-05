@@ -1,0 +1,39 @@
+/* Sonar Sim design tokens. Apple-clean dark chrome around operator-faithful grams. */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  /* Chrome */
+  --bg-0: #0b0c0e;          /* window */
+  --bg-1: #131418;          /* panels */
+  --bg-2: #1b1d22;          /* raised controls */
+  --bg-3: #24262d;          /* hover */
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+  --text-1: #f2f3f5;
+  --text-2: #a4a7b0;
+  --text-3: #6c707a;
+  --accent: #0a84ff;        /* system blue for chrome selection only */
+  --danger: #ff453a;
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  /* Operator display (grams stay faithful) */
+  --gram-bg: #000;
+  --phosphor: #5cff7a;
+  --phosphor-dim: #2a8a3d;
+  --plot-bg: #05080a;
+  --plot-grid: rgba(92, 255, 122, 0.10);
+  --plot-aircraft: #7fd3ff;
+  --plot-buoy: #ffd35c;
+  --plot-buoy-dead: #5a5a5a;
+  --plot-bearing: rgba(255, 211, 92, 0.55);
+  --plot-fix: #ff6b6b;
+  --plot-truth: rgba(255, 255, 255, 0.55);
+
+  /* Space & shape */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+  --radius-s: 6px; --radius-m: 10px; --radius-l: 14px;
+  --motion-fast: 120ms; --motion: 200ms; --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  color-scheme: dark;
+}
