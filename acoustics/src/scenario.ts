@@ -20,7 +20,7 @@ export function validateScenario(value:unknown):asserts value is Scenario {
   for(const c of s.contacts){const a=c?.params;
     if(!track(c)||typeof c.id!=='string'||!c.id||ids.has(c.id)||!a||typeof a.label!=='string'||!finite(a.shaftHz,.01,1000)||!finite(a.blades,1,20)||!Number.isInteger(a.blades)||!finite(a.tonalHz,1,1e6)||!finite(a.levelDb,0,220)||!finite(a.modulation,0,.9)) throw new Error('Invalid contact'); ids.add(c.id);
     if(!Array.isArray(c.motion)||c.motion.length<1||c.motion[0].at!==0)throw new Error('Contact needs initial timed motion leg');
-    let last=-1;for(const leg of c.motion){if(!finite(leg.at,0,1e9)||leg.at<=last||!finite(leg.course,-1e6,1e6)||!finite(leg.speed,0,500)||!finite(leg.depth,0,1e6))throw new Error('Invalid motion leg');last=leg.at;}
+    let last=-1;for(const leg of c.motion){if(!finite(leg.at,0,1e9)||leg.at<=last||!finite(leg.course,-1e6,1e6)||!finite(leg.speed,0,500)||!finite(leg.depth,0,1e6))throw new Error('Invalid motion leg');if(leg.waypoint!==undefined)throw new Error('Waypoint targets reserved; use course/speed legs in M1');last=leg.at;}
     if(c.transients!==undefined && (!Array.isArray(c.transients)||c.transients.length))throw new Error('Transients reserved for future milestones');
   }
   ids.clear(); for(const b of s.buoys){ if(!track(b)||typeof b.id!=='string'||!b.id||ids.has(b.id)||!['passive-omni','difar'].includes(b.type)||!finite(b.rfChannel,0,9999)||!Number.isInteger(b.rfChannel)||!finite(b.deployedAt,0,1e9)||!finite(b.life,.001,1e9)) throw new Error('Invalid buoy');ids.add(b.id); }
