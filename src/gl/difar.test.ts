@@ -68,3 +68,29 @@ describe('DEMON off the display', () => {
     expect(kinds.every((k) => k === 'lofar')).toBe(true)
   })
 })
+
+describe('engine per-bin bearings through the host', () => {
+  it('carries bearingDeg with each LOFAR row (NaN on omni) and pools its buffer on release', () => {
+    type Rows = { type: string; streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array; bearingDeg?: Float32Array }
+    const msgs: { type: string }[] = []
+    const h = new SimHost((m) => msgs.push(m as never))
+    h.handle({ type: 'init', seed: 3, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2, demon: false })
+    const tac = msgs.find((m) => m.type === 'tactical') as unknown as { buoys: TacticalBuoy[] }
+    const bins = 2048
+    for (let step = 0; step < 40; step++) {
+      h.handle({ type: 'step' })
+      const rows = msgs.filter((m) => m.type === 'gramRows').pop() as unknown as Rows
+      expect(rows.bearingDeg?.length).toBe(rows.data.length)
+      h.handle({ type: 'release', buffers: [rows.streamIds.buffer, rows.rowIndex.buffer, rows.data.buffer, rows.bearingDeg!.buffer] as ArrayBuffer[] })
+    }
+    const rows = msgs.filter((m) => m.type === 'gramRows').pop() as unknown as Rows
+    let difarFinite = 0
+    tac.buoys.forEach((b, i) => {
+      const seg = rows.bearingDeg!.subarray(i * bins, (i + 1) * bins)
+      if (b.kind === 'difar') { for (const v of seg) if (Number.isFinite(v)) { difarFinite++; expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThan(360.0001) } }
+      else expect(seg.every(Number.isNaN)).toBe(true)
+    })
+    expect(difarFinite).toBeGreaterThan(0)
+    expect(msgs.some((m) => m.type === 'error')).toBe(false)
+  })
+})

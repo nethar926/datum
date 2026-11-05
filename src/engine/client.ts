@@ -91,6 +91,7 @@ export class SimClient {
         const bufs = this.releaseBufs
         bufs.length = 0
         bufs.push(m.streamIds.buffer as ArrayBuffer, m.rowIndex.buffer as ArrayBuffer, m.data.buffer as ArrayBuffer)
+        if (m.bearingDeg) bufs.push(m.bearingDeg.buffer as ArrayBuffer)
         this.send({ type: 'release', buffers: bufs }, bufs)
         break
       }

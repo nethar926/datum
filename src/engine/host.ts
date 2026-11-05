@@ -13,7 +13,7 @@ const ORBIT_RADIUS_M = 7000
 const AIRCRAFT_ALT_M = 450 // display value for the fictional patrol aircraft
 
 type Post = (msg: FromWorker, transfer?: Transferable[]) => void
-interface Frame { streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array }
+interface Frame { streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array; bearingDeg?: Float32Array }
 const rad2deg = (r: number) => ((((r * 180) / Math.PI) % 360) + 360) % 360
 
 /** Worker-side host: owns an AcousticEngine and speaks the data contract. Pure enough to unit test without a Worker. */
@@ -101,7 +101,7 @@ export class SimHost {
   private newFrame(): Frame {
     const streamIds = new Int32Array(this.n)
     for (let i = 0; i < this.n; i++) streamIds[i] = i + 1
-    return { streamIds, rowIndex: new Uint32Array(this.n), data: new Float32Array(this.n * this.bins) }
+    return { streamIds, rowIndex: new Uint32Array(this.n), data: new Float32Array(this.n * this.bins), bearingDeg: new Float32Array(this.n * this.bins) }
   }
 
   private newDemonFrame(): Frame {
@@ -110,9 +110,14 @@ export class SimHost {
   }
 
   private release(buffers: ArrayBuffer[]): void {
-    if (buffers.length % 3 !== 0) throw new Error('Release must return whole frames')
+    // Frames come back as [ids, rowIndex, data] plus, for LOFAR frames, an optional bearingDeg buffer of data's size.
+    const lofarBytes = this.n * this.bins * 4
     for (let k = 0; k < buffers.length; k += 3) {
+      if (k + 3 > buffers.length) throw new Error('Release must return whole frames')
       const [s, r, d] = [buffers[k], buffers[k + 1], buffers[k + 2]]
+      const next = buffers[k + 3]
+      const brg = d.byteLength === lofarBytes && next && next.byteLength === lofarBytes ? next : undefined
+      if (brg) k++
       const dn = this.demonIds.length
       if (dn && s.byteLength === dn * 4 && r.byteLength === dn * 4 && d.byteLength === dn * this.demonBins * 4 && d.byteLength !== this.n * this.bins * 4) {
         if (this.demonPool.length >= POOL_FRAMES) throw new Error('Pool capacity exceeded')
@@ -121,8 +126,8 @@ export class SimHost {
       }
       if (this.pool.length >= POOL_FRAMES) throw new Error('Pool capacity exceeded')
       // Stale buffers from a previous init (different size) are silently dropped.
-      if (s.byteLength !== this.n * 4 || r.byteLength !== this.n * 4 || d.byteLength !== this.n * this.bins * 4) continue
-      this.pool.push({ streamIds: new Int32Array(s), rowIndex: new Uint32Array(r), data: new Float32Array(d) })
+      if (s.byteLength !== this.n * 4 || r.byteLength !== this.n * 4 || d.byteLength !== lofarBytes) continue
+      this.pool.push({ streamIds: new Int32Array(s), rowIndex: new Uint32Array(r), data: new Float32Array(d), bearingDeg: brg ? new Float32Array(brg) : new Float32Array(lofarBytes / 4) })
     }
   }
 
@@ -133,15 +138,22 @@ export class SimHost {
     if (!frame) return
     this.steerOrbit()
     engine.advance(this.dt)
+    const wb = (engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void }).writeBearingRow
     for (let i = 0; i < this.n; i++) {
       frame.streamIds[i] = i + 1
       frame.rowIndex[i] = this.rowCount
       engine.writeRow(i + 1, frame.data, i * this.bins)
+      if (frame.bearingDeg) {
+        if (wb) wb.call(engine, i + 1, frame.bearingDeg, i * this.bins)
+        else frame.bearingDeg.fill(NaN, i * this.bins, (i + 1) * this.bins)
+      }
       if (this.rxEnabled) this.rx[i].process(frame.data, i * this.bins, this.bins, this.dt)
     }
     this.rowCount++
     const rows: GramRows = { v: 1, type: 'gramRows', simT: engine.time, ...frame }
-    this.post(rows, [frame.streamIds.buffer, frame.rowIndex.buffer, frame.data.buffer])
+    const bufs: Transferable[] = [frame.streamIds.buffer, frame.rowIndex.buffer, frame.data.buffer]
+    if (frame.bearingDeg) bufs.push(frame.bearingDeg.buffer)
+    this.post(rows, bufs)
     this.stepDemon()
     this.updateTactical()
     this.post(this.tactical!)
