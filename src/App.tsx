@@ -132,6 +132,9 @@ export default function App() {
         {showSettings && (
           <div className="popover" role="dialog" aria-label="Settings" data-testid="settings">
             <TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} />
+            <label className="check" title="Off = ideal receiver with unlimited dynamic range (for comparison)">
+              <input type="checkbox" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /> Realistic receiver (AGC, limited range)
+            </label>
           </div>
         )}
       </header>
@@ -170,7 +173,9 @@ export default function App() {
             <span className="readout">
               {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} HZ  Δf ${cfg.fBin.toFixed(2)}` : 'STARTING'}
               {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
+              {buoy?.rx ? `  AGC ${buoy.rx.gainDb >= 0 ? '+' : ''}${buoy.rx.gainDb.toFixed(0)}` : ''}
             </span>
+            {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
           </div>
           <div className="panel-body">
             {lofarCfgs.length > 0 && (

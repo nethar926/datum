@@ -2,7 +2,7 @@ import type { Band, FromWorker, GramConfig, GramRows, Tactical, ToWorker } from 
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 
 type RowsListener = (rows: GramRows) => void
-export interface SimStatus { scenarioId: string; seed: number; surfaceTraffic: number; params?: ScenarioParams; simT: number; playing: boolean; rate: number; band: Band; configs: GramConfig[]; error?: string; tactical?: Tactical }
+export interface SimStatus { receiver: boolean; scenarioId: string; seed: number; surfaceTraffic: number; params?: ScenarioParams; simT: number; playing: boolean; rate: number; band: Band; configs: GramConfig[]; error?: string; tactical?: Tactical }
 
 /** Track history for the plot: fixed-size ring of x,y pairs. */
 export class TrackRing {
@@ -29,7 +29,7 @@ export class SimClient {
   private rowRateHz = 2
   private releaseBufs: ArrayBuffer[] = []
   readonly track = new TrackRing(1200)
-  status: SimStatus = { scenarioId: 'ridgeline-field', seed: 7, surfaceTraffic: 0.5, simT: 0, playing: false, rate: 4, band: 'lofar1k', configs: [] }
+  status: SimStatus = { receiver: true, scenarioId: 'ridgeline-field', seed: 7, surfaceTraffic: 0.5, simT: 0, playing: false, rate: 4, band: 'lofar1k', configs: [] }
 
   constructor(private readonly makeWorker: () => Worker = () => new Worker(new URL('./sim.worker.ts', import.meta.url), { type: 'module' })) {}
 
@@ -43,6 +43,7 @@ export class SimClient {
     const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
     this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic })
     this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic })
+    if (!this.status.receiver) this.send({ type: 'setReceiver', enabled: false })
     if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(this.tick) }
   }
 
@@ -54,6 +55,8 @@ export class SimClient {
     this.setStatus({ surfaceTraffic: v })
     this.send({ type: 'setSurfaceTraffic', value: v })
   }
+  /** Realistic receiver front end (AGC, finite dynamic range, clipping) on/off. */
+  setReceiver(enabled: boolean): void { this.setStatus({ receiver: enabled }); this.send({ type: 'setReceiver', enabled }) }
   setBand(band: Band): void { if (band !== this.status.band) this.start(this.status.seed, this.status.scenarioId, band) }
 
   onRows(cb: RowsListener): () => void { this.rowsListeners.add(cb); return () => this.rowsListeners.delete(cb) }

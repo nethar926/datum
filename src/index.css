@@ -112,3 +112,4 @@ button, select { font: inherit; color: inherit; }
 .harm-marker.lofar { border-left: 1px dashed var(--plot-manual); opacity: .85; }
 .harm-marker.lofar span { color: var(--plot-manual); }
 .cross-readout { top: auto; left: auto; right: 8px; bottom: 28px; background: rgba(0,0,0,.55); padding: 3px 5px; border-radius: 3px; }
+.ovld { font: 600 11px/1 var(--font-mono); color: #ff5a4a; border: 1px solid #ff5a4a; padding: 2px 4px; border-radius: 3px; margin-left: 6px; }

@@ -356,3 +356,33 @@ describe('LOFAR cursors', () => {
     expect(H.harmText(null, null, 1000)).toMatch(/CLICK A LINE/)
   })
 })
+
+import { Receiver, DEFAULT_RECEIVER } from './engine/receiver'
+describe('receiver front end', () => {
+  const B = 256, dt = 0.5
+  const row = (weak: number, loud: number) => { const r = new Float32Array(B).fill(60); r[40] = weak; r[200] = loud; return r }
+  it('passes the settled scene through unchanged', () => {
+    const rx = new Receiver(); const r = row(70, 80); const ref = r.slice()
+    rx.process(r, 0, B, dt); expect(Array.from(r)).toEqual(Array.from(ref)); expect(rx.overload).toBe(false)
+  })
+  it('clips a sudden loud source, then the AGC pulls gain down and the weak line drowns', () => {
+    const rx = new Receiver()
+    for (let i = 0; i < 20; i++) rx.process(row(70, 60), 0, B, dt)
+    const hit = row(70, 150); rx.process(hit, 0, B, dt)
+    expect(rx.overload).toBe(true)
+    let r = hit
+    for (let i = 0; i < 40; i++) { r = row(70, 150); rx.process(r, 0, B, dt) }
+    expect(rx.gainDb).toBeLessThan(-30)
+    const floor = Math.max(...Array.from(r).filter((_, i) => i !== 40 && i !== 200))
+    expect(r[40] - floor).toBeLessThan(1) // weak line is gone into the floor
+  })
+  it('releases slowly after the loud source stops (pumping)', () => {
+    const rx = new Receiver()
+    for (let i = 0; i < 20; i++) rx.process(row(70, 60), 0, B, dt)
+    for (let i = 0; i < 40; i++) rx.process(row(70, 120), 0, B, dt)
+    const g0 = rx.gainDb
+    rx.process(row(70, 60), 0, B, dt)
+    expect(rx.gainDb).toBeGreaterThan(g0)
+    expect(rx.gainDb - g0).toBeLessThan((0 - g0) * (dt / DEFAULT_RECEIVER.releaseS) * 1.5)
+  })
+})
