@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
-import { Lofar } from './gram/Lofar'
+import { Gram } from './gram/Gram'
+import { DemonPane } from './gram/DemonPane'
 import { clampView, type FreqView } from './gram/axis'
 import { TacticalPlot } from './tactical/TacticalPlot'
 import type { FixSource, ManualBearings } from './tactical/manual'
@@ -46,7 +47,9 @@ export default function App() {
   }, [client])
 
   const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
-  const cfg = st.configs[stream]
+  const lofarCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'lofar'), [st.configs])
+  const demonCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'demon'), [st.configs])
+  const cfg = lofarCfgs[stream]
   const buoy = st.tactical?.buoys[stream]
 
   return (
@@ -81,6 +84,7 @@ export default function App() {
       </header>
 
       <main className="workspace">
+        <div className="workspace-left">
         <section className="panel">
           <div className="panel-head">
             <h2>LOFAR</h2>
@@ -89,7 +93,7 @@ export default function App() {
               <button aria-pressed={!normalized} onClick={() => setNormalized(false)}>Raw</button>
             </div>
             <div className="seg" role="group" aria-label="Buoy channel">
-              {st.configs.map((c, i) => (
+              {lofarCfgs.map((c, i) => (
                 <button key={c.streamId} aria-pressed={i === stream} onClick={() => setStream(i)}>
                   {c.channel}{st.tactical?.buoys[i]?.kind === 'difar' ? 'D' : 'O'}
                 </button>
@@ -101,14 +105,17 @@ export default function App() {
             </span>
           </div>
           <div className="panel-body">
-            {st.configs.length > 0 && (
-              <Lofar client={client} configs={st.configs} streamIndex={stream} view={view}
+            {lofarCfgs.length > 0 && (
+              <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
                 normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz} />
             )}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
         </section>
+        <DemonPane client={client} configs={demonCfgs} palette={palette}
+          streamIndex={Math.max(0, demonCfgs.findIndex((c) => c.channel === cfg?.channel))} />
+        </div>
         <section className="panel">
           <div className="panel-head">
             <h2>Tactical</h2>

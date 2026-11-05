@@ -181,3 +181,21 @@ describe('manual bearings', () => {
     expect(log.toJsonl().split('\n')).toHaveLength(3)
   })
 })
+
+describe('harmonic cursor', () => {
+  it('lists harmonics up to fMax', async () => {
+    const { harmonicSeries } = await import('./gram/harmonics')
+    expect(harmonicSeries(2.5, 10)).toEqual([2.5, 5, 7.5, 10])
+    expect(harmonicSeries(0, 10)).toEqual([])
+    expect(harmonicSeries(1, 1000).length).toBe(24)
+  })
+  it('reads RPM and blade count, rejects non-harmonic blade lines', async () => {
+    const { bladeReadout } = await import('./gram/harmonics')
+    const r = bladeReadout(2.4, 16.85)
+    expect(r.rpm).toBeCloseTo(144)
+    expect(r.blades).toBe(7)
+    expect(bladeReadout(2.4, 2.4 * 6.5).blades).toBeNull()
+    expect(bladeReadout(2.4, 2.4).blades).toBeNull() // 1 blade is not a propeller reading
+    expect(bladeReadout(2.4, null).blades).toBeNull()
+  })
+})
