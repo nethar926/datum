@@ -6,7 +6,7 @@ const acoustics = fileURLToPath(new URL('./acoustics/src/index.ts', import.meta.
 
 // GitHub Pages serves the app under /sonar-sim/. Override with SONAR_BASE=/ for root hosting.
 export default defineConfig({
-  base: process.env.SONAR_BASE ?? '/sonar-sim/',
+  base: process.env.SONAR_BASE ?? '/datum/',
   plugins: [react()],
   resolve: { alias: { '@acoustics': acoustics } },
   worker: { format: 'es' },

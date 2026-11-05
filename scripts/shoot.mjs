@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
 
 const port = 4179
-const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore' })
+const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const errors = []
 try {
   await new Promise((r) => setTimeout(r, 2500))
@@ -11,7 +11,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 860 }, deviceScaleFactor: 1 })
   page.on('pageerror', (e) => errors.push(String(e)))
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
-  await page.goto(`http://localhost:${port}/sonar-sim/?autoplay&rate=16`)
+  await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16`)
   await page.waitForSelector('[data-testid=lofar]')
   await page.waitForTimeout(Number(process.env.SHOOT_MS ?? 20000))
   if (await page.locator('.gl-error').count()) errors.push(await page.locator('.gl-error').innerText())
@@ -19,4 +19,4 @@ try {
   await browser.close()
   console.log(JSON.stringify({ errors }))
   if (errors.length) process.exitCode = 1
-} finally { srv.kill() }
+} finally { try { process.kill(-srv.pid) } catch { srv.kill() } }

@@ -30,7 +30,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="toolbar">
-        <div className="brand">Sonar Sim<small>Acoustic operator trainer · fictional patrol aircraft</small></div>
+        <div className="brand">DATUM<small>Acoustic operator trainer · fictional patrol aircraft</small></div>
         <div className="group">
           <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
             {st.playing ? 'Pause' : 'Play'}
