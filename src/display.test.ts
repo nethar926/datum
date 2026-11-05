@@ -144,3 +144,40 @@ describe('palettes', () => {
     expect(Array.from(paletteLut('neon' as never).slice(1020))).toEqual(Array.from(paletteLut('green').slice(1020)))
   })
 })
+
+import { bearingTo, distToRay, fixInputs, MANUAL_QUALITY } from './tactical/manual'
+import { OperatorLog } from './log/operatorLog'
+describe('manual bearings', () => {
+  const B = (id: number, x: number, y: number, kind: 'difar' | 'omni' = 'difar', state: 'live' | 'dead' = 'live') =>
+    ({ id, channel: 10 + id, kind, x, y, hydrophoneDepthM: 60, batteryFrac: 1, lifeRemainingS: 1, state })
+  it('computes true bearings and ray distances', () => {
+    expect(bearingTo({ x: 0, y: 0 }, 0, 100)).toBeCloseTo(0)
+    expect(bearingTo({ x: 0, y: 0 }, 100, 0)).toBeCloseTo(90)
+    expect(bearingTo({ x: 0, y: 0 }, -100, 0)).toBeCloseTo(270)
+    expect(bearingTo({ x: 5, y: 5 }, 5, 5)).toBeNull()
+    expect(distToRay({ x: 0, y: 0 }, 90, 1000, 500, 30)).toBeCloseTo(30)
+    expect(distToRay({ x: 0, y: 0 }, 90, 1000, -500, 0)).toBe(Infinity)
+    expect(distToRay({ x: 0, y: 0 }, 90, 1000, 1500, 0)).toBe(Infinity)
+  })
+  it('feeds auto, manual or both into the fix solver', () => {
+    const buoys = [B(1, -2000, 0), B(2, 2000, 0), B(3, 0, 0, 'omni'), B(4, 0, -3000, 'difar', 'dead')]
+    const auto = [{ buoyId: 1, freqHz: 72, brgDeg: 45, quality: 20 }]
+    const man = { 2: 315, 3: 10, 4: 0 }
+    expect(fixInputs(auto, man, buoys, 'auto', null)).toEqual(auto)
+    expect(fixInputs(auto, man, buoys, 'manual', null)).toEqual([{ buoyId: 2, freqHz: 72, brgDeg: 315, quality: MANUAL_QUALITY }])
+    const both = fixInputs(auto, man, buoys, 'both', null)
+    expect(both).toHaveLength(2)
+    const f = crossFixes(both, buoys, 1.5, 10)
+    expect(f).toHaveLength(1); expect(f[0].x).toBeCloseTo(0, 0); expect(f[0].y).toBeCloseTo(2000, 0)
+    // No frequency known: manual lines form their own group and still fix.
+    const mf = crossFixes(fixInputs([], { 1: 45, 2: 315 }, buoys, 'manual', null), buoys, 1.5, 10)
+    expect(mf).toHaveLength(1); expect(mf[0].freqHz).toBe(-1)
+  })
+  it('logs v1.1 events, bounded, exportable', () => {
+    const log = new OperatorLog(3); let n = 0; log.subscribe(() => n++)
+    for (let i = 0; i < 5; i++) log.add({ simT: i, kind: 'bearing', buoyId: 1, data: { source: 'manual', brgDeg: i } })
+    expect(log.size()).toBe(3); expect(n).toBe(5)
+    expect(log.all()[0]).toMatchObject({ v: 1.1, type: 'log', simT: 2, kind: 'bearing' })
+    expect(log.toJsonl().split('\n')).toHaveLength(3)
+  })
+})

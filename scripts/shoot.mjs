@@ -15,6 +15,17 @@ try {
   await page.waitForSelector('[data-testid=lofar]')
   await page.waitForTimeout(Number(process.env.SHOOT_MS ?? 20000))
   if (await page.locator('.gl-error').count()) errors.push(await page.locator('.gl-error').innerText())
+  if (process.env.DRAG) {
+    // Place two manual bearing cursors (buoys 11 and 12) by dragging from each buoy; they should cross-fix.
+    const box = await page.locator('[data-testid=tactical]').boundingBox()
+    const m = 18000 / Math.min(box.width, box.height)
+    const sx = (x) => box.x + box.width / 2 + x / m, sy = (y) => box.y + box.height / 2 - y / m
+    for (const [bx, by, tx, ty] of [[-2000, 2000, 1500, 5500], [2000, 2000, -1000, 5000]]) {
+      await page.mouse.move(sx(bx), sy(by)); await page.mouse.down()
+      await page.mouse.move(sx((bx + tx) / 2), sy((by + ty) / 2), { steps: 5 }); await page.mouse.move(sx(tx), sy(ty), { steps: 5 }); await page.mouse.up()
+    }
+    await page.waitForTimeout(500)
+  }
   await page.screenshot({ path: process.env.SHOT ?? 'docs/m1.png' })
   await browser.close()
   console.log(JSON.stringify({ errors }))

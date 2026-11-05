@@ -4,6 +4,8 @@ import type { Band } from './engine/contract'
 import { Lofar } from './gram/Lofar'
 import { clampView, type FreqView } from './gram/axis'
 import { TacticalPlot } from './tactical/TacticalPlot'
+import type { FixSource, ManualBearings } from './tactical/manual'
+import { OperatorLog } from './log/operatorLog'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 
 const RATES = [1, 4, 16]
@@ -23,6 +25,16 @@ export default function App() {
   const [palette, setPalette] = useState<PaletteId>(loadPalette)
   useEffect(() => { try { localStorage.setItem(PALETTE_KEY, palette) } catch { /* private mode */ } }, [palette])
   const [allBearings, setAllBearings] = useState(false)
+  const [showAuto, setShowAuto] = useState(true)
+  const [showManual, setShowManual] = useState(true)
+  const [fixSource, setFixSource] = useState<FixSource>('both')
+  const [manual, setManual] = useState<ManualBearings>({})
+  const log = useMemo(() => new OperatorLog(), [])
+  const logCount = useSyncExternalStore(log.subscribe, log.size)
+  const onManual = (buoyId: number, deg: number | null, final: boolean) => {
+    setManual((m) => { const n = { ...m }; if (deg === null) delete n[buoyId]; else n[buoyId] = deg; return n })
+    if (final) log.add({ simT: client.status.simT, kind: 'bearing', buoyId, data: deg === null ? { source: 'manual', cleared: true } : { source: 'manual', brgDeg: Math.round(deg * 10) / 10 } })
+  }
   const [selHz, setSelHz] = useState<number | null>(null)
 
   useEffect(() => {
@@ -65,7 +77,7 @@ export default function App() {
             <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
           </label>
         </div>
-        <span className="readout">T+{fmtT(st.simT)}</span>
+        <span className="readout">LOG {logCount}  T+{fmtT(st.simT)}</span>
       </header>
 
       <main className="workspace">
@@ -104,12 +116,20 @@ export default function App() {
               <button aria-pressed={!allBearings} onClick={() => setAllBearings(false)}>{selHz === null ? 'Sel' : `${selHz.toFixed(1)} Hz`}</button>
               <button aria-pressed={allBearings} onClick={() => setAllBearings(true)}>All</button>
             </div>
+            <div className="seg" role="group" aria-label="Bearing layers">
+              <button aria-pressed={showAuto} onClick={() => setShowAuto(!showAuto)} title="DIFAR-computed bearings (solid)">Auto</button>
+              <button aria-pressed={showManual} onClick={() => setShowManual(!showManual)} title="Operator bearing cursors (dashed). Drag from a DIFAR buoy; double-click it to clear.">Man</button>
+            </div>
+            <div className="seg" role="group" aria-label="Fix from">
+              {(['auto', 'manual', 'both'] as const).map((f) => <button key={f} aria-pressed={fixSource === f} onClick={() => setFixSource(f)}>{f === 'auto' ? 'Fix A' : f === 'manual' ? 'Fix M' : 'Fix A+M'}</button>)}
+            </div>
             <span className="readout">
               {st.tactical ? `A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')} · ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT · ${st.tactical.aircraft.altM} M` : ''}
             </span>
           </div>
           <div className="panel-body plot">
-            <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings} />
+            <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
+              showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} />
           </div>
         </section>
       </main>
