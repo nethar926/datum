@@ -10,7 +10,7 @@ export class WorkerRuntime {
   private seed=42;private rate=1;private nextId=1;private nextRow=.25;
   private readonly configs:GramConfig[]=[];
   private readonly indices=new Map<number,number>();
-  private readonly pool:Frame[]=[];
+  private readonly groups=[{bins:1024,configs:[] as GramConfig[],pool:[] as Frame[]},{bins:512,configs:[] as GramConfig[],pool:[] as Frame[]}];
   private readonly scratch=new Float32Array(1024);
   private timer:ReturnType<typeof setInterval>|undefined;
   private readonly bearingStore=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
@@ -30,6 +30,7 @@ export class WorkerRuntime {
       case 'play':if(this.timer===undefined)this.timer=setInterval(()=>this.tick(.25*this.rate),250);break;
       case 'pause':this.dispose();break;
       case 'setRate':if(!Number.isFinite(m.x)||m.x<.1||m.x>64)throw new Error('Rate must be 0.1..64');this.rate=m.x;break;
+      case 'setSurfaceTraffic':e.setSurfaceTraffic(m.value);this.sendTactical();break;
       case 'seek':this.seek(m.simT);break;
       case 'dropBuoy':{
         if(m.kind!=='omni'&&m.kind!=='difar')throw new Error('Receiver type pending approved plan');
@@ -39,28 +40,37 @@ export class WorkerRuntime {
         this.rebuildTactical();this.sendTactical();break;
       }
       case 'subscribe':{
-        if(m.kind!=='lofar'||(m.bins!==undefined&&m.bins!==1024)||(m.band!==undefined&&(m.band[0]!==0||m.band[1]!==500)))throw new Error('M1 supports 1024-bin 0..500 Hz LOFAR only');
-        const existing=this.configs.find(c=>c.channel===m.channel);if(existing)this.emit({...existing,simT:e.time});else{this.subscribe(m.channel);this.rebuildPool();}break;
+        if(m.kind==='demon'){
+          if(m.buoyId===undefined)throw new Error('DEMON requires buoyId');
+          const id=e.subscribe({kind:'demon',buoyId:m.buoyId,band:m.demodBandHz??m.band}),config=e.configs().find(c=>c.streamId===id)!;
+          this.configs.push(config);this.indices.set(id,0);this.emit(config);this.rebuildPool();break;
+        }
+        if(m.kind!==undefined&&m.kind!=='lofar')throw new Error('Unsupported gram kind');
+        if(m.channel===undefined)throw new Error('LOFAR requires channel');
+        const band=m.band??[0,500],existing=this.configs.find(c=>c.channel===m.channel&&c.kind==='lofar'&&c.f0===band[0]&&Math.abs(c.f0+c.fBin*(c.bins-1)-band[1])<1e-8);
+        if(existing)this.emit({...existing,simT:e.time});else{const config=e.subscribe({channel:m.channel,kind:'lofar',bins:m.bins,band});this.configs.push(config);this.indices.set(config.streamId,0);this.emit(config);this.rebuildPool();}break;
       }
-      case 'unsubscribe':{const i=this.configs.findIndex(c=>c.streamId===m.streamId);if(i>=0){this.configs.splice(i,1);this.rebuildPool();}break;}
+      case 'unsubscribe':{const i=this.configs.findIndex(c=>c.streamId===m.streamId);if(i>=0){this.configs.splice(i,1);this.indices.delete(m.streamId);e.unsubscribe(m.streamId);this.rebuildPool();}break;}
       case 'release':this.release(m.buffers);break;
       default:throw new Error('Unknown command');
     }
   }catch(error){this.error(error);}}
   private error(error:unknown):void{this.emit({v:1,type:'error',simT:this.simT,message:error instanceof Error?error.message:'Worker error'});}
   private subscribe(channel:number):void{
-    const e=this.engine!,id=this.nextId++;e.registerStream(id,channel);const config:GramConfig={v:1,type:'gramConfig',simT:e.time,streamId:id,kind:'lofar',channel,bins:e.scenario.bins,f0:0,fBin:e.scenario.fmax/(e.scenario.bins-1),rowRateHz:4,dbFloor:40,dbCeil:110};
+    const e=this.engine!;while(this.configs.some(c=>c.streamId===this.nextId))this.nextId++;const id=this.nextId++;e.registerStream(id,channel);const config:GramConfig={v:1,type:'gramConfig',simT:e.time,streamId:id,kind:'lofar',channel,bins:e.scenario.bins,f0:0,fBin:e.scenario.fmax/(e.scenario.bins-1),rowRateHz:4,dbFloor:40,dbCeil:110};
     this.configs.push(config);this.indices.set(id,0);this.emit(config);
   }
   private frame(ids:Int32Array,indices:Uint32Array,data:Float32Array):Frame{return {message:{v:1,type:'gramRows',simT:this.simT,streamIds:ids,rowIndex:indices,data},transfer:[ids.buffer as ArrayBuffer,indices.buffer as ArrayBuffer,data.buffer as ArrayBuffer]};}
-  private rebuildPool():void{this.pool.length=0;const n=this.configs.length;for(let i=0;i<3;i++)this.pool.push(this.frame(new Int32Array(n),new Uint32Array(n),new Float32Array(n*1024)));}
+  private rebuildPool():void{
+    for(const g of this.groups){g.pool.length=0;g.configs.length=0;for(const c of this.configs)if(c.bins===g.bins)g.configs.push(c);const n=g.configs.length;if(n)for(let i=0;i<3;i++)g.pool.push(this.frame(new Int32Array(n),new Uint32Array(n),new Float32Array(n*g.bins)));}
+  }
   private release(buffers:ArrayBuffer[]):void{
-    if(buffers.length%3!==0)throw new Error('Release complete batches: ids, rowIndex, data');const n=this.configs.length;
+    if(buffers.length%3!==0)throw new Error('Release complete batches: ids, rowIndex, data');
     for(let i=0;i<buffers.length;i+=3){const a=buffers[i],b=buffers[i+1],c=buffers[i+2];
       if(!(a instanceof ArrayBuffer)||!(b instanceof ArrayBuffer)||!(c instanceof ArrayBuffer))throw new Error('Invalid release buffer');
-      // Outstanding old-config batches may arrive late; discard rather than grow pool.
-      if(a.byteLength!==n*4||b.byteLength!==n*4||c.byteLength!==n*1024*4||this.pool.length>=3)continue;
-      this.pool.push(this.frame(new Int32Array(a),new Uint32Array(b),new Float32Array(c)));
+      const n=a.byteLength/4;if(!n||b.byteLength!==a.byteLength)continue;
+      const bins=c.byteLength/(n*4),g=this.groups.find(g=>g.bins===bins);if(!g||g.configs.length!==n||g.pool.length>=3)continue;
+      g.pool.push(this.frame(new Int32Array(a),new Uint32Array(b),new Float32Array(c)));
     }
   }
   /** Exactly one incremental row per subscribed stream. Pool starvation drops rows but keeps sim time. */
@@ -68,12 +78,12 @@ export class WorkerRuntime {
     const e=this.engine;if(!e)throw new Error('Initialize first');
     if(!Number.isFinite(dt)||dt<0||dt>1e6||e.time+dt>1e9)throw new Error('Invalid tick dt');
     const target=e.time+dt;
-    while(this.nextRow<=target){e.advance(this.nextRow-e.time);this.nextRow+=.25;const frame=this.pool.pop();
+    while(this.nextRow<=target){e.advance(this.nextRow-e.time);this.nextRow+=.25;
       for(const c of this.configs)this.indices.set(c.streamId,(this.indices.get(c.streamId)??0)+1);
-      if(frame&&this.configs.length){const m=frame.message;m.simT=e.time;
-        for(let i=0;i<this.configs.length;i++){const c=this.configs[i];m.streamIds[i]=c.streamId;m.rowIndex[i]=this.indices.get(c.streamId)!-1;e.writeRow(c.streamId,m.data,i*1024);}
-        this.emit(m,frame.transfer);
-      }else{if(frame)this.pool.push(frame);for(const c of this.configs)e.writeRow(c.streamId,this.scratch);}
+      for(const g of this.groups){if(!g.configs.length)continue;const frame=g.pool.pop();
+        if(frame){const m=frame.message;m.simT=e.time;for(let i=0;i<g.configs.length;i++){const c=g.configs[i];m.streamIds[i]=c.streamId;m.rowIndex[i]=this.indices.get(c.streamId)!-1;e.writeRow(c.streamId,m.data,i*g.bins);}this.emit(m,frame.transfer);}
+        else for(const c of g.configs)e.writeRow(c.streamId,this.scratch);
+      }
     }
     e.advance(target-e.time);
     this.sendTactical();
@@ -86,6 +96,7 @@ export class WorkerRuntime {
     }t.bearings.length=count;this.emit(t);
   }
   private seek(target:number):void{
+    if(this.configs.some(c=>c.kind==='demon'||c.f0!==0||Math.abs(c.fBin*(c.bins-1)-500)>1e-8))throw new Error('Seek with DEMON awaits analysis-window replay');
     if(target<0||target>3600)throw new Error('M1 seek range is 0..3600 seconds');
     if(this.engine!.scenario.buoys.length!==1)throw new Error('Seek after drops awaits scenario event log');
     // Replay the seeded row schedule, preserving fluctuations exactly at 4 rows/s.

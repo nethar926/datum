@@ -12,7 +12,7 @@ npm run build
 npm run bench
 ```
 
-No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 48 tests;
+No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 77 tests;
 benchmark: 12 warmup + 200 full 60-contact × 32-buoy × 1024-bin steps, mean/p95,
 no timing assertion. `busyScenario()` is a test/benchmark fixture only. No PNG preview.
 
@@ -75,8 +75,8 @@ The default client worker URL targets built ESM `dist/worker.js`.
 - `tactical` at each clock tick/change: aircraft ENU/heading/groundspeed (illustrative altitude
   300 m); buoy RF/depth/battery/state; strongest K≤8 DIFAR lines per buoy:
   `{buoyId,freqHz,brgDeg,quality}` (quality=SNR dB). Numeric IDs map `buoy-N`. Truth omitted.
-- `error {message}` is a diagnostic extension. Wideband, worker DEMON, azigram, DICASS,
-  VLAD, BT/SSP are reserved/rejected, not implemented. Standalone DEMON DSP is tested only.
+- `error {message}` is a diagnostic extension. Wideband, azigram, DICASS,
+  VLAD, BT/SSP are reserved/rejected, not implemented. DEMON streams are enabled as described below.
 
 ## Scenario v1
 
@@ -85,7 +85,7 @@ JSON-safe `v:1`, seed, environment, aircraft/contacts/buoys. Each contact has ac
 `{at,course,speed,depth}` starting at 0. Initial leg sets motion; later changes apply at
 exact boundaries. ENU metres, depth down, m/s, course radians clockwise from north.
 Waypoint targets/nonempty transients are typed/reserved but reject until implemented.
-No M2 catalog. Validation caps 250 contacts, 128 buoys, depths 0..1e6 m (stress-test bound,
+Catalog references are an additive v1 extension; legacy raw params still work. Validation caps 250 contacts, 128 buoys, depths 0..1e6 m (stress-test bound,
 not physically valid), bins 2..16384. Worker M1 is fixed to 1024 bins.
 
 ## Models, equations, limitations
@@ -122,3 +122,95 @@ Acoustics*, 4e (2000); Jensen et al., *Computational Ocean Acoustics*, 2e (2011)
 Wenz, JASA 34 (1962), 1936–1956; Knudsen/Alford/Emling, J. Marine Research 7 (1948),
 410–429; Thorp, JASA 42 (1967), 270; Mackenzie, JASA 70 (1981), 807–812.
 Public Mulberry32, Box–Muller (1958), Cooley–Tukey (1965) numerical algorithms.
+
+## Catalog (M2)
+
+`catalog/schema.ts` defines `catalogVersion:1`, forces, hulls, variants and fixed parameter
+sheets. `catalog/classes.ts` contains 12 entirely fictional classes (four per force), spanning
+five propulsion types. Blue/Green electrical buses use 60 Hz; Red uses 50 Hz. AIP is a flag
+on capable diesel classes and an operating mode, never a propulsion class. Country/hull names,
+RPMs, levels and tonals are invented. Variants override a fixed subset of class params;
+randomization never rewrites those sheets. Transients/emitters remain data-only placeholders.
+
+`deriveSignature(klass, variantIdOrObject, {speedKn,depthM,mode})` returns existing source params
+plus typed tonal families and broadband/flow state. Shaft RPM scales with speed/max speed;
+blade harmonics, speed-related components and geared mesh/reduction lines follow it. Bus and
+nuclear pump frequencies stay fixed. Battery/AIP omit diesel firing lines; snorkel enables
+firing on diesel-electric. Validation rejects incompatible operating modes/envelopes.
+Urick/Ross static-pressure scaling: `V_i(d)=V_i0*sqrt(1+d/10.06)`; cavitation power is exactly
+zero below inception, then grows with excess speed and adds blade/shaft DEMON modulation.
+Flow self-noise uses `L=Lref+55 log10(v/vref)`; a fixed invented 1% power fraction radiates
+remotely, while the full self-noise is applied only at a colocated receiver. No empirical curves.
+
+A `ScenarioInput` contact may supply `catalogRef:{classId,variantId?,hullId?}` instead of
+`params`, with `operatingMode`. `loadScenario` returns resolved params without modifying the
+input. Engine signatures refresh in place on timed speed/depth legs. Scenario v remains 1
+(additive fields); raw-param M1 scenarios stay valid. Modes are fixed per contact for now.
+
+`randomize(seed)` or `randomizeSelection(rng,weights)` selects rarity, class, hull, variant and
+operational state only. Default weights: dieselDirect=5, dieselGearReduction=15,
+dieselElectric/battery=40, AIP mode=2, nuclearGearReduction=40, nuclearElectric=2 (total 104).
+Common=40, uncommon=15, rare=5, very rare=2; AIP is a selection bucket, not a sixth propulsion.
+
+## Data-contract v1.1: ScenarioParams
+
+Exported from `scenario/presets.ts`, `contract.ts` and the package entry. Serializable fields:
+`{subCount, rarityWeights, opState:{speedKn:[min,max], depthM:[min,max], quietProb,
+cavitationAllowed}, seaState, surfaceTraffic, cpaRangeKm:[min,max], buoyLifeMin, seed}`.
+Speeds knots, depth metres, range km, life minutes; probabilities/traffic are 0..1. This is a
+local generation input, not a changed worker command. Root contract docs remain untouched.
+`presetToParams('easy'|'regular'|'difficult',seed)` uses a dedicated PRNG substream; frontend
+sliders edit the resulting plain object. `clampParams(unknown)` repairs NaN/nonfinite/range
+edits, bounds counts to 1..250 and restores positive rarity totals. `generateScenario(params,
+seed?)` respects edits, intersects operating ranges with class envelopes, applies quiet-speed
+caps, and holds cavitation-disabled speeds below inception. surfaceTraffic maps to ambient
+shipping (not unapproved surface-vessel classes). No hidden difficulty settings remain after
+preset expansion. Easy: one shallow/fast contact, light traffic/noise, short range, 8 h buoys.
+Regular: 1–2 contacts, default weights/noise, mid ranges, 4 h. Difficult: 1–3, rare weights ×3,
+deep/slow/quiet without cavitation, high traffic/noise, long range, 1–2 h buoy life.
+
+## DEMON stream extension
+
+Pinned API: `engine.subscribe({kind:'demon',buoyId,band?:[1000,4000]})` returns a numeric
+streamId. Its config appears in `configs()` with kind='demon', channel, bins=512, f0=0,
+fBin=100/511 Hz, 4 rows/s. `rowsReady` and `writeRow` work unchanged. LOFAR subscriptions
+still return their config and permit omitted kind (defaults to 'lofar'). The worker accepts
+DEMON subscriptions with buoyId, and sends separately pooled gramRows for each distinct
+bin count (1024 LOFAR, 512 DEMON); return each batch's three buffers through release.
+Actual acoustic AM synthesis, square-law/LP/Hann/FFT, and median-relative dB are used.
+Selected-band carrier represents the strongest contact only (not full contact waveform
+summation); independent 5.11 s analysis blocks are synthesized for each row. Phase/time
+alignment of overlapping blocks is not modeled. Selected streams allocate DSP buffers once.
+Seek with DEMON currently errors pending window replay; LOFAR-only seek is unchanged.
+
+`fitLloydsMirror(samples, {zrM,cMps?,basis?})` fits measured null spacing samples
+`{simT,spacingHz}` to the public far-field CPA spacing curve. rangeSource (or basis alias)
+is `{kind:'cpaFit'|'manual',rCPA,speed,tCPA?}` (accepts the CPA result directly). Without it, basis='none', zs=NaN and
+only the explicitly relative `depthRatio=rCpa/zs` is identifiable; a good ratio fit still has
+ok=true. No hidden range/truth is injected. This small analysis helper is not a classifier.
+
+Additional public source: D. Ross, *Mechanics of Underwater Noise* (1976; reprint 1987).
+All cavitation, machinery and flow strengths remain invented illustrative training curves.
+
+### Pinned frontend names and defaults (v1.1)
+
+`fitCpaFromDoppler([{tS,fHz}], opts?:{c?,maxSpeed?})` returns
+`{ok,f0,speed,tCPA,rCPA,residualRms}` in Hz, m/s, sim seconds, metres and Hz RMS.
+Straight-line constant-speed moving-source/stationary-receiver CPA Doppler only; whole-pass
+coverage improves identifiability. `fitLloydsMirror` returns
+`{ok,basis,zs,depthRatio,rCPA,speed,tCPA,residualRms}`; basis can be
+`{kind:'cpaFit',...cpaResult}` or `{kind:'manual',rCPA,speed,tCPA?}`. Without basis,
+`zs/rCPA/speed` are NaN and only the relative depth ratio is meaningful. Samples may be
+`{simT,spacingHz}` or `{tS,fHz}` (fHz interpreted as null spacing, not an arbitrary tonal).
+Receiver depth opts.zr / opts.zrM defaults to 40 m; c / cMps defaults to 1500 m/s.
+
+`generateScenario(params,seed?)` returns constructor-ready v1 data including `fMax=500`,
+`bins=1024`, `fBin=500/1023`, `band=[0,500]`; legacy `fmax` remains for compatibility.
+fBin is derived metadata. `subscribe({channel,kind?:'lofar',band?:[f0,fMax],bins?})`
+uses these defaults; an explicit band overrides them. Bins remain fixed to the scenario.
+Configs always name bin width **fBin**, and include f0. A nondefault band gets its own cached
+renderer; custom/default 1024-bin rows can share a packed batch. Nondefault-band seek,
+like DEMON seek, is deferred to future window/config replay.
+`engine.setSurfaceTraffic(value)` clamps to 0..1 (nonfinite -> 0.5), updates shipping ambient;
+worker command `{v:1,type:'setSurfaceTraffic',simT,value}` does the same. ScenarioParams and
+all these additions are documented here rather than modifying out-of-scope root docs.

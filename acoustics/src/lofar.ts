@@ -26,29 +26,32 @@ export class LofarGenerator {
   private readonly g=createGeometry();
   private environment:Environment;
   bearing=0;
-  constructor(readonly buoy:Buoy, contacts:Contact[],readonly bins:number,readonly fmax:number,seed:number,environment:Environment){
+  constructor(readonly buoy:Buoy, contacts:Contact[],readonly bins:number,readonly fmax:number,seed:number,environment:Environment,readonly f0=0){
     this.row=new Float32Array(bins);this.power=new Float64Array(bins);this.ambient=new Float64Array(bins);this.absorption=new Float64Array(bins);this.shape=new Float64Array(bins);this.absorptionExponent=new Float64Array(bins);
     this.rng=mulberry32(deriveSeed(seed,`buoy:${buoy.id}`));this.environment={...environment};
-    this.contacts=contacts.map(contact=>{const frequencies=new Float64Array(6),powers=new Float64Array(6);fillTonals(contact.params,frequencies,powers);return {contact,frequencies,powers,gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
+    this.contacts=contacts.map(contact=>{const frequencies=new Float64Array(contact.params.tonals?.length??6),powers=new Float64Array(contact.params.tonals?.length??6);fillTonals(contact.params,frequencies,powers);return {contact,frequencies,powers,gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
     this.setEnvironment(environment);
   }
   setEnvironment(e:Environment):void {
-    this.environment={...e};const df=this.fmax/(this.bins-1);
-    for(let i=0;i<this.bins;i++){const f=Math.max(df/2,i*df);this.absorption[i]=thorp(f);this.absorptionExponent[i]=-this.absorption[i]*(Math.LN10/10);this.ambient[i]=dbToPower(ambientLevel(f,e.seaState,e.shipping));this.shape[i]=1/(1+(f/400)**2);}
+    this.environment={...e};const df=(this.fmax-this.f0)/(this.bins-1);
+    for(let i=0;i<this.bins;i++){const f=Math.max(df/2,this.f0+i*df);this.absorption[i]=thorp(f);this.absorptionExponent[i]=-this.absorption[i]*(Math.LN10/10);this.ambient[i]=dbToPower(ambientLevel(f,e.seaState,e.shipping));this.shape[i]=1/(1+(f/400)**2);}
   }
   generate(out=this.row,offset=0):Float32Array {
     if(!Number.isInteger(offset)||offset<0||out.length<offset+this.bins)throw new Error('Row size mismatch');
-    this.lineCount=0;this.power.set(this.ambient);const e=this.environment,df=this.fmax/(this.bins-1);let east=0,north=0;
+    this.lineCount=0;this.power.set(this.ambient);const e=this.environment,df=(this.fmax-this.f0)/(this.bins-1);let east=0,north=0;
     for(let j=0;j<this.contacts.length;j++){
       const item=this.contacts[j],c=item.contact,g=geometry(c,this.buoy,this.g);
+      if(c.params.tonals)fillTonals(c.params,item.frequencies,item.powers);
       const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
       const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread;
       // Smooth fictional broadband PSD; absorption per bin cached, range factor updated.
       const km=Math.max(0,g.range-1)/1000;
-      for(let i=0;i<this.bins;i++)this.power[i]+=level*.0001*this.shape[i]*Math.exp(this.absorptionExponent[i]*km);
+      const flow=c.params.flowNoiseDb===undefined?0:dbToPower(c.params.flowNoiseDb)*(g.range<=1?1:spread*(c.params.flowRadiatedFraction??0));
+      const broadband=level*(.0001+(c.params.cavitationPower??0))+flow;
+      for(let i=0;i<this.bins;i++)this.power[i]+=broadband*this.shape[i]*Math.exp(this.absorptionExponent[i]*km);
       for(let k=0;k<item.frequencies.length;k++){
-        const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=f/df;
-        if(bin>this.bins-1)continue;
+        const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-this.f0)/df;
+        if(bin<0||bin>this.bins-1)continue;
         const i=Math.floor(bin),a=bin-i;
         const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,this.buoy.depth,e.soundSpeed);
         this.power[i]+=v*(1-a)/df;if(i+1<this.bins)this.power[i+1]+=v*a/df;

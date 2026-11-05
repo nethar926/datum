@@ -23,9 +23,9 @@ it('subscribe configs rowsReady and writeRow numbered allocation-free output fac
 });
 it('subscription validates unsupported kind bins band channel and uses scenario dimensions',()=>{const s=cpaScenario();s.bins=64;s.fmax=200;const e=new AcousticEngine(s);
   expect(e.subscribe({channel:1,kind:'lofar',bins:64,band:[0,200]}).bins).toBe(64);
-  expect(()=>e.subscribe({channel:1,kind:'demon' as 'lofar'})).toThrow(/kind/);
+  expect(()=>e.subscribe({channel:1,kind:'bearing' as 'lofar'})).toThrow(/kind/);
   expect(()=>e.subscribe({channel:1,kind:'lofar',bins:1024})).toThrow(/bins/);
-  expect(()=>e.subscribe({channel:1,kind:'lofar',band:[0,500]})).toThrow(/band/);
+  expect(()=>e.subscribe({channel:1,kind:'lofar',band:[500,0]})).toThrow(/band/);
   expect(()=>e.subscribe({channel:999,kind:'lofar'})).toThrow(/channel/);
 });
 it('legacy registered writeRow remains immediate and now returns numbered rows',()=>{const e=new AcousticEngine(cpaScenario()),out=new Float32Array(1024);expect(e.writeRow(1,out)).toBe(0);expect(e.writeRow(1,out)).toBe(1);expect([...out].every(Number.isFinite)).toBe(true);});
