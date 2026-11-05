@@ -1,21 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { difarRgb, difarWheelLut } from './colormap'
+import { difarHue, difarRgb, difarWheelLut } from './colormap'
 import { fillLineBearings, isGramMode } from '../gram/difarBearing'
 import { DIFAR_CONIC } from '../gram/DifarLegend'
 import { SimHost } from '../engine/host'
 import type { GramConfig, TacticalBuoy } from '../engine/contract'
 
-describe('DIFAR bearing colour wheel', () => {
-  it('hits the four anchors', () => {
+describe('DIFAR bearing colour wheel (full 360° hue)', () => {
+  it('maps every 45° to the expected colour, cardinals on N red / E yellow / S blue / W violet', () => {
     expect(difarRgb(0)).toEqual([255, 0, 0])       // N red
+    expect(difarRgb(45)).toEqual([255, 128, 0])    // NE orange
     expect(difarRgb(90)).toEqual([255, 255, 0])    // E yellow
+    expect(difarRgb(135)).toEqual([0, 255, 128])   // SE spring green
     expect(difarRgb(180)).toEqual([0, 0, 255])     // S blue
-    expect(difarRgb(270)).toEqual([148, 0, 211])   // W violet
+    expect(difarRgb(225)).toEqual([85, 0, 255])    // SW indigo
+    expect(difarRgb(270)).toEqual([170, 0, 255])   // W violet
+    expect(difarRgb(315)).toEqual([255, 0, 170])   // NW magenta
   })
-  it('blends smoothly: 045 is orange, 315 is between violet and red', () => {
-    expect(difarRgb(45)).toEqual([255, 128, 0])
-    expect(difarRgb(315)).toEqual([202, 0, 106])
-    expect(difarRgb(135)).toEqual([128, 128, 128])
+  it('covers the whole hue circle in order (monotonic hue, no greys)', () => {
+    let last = -1
+    for (let d = 0; d < 360; d++) {
+      const h = difarHue(d); expect(h).toBeGreaterThan(last); last = h
+      const c = difarRgb(d); expect(Math.max(...c)).toBe(255); expect(Math.min(...c)).toBe(0) // fully saturated
+    }
+    expect(difarHue(120)).toBeCloseTo(120) // green and cyan are on the wheel
+    expect(difarHue(150)).toBeCloseTo(180)
   })
   it('wraps through north and normalises any bearing', () => {
     expect(difarRgb(360)).toEqual(difarRgb(0))
@@ -27,14 +35,15 @@ describe('DIFAR bearing colour wheel', () => {
   it('changes by small steps every degree (no hue jumps)', () => {
     for (let d = 0; d < 360; d++) {
       const a = difarRgb(d), b = difarRgb(d + 1)
-      expect(Math.max(...a.map((v, i) => Math.abs(v - b[i])))).toBeLessThanOrEqual(3)
+      expect(Math.max(...a.map((v, i) => Math.abs(v - b[i])))).toBeLessThanOrEqual(9)
     }
   })
-  it('wheel LUT and legend use the same anchors', () => {
+  it('wheel LUT and legend use the same wheel', () => {
     const lut = difarWheelLut(360)
-    expect([...lut.slice(45 * 4, 45 * 4 + 4)]).toEqual([255, 128, 0, 255])
+    for (const d of [0, 45, 90, 135, 180, 225, 270, 315]) expect([...lut.slice(d * 4, d * 4 + 3)]).toEqual(difarRgb(d))
     expect(DIFAR_CONIC).toContain('rgb(255 255 0) 90deg')
-    expect(DIFAR_CONIC).toContain('rgb(148 0 211) 270deg')
+    expect(DIFAR_CONIC).toContain('rgb(0 0 255) 180deg')
+    expect(DIFAR_CONIC).toContain('rgb(170 0 255) 270deg')
     expect(DIFAR_CONIC).toContain('rgb(255 0 0) 360deg')
   })
 })

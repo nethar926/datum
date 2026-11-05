@@ -43,18 +43,37 @@ export function normalizeDb(db: number, floor: number, ceil: number): number {
   return Math.min(1, Math.max(0, (db - floor) / span))
 }
 
-/** DIFAR bearing wheel anchors (deg, RGB): 000 N red, 090 E yellow, 180 S blue, 270 W violet, wrapping back to red. */
-export const DIFAR_ANCHORS: readonly (readonly [number, number, number, number])[] = [
-  [0, 255, 0, 0], [90, 255, 255, 0], [180, 0, 0, 255], [270, 148, 0, 211], [360, 255, 0, 0],
+/**
+ * DIFAR bearing → hue on a full, continuous 360° HSV wheel (S = V = 1; brightness comes from intensity in the shader).
+ * Cardinals land on Wilson's colours: 000 N red, 090 E yellow, 180 S blue, 270 W violet. Between them the hue sweeps
+ * every value in order (N→E orange, E→S green and cyan, S→W indigo, W→N magenta), piecewise-linear in hue.
+ */
+export const DIFAR_HUE_ANCHORS: readonly (readonly [bearingDeg: number, hueDeg: number])[] = [
+  [0, 0], [90, 60], [180, 240], [270, 280], [360, 360],
 ]
-/** Bearing (deg, any value) to RGB 0..255, linear between the four anchors through every degree. */
-export function difarRgb(deg: number): [number, number, number] {
+/** Bearing (deg, any value) → hue (deg 0..360). */
+export function difarHue(deg: number): number {
   const d = ((deg % 360) + 360) % 360
-  const k = Math.min(3, Math.floor(d / 90))
-  const [a0, r0, g0, b0] = DIFAR_ANCHORS[k], [, r1, g1, b1] = DIFAR_ANCHORS[k + 1]
-  const t = (d - a0) / 90
-  return [Math.round(r0 + (r1 - r0) * t), Math.round(g0 + (g1 - g0) * t), Math.round(b0 + (b1 - b0) * t)]
+  let k = 0
+  while (k < DIFAR_HUE_ANCHORS.length - 2 && d >= DIFAR_HUE_ANCHORS[k + 1][0]) k++
+  const [b0, h0] = DIFAR_HUE_ANCHORS[k], [b1, h1] = DIFAR_HUE_ANCHORS[k + 1]
+  return (h0 + ((d - b0) / (b1 - b0)) * (h1 - h0)) % 360
 }
+/** Fully saturated HSV (V = 1) to RGB 0..255. */
+export function hueRgb(h: number): [number, number, number] {
+  const x = (((h % 360) + 360) % 360) / 60, i = Math.floor(x) % 6, f = x - Math.floor(x)
+  const up = Math.round(255 * f), dn = Math.round(255 * (1 - f))
+  switch (i) {
+    case 0: return [255, up, 0]
+    case 1: return [dn, 255, 0]
+    case 2: return [0, 255, up]
+    case 3: return [0, dn, 255]
+    case 4: return [up, 0, 255]
+    default: return [255, 0, dn]
+  }
+}
+/** Bearing (deg, any value) to RGB 0..255 on the continuous wheel. */
+export const difarRgb = (deg: number): [number, number, number] => hueRgb(difarHue(deg))
 /** 360-entry RGBA wheel (one texel per degree) for the GPU; sampled with linear filtering and REPEAT wrap. */
 export function difarWheelLut(size = 360): Uint8Array {
   const out = new Uint8Array(size * 4)

@@ -20,15 +20,12 @@ import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
 import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
-import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
+import type { PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { Sheet } from './touch/Sheet'
 import { installAudioUnlock } from './touch/audioUnlock'
 
 const RATES = [1, 4, 16]
-const PALETTE_LABEL: Record<PaletteId, string> = { green: 'Green', amber: 'Amber', gray: 'Gray', multi: 'Multi' }
-const PALETTE_KEY = 'datum.palette'
-const loadPalette = (): PaletteId => { try { const v = localStorage.getItem(PALETTE_KEY); return isPaletteId(v) ? v : 'green' } catch { return 'green' } }
 const GRAM_MODE_KEY = 'datum.gramMode'
 const loadGramMode = (): GramMode => { try { const v = localStorage.getItem(GRAM_MODE_KEY); return isGramMode(v) ? v : 'lofar' } catch { return 'lofar' } }
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
@@ -41,8 +38,8 @@ export default function App() {
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
   const [truth, setTruth] = useState(false)
   const [normalized, setNormalized] = useState(true)
-  const [palette, setPalette] = useState<PaletteId>(loadPalette)
-  useEffect(() => { try { localStorage.setItem(PALETTE_KEY, palette) } catch { /* private mode */ } }, [palette])
+  // LOFAR is green only (amplitude = green brightness, no hue coding). DIFAR uses the bearing wheel instead.
+  const palette: PaletteId = 'green'
   const [gramMode, setGramMode] = useState<GramMode>(loadGramMode)
   useEffect(() => { try { localStorage.setItem(GRAM_MODE_KEY, gramMode) } catch { /* private mode */ } }, [gramMode])
   const [allBearings, setAllBearings] = useState(false)
@@ -106,7 +103,6 @@ export default function App() {
   useEffect(() => {
     client.start()
     const q = new URLSearchParams(location.search)
-    const pq = q.get('palette'); if (isPaletteId(pq)) setPalette(pq)
     const gm = q.get('gram'); if (isGramMode(gm)) setGramMode(gm)
     if (q.has('autoplay')) { client.setRate(Number(q.get('rate')) || 16); client.setPlaying(true) }
     return () => client.dispose()
@@ -158,9 +154,6 @@ export default function App() {
           </div>
         </div>
         <div className="group">
-          <div className="seg" role="group" aria-label="Gram palette">
-            {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)}>{PALETTE_LABEL[id]}</button>)}
-          </div>
         </div>
         <div className="group">
           <label className="seg" style={{ padding: '2px 8px', gap: 6, alignItems: 'center' }}>
@@ -196,9 +189,6 @@ export default function App() {
             <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
             <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
           </div></div>
-          <div className="sheet-row"><span className="seg-label">PALETTE</span><div className="seg" role="group" aria-label="Gram palette">
-            {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)}>{PALETTE_LABEL[id]}</button>)}
-          </div></div>
           <div className="sheet-row"><label className="seg" style={{ padding: '2px 8px', gap: 6, alignItems: 'center' }}>
             <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
           </label><button className="btn" data-testid="cmp-open" onClick={() => { setMenuOpen(false); setShowCmp(true) }} title="Recognition guide for every fictional class">Compendium</button><span className="readout">LOG {logCount}</span></div>
@@ -218,7 +208,7 @@ export default function App() {
           <div className="panel-head">
             <h2>{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'}</h2>
             <div className="seg" role="group" aria-label="Gram mode">
-              <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title="Intensity only, in the selected palette">LOFAR</button>
+              <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title="Amplitude as green brightness">LOFAR</button>
               <button aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
             </div>
             <div className="seg" role="group" aria-label="LOFAR processing">
