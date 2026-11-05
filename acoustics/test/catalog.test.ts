@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {catalog,validateCatalog,forceElectricalHz,effectiveParams,deriveSignature,cavitationInceptionKn,drawRarity,rarityWeights,rarityOrder,mulberry32,randomize,loadScenario,cpaScenario,AcousticEngine,knotsToMps,bladeRate,ContactSynth,Demon,surfaceTypes} from '../src/index.js';
+import {catalog,validateCatalog,forceElectricalHz,effectiveParams,deriveSignature,displayName,cavitationInceptionKn,drawRarity,rarityWeights,rarityOrder,mulberry32,randomize,loadScenario,cpaScenario,busyScenario,lloydsCpaScenario,AcousticEngine,knotsToMps,bladeRate,ContactSynth,Demon,surfaceTypes,createSurfacePool} from '../src/index.js';
 import type {ScenarioInput} from '../src/scenario.js';
 describe('fixed fictional catalog',()=>{
  it('valid version, approved twenty-two classes across fictional forces; all hulls/variants resolve',()=>{expect(()=>validateCatalog(catalog)).not.toThrow();expect(catalog.classes).toHaveLength(22);for(const force of ['Blue','Green','Red'])expect(catalog.classes.filter(c=>c.force===force)).toHaveLength(force==='Red'?12:5);for(const c of catalog.classes)for(const v of c.variants){const p=effectiveParams(c,v.id);expect(p.electricalHz).toBe(forceElectricalHz(c.force));expect(c.hulls.length).toBeGreaterThan(0);}});
@@ -18,4 +18,19 @@ describe('public mechanism-derived fictional signatures',()=>{
  it('flow self-noise rises 55 log speed',()=>{const c=catalog.classes[0],a=deriveSignature(c,'base',{speedKn:5,depthM:50,mode:'normal'}),b=deriveSignature(c,'base',{speedKn:10,depthM:50,mode:'normal'});expect(b.flowNoiseDb!-a.flowNoiseDb!).toBeCloseTo(55*Math.log10(2));});
  it('catalog contact references resolve and refresh in-place across timed legs',()=>{const c=catalog.classes[1],s:ScenarioInput=cpaScenario();s.contacts=[{...s.contacts[0],params:undefined,catalogRef:{classId:c.id,hullId:c.hulls[0].id,variantId:'pump-refit'},operatingMode:'battery',speed:knotsToMps(5),depth:50,motion:[{at:0,course:0,speed:knotsToMps(5),depth:50},{at:1,course:0,speed:knotsToMps(10),depth:50}]}];const resolved=loadScenario(s);expect(resolved.contacts[0].params.tonals!.length).toBeGreaterThan(6);const e=new AcousticEngine(s),params=e.scenario.contacts[0].params,shaft=params.shaftHz;e.step(2);expect(e.scenario.contacts[0].params).toBe(params);expect(params.shaftHz).toBeCloseTo(shaft*2);expect([...e.rows[0].row].every(Number.isFinite)).toBe(true);expect(()=>loadScenario({...s,contacts:[{...s.contacts[0],catalogRef:{classId:'missing'}}]})).toThrow();});
  it('derived cavitating signature feeds actual DEMON synth',()=>{const c=catalog.classes[0],s=deriveSignature(c,'base',{speedKn:17,depthM:0,mode:'normal'}),signal=new Float32Array(32768),d=new Demon(32768,4096);new ContactSynth(s,4096,7).fill(signal);const power=d.process(signal),expected=Math.round(bladeRate(s)/.125);let peak=expected-2;for(let i=expected-1;i<=expected+2;i++)if(power[i]>power[peak])peak=i;expect(Math.abs(peak*.125-bladeRate(s))).toBeLessThanOrEqual(.125);});
+});
+
+it('truth/display labels strip leading Fictional while catalog class names keep it',()=>{
+ expect(catalog.classes).toHaveLength(22);expect(surfaceTypes).toHaveLength(6);
+ for(const c of catalog.classes){expect(c.name).toMatch(/^Fictional /);expect(displayName(c.name)).not.toMatch(/^fictional /i);expect(deriveSignature(c,'base',{speedKn:Math.min(5,c.params.maxSpeedKn),depthM:Math.min(50,c.params.depthM[1]),mode:'normal'}).label).not.toMatch(/^fictional /i);}
+ for(const t of surfaceTypes){expect(t.name).toMatch(/^Fictional /);expect(displayName(t.name)).toBe(t.name.slice('Fictional '.length));}
+ for(const c of createSurfacePool(7))expect(c.params.label).not.toMatch(/^fictional /i);
+ for(const klass of catalog.classes){
+  const s:ScenarioInput=cpaScenario();s.contacts=[{...s.contacts[0],params:undefined as never,catalogRef:{classId:klass.id,hullId:klass.hulls[0].id,variantId:'base'},operatingMode:'normal',speed:knotsToMps(Math.min(5,klass.params.maxSpeedKn)),depth:Math.min(50,klass.params.depthM[1]),motion:[{at:0,course:0,speed:knotsToMps(Math.min(5,klass.params.maxSpeedKn)),depth:Math.min(50,klass.params.depthM[1])}]}];
+  for(const c of new AcousticEngine(loadScenario(s)).tactical().truth!.contacts)expect(c.label).not.toMatch(/^fictional /i);
+ }
+ const surface=cpaScenario();const se=new AcousticEngine(surface);se.setSurfaceTraffic(1);
+ for(const c of se.tactical().truth!.contacts)expect(c.label).not.toMatch(/^fictional /i);
+ for(const scenario of [cpaScenario(),busyScenario(),lloydsCpaScenario()])for(const c of new AcousticEngine(scenario).tactical().truth!.contacts)expect(c.label).not.toMatch(/^fictional /i);
+ expect(busyScenario().contacts[0].params.label).toBe('Vessel 0');expect(lloydsCpaScenario().contacts[0].params.label).toBe('Cavitating Training Contact');
 });

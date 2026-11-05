@@ -19,7 +19,7 @@ export function sourceLines(s:Signature):TonalLine[]{
  for(let i=0;i<lines.length;i++)tagLine(lines[i],i,s.lineProfiles?.[lines[i].family]);return lines;
 }
 export interface Signature {speedGated?:SpeedGated[];reactorOffline?:boolean; plantSpec?:VesselPlantSpec;propulsion?:PropulsionTruth; label: string; shafts?:number; electricalHz?:50|60; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; lineProfiles?:LineProfiles; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number }
-export const fictionalSignature: Signature = {label:'Fictional SSK A',shaftHz:2,blades:5,tonalHz:90,levelDb:125,modulation:.35};
+export const fictionalSignature: Signature = {label:'SSK A',shaftHz:2,blades:5,tonalHz:90,levelDb:125,modulation:.35};
 /** Fictional teaching curves only. Urick: machinery harmonics, propeller blade rate and cavitation.
  * Inception speed rises with hydrostatic pressure; this illustrative fit is NOT platform data. */
 export const bladeRate=(s:Signature):number => s.shaftHz*s.blades;

@@ -4,6 +4,7 @@ import {deriveSeed,mulberry32} from '../prng.js';
 import {knotsToMps,clamp} from '../units.js';
 import {type Signature} from '../sourceModel.js';
 import type {Contact,Scenario} from '../scenario.js';
+import {displayName} from './derive.js';
 /** Fixed invented ship templates, not measured signatures. Offsets above a fictional 120 dB
  * reference sub: +12/+18/+20/+16/+26/+28 dB. Urick/Ross: shaft/blade/diesel/broadband mechanisms. */
 const templates=[
@@ -21,7 +22,7 @@ export function createSurfacePool(seed:number,max=SURFACE_POOL_SIZE):Contact[]{
  const out:Contact[]=[];for(let rank=0;rank<max;rank++){
   const rng=mulberry32(deriveSeed(seed,`surface-pool:${rank}`)),mix=rank/Math.max(1,max-1),choices=mix<.34?[0,0,3,2,1]:mix<.67?[1,2,2,3,4]:[4,4,5,5,1],type=surfaceTypes[choices[Math.floor(rng()*choices.length)]];
   const shafts=type.shafts[0]+Math.floor(rng()*(type.shafts[1]-type.shafts[0]+1)),blades=rng()<.5?3:4,electricalHz=rng()<.5?50:60,speedKn=type.maxSpeedKn*(.45+.4*rng()),shaftHz=type.maxRpm/60*speedKn/type.maxSpeedKn;
-  const params:Signature={label:type.name,shafts,electricalHz,shaftHz,blades,tonalHz:shaftHz*blades,levelDb:120+type.offsetDb+10*Math.log10(1+speedKn/5),modulation:.55,tonals:[],plantSpec:surfaceVesselPlant(type.id,type.maxRpm,shafts,electricalHz,type.plantSpec.machinery.kind==='dieselGR'),cavitationPower:.025+.04*(speedKn/type.maxSpeedKn)**2,flowNoiseDb:85+55*Math.log10(speedKn/5),flowRadiatedFraction:.02};
+  const params:Signature={label:displayName(type.name),shafts,electricalHz,shaftHz,blades,tonalHz:shaftHz*blades,levelDb:120+type.offsetDb+10*Math.log10(1+speedKn/5),modulation:.55,tonals:[],plantSpec:surfaceVesselPlant(type.id,type.maxRpm,shafts,electricalHz,type.plantSpec.machinery.kind==='dieselGR'),cavitationPower:.025+.04*(speedKn/type.maxSpeedKn)**2,flowNoiseDb:85+55*Math.log10(speedKn/5),flowRadiatedFraction:.02};
   params.plantSpec!.propeller={shafts,blades,type:'flat'};
   configurePropulsion(params,seed,`surface-${rank+1}`);params.shaftHz=updatePropulsion(params,speedKn/type.maxSpeedKn,'SURF').shafts[0].hz;writePlantTonals(params,'SURF');
   const course=rng()*Math.PI*2,speed=knotsToMps(speedKn),depth=3+5*rng(),x=(rng()-.5)*14000,y=(rng()-.5)*14000;
