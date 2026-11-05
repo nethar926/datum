@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { crossFixes } from './fix'
+import { LONG_PRESS_MS, capDpr, exceedsSlop } from '../touch/gestures'
 import { fitView, toScreenX, toScreenY, toWorld, type PlotView } from './transform'
 import { bearingTo, distToRay, fixInputs, type FixSource, type ManualBearings } from './manual'
 
@@ -18,6 +19,8 @@ interface Props {
   onManual?: (buoyId: number, deg: number | null, final: boolean) => void
 }
 const HIT_PX = 14
+// Fingers need a 44 pt target: 22 px radius on coarse pointers.
+const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional truth. Canvas 2D. */
 export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual }: Props) {
@@ -26,6 +29,8 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
   props.current = { showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource }
   const viewRef = useRef<PlotView | null>(null)
   const dragRef = useRef<number | null>(null)
+  // Long-press a DIFAR buoy (touch stand-in for double-click) clears its manual bearing.
+  const press = useRef<{ x: number; y: number; moved: boolean; timer: number } | null>(null)
 
   useEffect(() => {
     const canvas = ref.current!
@@ -40,7 +45,7 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
       raf = requestAnimationFrame(draw)
       const st = client.status, t = st.tactical
       const { showTruth: truth, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs } = props.current
-      const dpr = Math.min(2, devicePixelRatio || 1)
+      const dpr = capDpr(devicePixelRatio)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
       const key = `${w}x${h}:${truth}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${JSON.stringify(man)}`
       if (t?.simT === lastT && key === lastKey) return
@@ -152,7 +157,7 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
       const deg = props.current.manual[b.id]
       const dLine = deg === undefined ? Infinity : distToRay(b, deg, BEARING_LEN_M, w.x, w.y) / w.mPerPx
       const d = Math.min(dBuoy, dLine)
-      if (d <= HIT_PX && (!best || d < best.d)) best = { id: b.id, d }
+      if (d <= hitPx() && (!best || d < best.d)) best = { id: b.id, d }
     }
     return best && { id: best.id, w }
   }
@@ -163,10 +168,22 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
   return (
     <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot"
       style={{ cursor: onManual ? 'crosshair' : undefined, touchAction: 'none' }}
-      onPointerDown={(e) => { const h = hitBuoy(e); if (!h || !onManual) return; dragRef.current = h.id; e.currentTarget.setPointerCapture(e.pointerId) }}
-      onPointerMove={(e) => { const id = dragRef.current; if (id === null) return; const w = world(e); if (w) setFrom(id, w.x, w.y, false) }}
-      onPointerUp={(e) => { const id = dragRef.current; dragRef.current = null; if (id === null) return; const w = world(e); if (w) setFrom(id, w.x, w.y, true) }}
-      onPointerCancel={() => { dragRef.current = null }}
+      onPointerDown={(e) => {
+        const h = hitBuoy(e); if (!h || !onManual) return
+        dragRef.current = h.id; try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic pointer */ }
+        const id = h.id, pr = { x: e.clientX, y: e.clientY, moved: false, timer: 0 }
+        pr.timer = window.setTimeout(() => { if (!pr.moved && dragRef.current === id) { dragRef.current = null; onManual(id, null, true) } }, LONG_PRESS_MS)
+        press.current = pr
+      }}
+      onPointerMove={(e) => {
+        const id = dragRef.current; if (id === null) return
+        const pr = press.current
+        if (pr && !pr.moved) { if (!exceedsSlop(pr.x, pr.y, e.clientX, e.clientY)) return; pr.moved = true; clearTimeout(pr.timer) }
+        const w = world(e); if (w) setFrom(id, w.x, w.y, false)
+      }}
+      onPointerUp={(e) => { const id = dragRef.current; dragRef.current = null; const pr = press.current; press.current = null; if (pr) clearTimeout(pr.timer); if (id === null || !pr?.moved) return; const w = world(e); if (w) setFrom(id, w.x, w.y, true) }}
+      onPointerCancel={() => { dragRef.current = null; if (press.current) clearTimeout(press.current.timer); press.current = null }}
+      onContextMenu={(e) => e.preventDefault()}
       onDoubleClick={(e) => { const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
   )
 }

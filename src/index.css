@@ -2,6 +2,9 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+/* manipulation: no double-tap zoom, so taps fire without the 300 ms wait. */
+body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 body {
   background: var(--bg-0); color: var(--text-1);
   font: 13px/1.4 var(--font-ui); letter-spacing: -0.01em;
@@ -9,7 +12,9 @@ body {
 }
 button, select { font: inherit; color: inherit; }
 
-.app { display: grid; grid-template-rows: auto 1fr; height: 100%; gap: var(--space-3); padding: var(--space-3); }
+.app { display: grid; grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); height: 100%; height: 100dvh; gap: var(--space-3);
+  padding: max(var(--space-3), env(safe-area-inset-top)) max(var(--space-3), env(safe-area-inset-right)) max(var(--space-3), env(safe-area-inset-bottom)) max(var(--space-3), env(safe-area-inset-left)); }
+.app canvas { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .toolbar { position: relative;
   display: flex; align-items: center; gap: var(--space-4); padding: var(--space-2) var(--space-4);
   background: var(--bg-1); border: 1px solid var(--hairline); border-radius: var(--radius-l); box-shadow: var(--shadow-panel);
@@ -179,3 +184,76 @@ button, select { font: inherit; color: inherit; }
   .cmp-tag, .cmp-card dt, .cmp-card h4, .cmp-foot { color: #444; } .cmp-modes th { color: #000; }
 }
 .harm-marker.probe { border-left-style: dashed; border-left-color: #ffcc55; } .harm-marker.probe span { color: #ffcc55; }
+
+/* ---------- Touch (m3-fe-touch) ---------- */
+.seg button, .btn { -webkit-user-select: none; user-select: none; transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease); }
+.seg button:active, .btn:active { transform: scale(.96); }
+.btn.icon { min-width: 0; padding: 4px 10px; }
+@media (pointer: coarse) {
+  /* 44 pt hit targets, no hover-only affordances, 16 px inputs so Safari does not zoom on focus. */
+  .seg button, .btn, .truth-bar button, .cmp-narrow .chip, .sheet-head button { min-height: 44px; min-width: 44px; }
+  .seg button { padding: 0 12px; }
+  .seg button:hover, .btn:hover { color: inherit; }
+  .btn:hover { background: var(--bg-2); }
+  input, select, textarea { font-size: 16px !important; }
+  input[type=checkbox] { width: 22px; height: 22px; }
+  .field input[type=range] { height: 32px; }
+  .btn.icon { min-width: 44px; }
+  .panel-head { gap: var(--space-2); }
+  /* Touch: toolbar wraps, panel heads become a horizontal strip instead of widening the page. */
+  .toolbar { flex-wrap: wrap; row-gap: var(--space-1); }
+  .panel-head { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; }
+  .panel-head::-webkit-scrollbar { display: none; }
+  .panel-head .readout { flex-shrink: 0; }
+}
+.gram canvas.pressing { outline: 1px solid rgba(92,255,122,.25); outline-offset: -1px; }
+
+/* Phones: compact top bar; everything else lives in a bottom sheet. */
+.toolbar.compact, .toolbar.compact:is(*) { flex-wrap: nowrap; gap: var(--space-2); padding: var(--space-1) var(--space-2); }
+.toolbar.compact .readout { min-width: 0; flex-shrink: 1; }
+.toolbar.compact .brand { margin-right: auto; }
+.layout-phonePortrait, .layout-phoneLandscape { gap: var(--space-2); }
+.layout-phonePortrait .panel-head, .layout-phoneLandscape .panel-head {
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; padding: var(--space-1) var(--space-2);
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+.layout-phonePortrait .panel-head::-webkit-scrollbar, .layout-phoneLandscape .panel-head::-webkit-scrollbar { display: none; }
+.layout-phonePortrait .panel-head .readout, .layout-phoneLandscape .panel-head .readout { flex-shrink: 0; }
+.layout-phonePortrait .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--space-2); }
+.layout-phoneLandscape .workspace { grid-template-columns: minmax(0, 1fr); position: relative; overflow: hidden; }
+.layout-phoneLandscape .tac-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 55%); z-index: 12;
+  transform: translateX(calc(100% + 16px)); transition: transform var(--motion) var(--ease); will-change: transform; }
+.layout-phoneLandscape .tac-panel.open { transform: none; }
+.tac-scrim { position: absolute; inset: 0; z-index: 11; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity var(--motion) var(--ease); }
+.tac-scrim.open { opacity: 1; pointer-events: auto; }
+.tac-toggle { flex-shrink: 0; }
+.truth-chip { position: absolute; left: 8px; bottom: 8px; z-index: 3; font: 600 11px/1 var(--font-mono); color: #e8c46a; background: rgba(4,10,8,.85); }
+
+/* Bottom sheet */
+.sheet-root { position: fixed; inset: 0; z-index: 30; pointer-events: none; transition: opacity var(--motion) var(--ease); }
+.sheet-root.open { pointer-events: auto; }
+.sheet-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.5); opacity: 0; transition: opacity var(--motion) var(--ease); }
+.sheet-root.open .sheet-scrim { opacity: 1; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 85dvh; display: flex; flex-direction: column;
+  background: var(--bg-1); border: 1px solid var(--hairline-strong); border-bottom: 0; border-radius: var(--radius-l) var(--radius-l) 0 0;
+  box-shadow: 0 -12px 32px rgba(0,0,0,.5); padding: 0 max(var(--space-4), env(safe-area-inset-right)) max(var(--space-4), env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
+  transform: translateY(100%); transition: transform var(--motion) var(--ease); will-change: transform; }
+.sheet-root.open .sheet { transform: none; }
+.sheet-grab { display: grid; place-items: center; height: 24px; touch-action: none; cursor: grab; }
+.sheet-grab i { width: 36px; height: 5px; border-radius: 3px; background: var(--hairline-strong); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--space-2); }
+.sheet-head h2 { margin: 0; font-size: 15px; }
+.sheet-body { overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: flex; flex-direction: column; gap: var(--space-3); }
+.sheet-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.sheet-col { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--hairline); }
+.sheet .truth-panel { position: static; max-width: none; max-height: none; overflow: visible; }
+.sheet .truth-bar { position: static; margin: 0 0 4px; }
+.cmp-sheet .compendium { top: max(24px, env(safe-area-inset-top)); border-radius: var(--radius-l) var(--radius-l) 0 0; border-top: 1px solid var(--hairline-strong);
+  animation: sheet-up var(--motion) var(--ease); padding-bottom: env(safe-area-inset-bottom); }
+.layout-phonePortrait .cmp-body { flex-direction: column; }
+.layout-phonePortrait .cmp-narrow { width: auto; max-height: 45%; border-right: 0; border-bottom: 1px solid var(--hairline); }
+.layout-phonePortrait .cmp-bar input { width: 100%; }
+.layout-phonePortrait .cmp-grid { grid-template-columns: minmax(0, 1fr); }
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sheet, .sheet-scrim, .tac-panel, .tac-scrim, .seg button, .btn { transition: none !important; } .cmp-sheet .compendium { animation: none; } }
+.sheet-row .seg-label { min-width: 72px; margin-right: 0; }

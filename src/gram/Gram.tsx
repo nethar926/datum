@@ -8,6 +8,7 @@ import { AutoLevel } from './autoLevel'
 import { SplitWindowNormalizer } from './whiten'
 import { LevelHistory } from './levelHistory'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
+import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
 
 
 export interface OverlayCtx { view: FreqView; width: number; cfg: GramConfig; historyS: number }
@@ -44,6 +45,9 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
   const [glError, setGlError] = useState<string | null>(null)
+  // Bumped when a lost WebGL context is not restored (iOS backgrounding): remounts the canvas with a fresh context.
+  const [glGen, setGlGen] = useState(0)
+  const [pressHint, setPressHint] = useState(false)
   const [cursor, setCursor] = useState<number | null>(null)
   const [cross, setCross] = useState<{ hz: number; agoS: number; x: number } | null>(null)
   const histRef = useRef<LevelHistory | null>(null)
@@ -112,11 +116,26 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
-    return () => { cancelAnimationFrame(raf); off(); ro.disconnect(); r.dispose(); rendererRef.current = null; histRef.current = null }
-  }, [client, bins, configs.length, configs.map((c) => c.streamId).join(','), HISTORY_ROWS])
+    // iOS may drop the context while backgrounded and never fire 'restored'; rebuild on return if still lost.
+    let lostTimer = 0
+    const checkLost = () => {
+      if (document.visibilityState !== 'visible' || !r.isLost()) return
+      clearTimeout(lostTimer)
+      lostTimer = window.setTimeout(() => { if (r.isLost()) setGlGen((g) => g + 1) }, 1000)
+    }
+    const onLost = () => { if (document.visibilityState === 'visible') checkLost() }
+    document.addEventListener('visibilitychange', checkLost); canvas.addEventListener('webglcontextlost', onLost)
+    const onShow = () => { dirty = true }
+    window.addEventListener('pageshow', onShow)
+    return () => {
+      cancelAnimationFrame(raf); clearTimeout(lostTimer); off(); ro.disconnect()
+      document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
+      r.dispose(); rendererRef.current = null; histRef.current = null
+    }
+  }, [client, bins, configs.length, configs.map((c) => c.streamId).join(','), HISTORY_ROWS, glGen])
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
-  useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, bins, configs.length, client])
+  useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, bins, configs.length, client, glGen])
 
   const ticks = useMemo(() => niceTicks(view.lo, view.hi, Math.max(3, Math.floor(width / 90))), [view, width])
   const historyS = HISTORY_ROWS / rowRate
@@ -127,15 +146,69 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     const anchor = xToFreq(e.clientX - rect.left, view, rect.width)
     onView(zoomView(view, anchor, e.deltaY < 0 ? 1.25 : 0.8, fMax))
   }
-  const drag = (e: React.PointerEvent<HTMLCanvasElement>, phase: 'start' | 'move' | 'end') => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    onDragPoint?.(phase, xToFreq(e.clientX - rect.left, view, rect.width), ((e.clientY - rect.top) / rect.height) * historyS, e.shiftKey)
+  // Pointer gestures (mouse, pen, touch). One finger: tap = pick/select, drag = tool drag or scrub cursor,
+  // long-press = crosshair details at that point, double-tap = full band. Two fingers: pinch zoom + pan.
+  type P = { id: number; x: number; y: number; x0: number; y0: number; t0: number; type: string }
+  const ptr = useRef(new Map<number, P>())
+  const g = useRef({ pinch: null as null | { v: FreqView; a0: number; b0: number }, dragging: false, moved: false, longFired: false, longTimer: 0, lastTap: { t: 0, x: 0, y: 0 } })
+  const local = (e: React.PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height } }
+  const ago = (y: number, h: number) => Math.max(0, (y / Math.max(1, h)) * historyS)
+  const showAt = (x: number, y: number, w: number, h: number, withCross: boolean) => {
+    const hz = xToFreq(x, view, w); setCursor(hz)
+    if (withCross) setCross({ hz, agoS: ago(y, h), x })
   }
-  const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const hz = xToFreq(e.clientX - rect.left, view, rect.width)
-    setCursor(hz)
-    if (crosshair) setCross({ hz, agoS: Math.max(0, ((e.clientY - rect.top) / rect.height) * historyS), x: e.clientX - rect.left })
+  const onPDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic or already-released pointer */ }
+    const { x, y, w, h } = local(e), G = g.current
+    ptr.current.set(e.pointerId, { id: e.pointerId, x, y, x0: x, y0: y, t0: e.timeStamp, type: e.pointerType })
+    clearTimeout(G.longTimer)
+    if (ptr.current.size === 2) {
+      // Second finger: end any one-finger drag and start a pinch from the current view.
+      if (G.dragging) { G.dragging = false; const p0 = [...ptr.current.values()][0]; onDragPoint?.('end', xToFreq(p0.x, view, w), ago(p0.y, h), false) }
+      const [a, b] = [...ptr.current.values()]
+      G.pinch = { v: view, a0: a.x, b0: b.x }; G.moved = true; setPressHint(false); return
+    }
+    if (ptr.current.size > 2) return
+    G.moved = false; G.longFired = false; G.pinch = null
+    if (!crosshair) setCross(null)
+    if (onDragPoint) { G.dragging = true; onDragPoint('start', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
+    if (e.pointerType !== 'mouse') {
+      showAt(x, y, w, h, false); setPressHint(true)
+      G.longTimer = window.setTimeout(() => {
+        const p = ptr.current.get(e.pointerId); if (!p || G.moved || ptr.current.size !== 1) return
+        G.longFired = true; setPressHint(false); showAt(p.x, p.y, w, h, true)
+      }, LONG_PRESS_MS)
+    }
+  }
+  const onPMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const { x, y, w, h } = local(e), G = g.current, p = ptr.current.get(e.pointerId)
+    if (!p) { if (e.pointerType === 'mouse') showAt(x, y, w, h, crosshair); return }
+    p.x = x; p.y = y
+    if (G.pinch && ptr.current.size >= 2) {
+      const [a, b] = [...ptr.current.values()]
+      onView(pinchView(G.pinch.v, G.pinch.a0, G.pinch.b0, a.x, b.x, w, fMax)); return
+    }
+    if (!G.moved && exceedsSlop(p.x0, p.y0, x, y)) { G.moved = true; clearTimeout(G.longTimer); setPressHint(false) }
+    if (G.dragging) { if (G.moved) onDragPoint?.('move', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
+    showAt(x, y, w, h, crosshair || G.longFired)
+  }
+  const onPUp = (e: React.PointerEvent<HTMLCanvasElement>, cancel = false) => {
+    const { x, y, w, h } = local(e), G = g.current, p = ptr.current.get(e.pointerId)
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+    ptr.current.delete(e.pointerId); clearTimeout(G.longTimer); setPressHint(false)
+    if (!p) return
+    if (G.pinch) { if (ptr.current.size < 2) G.pinch = null; return }
+    if (G.dragging) { G.dragging = false; onDragPoint?.('end', xToFreq(x, view, w), ago(y, h), e.shiftKey); return }
+    if (cancel || G.moved || G.longFired) return
+    // Tap.
+    const hz = xToFreq(x, view, w), lt = G.lastTap
+    if (p.type !== 'mouse' && e.timeStamp - lt.t < DOUBLE_TAP_MS && !exceedsSlop(lt.x, lt.y, x, y, 24)) {
+      G.lastTap = { t: 0, x: 0, y: 0 }; onView(clampView({ lo: 0, hi: fMax }, fMax)); return
+    }
+    G.lastTap = { t: e.timeStamp, x, y }
+    if (onPickPoint) onPickPoint(hz, ago(y, h))
+    else onSelectHz?.(hz)
   }
   const crossText = (() => {
     if (!cross || !cfg) return ''
@@ -148,17 +221,12 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   return (
     <div className="gram">
       {glError ? <div className="gl-error">{glError}</div> : (
-        <canvas ref={canvasRef} data-testid={testId} onWheel={onWheel} onMouseMove={onMove} onMouseLeave={() => { setCursor(null); setCross(null) }}
-          onPointerDown={onDragPoint ? (e) => { e.currentTarget.setPointerCapture(e.pointerId); drag(e, 'start') } : undefined}
-          onPointerMove={onDragPoint ? (e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) drag(e, 'move') } : undefined}
-          onPointerUp={onDragPoint ? (e) => { drag(e, 'end'); e.currentTarget.releasePointerCapture(e.pointerId) } : undefined}
-          onClick={(e) => {
-            if (onDragPoint) return
-            const rect = e.currentTarget.getBoundingClientRect(), hz = xToFreq(e.clientX - rect.left, view, rect.width)
-            if (onPickPoint) onPickPoint(hz, ((e.clientY - rect.top) / rect.height) * historyS)
-            else onSelectHz?.(hz)
-          }}
-          style={onPickPoint ? { cursor: 'crosshair' } : onDragPoint ? { cursor: 'ew-resize', touchAction: 'none' } : undefined}
+        <canvas key={glGen} ref={canvasRef} data-testid={testId} onWheel={onWheel}
+          onPointerDown={onPDown} onPointerMove={onPMove} onPointerUp={(e) => onPUp(e)} onPointerCancel={(e) => onPUp(e, true)}
+          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size) { setCursor(null); setCross(null) } }}
+          onContextMenu={(e) => e.preventDefault()}
+          className={pressHint ? 'pressing' : undefined}
+          style={{ touchAction: 'none', cursor: onPickPoint ? 'crosshair' : onDragPoint ? 'ew-resize' : undefined }}
           onDoubleClick={() => onView(clampView({ lo: 0, hi: fMax }, fMax))} aria-label={label} />
       )}
       <div className="axis axis-y" aria-hidden>
@@ -173,13 +241,13 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(1)}</span></div>
       )}
       {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS })}</div>}
-      {crosshair && cross && (
+      {cross && (
         <div className="gram-layer cross-layer" style={{ width }} aria-hidden>
           <div className="cross-h" style={{ top: `${(cross.agoS / historyS) * 100}%` }} />
           <div className="cross-v" style={{ left: cross.x }} />
         </div>
       )}
-      {crosshair && cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}</div> : cursor !== null && <div className="cursor-readout">{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}</div>}
+      {cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}</div> : cursor !== null && <div className="cursor-readout">{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}</div>}
     </div>
   )
 }

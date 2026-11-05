@@ -21,6 +21,9 @@ import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/har
 import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
+import { useLayout } from './touch/useLayout'
+import { Sheet } from './touch/Sheet'
+import { installAudioUnlock } from './touch/audioUnlock'
 
 const RATES = [1, 4, 16]
 const PALETTE_LABEL: Record<PaletteId, string> = { green: 'Green', amber: 'Amber', gray: 'Gray', multi: 'Multi' }
@@ -57,6 +60,12 @@ export default function App() {
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showCmp, setShowCmp] = useState(false)
+  const layout = useLayout(), phone = layout !== 'wide'
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [tacOpen, setTacOpen] = useState(false)
+  const [truthSheet, setTruthSheet] = useState(false)
+  useEffect(() => { if (!phone) { setMenuOpen(false); setTruthSheet(false) } if (layout !== 'phoneLandscape') setTacOpen(false) }, [layout, phone])
+  useEffect(() => installAudioUnlock(), [])
   const [tool, setTool] = useState<'select' | 'cpa' | 'lm' | 'harm'>('select')
   const [crossOn, setCrossOn] = useState(false)
   const [harmF0, setHarmF0] = useState<number | null>(null)
@@ -110,8 +119,21 @@ export default function App() {
   const buoy = st.tactical?.buoys[stream]
 
   return (
-    <div className="app">
+    <div className={`app layout-${layout}`} data-layout={layout}>
       {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
+      {phone ? (
+        <header className="toolbar compact">
+          <div className="brand">DATUM</div>
+          <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
+            {st.playing ? 'Pause' : 'Play'}
+          </button>
+          <div className="seg" role="group" aria-label="Sim rate">
+            {RATES.map((r) => <button key={r} aria-pressed={st.rate === r} onClick={() => client.setRate(r)}>{r}×</button>)}
+          </div>
+          <span className="readout">T+{fmtT(st.simT)}</span>
+          <button className="btn icon" data-testid="menu-open" aria-label="More controls" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button>
+        </header>
+      ) : (
       <header className="toolbar">
         <div className="brand">DATUM<small>Acoustic operator trainer · fictional patrol aircraft</small></div>
         <div className="group">
@@ -161,7 +183,34 @@ export default function App() {
           </div>
         )}
       </header>
-      {showCmp && <Compendium onClose={() => setShowCmp(false)} />}
+      )}
+      {phone && (
+        <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Controls" testId="menu-sheet">
+          <div className="sheet-row"><span className="seg-label">SCENARIO</span><button className="btn" onClick={() => { setMenuOpen(false); setShowNew(true) }}>New</button><select className="btn scn-select" data-testid="scenario-select" aria-label="Scenario"
+            value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
+            onChange={(e) => { setCpaMarks([]); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
+            {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
+            {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
+          </select></div>
+          <div className="sheet-row"><span className="seg-label">BAND</span><div className="seg" role="group" aria-label="LOFAR band">
+            <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
+            <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
+          </div></div>
+          <div className="sheet-row"><span className="seg-label">PALETTE</span><div className="seg" role="group" aria-label="Gram palette">
+            {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)}>{PALETTE_LABEL[id]}</button>)}
+          </div></div>
+          <div className="sheet-row"><label className="seg" style={{ padding: '2px 8px', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
+          </label><button className="btn" data-testid="cmp-open" onClick={() => { setMenuOpen(false); setShowCmp(true) }} title="Recognition guide for every fictional class">Compendium</button><span className="readout">LOG {logCount}</span></div>
+          <div className="sheet-col">
+            <TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} />
+            <label className="check" title="Off = ideal receiver with unlimited dynamic range (for comparison)">
+              <input type="checkbox" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /> Realistic receiver (AGC, limited range)
+            </label>
+          </div>
+        </Sheet>
+      )}
+      {showCmp && <div className={phone ? "cmp-sheet" : undefined}><Compendium onClose={() => setShowCmp(false)} /></div>}
 
       <main className="workspace">
         <div className="workspace-left">
@@ -204,6 +253,7 @@ export default function App() {
               {buoy?.rx ? `  AGC ${buoy.rx.gainDb >= 0 ? '+' : ''}${buoy.rx.gainDb.toFixed(0)}` : ''}
             </span>
             {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
+            {layout === 'phoneLandscape' && <button className="btn icon tac-toggle" data-testid="tac-open" aria-expanded={tacOpen} onClick={() => setTacOpen(!tacOpen)} title="Tactical plot">TAC</button>}
           </div>
           <div className="panel-body">
             {lofarCfgs.length > 0 && (
@@ -246,9 +296,11 @@ export default function App() {
           </div>
         </section>
         </div>
-        <section className="panel">
+        {layout === 'phoneLandscape' && <div className={`tac-scrim${tacOpen ? ' open' : ''}`} onClick={() => setTacOpen(false)} aria-hidden />}
+        <section className={`panel tac-panel${tacOpen ? ' open' : ''}`} data-testid="tac-panel">
           <div className="panel-head">
             <h2>Tactical</h2>
+            {layout === 'phoneLandscape' && <button className="btn icon" onClick={() => setTacOpen(false)} aria-label="Close tactical">✕</button>}
             <span className="seg-label">BRG</span>
             <div className="seg" role="group" aria-label="Bearings shown">
               <button aria-pressed={!allBearings} onClick={() => setAllBearings(false)}>{selHz === null ? 'Sel' : `${selHz.toFixed(1)} Hz`}</button>
@@ -269,10 +321,16 @@ export default function App() {
               {`A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</div>}
             <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} />
-            {truth && st.tactical?.truth && <TruthPanel contacts={st.tactical.truth.contacts} />}
+            {truth && st.tactical?.truth && !phone && <TruthPanel contacts={st.tactical.truth.contacts} />}
+            {truth && st.tactical?.truth && phone && <button className="btn truth-chip" data-testid="truth-open" onClick={() => setTruthSheet(true)}>TRUTH · {st.tactical.truth.contacts.filter((c) => c.active !== false).length}</button>}
           </div>
         </section>
       </main>
+      {phone && truth && st.tactical?.truth && (
+        <Sheet open={truthSheet} onClose={() => setTruthSheet(false)} title="Truth" testId="truth-sheet">
+          <TruthPanel contacts={st.tactical.truth.contacts} />
+        </Sheet>
+      )}
     </div>
   )
 }

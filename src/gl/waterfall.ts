@@ -1,3 +1,4 @@
+import { capDpr } from '../touch/gestures'
 import { difarWheelLut, paletteLut, type PaletteId } from './colormap'
 
 const VS = `#version 300 es
@@ -155,6 +156,8 @@ export class WaterfallRenderer {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, this.headB[b], this.bins, 1, gl.RED, gl.FLOAT, data, offset)
   }
 
+  isLost(): boolean { return this.lost || this.gl.isContextLost() }
+
   rowsFilled(s: number): number { return this.filled[s] ?? 0 }
 
   /** difar: bearing stream index to colour by, or undefined for the palette (LOFAR) look. */
@@ -162,7 +165,7 @@ export class WaterfallRenderer {
     if (s < 0 || s >= this.streams) return
     if (this.lost || this.gl.isContextLost()) return
     const gl = this.gl, c = this.canvas
-    const dpr = Math.min(2, globalThis.devicePixelRatio || 1)
+    const dpr = capDpr(globalThis.devicePixelRatio)
     const w = Math.max(1, Math.round(c.clientWidth * dpr)), h = Math.max(1, Math.round(c.clientHeight * dpr))
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
     gl.viewport(0, 0, w, h)
