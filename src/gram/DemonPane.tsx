@@ -45,7 +45,7 @@ export function DemonPane({ client, configs, streamIndex, palette }: Props) {
       <div className="panel-body">
         {cfg ? (
           <Gram client={client} configs={configs} streamIndex={streamIndex} view={view} palette={palette}
-            onView={(v) => setView(clampView(v, fMax, 2))} normalized={false} historyRows={300}
+            onView={(v) => setView(clampView(v, fMax, 2))} normalized historyRows={300}
             label="DEMON waterfall" testId="demon" onSelectHz={onPick}
             overlay={({ view: v, width }) => (
               <>
