@@ -65,7 +65,10 @@ function edasFor(x: Any, engines: CardEngine[]): ClassifyingLine[] {
   const out: ClassifyingLine[] = []
   for (const e of src) {
     const name = String(e.eda?.name ?? e.name ?? e.id ?? 'EDA').toUpperCase()
-    const m = e.eda?.cfrMultiple ?? e.cfrMultiple ?? (perRev && typeof e.perCrankRev === 'number' ? e.perCrankRev / perRev : undefined)
+    const raw = e.eda?.cfrMultiple ?? e.cfrMultiple
+    // idKeys carries the multiple as a [min, max] range; the catalog carries a number.
+    const m = Array.isArray(raw) && typeof raw[0] === 'number' && typeof raw[1] === 'number' ? (raw[0] + raw[1]) / 2
+      : raw ?? (perRev && typeof e.perCrankRev === 'number' ? e.perCrankRev / perRev : undefined)
     if (typeof m === 'number' && m > 0) out.push({ name, cfrMultiple: Math.round(m * 100) / 100 })
   }
   return out

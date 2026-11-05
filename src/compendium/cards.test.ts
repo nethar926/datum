@@ -49,4 +49,9 @@ describe('compendium cards', () => {
     expect(c.speedFeatures).toEqual([{ kind: 'SWATH', name: '', band: '180–240 Hz', kts: [9, 13] }, { kind: 'SRC', name: 'A', band: '≈512 Hz', kts: [14, 20] }])
     expect(filterCards([c], { query: 'hydp', country: '', plant: '' })).toHaveLength(1)
   })
+  it('reads idKeys EDA multiples given as [min, max] ranges', () => {
+    const [c] = compendiumCards({ classes: [{ id: 'r', name: 'Range', country: 'Ostmark', force: 'Blue', plant: 'diesel',
+      idKeys: { edas: [{ name: 'LOP', cfrMultiple: [27.5, 28] }] }, params: { electricalHz: 50 } }] })
+    expect(c.edas).toEqual([{ name: 'LOP', cfrMultiple: 27.75 }])
+  })
 })
