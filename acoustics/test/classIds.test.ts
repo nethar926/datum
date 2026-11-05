@@ -1,6 +1,6 @@
 import {it,expect} from 'vitest';
 import {execFileSync} from 'node:child_process';
-import {catalog,surfaceTypes,createSurfacePool,deriveSignature,matchClasses,type ClassObservations,type IdKeys} from '../src/index.js';
+import {catalog,surfaceTypes,createSurfacePool,deriveSignature,matchClasses,AcousticEngine,cpaScenario,knotsToMps,type ClassObservations,type IdKeys} from '../src/index.js';
 import {identityBands,varyPlantIdentity} from '../src/catalog/plantIdentity.js';
 const mid=(r:readonly number[]) => (r[0]+r[1])/2;
 const disjoint=(a:readonly number[],b:readonly number[])=>a[1]<b[0]||b[1]<a[0];
@@ -30,4 +30,23 @@ it('surface hydraulics and non-direct gearing/auxiliary sources vary by fictiona
 });
 it('fresh independent module runs reproduce all class and surface identities; hash bands ignore input order',()=>{
  const script="import {catalog,surfaceTypes} from './src/index.ts';console.log(JSON.stringify({catalog,surfaceTypes}));",run=()=>execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',script],{encoding:'utf8'});expect(run()).toBe(run());const ids=catalog.classes.map(c=>c.id),a=identityBands(ids),b=identityBands([...ids].reverse());for(const id of ids)expect(a.get(id)).toEqual(b.get(id));
+});
+
+it('all 22 classes and twelve seeded hull draws obey nominal truth CSR/CFR/EFR and BR closed forms within 1e-9',()=>{
+ const close=(a:number,b:number)=>expect(Math.abs(a-b)).toBeLessThanOrEqual(1e-9),strokes=new Set<number>();let states=0,running=0;
+ for(const c of catalog.classes)for(let seed=0;seed<12;seed++){
+  const scenario=cpaScenario(),mode=c.plant==='diesel'?'SNORK' as const:'NUC' as const,limit=c.plant==='diesel'?c.maxSpeedKts.snorkel:c.maxSpeedKts.submerged,depth=c.plant==='diesel'?c.snorkelDepthM/2:100,speeds=[.2*limit,.4*limit,.65*limit,.95*limit];
+  scenario.contacts=[{...scenario.contacts[0],id:'orders-proof',catalogRef:{classId:c.id,hullId:c.hulls[seed%c.hulls.length].id,variantId:c.variants[Math.floor(seed/c.hulls.length)%c.variants.length].id},operatingMode:mode,speed:knotsToMps(speeds[0]),depth,motion:speeds.map((speed,at)=>({at,course:0,speed:knotsToMps(speed),depth}))}];scenario.surfaceTraffic=0;
+  const engine=new AcousticEngine(scenario,seed);
+  for(let at=0;at<speeds.length;at++){
+   if(at)engine.advance(1);const contact=engine.tactical().truth!.contacts[0],p=contact.propulsion;states++;
+   for(const e of p.engines){strokes.add(e.stroke);if(e.running)running++;close(e.csrHz,e.erpm/60);if(e.stroke===2)close(e.csrHz,e.cfrHz);else close(e.csrHz,2*e.cfrHz);close(e.efrHz,e.cfrHz*e.cylinders);}
+   close(p.propulsor.brHz,p.shafts[0].hz*p.propulsor.blades);
+   for(let shaft=0;shaft<p.shafts.length;shaft++){const lines=contact.lines.filter(l=>l.lineFamily==='BR'&&l.shaftIndex===shaft);expect(lines).toHaveLength(3);for(const l of lines){close(l.fundamentalHz!,p.shafts[shaft].hz*p.propulsor.blades);close(l.f0Hz,p.shafts[shaft].hz*p.propulsor.blades*l.harmonic!);}}
+  }
+ }
+ expect(states).toBe(22*12*4);expect([...strokes].sort()).toEqual([2,4]);expect(running).toBeGreaterThan(0);
+});
+it('speed window display names are numbered SRC and SWATH labels for every class',()=>{
+ for(const c of catalog.classes){let src=0,swath=0;for(const w of c.speedWindows!)expect(w.name).toBe(w.kind==='SRC'?`SRC-${++src}`:`SWATH-${++swath}`);}
 });

@@ -812,3 +812,8 @@ teaching signatures, not real-vessel data or calibrated identification probabili
 the unchanged `matchClasses`, optional slots and the 310-Hz example, ship hydraulics,
 class-specific auxiliary/gearing/SRC data, and independent-process determinism. Existing
 physics/seed/row/worker tests continue to apply; no per-row allocation was introduced.
+
+Window display labels are `SRC-1`, `SWATH-1` (numbered within each kind). The closed-form
+truth regression covers all 22 classes x 12 seeded hull/variant draws x four speeds (1056
+states), checking nominal CSR/CFR/EFR and every shaft's BR harmonics to absolute 1e-9.
+Wandered `freqHz` is deliberately not substituted for nominal machinery rates in this test.
