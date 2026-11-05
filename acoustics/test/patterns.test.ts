@@ -75,10 +75,13 @@ describe('passive sonar range and spacing', () => {
     expect(Math.abs(plan.detectionRangeM - target)).toBeLessThan(1);
     expect(transmissionLoss(plan.detectionRangeM, fHz, spreading)).toBeCloseTo(slDb - nlDb + diDb - dtDb, 9);
   });
-  it('uses fictional 120/70/0/10 dB, 200Hz and spherical defaults', () => {
-    expect(planPattern({ ...defaults, kind: 'barrier' })).toEqual(planPattern({ ...defaults, kind: 'barrier', slDb: 120, nlDb: 70, diDb: 0, dtDb: 10, fHz: 200, spreading: 'spherical' }));
-    // Default FOM=40 dB, below spherical TL(1km), hence lower-bound clamp.
-    expect(planPattern({ ...defaults, kind: 'barrier' }).detectionRangeM).toBe(1000);
+  it('uses fictional 130/65/0/10 dB, 200Hz and spherical defaults', () => {
+    expect(planPattern({ ...defaults, kind: 'barrier' })).toEqual(planPattern({ ...defaults, kind: 'barrier', slDb: 130, nlDb: 65, diDb: 0, dtDb: 10, fHz: 200, spreading: 'spherical' }));
+    // Default FOM=55 dB is still below spherical TL(1km) (~60 dB).
+    // Without the 1km clamp the root is ~562m, not 5.6km.
+    const plan = planPattern({ ...defaults, kind: 'barrier' });
+    expect(plan.detectionRangeM).toBe(1000);
+    expect(transmissionLoss(plan.detectionRangeM, 200)).toBeGreaterThan(55);
   });
   it.each([[0, 1000], [250, 30000]])('clamps source level %s to range %s', (slDb, r) => {
     expect(planPattern({ ...defaults, kind: 'single', slDb }).detectionRangeM).toBe(r);

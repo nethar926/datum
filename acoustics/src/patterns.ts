@@ -34,7 +34,7 @@ function finite(value: number, name: string): number {
 }
 
 /** Pure training planner; no engine state, deployments or worker protocol changes.
- * Passive FOM = SL - NL + DI - DT. Fictional defaults 120/70/0/10 dB,
+ * Passive FOM = SL - NL + DI - DT. Fictional defaults 130/65/0/10 dB,
  * 200 Hz, spherical TL (including existing Thorp absorption). */
 export function planPattern(opts: PatternOptions): PatternPlan {
   finite(opts.center.x, 'center.x');
@@ -45,7 +45,7 @@ export function planPattern(opts: PatternOptions): PatternPlan {
     throw new RangeError('Unknown pattern kind');
   // A ring has no threat axis when AUTO was called with a nonfinite axis.
   const axis = (hasAxis ? opts.axisDeg % 360 : opts.kind === 'auto' ? 0 : finite(opts.axisDeg, 'axisDeg')) * Math.PI / 180;
-  const sl = finite(opts.slDb ?? 120, 'slDb'), nl = finite(opts.nlDb ?? 70, 'nlDb');
+  const sl = finite(opts.slDb ?? 130, 'slDb'), nl = finite(opts.nlDb ?? 65, 'nlDb');
   const di = finite(opts.diDb ?? 0, 'diDb'), dt = finite(opts.dtDb ?? 10, 'dtDb');
   const f = finite(opts.fHz ?? 200, 'fHz');
   if (f < 0) throw new RangeError('fHz must be nonnegative');
