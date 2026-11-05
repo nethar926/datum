@@ -441,3 +441,12 @@ describe('truth EDA naming', () => {
     expect(truthEdaName(undefined, 277.5, 0.5)).toBeNull()
   })
 })
+
+describe('truth speed-gated rows', () => {
+  const base = { id: 1, spdMps: 8, crsDeg: 90, propulsion: { kind: 'dieselGR', ratio: 3, ratioLabel: '3:1', engines: [], shafts: [] } }
+  it('lists only active swaths/SRCs', () => {
+    const r = truthRows({ ...base, speedGated: [{ name: 'A', kind: 'SRC', hz: 512, active: true, gain: 0.5 }, { name: 'B', kind: 'SWATH', loHz: 180, hiHz: 240, active: false }] })
+    expect(r.at(-1)).toBe('ACTIVE SRC A 512.0 HZ (FADING)')
+    expect(truthRows({ ...base, speedGated: [{ name: 'B', kind: 'SWATH', loHz: 1, hiHz: 2, active: false }] }).at(-1)).toBe('SWATH/SRC NONE AT THIS SPEED')
+  })
+})

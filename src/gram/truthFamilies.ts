@@ -8,7 +8,8 @@ export type LineFamily = 'CSR' | 'CFR' | 'EDA' | 'EFR' | 'PSR' | (string & {})
 export interface EngineTruth { id: string; stroke: number; cylinders: number; erpm: number; running: boolean; csrHz: number; cfrHz: number; efrHz: number }
 export interface PropulsionTruthLite { kind: string; ratio: number; ratioLabel: string; engines: EngineTruth[]; shafts: { rpm: number; hz: number; coupled?: boolean }[]; motor?: { rpm: number } }
 export interface TruthLineLite { lineFamily?: LineFamily; fundamentalHz?: number; engineId?: string; freqHz?: number; hz?: number; eda?: { name: string; cfrMultiple: number } }
-export interface TruthContactLite { mode?: string; id: number; label?: string; sourceId?: string; active?: boolean; depthM?: number; spdKts?: number; spdMps: number; crsDeg: number; propulsion?: PropulsionTruthLite; lines?: TruthLineLite[] }
+export interface SpeedGatedLite { name: string; kind: 'SWATH' | 'SRC'; hz?: number; loHz?: number; hiHz?: number; active: boolean; gain?: number }
+export interface TruthContactLite { speedGated?: SpeedGatedLite[]; classifiers?: SpeedGatedLite[]; mode?: string; id: number; label?: string; sourceId?: string; active?: boolean; depthM?: number; spdKts?: number; spdMps: number; crsDeg: number; propulsion?: PropulsionTruthLite; lines?: TruthLineLite[] }
 
 export interface FamilyFundamental { family: LineFamily; hz: number; contactId: number; engineId?: string; engineNo?: number; erpm?: number }
 
@@ -76,6 +77,9 @@ export function truthRows(c: TruthContactLite): string[] {
   })
   p.shafts.forEach((s, i) => rows.push(`SHAFT ${i + 1}  PSR ${s.hz.toFixed(2)} HZ  ${s.rpm.toFixed(0)} RPM${s.coupled === undefined ? '' : s.coupled ? '  COUPLED' : '  DECOUPLED'}`))
   if (p.motor) rows.push(`MOTOR ${p.motor.rpm.toFixed(0)} RPM`)
+  const sg = c.speedGated ?? c.classifiers ?? []
+  const on = sg.filter((g) => g.active).map((g) => `${g.kind} ${g.name} ${g.hz !== undefined ? g.hz.toFixed(1) : `${g.loHz?.toFixed(0)}–${g.hiHz?.toFixed(0)}`} HZ${g.gain !== undefined && g.gain < 0.99 ? ' (FADING)' : ''}`)
+  if (sg.length) rows.push(on.length ? `ACTIVE ${on.join('  ')}` : 'SWATH/SRC NONE AT THIS SPEED')
   if (p.kind === 'dieselDirect') rows.push(psrCoupled(p) ? 'PSR = CSR (ENGINES COUPLED)' : 'PSR ≠ CSR (ENGINES DECOUPLED, ON MOTOR)')
   return rows
 }

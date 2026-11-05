@@ -9,6 +9,7 @@ export type ModeCode = 'SURF' | 'SNORK' | 'D/E' | 'BATT' | 'AIP' | 'NUC'
 
 export interface CardEngine { count: number; stroke: 2 | 4; cylinders: number; erpm: [number, number] }
 export interface ClassifyingLine { name: string; cfrMultiple: number }
+export interface SpeedFeature { kind: string; name: string; band: string; kts: [number, number] }
 export interface ModeKeys { mode: ModeCode; lines: string[] }
 export interface CompendiumCard {
   id: string; name: string; country: string; force: 'Red' | 'Blue' | 'Green'; gridHz: 50 | 60
@@ -19,7 +20,7 @@ export interface CompendiumCard {
   speeds: { label: string; kts: number }[]; quietKts?: [number, number]
   cavitationKts?: number; emergency?: string
   modes: ModeKeys[]; ratios: string[]; demon: string; hulls: number
-  edas: ClassifyingLine[]; hydpHz?: number
+  edas: ClassifyingLine[]; hydpHz?: number; speedFeatures: SpeedFeature[]
 }
 
 const PROP_LABEL: Record<string, string> = { flat: 'FLAT', skewed: 'SKEWED', cpp: 'VARIABLE PITCH' }
@@ -68,6 +69,19 @@ function edasFor(x: Any, engines: CardEngine[]): ClassifyingLine[] {
     if (typeof m === 'number' && m > 0) out.push({ name, cfrMultiple: Math.round(m * 100) / 100 })
   }
   return out
+}
+
+function speedFeaturesFor(x: Any): SpeedFeature[] {
+  const src: Any[] = [x.idKeys?.speedWindows, x.idKeys?.speedGated, x.speedWindows, x.speedGated].find(Array.isArray) ?? []
+  const out: SpeedFeature[] = []
+  for (const f of src) {
+    const lo = f.onKts ?? f.kts?.[0] ?? f.speedKts?.[0] ?? f.window?.[0], hi = f.offKts ?? f.kts?.[1] ?? f.speedKts?.[1] ?? f.window?.[1]
+    if (typeof lo !== 'number' || typeof hi !== 'number') continue
+    const a = f.loHz ?? f.hzRange?.[0], b = f.hiHz ?? f.hzRange?.[1]
+    const band = typeof a === 'number' && typeof b === 'number' ? `${Math.round(a)}–${Math.round(b)} Hz` : typeof f.hz === 'number' ? `≈${Math.round(f.hz)} Hz` : ''
+    out.push({ kind: String(f.kind ?? 'SRC').toUpperCase(), name: String(f.name ?? ''), band, kts: [lo, hi] })
+  }
+  return out.sort((p, q) => p.kts[0] - q.kts[0])
 }
 
 function ratiosFor(c: CompendiumCard): string[] {
@@ -121,10 +135,11 @@ export function compendiumCards(catalog: { classes: readonly unknown[] } | undef
       speeds, quietKts: x.quietSpeedKts ? [r1(x.quietSpeedKts[0]), r1(x.quietSpeedKts[1])] : undefined,
       cavitationKts: p.cavitation?.surfaceInceptionKn,
       emergency: ep ? `${ep.blades}-blade emergency propulsor, ≤${ep.maxSpeedKts} kt (off unless ordered)` : undefined,
-      edas: [], hydpHz: typeof x.idKeys?.hydpHz === 'number' ? x.idKeys.hydpHz : typeof x.idKeys?.hydp?.nominalHz === 'number' ? x.idKeys.hydp.nominalHz : typeof x.hydp?.nominalHz === 'number' ? x.hydp.nominalHz : undefined,
+      edas: [], speedFeatures: [], hydpHz: typeof x.idKeys?.hydpHz === 'number' ? x.idKeys.hydpHz : typeof x.idKeys?.hydp?.nominalHz === 'number' ? x.idKeys.hydp.nominalHz : typeof x.hydp?.nominalHz === 'number' ? x.hydp.nominalHz : undefined,
       modes: [], ratios: [], demon: '', hulls: Array.isArray(x.hulls) ? x.hulls.length : 0,
     }
     card.edas = edasFor(x, card.engines)
+    card.speedFeatures = speedFeaturesFor(x)
     card.modes = Array.isArray(x.idKeys?.modes) && x.idKeys.modes.every((m: Any) => typeof m?.mode === 'string' && Array.isArray(m.lines)) ? x.idKeys.modes
       : modesFor(plant, dtCode, !!m?.motor || dtCode === 'DEL' || dtCode === 'NEL', card.motorSlots, !!card.aip, Array.isArray(x.edas) && x.edas.length > 0)
     card.ratios = Array.isArray(x.idKeys?.ratios) && x.idKeys.ratios.every((r: unknown) => typeof r === 'string') ? x.idKeys.ratios : ratiosFor(card)
@@ -138,5 +153,5 @@ export interface CardFilter { query: string; country: string; plant: '' | PlantK
 export function filterCards(cards: readonly CompendiumCard[], f: CardFilter): CompendiumCard[] {
   const q = f.query.trim().toLowerCase()
   return cards.filter((c) => (!f.country || c.country === f.country) && (!f.plant || c.plant === f.plant)
-    && (!q || [c.name, c.country, c.force, c.drivetrain, c.aip ?? '', c.propType ?? '', ...c.edas.map((e) => `${e.name} EDA ×${e.cfrMultiple}`), c.hydpHz ? 'HYDP' : '', ...c.ratios, ...c.modes.flatMap((m) => m.lines)].join(' ').toLowerCase().includes(q)))
+    && (!q || [c.name, c.country, c.force, c.drivetrain, c.aip ?? '', c.propType ?? '', ...c.edas.map((e) => `${e.name} EDA ×${e.cfrMultiple}`), c.hydpHz ? 'HYDP' : '', ...c.speedFeatures.map((f) => `${f.kind} ${f.name}`), ...c.ratios, ...c.modes.flatMap((m) => m.lines)].join(' ').toLowerCase().includes(q)))
 }
