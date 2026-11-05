@@ -22,6 +22,7 @@ export interface TruthContact { id: number; label: string; x: number; y: number;
   /** v1.2 (m3-lines) fields, optional so older engines still work. */
   active?: boolean; depthM?: number; spdKts?: number
   propulsion?: import('../gram/truthFamilies').PropulsionTruthLite; lines?: import('../gram/truthFamilies').TruthLineLite[]
+  speedGated?: import('../gram/truthFamilies').SpeedGatedLite[]; sourceId?: string; category?: 'surface' | 'subsurface'
 }
 export interface Tactical {
   v: 1; type: 'tactical'; simT: number

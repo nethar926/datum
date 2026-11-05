@@ -6,7 +6,12 @@
 /** Engine families from m3-lines; the engine also tags PSR lines, so any family string is accepted. */
 export type LineFamily = 'CSR' | 'CFR' | 'EDA' | 'EFR' | 'PSR' | (string & {})
 export interface EngineTruth { id: string; stroke: number; cylinders: number; erpm: number; running: boolean; csrHz: number; cfrHz: number; efrHz: number }
-export interface PropulsionTruthLite { kind: string; ratio: number; ratioLabel: string; engines: EngineTruth[]; shafts: { rpm: number; hz: number; coupled?: boolean }[]; motor?: { rpm: number } }
+export interface PropulsionTruthLite { kind: string; ratio: number; ratioLabel: string; engines: EngineTruth[]; shafts: { rpm: number; hz: number; coupled?: boolean }[]
+  motor?: { rpm: number; shaftHz?: number; slots?: number; msrHz?: number }
+  /** m3-lines fields, optional so older engines still render. */
+  mode?: string; drivetrainLabel?: string; tpk?: number; tpkValid?: boolean; tpkMinKts?: number
+  propulsor?: { shafts: number; blades: number; bladeType: string; brHz: number }
+  emergencyPropulsor?: { active: boolean; rpm: number; hz: number; blades: number }; aip?: { kind: string; active: boolean } }
 export interface TruthLineLite { lineFamily?: LineFamily; fundamentalHz?: number; engineId?: string; freqHz?: number; hz?: number; eda?: { name: string; cfrMultiple: number } }
 export interface SpeedGatedLite { name: string; kind: 'SWATH' | 'SRC'; hz?: number; loHz?: number; hiHz?: number; active: boolean; gain?: number }
 export interface TruthContactLite { speedGated?: SpeedGatedLite[]; classifiers?: SpeedGatedLite[]; mode?: string; id: number; label?: string; sourceId?: string; active?: boolean; depthM?: number; spdKts?: number; spdMps: number; crsDeg: number; propulsion?: PropulsionTruthLite; lines?: TruthLineLite[] }
@@ -64,19 +69,31 @@ export function psrCoupled(p: PropulsionTruthLite | undefined): boolean {
 const KIND: Record<string, string> = { dieselDirect: 'DIESEL DIRECT', dieselGR: 'DIESEL GEARED', dieselElectric: 'DIESEL ELECTRIC', nuclearGR: 'NUCLEAR GEARED', nuclearElectric: 'NUCLEAR ELECTRIC' }
 
 /** Text rows for one contact in the debug truth panel. */
+const BLADE: Record<string, string> = { flat: 'FLAT', skewed: 'SKEWED', cpp: 'VARIABLE PITCH', variable: 'VARIABLE PITCH' }
+
 export function truthRows(c: TruthContactLite): string[] {
   const kts = c.spdKts ?? c.spdMps * 1.943844
-  const rows = [`${(c.label ?? c.sourceId ?? 'C' + c.id).toUpperCase()}  CRS ${c.crsDeg.toFixed(0).padStart(3, '0')}  ${kts.toFixed(1)} KT${c.depthM !== undefined ? `  ${c.depthM.toFixed(0)} M` : ''}${c.mode ? `  MODE ${c.mode.toUpperCase()}` : ''}`]
   const p = c.propulsion
+  const mode = c.mode ?? p?.mode
+  const rows = [`${(c.label ?? c.sourceId ?? 'C' + c.id).toUpperCase()}  CRS ${c.crsDeg.toFixed(0).padStart(3, '0')}  ${kts.toFixed(1)} KT${c.depthM !== undefined ? `  ${c.depthM.toFixed(0)} M` : ''}${mode ? `  MODE ${mode.toUpperCase()}` : ''}`]
   if (!p) return rows
-  rows.push(`PLANT ${KIND[p.kind] ?? p.kind.toUpperCase()}  RATIO ${p.ratioLabel}`)
+  const plant = KIND[p.kind] ?? p.kind.toUpperCase()
+  const label = p.drivetrainLabel ? p.drivetrainLabel.toUpperCase() : ''
+  rows.push(`PLANT ${label && /DIESEL|NUCLEAR/.test(label) ? label : [plant, label].filter(Boolean).join(' ')}${p.aip ? `  AIP ${p.aip.kind.toUpperCase()}${p.aip.active ? ' ON' : ' OFF'}` : ''}  RATIO ${p.ratioLabel}`)
+  const pr = p.propulsor
+  if (pr) rows.push(`PROP ${pr.shafts} SHAFT${pr.shafts > 1 ? 'S' : ''}  ${pr.blades}-BLADE ${BLADE[pr.bladeType] ?? pr.bladeType.toUpperCase()}  BR ${pr.brHz.toFixed(2)} HZ = PSR × ${pr.blades}`)
+  if (typeof p.tpk === 'number' && p.tpk > 0) rows.push(p.tpkValid === false
+    ? `TPK ${p.tpk.toFixed(2)} RPM/KT  NOT VALID${p.tpkMinKts !== undefined ? ` BELOW ${p.tpkMinKts} KT` : ''} (PITCH CONTROL)`
+    : `TPK ${p.tpk.toFixed(2)} RPM/KT  SPD = PSRPM ÷ TPK${p.tpkMinKts !== undefined ? `  (VALID ABOVE ${p.tpkMinKts} KT)` : ''}`)
   p.engines.forEach((e, n) => {
     rows.push(e.running
       ? `ENG E${n + 1} ${e.stroke}-STROKE ${e.cylinders} CYL  ERPM ${e.erpm.toFixed(0)}  CSR ${e.csrHz.toFixed(2)}  CFR ${e.cfrHz.toFixed(2)}  EFR ${e.efrHz.toFixed(2)} HZ`
       : `ENG E${n + 1} ${e.stroke}-STROKE ${e.cylinders} CYL  STOPPED`)
   })
   p.shafts.forEach((s, i) => rows.push(`SHAFT ${i + 1}  PSR ${s.hz.toFixed(2)} HZ  ${s.rpm.toFixed(0)} RPM${s.coupled === undefined ? '' : s.coupled ? '  COUPLED' : '  DECOUPLED'}`))
-  if (p.motor) rows.push(`MOTOR ${p.motor.rpm.toFixed(0)} RPM`)
+  if (p.motor) rows.push(`MOTOR ${p.motor.rpm.toFixed(0)} RPM${p.motor.msrHz !== undefined ? `  MSR ${p.motor.msrHz.toFixed(1)} HZ${p.motor.slots ? ` (${p.motor.slots} SLOTS)` : ''}` : ''}`)
+  const ep = p.emergencyPropulsor
+  if (ep?.active) rows.push(`EMERG PROPULSOR ON  ${ep.blades}-BLADE  ${ep.hz.toFixed(2)} HZ  ${ep.rpm.toFixed(0)} RPM`)
   const sg = c.speedGated ?? c.classifiers ?? []
   const on = sg.filter((g) => g.active).map((g) => `${g.kind} ${g.name} ${g.hz !== undefined ? g.hz.toFixed(1) : `${g.loHz?.toFixed(0)}–${g.hiHz?.toFixed(0)}`} HZ${g.gain !== undefined && g.gain < 0.99 ? ' (FADING)' : ''}`)
   if (sg.length) rows.push(on.length ? `ACTIVE ${on.join('  ')}` : 'SWATH/SRC NONE AT THIS SPEED')

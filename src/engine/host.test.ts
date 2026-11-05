@@ -83,3 +83,30 @@ describe('SimHost', () => {
     expect(peakNear(144) - floorNear(144)).toBeGreaterThan(8)
   })
 })
+
+import { acousticsV11 } from '../scenarios/acousticsApi'
+describe('SimHost truth', () => {
+  it('passes the engine truth through, with TPK, propulsor, mode and speed-gated lines', () => {
+    const out: FromWorker[] = []
+    const host = new SimHost((m) => out.push(m))
+    const params = acousticsV11.presetToParams!('regular', 11)
+    host.handle({ type: 'init', seed: 11, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2, params })
+    host.handle({ type: 'step' }); host.handle({ type: 'step' })
+    expect(out.filter((m) => m.type === 'error')).toEqual([])
+    const t = out.filter((m): m is Tactical => m.type === 'tactical').at(-1)!
+    const subs = t.truth!.contacts.filter((c) => c.category === 'subsurface' && c.propulsion?.propulsor)
+    expect(subs.length).toBeGreaterThan(0)
+    for (const c of subs) {
+      const p = c.propulsion!
+      expect(p.tpk).toBeGreaterThan(0)
+      expect(p.propulsor!.brHz).toBeCloseTo(p.shafts[0].hz * p.propulsor!.blades, 6)
+      expect(['SURF', 'SNORK', 'D/E', 'BATT', 'AIP', 'NUC']).toContain(p.mode)
+      expect(Array.isArray(c.speedGated)).toBe(true)
+    }
+    // Truth follows the engine on later steps instead of freezing at init.
+    const x0 = subs[0].x
+    for (let k = 0; k < 20; k++) host.handle({ type: 'step' })
+    const t2 = out.filter((m): m is Tactical => m.type === 'tactical').at(-1)!
+    expect(t2.truth!.contacts.find((c) => c.sourceId === subs[0].sourceId)!.x).not.toBe(x0)
+  })
+})
