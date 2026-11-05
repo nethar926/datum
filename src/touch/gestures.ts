@@ -12,20 +12,20 @@ export const exceedsSlop = (x0: number, y0: number, x1: number, y1: number, slop
  * Two-finger pinch + pan on a frequency axis. The frequency under the starting midpoint stays under the
  * current midpoint, and the span scales by the change in finger separation.
  */
-export function pinchView(start: FreqView, a0: number, b0: number, a1: number, b1: number, width: number, fMax: number, minSpan = 10): FreqView {
+export function pinchView(start: FreqView, a0: number, b0: number, a1: number, b1: number, width: number, fMax: number, minSpan = 10, fMin = 0): FreqView {
   const w = Math.max(1, width)
   const d0 = Math.max(8, Math.abs(b0 - a0)), d1 = Math.max(8, Math.abs(b1 - a1))
   const m0 = (a0 + b0) / 2, m1 = (a1 + b1) / 2
   const anchor = xToFreq(m0, start, w)
   const span = (start.hi - start.lo) * (d0 / d1)
   const lo = anchor - (m1 / w) * span
-  return clampView({ lo, hi: lo + span }, fMax, minSpan)
+  return clampView({ lo, hi: lo + span }, fMax, minSpan, fMin)
 }
 
 /** One-axis pan by dx CSS px (content follows the finger). */
-export function panView(start: FreqView, dx: number, width: number, fMax: number): FreqView {
+export function panView(start: FreqView, dx: number, width: number, fMax: number, minSpan = 10, fMin = 0): FreqView {
   const df = (dx / Math.max(1, width)) * (start.hi - start.lo)
-  return clampView({ lo: start.lo - df, hi: start.hi - df }, fMax)
+  return clampView({ lo: start.lo - df, hi: start.hi - df }, fMax, minSpan, fMin)
 }
 
 export type Layout = 'wide' | 'phoneLandscape' | 'phonePortrait'

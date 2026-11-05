@@ -13,6 +13,8 @@ import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState }
 import { CpaOverlay, cpaReadout } from './gram/CpaOverlay'
 import { addSample, cpaFitterReady, MIN_CPA_SAMPLES, runCpaFit, type CpaSample } from './gram/cpa'
 import { clampView, type FreqView } from './gram/axis'
+import { RES_MAX, RES_MIN, clampRes, fullView, geometryKey, minSpanOf, resReadout, vernierLabel } from './gram/res'
+import type { GramFilter } from './engine/contract'
 import { TacticalPlot } from './tactical/TacticalPlot'
 import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
@@ -30,6 +32,16 @@ const PALETTE_LABEL: Record<PaletteId, string> = { green: 'Green', amber: 'Amber
 const PALETTE_KEY = 'datum.palette'
 const loadPalette = (): PaletteId => { try { const v = localStorage.getItem(PALETTE_KEY); return isPaletteId(v) ? v : 'green' } catch { return 'green' } }
 const GRAM_MODE_KEY = 'datum.gramMode'
+const GRAM_KEY = 'datum.gram'
+/** Saved RES level and NB/BB filter (default RES 5, NB); ?res= and ?filter= override. */
+const loadGram = (): { res: number; filter: GramFilter } => {
+  let res = 5, filter: GramFilter = 'NB'
+  try { const v = JSON.parse(localStorage.getItem(GRAM_KEY) ?? 'null'); if (v && Number.isFinite(v.res)) res = clampRes(v.res); if (v?.filter === 'BB' || v?.filter === 'NB') filter = v.filter } catch { /* private mode */ }
+  const q = new URLSearchParams(location.search), qr = Number(q.get('res')), qf = q.get('filter')?.toUpperCase()
+  if (q.has('res') && Number.isFinite(qr)) res = clampRes(qr)
+  if (qf === 'NB' || qf === 'BB') filter = qf
+  return { res, filter }
+}
 const loadGramMode = (): GramMode => { try { const v = localStorage.getItem(GRAM_MODE_KEY); return isGramMode(v) ? v : 'lofar' } catch { return 'lofar' } }
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
 const fmtT = (s: number) => { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` }
@@ -40,7 +52,7 @@ export default function App() {
   const [stream, setStream] = useState(0)
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
   const [truth, setTruth] = useState(false)
-  const [normalized, setNormalized] = useState(true)
+  const [vernierPick, setVernierPick] = useState(false)
   const [palette, setPalette] = useState<PaletteId>(loadPalette)
   useEffect(() => { try { localStorage.setItem(PALETTE_KEY, palette) } catch { /* private mode */ } }, [palette])
   const [gramMode, setGramMode] = useState<GramMode>(loadGramMode)
@@ -104,6 +116,7 @@ export default function App() {
   }
 
   useEffect(() => {
+    client.setGram(loadGram())
     client.start()
     const q = new URLSearchParams(location.search)
     const pq = q.get('palette'); if (isPaletteId(pq)) setPalette(pq)
@@ -115,8 +128,48 @@ export default function App() {
   const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
   const lofarCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'lofar'), [st.configs])
   const cfg = lofarCfgs[stream]
+  const gram = st.gram
+  const filter: GramFilter = cfg?.filter ?? gram?.filter ?? 'NB'
+  useEffect(() => { if (gram) try { localStorage.setItem(GRAM_KEY, JSON.stringify(gram)) } catch { /* private mode */ } }, [gram])
+  // New RES / vernier grid: show the whole new band (the old view is on a different frequency grid).
+  const geo = geometryKey(lofarCfgs)
+  useEffect(() => { if (cfg) setView(fullView(cfg)) }, [geo]) // eslint-disable-line react-hooks/exhaustive-deps
+  const stepRes = (d: number) => { const r = clampRes((cfg?.res ?? gram?.res ?? 5) + d); if (r !== cfg?.res) client.setGram({ res: r }) }
+  const setFilter = (f: GramFilter) => { if (f !== filter) client.setGram({ filter: f }) }
+  const centerVernier = (hz: number) => { setVernierPick(false); client.setGram({ vernierHz: Math.max(0, hz) }) }
+  const vernierOff = () => { setVernierPick(false); client.setGram({ vernierHz: null }) }
+  const vLabel = vernierLabel(cfg)
+  const onVernier = () => { if (vLabel) vernierOff(); else if (selHz !== null) centerVernier(selHz); else setVernierPick(!vernierPick) }
+  const viewDigits = (cfg?.fBin ?? 1) < 0.1 ? 2 : (cfg?.fBin ?? 1) < 1 ? 1 : 0
   const probeName = truth && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
   const buoy = st.tactical?.buoys[stream]
+
+  const toolsRow = (
+    <div className="panel-head gram-tools" data-testid="gram-tools">
+      {!phone && <span className="seg-label">TOOLS</span>}
+            <div className="seg" role="group" aria-label="CPA cursor">
+              <button aria-pressed={cpaMode} onClick={() => setCpaMode(!cpaMode)} title="Mark points along one tonal's Doppler S-curve to fit CPA time, speed and range">CPA</button>
+              {cpaMarks.length > 0 && <button onClick={() => setCpaMarks((m) => m.slice(0, -1))} title="Remove last mark">Undo</button>}
+              {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
+            </div>
+            <div className="seg" role="group" aria-label="Harmonic cursor">
+              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
+              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null) }}>Clear</button>}
+            </div>
+            <div className="seg" role="group" aria-label="Cross cursor">
+              <button aria-pressed={crossOn} onClick={() => setCrossOn(!crossOn)} title="Time / frequency crosshair with level readout">CROSS</button>
+            </div>
+            <div className="seg" role="group" aria-label="Lloyd's mirror">
+              <button aria-pressed={tool === 'lm'} onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)">LM</button>
+            </div>
+            <span className="readout">
+              {cfg ? `${view.lo.toFixed(viewDigits)}–${view.hi.toFixed(viewDigits)} HZ  Δf ${cfg.fBin < 0.1 ? cfg.fBin.toFixed(3) : cfg.fBin.toFixed(2)}` : 'STARTING'}
+              {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
+              {buoy?.rx ? `  AGC ${buoy.rx.gainDb >= 0 ? '+' : ''}${buoy.rx.gainDb.toFixed(0)}` : ''}
+            </span>
+            {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
+    </div>
+  )
 
   return (
     <div className={`app layout-${layout}`} data-layout={layout}>
@@ -216,15 +269,27 @@ export default function App() {
         <div className="workspace-left">
         <section className="panel">
           <div className="panel-head">
-            <h2>{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'}</h2>
+            <h2 data-testid="gram-title">{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'} · {filter}</h2>
             <div className="seg" role="group" aria-label="Gram mode">
               <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title="Intensity only, in the selected palette">LOFAR</button>
               <button aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
             </div>
-            <div className="seg" role="group" aria-label="LOFAR processing">
-              <button aria-pressed={normalized} onClick={() => setNormalized(true)} title="Split-window background normalization">Norm</button>
-              <button aria-pressed={!normalized} onClick={() => setNormalized(false)}>Raw</button>
+            <div className="seg filter-seg" role="group" aria-label="Gram filter" data-testid="filter-seg">
+              <button aria-pressed={filter === 'NB'} onClick={() => setFilter('NB')} title="Narrowband: background-normalized (TPSW), 0–30 dB above the local noise">NB</button>
+              <button aria-pressed={filter === 'BB'} onClick={() => setFilter('BB')} title="Broadband: absolute level, 40–110 dB">BB</button>
             </div>
+            {!phone && <span className="seg-label">RES</span>}
+            <div className="seg res-step" role="group" aria-label="Resolution" data-testid="res-step">
+              <button className="icon" onClick={() => stepRes(-1)} disabled={!cfg || (cfg.res ?? 5) <= RES_MIN} aria-label="Finer resolution (RES down)" title="Finer bins, narrower band">−</button>
+              <span key={cfg?.res} className="res-read" data-testid="res-readout" aria-live="polite">{resReadout(cfg, layout === 'phonePortrait')}</span>
+              <button className="icon" onClick={() => stepRes(1)} disabled={!cfg || (cfg.res ?? 5) >= RES_MAX} aria-label="Coarser resolution (RES up)" title="Wider bins, wider band">+</button>
+            </div>
+            <button className={`btn vernier${vLabel ? ' on' : vernierPick ? ' pick' : ''}`} data-testid="vernier" aria-pressed={!!vLabel || vernierPick} onClick={onVernier}
+              title={vLabel ? 'Back to the full band' : 'Center the band on a line: uses the selected line, or tap one on the gram'}>
+              {vLabel ? <>{vLabel} <span aria-hidden>✕</span></> : vernierPick ? 'VERNIER · tap a line' : layout === 'phonePortrait' ? 'VERNIER' : selHz !== null ? `VERNIER · ${selHz.toFixed(viewDigits + 1)} Hz` : 'VERNIER OFF · tap a line'}
+            </button>
+            {cfg?.bandLimited && <span className="band-limit-tag" data-testid="band-limit-tag" title="Part of this band is above the simulated top frequency">BAND LIMIT</span>}
+            {!phone && <span className="seg-label">BUOY</span>}
             <div className="seg" role="group" aria-label="Buoy channel">
               {lofarCfgs.map((c, i) => (
                 <button key={c.streamId} aria-pressed={i === stream} onClick={() => setStream(i)}>
@@ -232,37 +297,17 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <div className="seg" role="group" aria-label="CPA cursor">
-              <button aria-pressed={cpaMode} onClick={() => setCpaMode(!cpaMode)} title="Mark points along one tonal's Doppler S-curve to fit CPA time, speed and range">CPA</button>
-              {cpaMarks.length > 0 && <button onClick={() => setCpaMarks((m) => m.slice(0, -1))} title="Remove last mark">Undo</button>}
-              {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
-            </div>
-            <div className="seg" role="group" aria-label="Harmonic cursor">
-              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
-              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null) }}>Clear</button>}
-            </div>
-            <div className="seg" role="group" aria-label="Cross cursor">
-              <button aria-pressed={crossOn} onClick={() => setCrossOn(!crossOn)} title="Time / frequency crosshair with level readout">CROSS</button>
-            </div>
-            <div className="seg" role="group" aria-label="Lloyd's mirror">
-              <button aria-pressed={tool === 'lm'} onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)">LM</button>
-            </div>
-            <span className="readout">
-              {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} HZ  Δf ${cfg.fBin.toFixed(2)}` : 'STARTING'}
-              {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
-              {buoy?.rx ? `  AGC ${buoy.rx.gainDb >= 0 ? '+' : ''}${buoy.rx.gainDb.toFixed(0)}` : ''}
-            </span>
-            {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
             {layout === 'phoneLandscape' && <button className="btn icon tac-toggle" data-testid="tac-open" aria-expanded={tacOpen} onClick={() => setTacOpen(!tacOpen)} title="Tactical plot">TAC</button>}
           </div>
+          {layout !== 'phonePortrait' && toolsRow}
           <div className="panel-body">
             {lofarCfgs.length > 0 && (
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
-                onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
-                normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz}
+                onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
+                normalized={filter === 'NB'} palette={palette} selectedHz={selHz} onSelectHz={setSelHz}
                 mode={gramMode} tactical={st.tactical}
-                onPickPoint={cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
-                onDragPoint={tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
+                onPickPoint={vernierPick ? (hz) => centerVernier(hz) : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
+                onDragPoint={vernierPick ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
                 crosshair={crossOn} nowS={st.simT}
                 overlay={cpaMarks.length || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
@@ -294,6 +339,7 @@ export default function App() {
             {gramMode === 'difar' && <DifarLegend omni={!!buoy && buoy.kind !== 'difar'} />}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
+          {layout === 'phonePortrait' && toolsRow}
         </section>
         </div>
         {layout === 'phoneLandscape' && <div className={`tac-scrim${tacOpen ? ' open' : ''}`} onClick={() => setTacOpen(false)} aria-hidden />}

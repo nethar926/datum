@@ -14,6 +14,9 @@ const AIRCRAFT_ALT_M = 450 // display value for the fictional patrol aircraft
 
 type Post = (msg: FromWorker, transfer?: Transferable[]) => void
 interface Frame { streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array; bearingDeg?: Float32Array }
+type EngineSetGram = (id: number, p: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number | null }) => GramConfig & { simT?: number }
+/** Engine gramConfig → display contract (drops simT; keeps the RES fields). */
+const toConfig = (c: GramConfig & { simT?: number }): GramConfig => { const { simT: _t, ...rest } = c; return { ...rest, type: 'gramConfig', v: 1 } }
 const rad2deg = (r: number) => ((((r * 180) / Math.PI) % 360) + 360) % 360
 
 /** Worker-side host: owns an AcousticEngine and speaks the data contract. Pure enough to unit test without a Worker. */
@@ -32,6 +35,11 @@ export class SimHost {
   /** One receiver front end per LOFAR stream; rxEnabled=false gives an ideal (infinite-range) receiver. */
   private rx: Receiver[] = []
   private rxEnabled = true
+  /** RES mode (m3-res engines): rows only when the engine has one ready (every P = 2/4/8 s). */
+  private resMode = false
+  private filter: 'NB' | 'BB' = 'NB'
+  private demonConfigs: GramConfig[] = []
+  private lofarConfigs: GramConfig[] = []
   constructor(private readonly post: Post) {}
 
   handle(msg: ToWorker): void {
@@ -41,6 +49,7 @@ export class SimHost {
       if (msg.type === 'release') return this.release(msg.buffers)
       if (msg.type === 'step') return this.step()
       if (msg.type === 'setSurfaceTraffic') return this.setSurfaceTraffic(msg.value)
+      if (msg.type === 'setGram') return this.setGram(msg)
       if (msg.type === 'setReceiver') { this.rxEnabled = !!msg.enabled; for (const r of this.rx) r.reset(); return }
       throw new Error('Unknown message')
     } catch (e) {
@@ -55,8 +64,15 @@ export class SimHost {
     const gen = (Acoustics as unknown as { generateScenario?: (p: unknown) => ConstructorParameters<typeof AcousticEngine>[0] }).generateScenario
     const engine = new AcousticEngine(msg.params && gen ? gen(msg.params) : buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins))
     this.engine = engine
-    this.bins = band.bins
     this.n = engine.scenario.buoys.length
+    const setGram = (engine as unknown as { setGram?: EngineSetGram }).setGram
+    this.resMode = !!msg.gram && typeof setGram === 'function'
+    let resConfigs: GramConfig[] | undefined
+    if (this.resMode) {
+      resConfigs = engine.scenario.buoys.map((_, i) => toConfig(setGram!.call(engine, i + 1, { res: msg.gram!.res, filter: msg.gram!.filter })))
+      this.filter = resConfigs[0]?.filter ?? 'NB'
+    }
+    this.bins = resConfigs?.[0]?.bins ?? band.bins
     this.dt = 1 / msg.rowRateHz
     this.rowCount = 0
     this.pool = []
@@ -64,10 +80,11 @@ export class SimHost {
     this.rx = Array.from({ length: this.n }, () => new Receiver())
     this.tactical = this.makeTactical()
     const fBin = band.fmax / (band.bins - 1)
-    const configs: GramConfig[] = engine.scenario.buoys.map((b, i) => ({
+    const configs: GramConfig[] = resConfigs ?? engine.scenario.buoys.map((b, i) => ({
       v: 1, type: 'gramConfig', streamId: i + 1, kind: 'lofar', channel: b.rfChannel,
       bins: band.bins, f0: 0, fBin, rowRateHz: msg.rowRateHz, dbFloor: 40, dbCeil: 110,
     }))
+    this.lofarConfigs = configs.slice()
     this.demonIds = []; this.demonPool = []; this.demonBins = 0
     const sub = (engine as unknown as { subscribe?: (r: { kind: 'demon'; buoyId: number }) => number }).subscribe
     const all = (engine as unknown as { configs?: () => GramConfig[] }).configs
@@ -86,9 +103,24 @@ export class SimHost {
         } else this.demonIds = []
       } catch { this.demonIds = []; this.demonBins = 0 }
     }
+    this.demonConfigs = configs.filter((c) => c.kind === 'demon')
     this.post({ v: 1, type: 'streams', configs })
     this.post(this.tactical)
     if (msg.surfaceTraffic !== undefined) this.setSurfaceTraffic(msg.surfaceTraffic)
+  }
+
+  /** RES/filter/vernier change for every LOFAR stream; re-announces the streams (same ids, same frame size). */
+  private setGram(msg: Extract<ToWorker, { type: 'setGram' }>): void {
+    if (!this.resMode) throw new Error('setGram needs a RES-mode init')
+    const engine = this.engine!, set = (engine as unknown as { setGram: EngineSetGram }).setGram
+    const patch: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number | null } = {}
+    if (msg.res !== undefined) patch.res = msg.res
+    if (msg.filter !== undefined) patch.filter = msg.filter
+    if (msg.vernierHz !== undefined) patch.vernierHz = msg.vernierHz
+    this.lofarConfigs = this.lofarConfigs.map((c) => toConfig(set.call(engine, c.streamId, patch)))
+    this.filter = this.lofarConfigs[0]?.filter ?? 'NB'
+    for (const r of this.rx) r.reset()
+    this.post({ v: 1, type: 'streams', configs: [...this.lofarConfigs, ...this.demonConfigs] })
   }
 
   /** Forwards to the engine's v1.1 setSurfaceTraffic when present; a no-op on v1 engines. */
@@ -139,15 +171,22 @@ export class SimHost {
     this.steerOrbit()
     engine.advance(this.dt)
     const wb = (engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void }).writeBearingRow
+    // RES streams share settings, so their rows fall due together; skip the post until they do.
+    if (this.resMode && (engine as unknown as { rowsReady: (id: number) => number }).rowsReady(1) === 0) {
+      this.pool.push(frame); this.updateTactical(); this.post(this.tactical!); return
+    }
+    // NB rows are already TPSW-normalised; the AGC model only applies to absolute (BB / legacy) levels.
+    const rxOn = this.rxEnabled && (!this.resMode || this.filter === 'BB')
     for (let i = 0; i < this.n; i++) {
       frame.streamIds[i] = i + 1
-      frame.rowIndex[i] = this.rowCount
-      engine.writeRow(i + 1, frame.data, i * this.bins)
+      const idx = engine.writeRow(i + 1, frame.data, i * this.bins)
+      if (this.resMode && idx < 0) frame.data.fill(NaN, i * this.bins, (i + 1) * this.bins)
+      frame.rowIndex[i] = this.resMode ? Math.max(0, idx) : this.rowCount
       if (frame.bearingDeg) {
         if (wb) wb.call(engine, i + 1, frame.bearingDeg, i * this.bins)
         else frame.bearingDeg.fill(NaN, i * this.bins, (i + 1) * this.bins)
       }
-      if (this.rxEnabled) this.rx[i].process(frame.data, i * this.bins, this.bins, this.dt)
+      if (rxOn) this.rx[i].process(frame.data, i * this.bins, this.bins, this.resMode ? 1 / (this.lofarConfigs[0]?.rowRateHz || 0.5) : this.dt)
     }
     this.rowCount++
     const rows: GramRows = { v: 1, type: 'gramRows', simT: engine.time, ...frame }
@@ -218,7 +257,7 @@ export class SimHost {
       const remaining = Math.max(0, b.deployedAt + b.life - s.time)
       tb.x = b.x; tb.y = b.y; tb.hydrophoneDepthM = b.depth
       const r = this.rx[i]
-      if (r && this.rxEnabled) { if (tb.rx) { tb.rx.gainDb = r.gainDb; tb.rx.overload = r.overload } else tb.rx = { gainDb: r.gainDb, overload: r.overload } } else tb.rx = undefined
+      if (r && this.rxEnabled && (!this.resMode || this.filter === 'BB')) { if (tb.rx) { tb.rx.gainDb = r.gainDb; tb.rx.overload = r.overload } else tb.rx = { gainDb: r.gainDb, overload: r.overload } } else tb.rx = undefined
       tb.state = s.time < b.deployedAt ? 'falling' : alive ? 'live' : 'dead'
       tb.lifeRemainingS = s.time < b.deployedAt ? b.life : remaining
       tb.batteryFrac = Math.min(1, tb.lifeRemainingS / b.life)

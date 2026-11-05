@@ -257,3 +257,30 @@ button, select { font: inherit; color: inherit; }
 @keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sheet, .sheet-scrim, .tac-panel, .tac-scrim, .seg button, .btn { transition: none !important; } .cmp-sheet .compendium { animation: none; } }
 .sheet-row .seg-label { min-width: 72px; margin-right: 0; }
+
+/* m3-fe-res: RES stepper, NB|BB, VERNIER, BAND LIMIT (docs/m3-header-mock.png) */
+.panel-head.gram-tools { border-top: 1px solid var(--line, #22262c); }
+.panel-head.gram-tools .readout { margin-left: auto; }
+.res-step { align-items: center; }
+.res-step .res-read { display: inline-block; min-width: 20ch; padding: 0 10px; text-align: center; font: 600 11px/1 var(--font-mono); color: #8fe3a8;
+  white-space: nowrap; animation: res-in 180ms cubic-bezier(.2,.8,.2,1); }
+.res-step button.icon { min-width: 32px; font-weight: 600; }
+.res-step button:disabled { opacity: .35; cursor: default; transform: none; }
+@keyframes res-in { from { opacity: .3; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.btn.vernier { font: 600 11px/1 var(--font-mono); color: #8fe3a8; border: 1px dashed rgba(95,200,130,.55); background: rgba(40,110,60,.08);
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 120ms ease; white-space: nowrap; }
+.btn.vernier.pick { background: rgba(60,160,90,.22); border-style: solid; animation: vernier-pulse 1.2s ease-in-out infinite; }
+.btn.vernier.on { background: rgba(50,140,80,.30); border: 1px solid rgba(110,220,150,.7); color: #d6ffe2; }
+@keyframes vernier-pulse { 50% { border-color: rgba(140,240,170,.95); } }
+.band-limit-tag { font: 600 10px/1 var(--font-mono); letter-spacing: .06em; color: #ffcf70; border: 1px solid rgba(255,190,80,.5); border-radius: 4px; padding: 4px 6px; flex-shrink: 0; }
+.gram .band-limit { position: absolute; top: 0; bottom: 22px; pointer-events: none; z-index: 1;
+  background: repeating-linear-gradient(135deg, rgba(8,10,12,.78) 0 6px, rgba(8,10,12,.62) 6px 12px); border-left: 1px solid rgba(255,190,80,.6);
+  display: flex; align-items: flex-start; justify-content: center; transition: left 180ms ease, width 180ms ease; }
+.gram .band-limit span { margin-top: 8px; font: 600 10px/1 var(--font-mono); letter-spacing: .08em; color: #ffcf70; background: rgba(0,0,0,.55); padding: 3px 6px; border-radius: 3px; white-space: nowrap; }
+.gram .gram-veil { position: absolute; left: 0; top: 0; right: 44px; bottom: 22px; pointer-events: none; background: #05080a; opacity: 0;
+  animation: gram-veil 200ms ease-out; }
+@keyframes gram-veil { from { opacity: .55; } to { opacity: 0; } }
+@media (pointer: coarse) { .res-step button.icon { min-width: 44px; } }
+.layout-phonePortrait .res-step .res-read { min-width: 13ch; }
+.layout-phonePortrait .panel-head.gram-tools { border-top: 1px solid var(--line, #22262c); border-bottom: 0; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+@media (prefers-reduced-motion: reduce) { .res-step .res-read, .gram .gram-veil, .btn.vernier.pick { animation: none; } .gram .band-limit { transition: none; } }

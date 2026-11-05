@@ -5,7 +5,11 @@ export type GramKind = 'lofar' | 'demon' | 'bearing'
 export interface GramConfig {
   v: 1; type: 'gramConfig'; streamId: number; kind: GramKind; channel: number
   bins: number; f0: number; fBin: number; rowRateHz: number; dbFloor: number; dbCeil: number
+  /** m3-res fields: present only on RES grams. dB scale comes from dbFloor/dbCeil (NB 0–30, BB 40–110). */
+  res?: number; filter?: GramFilter; bandHz?: number; fcHz?: number; enbwHz?: number; bandLimited?: boolean; liveBins?: number
 }
+export type GramFilter = 'NB' | 'BB'
+export interface GramSettings { res: number; filter: GramFilter }
 export interface GramRows {
   v: 1; type: 'gramRows'; simT: number
   streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array
@@ -38,8 +42,11 @@ export type FromWorker = StreamSet | GramRows | Tactical | WorkerError
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'
 export type ToWorker =
-  | { type: 'init'; seed: number; scenarioId: string; band: Band; rowRateHz: number; params?: ScenarioParams; surfaceTraffic?: number; demon?: boolean }
+  | { type: 'init'; seed: number; scenarioId: string; band: Band; rowRateHz: number; params?: ScenarioParams; surfaceTraffic?: number; demon?: boolean
+      /** RES mode for every LOFAR stream (1024 bins, rows every P s). Omit for the legacy 4 Hz gram. */
+      gram?: GramSettings }
   | { type: 'setReceiver'; enabled: boolean }
   | { type: 'setSurfaceTraffic'; value: number }      // 0 none … 1 heavy
+  | { type: 'setGram'; res?: number; filter?: GramFilter; vernierHz?: number | null } // all LOFAR streams
   | { type: 'step' }                                    // advance one row period of sim time
   | { type: 'release'; buffers: ArrayBuffer[] }

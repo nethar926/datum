@@ -8,6 +8,7 @@ import { AutoLevel } from './autoLevel'
 import { SplitWindowNormalizer } from './whiten'
 import { LevelHistory } from './levelHistory'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
+import { bandLimitHz, fullView, geometryKey, minSpanOf } from './res'
 import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
 
 
@@ -55,6 +56,10 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
+  const fMin = cfg?.f0 ?? 0, minSpan = minSpanOf(cfg)
+  const full = (): FreqView => (cfg ? fullView(cfg) : { lo: 0, hi: fMax })
+  const geo = geometryKey(configs)
+  const limitHz = bandLimitHz(cfg)
   const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode })
   viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode }
   const tacRef = useRef(tactical); tacRef.current = tactical
@@ -72,6 +77,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     setGlError(null)
     rendererRef.current = r
     const level = new AutoLevel(N)
+    const engineFiltered = configs[0]?.res !== undefined
     const norm = new SplitWindowNormalizer(bins), scratch = new Float32Array(bins), brgRow = new Float32Array(bins)
     const hist = new LevelHistory(HISTORY_ROWS, bins); histRef.current = hist
     let histStream = viewRef.current.streamIndex
@@ -85,7 +91,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         if (s === undefined) continue
         r.pushRow(s, rows.data, k * bins); level.update(s, rows.data, k * bins, bins)
         if (s === histStream) hist.push(rows.data, k * bins)
-        norm.apply(rows.data, k * bins, scratch, 0); r.pushRow(N + s, scratch, 0)
+        // RES grams arrive engine-filtered (NB = TPSW), so the display normalizer only runs on legacy grams.
+        if (!engineFiltered) { norm.apply(rows.data, k * bins, scratch, 0); r.pushRow(N + s, scratch, 0) }
         // Bearing ring stays row-aligned with the power ring (NaN rows for omni buoys).
         // Engine per-bin bearings when streamed; else interim colouring from the tracked line bearings.
         const bd = (rows as { bearingDeg?: Float32Array }).bearingDeg
@@ -103,13 +110,15 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     let lastKey = ''
     const frame = () => {
       const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz, palette: pal, mode: md } = viewRef.current
-      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md}`
+      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md},${c?.dbFloor},${c?.dbCeil}`
       if ((dirty || key !== lastKey) && c) {
         const fl = level.get(s), useAuto = a && Number.isFinite(fl)
         const dbFloor = useAuto ? fl - AUTO_BELOW_DB : c.dbFloor, dbCeil = useAuto ? fl - AUTO_BELOW_DB + AUTO_SPAN_DB : c.dbCeil
         const range = { binLo: (v.lo - c.f0) / c.fBin, binHi: (v.hi - c.f0) / c.fBin }
         const difar = md === 'difar' ? s : undefined
-        if (nz) r.draw(N + s, { ...range, dbFloor: NORM_FLOOR_DB, dbCeil: NORM_CEIL_DB }, difar)
+        // RES grams: the colour scale comes only from gramConfig (NB 0–30 dB, BB 40–110 dB).
+        if (c.res !== undefined) r.draw(s, { ...range, dbFloor: c.dbFloor, dbCeil: c.dbCeil }, difar)
+        else if (nz) r.draw(N + s, { ...range, dbFloor: NORM_FLOOR_DB, dbCeil: NORM_CEIL_DB }, difar)
         else r.draw(s, { ...range, dbFloor, dbCeil }, difar)
         dirty = false; lastKey = key
       }
@@ -132,7 +141,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
       r.dispose(); rendererRef.current = null; histRef.current = null
     }
-  }, [client, bins, configs.length, configs.map((c) => c.streamId).join(','), HISTORY_ROWS, glGen])
+  }, [client, bins, configs.length, geo, HISTORY_ROWS, glGen])
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
   useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, bins, configs.length, client, glGen])
@@ -144,7 +153,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const anchor = xToFreq(e.clientX - rect.left, view, rect.width)
-    onView(zoomView(view, anchor, e.deltaY < 0 ? 1.25 : 0.8, fMax))
+    onView(zoomView(view, anchor, e.deltaY < 0 ? 1.25 : 0.8, fMax, minSpan, fMin))
   }
   // Pointer gestures (mouse, pen, touch). One finger: tap = pick/select, drag = tool drag or scrub cursor,
   // long-press = crosshair details at that point, double-tap = full band. Two fingers: pinch zoom + pan.
@@ -187,7 +196,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     p.x = x; p.y = y
     if (G.pinch && ptr.current.size >= 2) {
       const [a, b] = [...ptr.current.values()]
-      onView(pinchView(G.pinch.v, G.pinch.a0, G.pinch.b0, a.x, b.x, w, fMax)); return
+      onView(pinchView(G.pinch.v, G.pinch.a0, G.pinch.b0, a.x, b.x, w, fMax, minSpan, fMin)); return
     }
     if (!G.moved && exceedsSlop(p.x0, p.y0, x, y)) { G.moved = true; clearTimeout(G.longTimer); setPressHint(false) }
     if (G.dragging) { if (G.moved) onDragPoint?.('move', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
@@ -204,7 +213,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     // Tap.
     const hz = xToFreq(x, view, w), lt = G.lastTap
     if (p.type !== 'mouse' && e.timeStamp - lt.t < DOUBLE_TAP_MS && !exceedsSlop(lt.x, lt.y, x, y, 24)) {
-      G.lastTap = { t: 0, x: 0, y: 0 }; onView(clampView({ lo: 0, hi: fMax }, fMax)); return
+      G.lastTap = { t: 0, x: 0, y: 0 }; onView(full()); return
     }
     G.lastTap = { t: e.timeStamp, x, y }
     if (onPickPoint) onPickPoint(hz, ago(y, h))
@@ -227,7 +236,12 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           onContextMenu={(e) => e.preventDefault()}
           className={pressHint ? 'pressing' : undefined}
           style={{ touchAction: 'none', cursor: onPickPoint ? 'crosshair' : onDragPoint ? 'ew-resize' : undefined }}
-          onDoubleClick={() => onView(clampView({ lo: 0, hi: fMax }, fMax))} aria-label={label} />
+          onDoubleClick={() => onView(full())} aria-label={label} />
+      )}
+      {cfg && <div key={geo} className="gram-veil" aria-hidden />}
+      {limitHz !== null && freqToX(limitHz, view, width) < width && (
+        <div className="band-limit" data-testid={`${testId}-band-limit`} style={{ left: Math.max(0, freqToX(limitHz, view, width)), width: width - Math.max(0, freqToX(limitHz, view, width)) }}
+          title={`Above ${limitHz.toFixed(0)} Hz is past the simulated band`}><span>BAND LIMIT</span></div>
       )}
       <div className="axis axis-y" aria-hidden>
         {timeTicks.map((t) => <span key={t} style={{ top: `${(t / historyS) * 100}%` }}>{t === 0 ? 'now' : `-${t}s`}</span>)}
@@ -238,7 +252,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       </div>
       <div />
       {selectedHz !== null && selectedHz >= view.lo && selectedHz <= view.hi && (
-        <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(1)}</span></div>
+        <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(fBin < 0.1 ? 2 : 1)}</span></div>
       )}
       {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS })}</div>}
       {cross && (
