@@ -404,6 +404,17 @@ describe('engine line families (truth)', () => {
     expect(familyLabel(s!.fund)).toBe('EFR E1 ERPM 180')
     expect(snapToFamily(50, familyFundamentals([dd(true)]), 0.2)).toBeNull()
   })
+  it('battery mode: engine families drop, PSR stays; shaft coupled flag wins', () => {
+    const c = dd(false); c.mode = 'battery'; c.propulsion!.shafts[0].coupled = false
+    c.lines = [{ lineFamily: 'PSR', fundamentalHz: 3 }]
+    expect(familyFundamentals([c]).map((f) => f.family)).toEqual(['PSR'])
+    expect(psrCoupled(c.propulsion)).toBe(false)
+    const rows = truthRows(c).join('\n')
+    expect(rows).toMatch(/MODE BATTERY/); expect(rows).toMatch(/PSR 3.00 HZ  180 RPM  DECOUPLED/)
+    const on = dd(true); on.propulsion!.shafts[0].coupled = true
+    expect(psrCoupled(on.propulsion)).toBe(true)
+    expect(snapToFamily(9.1, familyFundamentals([c]), 0.5)?.k).toBe(3)
+  })
   it('Diesel Direct PSR = CSR only when the engines are coupled', () => {
     expect(psrCoupled(dd(true).propulsion)).toBe(true)
     expect(psrCoupled(dd(false).propulsion)).toBe(false)
