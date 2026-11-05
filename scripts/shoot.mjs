@@ -26,6 +26,16 @@ try {
     }
     await page.waitForTimeout(500)
   }
+  if (process.env.CPA) {
+    // Mark a short diagonal run of points on the LOFAR (UI path only; positions are not a real tonal).
+    await page.getByRole('button', { name: 'CPA', exact: true }).click()
+    const box = await page.locator('[data-testid=lofar]').boundingBox()
+    for (let k = 0; k < 6; k++) await page.mouse.click(box.x + box.width * (0.3 + 0.01 * k), box.y + box.height * (0.05 + 0.03 * k))
+    const t = await page.locator('[data-testid=cpa-readout]').innerText()
+    if (!/CPA/.test(t)) errors.push('cpa readout missing')
+    console.log('cpa:', t)
+    await page.waitForTimeout(300)
+  }
   await page.screenshot({ path: process.env.SHOT ?? 'docs/m1.png' })
   await browser.close()
   console.log(JSON.stringify({ errors }))

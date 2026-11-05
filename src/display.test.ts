@@ -199,3 +199,21 @@ describe('harmonic cursor', () => {
     expect(bladeReadout(2.4, null).blades).toBeNull()
   })
 })
+
+describe('CPA cursor', () => {
+  it('model curve is an S: high before CPA, f0 at CPA, low after', async () => {
+    const { cpaModelHz } = await import('./gram/cpa')
+    const fit = { f0: 100, speedMps: 5, tCpaS: 600, rCpaM: 1500 }
+    expect(cpaModelHz(fit, 600)).toBeCloseTo(100, 6)
+    expect(cpaModelHz(fit, 0)).toBeGreaterThan(100.25)
+    expect(cpaModelHz(fit, 1200)).toBeLessThan(99.75)
+    expect(cpaModelHz(fit, 0) - 100).toBeCloseTo(100 - cpaModelHz(fit, 1200), 2)
+  })
+  it('keeps marks time-ordered and replaces near-duplicates', async () => {
+    const { addSample } = await import('./gram/cpa')
+    let l = addSample([], { tS: 10, fHz: 1 })
+    l = addSample(l, { tS: 5, fHz: 2 })
+    l = addSample(l, { tS: 10.4, fHz: 3 })
+    expect(l).toEqual([{ tS: 5, fHz: 2 }, { tS: 10.4, fHz: 3 }])
+  })
+})

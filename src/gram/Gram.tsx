@@ -8,13 +8,15 @@ import { SplitWindowNormalizer } from './whiten'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 
 
-export interface OverlayCtx { view: FreqView; width: number; cfg: GramConfig }
+export interface OverlayCtx { view: FreqView; width: number; cfg: GramConfig; historyS: number }
 interface Props {
   /** Streams of one kind (all with equal bins), in display order; streamIndex selects among them. */
   client: SimClient; configs: GramConfig[]; streamIndex: number; view: FreqView; onView: (v: FreqView) => void
   label?: string; testId?: string; historyRows?: number; unit?: string
   /** Drawn above the waterfall (cursors, markers); gets the live view and pixel width. */
   overlay?: (o: OverlayCtx) => React.ReactNode
+  /** When set, clicks call this with (Hz, seconds before the newest row) instead of onSelectHz. */
+  onPickPoint?: (hz: number, agoS: number) => void
   auto?: boolean; normalized?: boolean; palette?: PaletteId; selectedHz?: number | null; onSelectHz?: (hz: number) => void
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
@@ -27,7 +29,7 @@ const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', selectedHz = null, onSelectHz,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -107,7 +109,12 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     <div className="gram">
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas ref={canvasRef} data-testid={testId} onWheel={onWheel} onMouseMove={onMove} onMouseLeave={() => setCursor(null)}
-          onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); onSelectHz?.(xToFreq(e.clientX - rect.left, view, rect.width)) }}
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect(), hz = xToFreq(e.clientX - rect.left, view, rect.width)
+            if (onPickPoint) onPickPoint(hz, ((e.clientY - rect.top) / rect.height) * historyS)
+            else onSelectHz?.(hz)
+          }}
+          style={onPickPoint ? { cursor: 'crosshair' } : undefined}
           onDoubleClick={() => onView(clampView({ lo: 0, hi: fMax }, fMax))} aria-label={label} />
       )}
       <div className="axis axis-y" aria-hidden>
@@ -121,7 +128,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       {selectedHz !== null && selectedHz >= view.lo && selectedHz <= view.hi && (
         <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(1)}</span></div>
       )}
-      {cfg && overlay?.({ view, width, cfg })}
+      {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS })}</div>}
       {cursor !== null && <div className="cursor-readout">{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}</div>}
     </div>
   )

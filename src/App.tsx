@@ -3,6 +3,8 @@ import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
 import { DemonPane } from './gram/DemonPane'
+import { CpaOverlay, cpaReadout } from './gram/CpaOverlay'
+import { addSample, cpaFitterReady, MIN_CPA_SAMPLES, runCpaFit, type CpaSample } from './gram/cpa'
 import { clampView, type FreqView } from './gram/axis'
 import { TacticalPlot } from './tactical/TacticalPlot'
 import type { FixSource, ManualBearings } from './tactical/manual'
@@ -37,6 +39,10 @@ export default function App() {
     if (final) log.add({ simT: client.status.simT, kind: 'bearing', buoyId, data: deg === null ? { source: 'manual', cleared: true } : { source: 'manual', brgDeg: Math.round(deg * 10) / 10 } })
   }
   const [selHz, setSelHz] = useState<number | null>(null)
+  const [cpaMode, setCpaMode] = useState(false)
+  const [cpaMarks, setCpaMarks] = useState<CpaSample[]>([])
+  useEffect(() => { setCpaMarks([]) }, [stream, st.band])
+  const cpaFit = useMemo(() => runCpaFit(cpaMarks), [cpaMarks])
 
   useEffect(() => {
     client.start()
@@ -99,6 +105,12 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <div className="seg" role="group" aria-label="CPA cursor">
+              <button aria-pressed={cpaMode} onClick={() => setCpaMode(!cpaMode)} title="Mark points along one tonal's Doppler S-curve to fit CPA time, speed and range">CPA</button>
+              {cpaMarks.length > 0 && <button onClick={() => setCpaMarks((m) => m.slice(0, -1))} title="Remove last mark">Undo</button>}
+              {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
+            </div>
+            {(cpaMode || cpaMarks.length > 0) && <span className="readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</span>}
             <span className="readout">
               {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} HZ  Δf ${cfg.fBin.toFixed(2)}` : 'STARTING'}
               {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
@@ -108,7 +120,9 @@ export default function App() {
             {lofarCfgs.length > 0 && (
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
-                normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz} />
+                normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz}
+                onPickPoint={cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
+                overlay={cpaMarks.length ? (ctx) => <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} /> : undefined} />
             )}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
