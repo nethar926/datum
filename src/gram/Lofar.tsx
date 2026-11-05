@@ -3,16 +3,22 @@ import type { GramConfig } from '../engine/contract'
 import type { SimClient } from '../engine/client'
 import { WaterfallRenderer } from '../gl/waterfall'
 import { AutoLevel } from './autoLevel'
+import { SplitWindowNormalizer } from './whiten'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 
 const HISTORY_ROWS = 600
 
-interface Props { client: SimClient; configs: GramConfig[]; streamIndex: number; view: FreqView; onView: (v: FreqView) => void; auto?: boolean }
+interface Props {
+  client: SimClient; configs: GramConfig[]; streamIndex: number; view: FreqView; onView: (v: FreqView) => void
+  auto?: boolean; normalized?: boolean; selectedHz?: number | null; onSelectHz?: (hz: number) => void
+}
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
+// Normalized view: background sits at ~0 dB, so a fixed range from just below it shows weak tonals.
+const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
 
 /** LOFAR waterfall: WebGL2 ring textures, frequency axis below, time axis right, cursor readout. */
-export function Lofar({ client, configs, streamIndex, view, onView, auto = true }: Props) {
+export function Lofar({ client, configs, streamIndex, view, onView, auto = true, normalized = true, selectedHz = null, onSelectHz }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
   const [glError, setGlError] = useState<string | null>(null)
@@ -21,34 +27,43 @@ export function Lofar({ client, configs, streamIndex, view, onView, auto = true 
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
-  const viewRef = useRef({ view, streamIndex, cfg, auto })
-  viewRef.current = { view, streamIndex, cfg, auto }
+  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized })
+  viewRef.current = { view, streamIndex, cfg, auto, normalized }
 
   // (Re)create the renderer when the stream geometry changes.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !bins || !configs.length) return
     let r: WaterfallRenderer
-    try { r = new WaterfallRenderer(canvas, bins, HISTORY_ROWS, configs.length) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
+    // Textures 0..N-1 hold raw rows, N..2N-1 the normalized rows, so toggling keeps full history.
+    const N = configs.length
+    try { r = new WaterfallRenderer(canvas, bins, HISTORY_ROWS, N * 2) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
     setGlError(null)
     rendererRef.current = r
-    const level = new AutoLevel(configs.length)
+    const level = new AutoLevel(N)
+    const norm = new SplitWindowNormalizer(bins), scratch = new Float32Array(bins)
     let dirty = true, raf = 0
     const off = client.onRows((rows) => {
       const n = rows.streamIds.length
-      for (let k = 0; k < n; k++) { r.pushRow(rows.streamIds[k] - 1, rows.data, k * bins); level.update(rows.streamIds[k] - 1, rows.data, k * bins, bins) }
+      for (let k = 0; k < n; k++) {
+        const s = rows.streamIds[k] - 1
+        r.pushRow(s, rows.data, k * bins); level.update(s, rows.data, k * bins, bins)
+        norm.apply(rows.data, k * bins, scratch, 0); r.pushRow(N + s, scratch, 0)
+      }
       dirty = true
     })
     const ro = new ResizeObserver(() => { dirty = true; setWidth(canvas.clientWidth) })
     ro.observe(canvas)
     let lastKey = ''
     const frame = () => {
-      const { view: v, streamIndex: s, cfg: c, auto: a } = viewRef.current
-      const key = `${v.lo},${v.hi},${s},${a}`
+      const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz } = viewRef.current
+      const key = `${v.lo},${v.hi},${s},${a},${nz}`
       if ((dirty || key !== lastKey) && c) {
         const fl = level.get(s), useAuto = a && Number.isFinite(fl)
         const dbFloor = useAuto ? fl - AUTO_BELOW_DB : c.dbFloor, dbCeil = useAuto ? fl - AUTO_BELOW_DB + AUTO_SPAN_DB : c.dbCeil
-        r.draw(s, { binLo: (v.lo - c.f0) / c.fBin, binHi: (v.hi - c.f0) / c.fBin, dbFloor, dbCeil })
+        const range = { binLo: (v.lo - c.f0) / c.fBin, binHi: (v.hi - c.f0) / c.fBin }
+        if (nz) r.draw(N + s, { ...range, dbFloor: NORM_FLOOR_DB, dbCeil: NORM_CEIL_DB })
+        else r.draw(s, { ...range, dbFloor, dbCeil })
         dirty = false; lastKey = key
       }
       raf = requestAnimationFrame(frame)
@@ -75,6 +90,7 @@ export function Lofar({ client, configs, streamIndex, view, onView, auto = true 
     <div className="gram">
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas ref={canvasRef} data-testid="lofar" onWheel={onWheel} onMouseMove={onMove} onMouseLeave={() => setCursor(null)}
+          onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); onSelectHz?.(xToFreq(e.clientX - rect.left, view, rect.width)) }}
           onDoubleClick={() => onView(clampView({ lo: 0, hi: fMax }, fMax))} aria-label="LOFAR waterfall" />
       )}
       <div className="axis axis-y" aria-hidden>
@@ -85,6 +101,9 @@ export function Lofar({ client, configs, streamIndex, view, onView, auto = true 
           <span key={f} style={{ left: x }}><i className="tick-x" style={{ left: '50%', top: -6 }} />{f}</span>) })}
       </div>
       <div />
+      {selectedHz !== null && selectedHz >= view.lo && selectedHz <= view.hi && (
+        <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(1)}</span></div>
+      )}
       {cursor !== null && <div className="cursor-readout">{cursor.toFixed(1)} Hz · bin {Math.round(cursor / fBin)}</div>}
     </div>
   )

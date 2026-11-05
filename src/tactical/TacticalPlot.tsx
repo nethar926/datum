@@ -1,18 +1,22 @@
 import { useEffect, useRef } from 'react'
 import type { SimClient } from '../engine/client'
+import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { crossFixes } from './fix'
 import { fitView, toScreenX, toScreenY } from './transform'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
+// Bearing lines are drawn to a finite length and fade out toward the end.
+const BEARING_LEN_M = 7000
+const SEL_TOL_HZ = 1.5
 
-interface Props { client: SimClient; showTruth: boolean; spanM?: number; selectedChannel?: number }
+interface Props { client: SimClient; showTruth: boolean; spanM?: number; selectedChannel?: number; selectedHz?: number | null; allBearings?: boolean }
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional truth. Canvas 2D. */
-export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel }: Props) {
+export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showTruth, spanM, selectedChannel })
-  props.current = { showTruth, spanM, selectedChannel }
+  const props = useRef({ showTruth, spanM, selectedChannel, selectedHz, allBearings })
+  props.current = { showTruth, spanM, selectedChannel, selectedHz, allBearings }
 
   useEffect(() => {
     const canvas = ref.current!
@@ -26,10 +30,10 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
     const draw = () => {
       raf = requestAnimationFrame(draw)
       const st = client.status, t = st.tactical
-      const { showTruth: truth, spanM: span, selectedChannel: sel } = props.current
+      const { showTruth: truth, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all } = props.current
       const dpr = Math.min(2, devicePixelRatio || 1)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
-      const key = `${w}x${h}:${truth}:${span}:${sel}`
+      const key = `${w}x${h}:${truth}:${span}:${sel}:${selHz}:${all}`
       if (t?.simT === lastT && key === lastKey) return
       lastT = t?.simT ?? -1; lastKey = key
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
@@ -44,15 +48,19 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
       ctx.fillText('N', w / 2 + 4 * dpr, 12 * dpr); ctx.fillText('2 km rings', 8 * dpr, h - 8 * dpr)
       if (!t) return
 
-      // Bearing lines.
-      const reach = span * 1.5
-      ctx.strokeStyle = C.brg; ctx.lineWidth = 1 * dpr
-      for (const b of t.bearings) {
-        const buoy = t.buoys.find((x) => x.id === b.buoyId); if (!buoy || b.quality < MIN_DRAW_Q) continue
+      // Bearing lines: by default only those for the selected tonal (picked on the LOFAR, or the
+      // selected buoy's strongest line), all of them as a toggle. Finite length, fading.
+      const shown = selectBearings(t.bearings, t.buoys, sel, selHz, all)
+      ctx.lineWidth = 1 * dpr
+      for (const b of shown) {
+        const buoy = t.buoys.find((x) => x.id === b.buoyId)!
         const th = (b.brgDeg * Math.PI) / 180
-        ctx.globalAlpha = Math.min(1, 0.25 + b.quality / 30)
-        ctx.beginPath(); ctx.moveTo(toScreenX(v, buoy.x), toScreenY(v, buoy.y))
-        ctx.lineTo(toScreenX(v, buoy.x + Math.sin(th) * reach), toScreenY(v, buoy.y + Math.cos(th) * reach)); ctx.stroke()
+        const x0 = toScreenX(v, buoy.x), y0 = toScreenY(v, buoy.y)
+        const x1 = toScreenX(v, buoy.x + Math.sin(th) * BEARING_LEN_M), y1 = toScreenY(v, buoy.y + Math.cos(th) * BEARING_LEN_M)
+        const g = ctx.createLinearGradient(x0, y0, x1, y1)
+        g.addColorStop(0, C.brg); g.addColorStop(1, 'rgba(0,0,0,0)')
+        ctx.strokeStyle = g; ctx.globalAlpha = Math.min(1, 0.35 + b.quality / 30)
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke()
       }
       ctx.globalAlpha = 1
 
@@ -80,7 +88,7 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
 
       // Cross-fixes from DIFAR lines.
       ctx.strokeStyle = C.fix; ctx.lineWidth = 1.5 * dpr
-      for (const f of crossFixes(t.bearings, t.buoys, 1.5, MIN_DRAW_Q)) {
+      for (const f of crossFixes(shown, t.buoys, SEL_TOL_HZ, MIN_DRAW_Q)) {
         const sx = toScreenX(v, f.x), sy = toScreenY(v, f.y), r = 6 * dpr
         ctx.beginPath(); ctx.moveTo(sx - r, sy - r); ctx.lineTo(sx + r, sy + r); ctx.moveTo(sx + r, sy - r); ctx.lineTo(sx - r, sy + r); ctx.stroke()
         ctx.fillStyle = C.fix; ctx.fillText(`${f.freqHz.toFixed(0)}Hz`, sx + 8 * dpr, sy - 6 * dpr)
@@ -102,4 +110,22 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
   }, [client])
 
   return <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot" />
+}
+
+/**
+ * Which DIFAR lines to draw. all: every confident line. Otherwise lines within SEL_TOL_HZ of the selected
+ * frequency; with no frequency picked, the strongest line on the selected buoy sets it.
+ */
+export function selectBearings(bearings: Bearing[], buoys: TacticalBuoy[], selChannel: number | undefined, selHz: number | null, all: boolean): Bearing[] {
+  const live = bearings.filter((b) => b.quality >= MIN_DRAW_Q && buoys.some((x) => x.id === b.buoyId && x.state !== 'dead'))
+  if (all) return live
+  let hz = selHz
+  if (hz === null) {
+    const buoy = buoys.find((x) => x.channel === selChannel)
+    let best: Bearing | undefined
+    for (const b of live) if (b.buoyId === buoy?.id && (!best || b.quality > best.quality)) best = b
+    if (!best) return []
+    hz = best.freqHz
+  }
+  return live.filter((b) => Math.abs(b.freqHz - hz) <= SEL_TOL_HZ)
 }

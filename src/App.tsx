@@ -15,6 +15,9 @@ export default function App() {
   const [stream, setStream] = useState(0)
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
   const [truth, setTruth] = useState(false)
+  const [normalized, setNormalized] = useState(true)
+  const [allBearings, setAllBearings] = useState(false)
+  const [selHz, setSelHz] = useState<number | null>(null)
 
   useEffect(() => {
     client.start()
@@ -23,7 +26,7 @@ export default function App() {
     return () => client.dispose()
   }, [client])
 
-  const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }) }
+  const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
   const cfg = st.configs[stream]
   const buoy = st.tactical?.buoys[stream]
 
@@ -57,6 +60,10 @@ export default function App() {
         <section className="panel">
           <div className="panel-head">
             <h2>LOFAR</h2>
+            <div className="seg" role="group" aria-label="LOFAR processing">
+              <button aria-pressed={normalized} onClick={() => setNormalized(true)} title="Split-window background normalization">Norm</button>
+              <button aria-pressed={!normalized} onClick={() => setNormalized(false)}>Raw</button>
+            </div>
             <div className="seg" role="group" aria-label="Buoy channel">
               {st.configs.map((c, i) => (
                 <button key={c.streamId} aria-pressed={i === stream} onClick={() => setStream(i)}>
@@ -72,7 +79,8 @@ export default function App() {
           <div className="panel-body">
             {st.configs.length > 0 && (
               <Lofar client={client} configs={st.configs} streamIndex={stream} view={view}
-                onView={(v) => setView(clampView(v, BAND_MAX[st.band]))} />
+                onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
+                normalized={normalized} selectedHz={selHz} onSelectHz={setSelHz} />
             )}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
@@ -80,12 +88,16 @@ export default function App() {
         <section className="panel">
           <div className="panel-head">
             <h2>Tactical</h2>
+            <div className="seg" role="group" aria-label="Bearings shown">
+              <button aria-pressed={!allBearings} onClick={() => setAllBearings(false)}>{selHz === null ? 'Sel' : `${selHz.toFixed(1)} Hz`}</button>
+              <button aria-pressed={allBearings} onClick={() => setAllBearings(true)}>All</button>
+            </div>
             <span className="readout">
               {st.tactical ? `A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')} · ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT · ${st.tactical.aircraft.altM} M` : ''}
             </span>
           </div>
           <div className="panel-body plot">
-            <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} />
+            <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings} />
           </div>
         </section>
       </main>

@@ -95,3 +95,33 @@ describe('auto level', () => {
     expect(a.get(1)).toBeNaN()
   })
 })
+
+import { SplitWindowNormalizer } from './gram/whiten'
+import { selectBearings } from './tactical/TacticalPlot'
+describe('split-window normalization', () => {
+  it('flattens a sloped background, keeps tonals, keeps NaN', () => {
+    const n = 512, src = new Float32Array(n), dst = new Float32Array(n)
+    for (let i = 0; i < n; i++) src[i] = 100 - i * 0.05
+    src[200] += 12
+    const nz = new SplitWindowNormalizer(n)
+    nz.apply(src, 0, dst, 0)
+    for (let i = 40; i < n - 40; i++) if (Math.abs(i - 200) > 30) expect(Math.abs(dst[i])).toBeLessThan(0.01)
+    expect(dst[200]).toBeCloseTo(12, 1)
+    src.fill(NaN); nz.apply(src, 0, dst, 0)
+    expect(dst.every((v) => Number.isNaN(v))).toBe(true)
+  })
+})
+describe('bearing selection', () => {
+  const buoys = [1, 2].map((id) => ({ id, channel: 10 + id, kind: 'difar' as const, x: 0, y: 0, hydrophoneDepthM: 60, batteryFrac: 1, lifeRemainingS: 1, state: 'live' as const }))
+  const br = [
+    { buoyId: 1, freqHz: 72, brgDeg: 10, quality: 20 }, { buoyId: 1, freqHz: 144, brgDeg: 50, quality: 12 },
+    { buoyId: 2, freqHz: 72.5, brgDeg: 300, quality: 15 }, { buoyId: 2, freqHz: 300, brgDeg: 90, quality: 4 },
+  ]
+  it('defaults to the strongest line on the selected buoy', () => {
+    expect(selectBearings(br, buoys, 11, null, false).map((b) => b.freqHz)).toEqual([72, 72.5])
+  })
+  it('follows a picked frequency, and shows all confident lines as a toggle', () => {
+    expect(selectBearings(br, buoys, 11, 144.4, false)).toHaveLength(1)
+    expect(selectBearings(br, buoys, 11, null, true)).toHaveLength(3)
+  })
+})
