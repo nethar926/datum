@@ -217,3 +217,29 @@ describe('CPA cursor', () => {
     expect(l).toEqual([{ tS: 5, fHz: 2 }, { tS: 10.4, fHz: 3 }])
   })
 })
+
+describe("Lloyd's mirror overlay", () => {
+  it('K from geometry matches the striation formula and round-trips to zs', async () => {
+    const L = await import('./gram/lloyds')
+    const R = 2000, zs = 60, zr = 30, c = 1500
+    const k = L.kFromGeometry(R, zs, zr)
+    expect(k).toBeCloseTo((c * R) / (2 * zs * zr), 6)
+    const rd = L.lloydReadout('cpaFit', k, zr, R)
+    expect(rd.zsM).toBeCloseTo(zs, 6)
+    expect(rd.depthRatio).toBeCloseTo(zs / R, 9)
+  })
+  it('basis none never reports a depth', async () => {
+    const L = await import('./gram/lloyds')
+    const rd = L.lloydReadout('none', 800, 30, 2000)
+    expect(Number.isNaN(rd.zsM)).toBe(true)
+    expect(rd.depthRatio).toBeGreaterThan(0)
+  })
+  it('drag re-scale puts the picked null through the pointer', async () => {
+    const L = await import('./gram/lloyds')
+    const s = { k: 100, tCpaS: 500, tauS: 300 }
+    const n = L.nearestNull(s, 800, 290)
+    expect(n).toBe(2)
+    const k = L.kThrough(s, n, 800, 290)
+    expect(L.striationHz({ ...s, k }, n, 800)).toBeCloseTo(290, 9)
+  })
+})

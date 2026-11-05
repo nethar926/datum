@@ -36,6 +36,17 @@ try {
     console.log('cpa:', t)
     await page.waitForTimeout(300)
   }
+  if (process.env.LM) {
+    await page.getByRole('button', { name: 'LM', exact: true }).click()
+    const box = await page.locator('[data-testid=lofar]').boundingBox()
+    const y = box.y + box.height * 0.1
+    await page.mouse.move(box.x + box.width * 0.08, y); await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.05, y, { steps: 6 }); await page.mouse.up()
+    const t = await page.locator('[data-testid=lm-readout]').innerText()
+    if (!/RELATIVE/.test(t)) errors.push('lm readout should be relative with no basis: ' + t)
+    console.log('lm:', t)
+    await page.waitForTimeout(300)
+  }
   await page.screenshot({ path: process.env.SHOT ?? 'docs/m1.png' })
   await browser.close()
   console.log(JSON.stringify({ errors }))

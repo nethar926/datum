@@ -17,6 +17,8 @@ interface Props {
   overlay?: (o: OverlayCtx) => React.ReactNode
   /** When set, clicks call this with (Hz, seconds before the newest row) instead of onSelectHz. */
   onPickPoint?: (hz: number, agoS: number) => void
+  /** When set, pointer drags on the waterfall call this (overlay dragging); clicks are suppressed. */
+  onDragPoint?: (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => void
   auto?: boolean; normalized?: boolean; palette?: PaletteId; selectedHz?: number | null; onSelectHz?: (hz: number) => void
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
@@ -29,7 +31,7 @@ const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', selectedHz = null, onSelectHz,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -100,6 +102,10 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     const anchor = xToFreq(e.clientX - rect.left, view, rect.width)
     onView(zoomView(view, anchor, e.deltaY < 0 ? 1.25 : 0.8, fMax))
   }
+  const drag = (e: React.PointerEvent<HTMLCanvasElement>, phase: 'start' | 'move' | 'end') => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    onDragPoint?.(phase, xToFreq(e.clientX - rect.left, view, rect.width), ((e.clientY - rect.top) / rect.height) * historyS, e.shiftKey)
+  }
   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     setCursor(xToFreq(e.clientX - rect.left, view, rect.width))
@@ -109,12 +115,16 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     <div className="gram">
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas ref={canvasRef} data-testid={testId} onWheel={onWheel} onMouseMove={onMove} onMouseLeave={() => setCursor(null)}
+          onPointerDown={onDragPoint ? (e) => { e.currentTarget.setPointerCapture(e.pointerId); drag(e, 'start') } : undefined}
+          onPointerMove={onDragPoint ? (e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) drag(e, 'move') } : undefined}
+          onPointerUp={onDragPoint ? (e) => { drag(e, 'end'); e.currentTarget.releasePointerCapture(e.pointerId) } : undefined}
           onClick={(e) => {
+            if (onDragPoint) return
             const rect = e.currentTarget.getBoundingClientRect(), hz = xToFreq(e.clientX - rect.left, view, rect.width)
             if (onPickPoint) onPickPoint(hz, ((e.clientY - rect.top) / rect.height) * historyS)
             else onSelectHz?.(hz)
           }}
-          style={onPickPoint ? { cursor: 'crosshair' } : undefined}
+          style={onPickPoint ? { cursor: 'crosshair' } : onDragPoint ? { cursor: 'ew-resize', touchAction: 'none' } : undefined}
           onDoubleClick={() => onView(clampView({ lo: 0, hi: fMax }, fMax))} aria-label={label} />
       )}
       <div className="axis axis-y" aria-hidden>

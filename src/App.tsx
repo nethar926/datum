@@ -3,6 +3,7 @@ import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
 import { DemonPane } from './gram/DemonPane'
+import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
 import { CpaOverlay, cpaReadout } from './gram/CpaOverlay'
 import { addSample, cpaFitterReady, MIN_CPA_SAMPLES, runCpaFit, type CpaSample } from './gram/cpa'
 import { clampView, type FreqView } from './gram/axis'
@@ -39,10 +40,20 @@ export default function App() {
     if (final) log.add({ simT: client.status.simT, kind: 'bearing', buoyId, data: deg === null ? { source: 'manual', cleared: true } : { source: 'manual', brgDeg: Math.round(deg * 10) / 10 } })
   }
   const [selHz, setSelHz] = useState<number | null>(null)
-  const [cpaMode, setCpaMode] = useState(false)
+  const [tool, setTool] = useState<'select' | 'cpa' | 'lm'>('select')
+  const cpaMode = tool === 'cpa'
+  const setCpaMode = (on: boolean) => setTool(on ? 'cpa' : 'select')
+  const [lm, setLm] = useState<LloydState>({ basis: 'cpaFit', k: 40, tCpaS: 0, tauS: 300, manRangeM: 2000, manSpeedMps: 4 })
   const [cpaMarks, setCpaMarks] = useState<CpaSample[]>([])
   useEffect(() => { setCpaMarks([]) }, [stream, st.band])
   const cpaFit = useMemo(() => runCpaFit(cpaMarks), [cpaMarks])
+  const cpaGeom: CpaGeom | null = cpaFit?.ok ? { tCpaS: cpaFit.tCpaS, rCpaM: cpaFit.rCpaM, speedMps: cpaFit.speedMps } : null
+  const lmDrag = useLloydDrag(lm, setLm, cpaGeom, st.simT)
+  const toggleLm = () => {
+    if (tool === 'lm') { setTool('select'); return }
+    if (lm.tCpaS === 0) setLm({ ...lm, tCpaS: st.simT - 100 })
+    setTool('lm')
+  }
 
   useEffect(() => {
     client.start()
@@ -110,6 +121,9 @@ export default function App() {
               {cpaMarks.length > 0 && <button onClick={() => setCpaMarks((m) => m.slice(0, -1))} title="Remove last mark">Undo</button>}
               {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
             </div>
+            <div className="seg" role="group" aria-label="Lloyd's mirror">
+              <button aria-pressed={tool === 'lm'} onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)">LM</button>
+            </div>
             {(cpaMode || cpaMarks.length > 0) && <span className="readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</span>}
             <span className="readout">
               {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} HZ  Δf ${cfg.fBin.toFixed(2)}` : 'STARTING'}
@@ -122,7 +136,27 @@ export default function App() {
                 onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
                 normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz}
                 onPickPoint={cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
-                overlay={cpaMarks.length ? (ctx) => <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} /> : undefined} />
+                onDragPoint={tool === 'lm' ? lmDrag : undefined}
+                overlay={cpaMarks.length || tool === 'lm' ? (ctx) => (<>
+                  {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
+                  {cpaMarks.length > 0 && <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} />}
+                </>) : undefined} />
+            )}
+            {tool === 'lm' && (
+              <div className="lm-panel" data-testid="lm-panel">
+                <div className="seg" role="group" aria-label="Lloyd's mirror basis">
+                  {(['cpaFit', 'manual', 'none'] as const).map((b) => (
+                    <button key={b} aria-pressed={lm.basis === b ? !(b === 'cpaFit' && !cpaGeom) : b === 'none' && lm.basis === 'cpaFit' && !cpaGeom} disabled={b === 'cpaFit' && !cpaGeom} onClick={() => setLm({ ...lm, basis: b })}
+                      title={b === 'cpaFit' && !cpaGeom ? 'Needs a CPA fit first' : undefined}>{b === 'cpaFit' ? 'CPA fit' : b === 'manual' ? 'Manual' : 'None'}</button>))}
+                </div>
+                {lm.basis === 'manual' && <>
+                  <label>Range km <input type="number" step={0.1} min={0.1} value={(lm.manRangeM / 1000).toFixed(1)} onChange={(e) => setLm({ ...lm, manRangeM: Math.max(100, Number(e.target.value) * 1000) })} /></label>
+                  <label>Speed kt <input type="number" step={0.5} min={0.5} value={(lm.manSpeedMps * 1.943844).toFixed(1)} onChange={(e) => setLm({ ...lm, manSpeedMps: Math.max(0.25, Number(e.target.value) / 1.943844) })} /></label>
+                </>}
+                {(lm.basis === 'none' || (lm.basis === 'cpaFit' && !cpaGeom)) &&
+                  <label>Width s <input type="number" step={10} min={10} value={lm.tauS.toFixed(0)} onChange={(e) => setLm({ ...lm, tauS: Math.max(10, Number(e.target.value)) })} /></label>}
+                <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null)}</span>
+              </div>
             )}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
