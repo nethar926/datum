@@ -107,10 +107,10 @@ export function compendiumCards(catalog: { classes: readonly unknown[] } | undef
       emergency: ep ? `${ep.blades}-blade emergency propulsor, ≤${ep.maxSpeedKts} kt (off unless ordered)` : undefined,
       modes: [], ratios: [], demon: '', hulls: Array.isArray(x.hulls) ? x.hulls.length : 0,
     }
-    card.modes = Array.isArray(x.idKeys?.modes) ? x.idKeys.modes
+    card.modes = Array.isArray(x.idKeys?.modes) && x.idKeys.modes.every((m: Any) => typeof m?.mode === 'string' && Array.isArray(m.lines)) ? x.idKeys.modes
       : modesFor(plant, dtCode, !!m?.motor || dtCode === 'DEL' || dtCode === 'NEL', card.motorSlots, !!card.aip, Array.isArray(x.edas) && x.edas.length > 0)
-    card.ratios = Array.isArray(x.idKeys?.ratios) ? x.idKeys.ratios : ratiosFor(card)
-    card.demon = x.idKeys?.demon ?? `Shaft ${shafts > 1 ? 'doublet' : 'line'} with ${blades}-blade BR harmonics${card.propType === 'SKEWED' ? ', weak BR modulation' : card.propType === 'FLAT' ? ', strong BR modulation' : ''}`
+    card.ratios = Array.isArray(x.idKeys?.ratios) && x.idKeys.ratios.every((r: unknown) => typeof r === 'string') ? x.idKeys.ratios : ratiosFor(card)
+    card.demon = typeof x.idKeys?.demon === 'string' ? x.idKeys.demon : `Shaft ${shafts > 1 ? 'doublet' : 'line'} with ${blades}-blade BR harmonics${card.propType === 'SKEWED' ? ', weak BR modulation' : card.propType === 'FLAT' ? ', strong BR modulation' : ''}`
     cards.push(card)
   }
   return cards.sort((a, b) => FORCE_ORDER[a.force] - FORCE_ORDER[b.force] || a.country.localeCompare(b.country) || a.name.localeCompare(b.name))
