@@ -20,20 +20,21 @@ export class LofarGenerator {
   readonly absorption:Float64Array;
   private readonly power:Float64Array;
   private readonly shape:Float64Array;
+  private readonly absorptionExponent:Float64Array;
   private readonly contacts:CachedContact[];
   private readonly rng:Random;
   private readonly g=createGeometry();
   private environment:Environment;
   bearing=0;
   constructor(readonly buoy:Buoy, contacts:Contact[],readonly bins:number,readonly fmax:number,seed:number,environment:Environment){
-    this.row=new Float32Array(bins);this.power=new Float64Array(bins);this.ambient=new Float64Array(bins);this.absorption=new Float64Array(bins);this.shape=new Float64Array(bins);
+    this.row=new Float32Array(bins);this.power=new Float64Array(bins);this.ambient=new Float64Array(bins);this.absorption=new Float64Array(bins);this.shape=new Float64Array(bins);this.absorptionExponent=new Float64Array(bins);
     this.rng=mulberry32(deriveSeed(seed,`buoy:${buoy.id}`));this.environment={...environment};
     this.contacts=contacts.map(contact=>{const frequencies=new Float64Array(6),powers=new Float64Array(6);fillTonals(contact.params,frequencies,powers);return {contact,frequencies,powers,gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
     this.setEnvironment(environment);
   }
   setEnvironment(e:Environment):void {
     this.environment={...e};const df=this.fmax/(this.bins-1);
-    for(let i=0;i<this.bins;i++){const f=Math.max(df/2,i*df);this.absorption[i]=thorp(f);this.ambient[i]=dbToPower(ambientLevel(f,e.seaState,e.shipping));this.shape[i]=1/(1+(f/400)**2);}
+    for(let i=0;i<this.bins;i++){const f=Math.max(df/2,i*df);this.absorption[i]=thorp(f);this.absorptionExponent[i]=-this.absorption[i]*(Math.LN10/10);this.ambient[i]=dbToPower(ambientLevel(f,e.seaState,e.shipping));this.shape[i]=1/(1+(f/400)**2);}
   }
   generate(out=this.row,offset=0):Float32Array {
     if(!Number.isInteger(offset)||offset<0||out.length<offset+this.bins)throw new Error('Row size mismatch');
@@ -44,7 +45,7 @@ export class LofarGenerator {
       const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread;
       // Smooth fictional broadband PSD; absorption per bin cached, range factor updated.
       const km=Math.max(0,g.range-1)/1000;
-      for(let i=0;i<this.bins;i++)this.power[i]+=level*.0001*this.shape[i]*10**(-this.absorption[i]*km/10);
+      for(let i=0;i<this.bins;i++)this.power[i]+=level*.0001*this.shape[i]*Math.exp(this.absorptionExponent[i]*km);
       for(let k=0;k<item.frequencies.length;k++){
         const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=f/df;
         if(bin>this.bins-1)continue;

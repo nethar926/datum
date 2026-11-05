@@ -14,4 +14,4 @@ export * from './engine.js';
 export * from './protocol.js';
 export * from './client.js';
 export * from './workerRuntime.js';
-export * from './workerRuntime.js';
+export * from './contract.js';

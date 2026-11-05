@@ -12,7 +12,7 @@ npm run build
 npm run bench
 ```
 
-No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 40 tests;
+No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 48 tests;
 benchmark: 12 warmup + 200 full 60-contact × 32-buoy × 1024-bin steps, mean/p95,
 no timing assertion. `busyScenario()` is a test/benchmark fixture only. No PNG preview.
 
@@ -35,6 +35,21 @@ Engine owns a cloned scenario. `registerStream(id,channel)`, `addBuoy`, `setEnvi
 allocate/rebuild only at config time. Initial stream IDs are buoy index+1. Live LOFAR
 outputs **dB re 1 µPa²/Hz**; tone power is divided by bin width. Dead/not-yet-deployed
 buoys yield **NaN** per contract (the only intentional no-data exception to finite spectra).
+
+### Additive frontend facade
+
+`loadScenario(unknown)` validates and throws `ScenarioError` with a JSONPath-style `path`.
+`exampleScenarios` exposes `m1-cpa-pass` and separate `benchmark-busy-field` fixtures.
+`new AcousticEngine(scenario, seed?)` optionally overrides the seed; `simT` aliases `time`.
+`subscribe({channel,kind:'lofar',bins?,band?})`, `unsubscribe`, `configs`, `rowsReady`,
+`writeRow`, `tactical` and `dropBuoy` form the display facade. Subscriptions become ready
+at 4 Hz; `writeRow` returns the zero-based row index or -1 without writing when none is due.
+Drain after each 0.25-second advance for time-correct rows: accumulated pending rows use
+current geometry, not historical snapshots. Legacy `registerStream` IDs remain immediate
+pull streams. `tactical()` reuses its object/records; `dropBuoy(spec)` returns a numeric ID.
+`contract.ts` re-exports v1 types and additive v1.1 `LogEvent`/confidence/event-kind types
+only, without logging behavior. Broadband attenuation uses cached natural-log coefficients
+and `Math.exp` (same equation, no approximation) instead of per-bin base-10 exponentiation.
 
 ## Worker v1
 

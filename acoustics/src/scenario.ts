@@ -32,3 +32,41 @@ export function busyScenario():Scenario {const s=cpaScenario();s.seed=131;s.envi
   for(let i=0;i<12;i++)s.contacts.push({id:`fictional-${i}`,x:(i%4-2)*1800,y:(Math.floor(i/4)-1)*2100,depth:30+15*i,course:i*.7,speed:2+i%7,motion:[{at:0,course:i*.7,speed:2+i%7,depth:30+15*i}],params:{...fictionalSignature,label:`Fictional vessel ${i}`,tonalHz:55+i*11,shaftHz:1+i*.13}});
   for(let i=0;i<8;i++)s.buoys.push(receiver(`buoy-${i+1}`,(i%4-1.5)*1200,Math.floor(i/4)*1500));return s;
 }
+
+/** Validated JSON boundary with a JSONPath-style location; existing validator remains authoritative. */
+export class ScenarioError extends Error {
+  constructor(message:string,readonly path:string='$'){super(`${path}: ${message}`);this.name='ScenarioError';}
+}
+export function loadScenario(json:unknown):Scenario {
+  try{validateScenario(json);return json;}
+  catch(error){throw new ScenarioError(error instanceof Error?error.message:'Invalid scenario',errorPath(json));}
+}
+// Diagnostic-only walk: runs only after validation fails, never in the render path.
+function errorPath(value:unknown):string {
+  if(!value||typeof value!=='object')return '$';const s=value as Scenario;
+  for(const [key,lo,hi] of [['seed',0,4294967295],['bins',2,16384],['fmax',1,1e6],['time',0,1e9]] as const)if(!finite(s[key],lo,hi)||((key==='seed'||key==='bins')&&!Number.isInteger(s[key])))return `$.${key}`;
+  if(s.v!==1)return '$.v';if(s.mode!=='aviation')return '$.mode';
+  const trackPath=(t:Track,path:string):string=>{if(!t)return path;for(const [key,lo,hi] of [['x',-1e9,1e9],['y',-1e9,1e9],['depth',0,1e6],['course',-1e6,1e6],['speed',0,500]] as const)if(!finite(t[key],lo,hi))return `${path}.${key}`;return '';};
+  const own=trackPath(s.ownship,'$.ownship');if(own)return own;
+  const e=s.environment;if(!e)return '$.environment';
+  for(const [key,lo,hi] of [['seaState',0,6],['soundSpeed',1300,1800],['transition',1,1e9]] as const)if(!finite(e[key],lo,hi))return `$.environment.${key}`;
+  if(!['light','moderate','heavy'].includes(e.shipping))return '$.environment.shipping';if(!['spherical','cylindrical','hybrid'].includes(e.spreading))return '$.environment.spreading';
+  if(!Array.isArray(s.contacts)||s.contacts.length>250)return '$.contacts';if(!Array.isArray(s.buoys)||s.buoys.length>128)return '$.buoys';
+  const ids=new Set<string>();
+  for(let i=0;i<s.contacts.length;i++){const c=s.contacts[i],p=`$.contacts[${i}]`,bad=trackPath(c,p);if(bad)return bad;
+    if(typeof c.id!=='string'||!c.id||ids.has(c.id))return `${p}.id`;ids.add(c.id);
+    const a=c.params;if(!a)return `${p}.params`;if(typeof a.label!=='string')return `${p}.params.label`;
+    for(const [key,lo,hi] of [['shaftHz',.01,1000],['blades',1,20],['tonalHz',1,1e6],['levelDb',0,220],['modulation',0,.9]] as const)if(!finite(a[key],lo,hi)||(key==='blades'&&!Number.isInteger(a[key])))return `${p}.params.${key}`;
+    if(!Array.isArray(c.motion)||!c.motion.length)return `${p}.motion`;let last=-1;
+    for(let j=0;j<c.motion.length;j++){const leg=c.motion[j],q=`${p}.motion[${j}]`;if(!leg)return q;
+      if(!finite(leg.at,0,1e9)||leg.at<=last||(j===0&&leg.at!==0))return `${q}.at`;last=leg.at;
+      for(const [key,lo,hi] of [['course',-1e6,1e6],['speed',0,500],['depth',0,1e6]] as const)if(!finite(leg[key],lo,hi))return `${q}.${key}`;
+      if(leg.waypoint!==undefined)return `${q}.waypoint`;
+    }if(c.transients!==undefined&&(!Array.isArray(c.transients)||c.transients.length))return `${p}.transients`;
+  }
+  ids.clear();for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],p=`$.buoys[${i}]`,bad=trackPath(b,p);if(bad)return bad;if(typeof b.id!=='string'||!b.id||ids.has(b.id))return `${p}.id`;ids.add(b.id);
+    if(!['passive-omni','difar'].includes(b.type))return `${p}.type`;
+    for(const [key,lo,hi] of [['rfChannel',0,9999],['deployedAt',0,1e9],['life',.001,1e9]] as const)if(!finite(b[key],lo,hi)||(key==='rfChannel'&&!Number.isInteger(b[key])))return `${p}.${key}`;
+  }return '$';
+}
+export const exampleScenarios:Record<string,Scenario>={'m1-cpa-pass':cpaScenario(),'benchmark-busy-field':busyScenario()};

@@ -21,7 +21,7 @@ export class WorkerRuntime {
   command(m:WorkerRequest):void{try{
     if(m.v!==1||!Number.isFinite(m.simT))throw new Error('Expected v1 and finite simT');
     if(m.type==='init'){
-      if(m.scenarioId!=='cpa-pass')throw new Error('Unknown scenarioId; M1 supports cpa-pass');
+      if(m.scenarioId!=='cpa-pass'&&m.scenarioId!=='m1-cpa-pass')throw new Error('Unknown scenarioId; M1 supports cpa-pass');
       const s=cpaScenario();s.seed=m.seed;const engine=new AcousticEngine(s);this.dispose();this.engine=engine;this.seed=m.seed;this.rate=1;this.nextId=1;this.nextRow=.25;this.configs.length=0;this.indices.clear();
       for(const b of engine.scenario.buoys)this.subscribe(b.rfChannel);this.rebuildPool();this.rebuildTactical();this.sendTactical();return;
     }
