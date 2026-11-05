@@ -71,6 +71,9 @@ const KIND: Record<string, string> = { dieselDirect: 'DIESEL DIRECT', dieselGR: 
 /** Text rows for one contact in the debug truth panel. */
 const BLADE: Record<string, string> = { flat: 'FLAT', skewed: 'SKEWED', cpp: 'VARIABLE PITCH', variable: 'VARIABLE PITCH' }
 
+/** True for a truth row the panel should grey out (TPK not valid at the current speed). */
+export const truthRowDim = (row: string): boolean => /^TPK .* VALID ABOVE /.test(row)
+
 export function truthRows(c: TruthContactLite): string[] {
   const kts = c.spdKts ?? c.spdMps * 1.943844
   const p = c.propulsion
@@ -82,9 +85,10 @@ export function truthRows(c: TruthContactLite): string[] {
   rows.push(`PLANT ${label && /DIESEL|NUCLEAR/.test(label) ? label : [plant, label].filter(Boolean).join(' ')}${p.aip ? `  AIP ${p.aip.kind.toUpperCase()}${p.aip.active ? ' ON' : ' OFF'}` : ''}  RATIO ${p.ratioLabel}`)
   const pr = p.propulsor
   if (pr) rows.push(`PROP ${pr.shafts} SHAFT${pr.shafts > 1 ? 'S' : ''}  ${pr.blades}-BLADE ${BLADE[pr.bladeType] ?? pr.bladeType.toUpperCase()}  BR ${pr.brHz.toFixed(2)} HZ = PSR × ${pr.blades}`)
+  // tpkValid false (variable pitch, inside the pitch-control range): keep the number, greyed in the panel, with the note.
   if (typeof p.tpk === 'number' && p.tpk > 0) rows.push(p.tpkValid === false
-    ? `TPK ${p.tpk.toFixed(2)} RPM/KT  NOT VALID${p.tpkMinKts !== undefined ? ` BELOW ${p.tpkMinKts} KT` : ''} (PITCH CONTROL)`
-    : `TPK ${p.tpk.toFixed(2)} RPM/KT  SPD = PSRPM ÷ TPK${p.tpkMinKts !== undefined ? `  (VALID ABOVE ${p.tpkMinKts} KT)` : ''}`)
+    ? `TPK ${p.tpk.toFixed(2)} RPM/KT  VALID ABOVE ${p.tpkMinKts ?? '?'} KT`
+    : `TPK ${p.tpk.toFixed(2)} RPM/KT  SPD = PSRPM ÷ TPK`)
   p.engines.forEach((e, n) => {
     rows.push(e.running
       ? `ENG E${n + 1} ${e.stroke}-STROKE ${e.cylinders} CYL  ERPM ${e.erpm.toFixed(0)}  CSR ${e.csrHz.toFixed(2)}  CFR ${e.cfrHz.toFixed(2)}  EFR ${e.efrHz.toFixed(2)} HZ`

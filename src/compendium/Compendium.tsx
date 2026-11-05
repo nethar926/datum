@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react'
 import { catalog } from '@acoustics'
-import { compendiumCards, filterCards, type CardFilter, type CompendiumCard } from './cards'
+import { compendiumCards, filterCards, r2, type CardFilter, type CompendiumCard } from './cards'
 
 const TIER: Record<string, string> = { gen1: 'GEN 1', gen2: 'GEN 2', gen3: 'GEN 3', gen4: 'GEN 4' }
 
@@ -19,7 +19,7 @@ function Card({ c }: { c: CompendiumCard }) {
         {c.motorSlots && <><dt>Motor</dt><dd>{c.motorSlots} slots</dd></>}
         <dt>Propulsor</dt><dd>{c.shafts} shaft{c.shafts > 1 ? 's' : ''} · {c.blades} blades{c.propType ? ` · ${c.propType}` : ''}</dd>
         {c.emergency && <><dt>Backup</dt><dd>{c.emergency}</dd></>}
-        <dt>TPK</dt><dd>{c.tpk ? `${c.tpk}${c.tpkMinKts ? ` (valid above ${c.tpkMinKts} kt)` : ''}` : 'pending catalog'}</dd>
+        <dt>TPK</dt><dd>{c.tpk ? `${r2(c.tpk)}${c.tpkMinKts ? ` (valid above ${r2(c.tpkMinKts)} kt)` : ''}` : 'pending catalog'}</dd>
         <dt>Max speed</dt><dd>{c.speeds.map((s) => `${s.label} ${s.kts} kt`).join(' · ')}</dd>
         {c.quietKts && <><dt>Quiet</dt><dd>{c.quietKts[0]}–{c.quietKts[1]} kt</dd></>}
         {c.cavitationKts && <><dt>Cavitation</dt><dd>onset ≈ {c.cavitationKts} kt at surface, later with depth</dd></>}

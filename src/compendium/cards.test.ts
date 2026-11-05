@@ -34,13 +34,15 @@ describe('compendium cards', () => {
     const [c] = compendiumCards({ classes: [{ id: 'x', name: 'Fictional Test', country: 'Kaelun Republic', force: 'Red', plant: 'diesel', drivetrainCode: 'DEL', drivetrainLabel: 'DIESEL ELECTRIC',
       motorSlots: 124, tpk: 9, tpkMinKts: 4, propeller: { shafts: 1, blades: 7, type: 'cpp' }, aip: { kind: 'stirling', maxSpeedKts: 4 },
       emergencyPropulsor: { blades: 5, maxSpeedKts: 3 }, machinery: { engines: [{ stroke: 4, cylinders: 12, erpm: { obsMin: 600, obsMax: 900 } }, { stroke: 4, cylinders: 12, erpm: { obsMin: 600, obsMax: 900 } }], motor: {} },
-      edas: [{ id: 'lop', name: 'LOP', cfrMultiple: 27.75 }, { id: 'old', perCrankRev: 6 * 10.5 }], idKeys: { hydpHz: 367.77, speedWindows: [{ kind: 'SRC', name: 'A', hz: 512, onKts: 14, offKts: 20 }, { kind: 'swath', loHz: 180, hiHz: 240, kts: [9, 13] }] },
+      edas: [{ id: 'lop', name: 'LOP', cfrMultiple: 27.75 }, { id: 'old', perCrankRev: 10.5 / 2 }], idKeys: { hydpHz: 367.77, speedWindows: [{ kind: 'SRC', name: 'A', hz: 512, onKts: 14, offKts: 20 }, { kind: 'swath', loHz: 180, hiHz: 240, kts: [9, 13] }] },
       params: { electricalHz: 50 } }] })
     expect(c.engines).toEqual([{ count: 2, stroke: 4, cylinders: 12, erpm: [600, 900] }])
     expect(c.propType).toBe('VARIABLE PITCH')
     expect(c.ratios).toContain('MSR = shaft rate × 124 slots')
     expect(c.ratios).toContain('SPD = PSRPM ÷ 9 (valid above 4 kt)')
-    expect(c.ratios).toContain('CFR = CSR × 6 (4-stroke, 12 cyl)')
+    expect(c.ratios).toContain('CSR = 2 × CFR (4-stroke)')
+    expect(c.ratios).toContain('EFR = CFR × 12 (12 cyl)')
+    expect(c.ratios).toContain('BR = PSR × 7 blades')
     expect(c.modes.find((m) => m.mode === 'BATT')?.lines).toContain('MSR')
     expect(c.modes.some((m) => m.mode === 'AIP')).toBe(true)
     expect(c.emergency).toMatch(/5-blade/)
@@ -53,5 +55,9 @@ describe('compendium cards', () => {
     const [c] = compendiumCards({ classes: [{ id: 'r', name: 'Range', country: 'Ostmark', force: 'Blue', plant: 'diesel',
       idKeys: { edas: [{ name: 'LOP', cfrMultiple: [27.5, 28] }] }, params: { electricalHz: 50 } }] })
     expect(c.edas).toEqual([{ name: 'LOP', cfrMultiple: 27.75 }])
+  })
+  it('shows no value with more than 2 decimals anywhere on a real card', () => {
+    const text = JSON.stringify(compendiumCards(catalog as never))
+    expect(text.match(/\d+\.\d{3,}/g) ?? []).toEqual([])
   })
 })

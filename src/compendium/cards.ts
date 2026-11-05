@@ -61,7 +61,7 @@ function modesFor(plant: PlantKind, dt: string, hasMotor: boolean, slots: number
  * per-crank-revolution field using the first engine's firing order. */
 function edasFor(x: Any, engines: CardEngine[]): ClassifyingLine[] {
   const src: Any[] = Array.isArray(x.idKeys?.edas) ? x.idKeys.edas : Array.isArray(x.edas) ? x.edas : []
-  const e0 = engines[0], perRev = e0 ? e0.cylinders * (e0.stroke === 2 ? 1 : 0.5) : 0
+  const e0 = engines[0], perRev = e0 ? (e0.stroke === 2 ? 1 : 0.5) : 0
   const out: ClassifyingLine[] = []
   for (const e of src) {
     const name = String(e.eda?.name ?? e.name ?? e.id ?? 'EDA').toUpperCase()
@@ -87,17 +87,28 @@ function speedFeaturesFor(x: Any): SpeedFeature[] {
   return out.sort((p, q) => p.kts[0] - q.kts[0])
 }
 
+/** At most 2 decimals, no trailing zeros. */
+export const r2 = (v: number): number => Math.round(v * 100) / 100
+
+/** Rounds every number in a card to at most 2 decimals, in place. Ids and counts are integers already. */
+function roundDeep<T>(v: T): T {
+  if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) v[i] = typeof v[i] === 'number' ? r2(v[i]) : roundDeep(v[i]) }
+  else if (v && typeof v === 'object') for (const k of Object.keys(v)) { const o = v as Any; o[k] = typeof o[k] === 'number' ? r2(o[k]) : roundDeep(o[k]) }
+  return v
+}
+
 function ratiosFor(c: CompendiumCard): string[] {
   const out: string[] = []
   for (const e of c.engines) {
-    out.push(e.stroke === 2 ? `CFR = CSR × ${e.cylinders} (2-stroke, ${e.cylinders} cyl)` : `CFR = CSR × ${e.cylinders / 2} (4-stroke, ${e.cylinders} cyl)`)
-    out.push(e.stroke === 2 ? 'EFR = CSR (2-stroke)' : 'EFR = CSR ÷ 2 (4-stroke)')
+    // Wilson's rules: 2-stroke CSR = CFR, 4-stroke CSR = 2 × CFR, EFR = CFR × cylinders.
+    out.push(e.stroke === 2 ? `CSR = CFR (2-stroke)` : `CSR = 2 × CFR (4-stroke)`)
+    out.push(`EFR = CFR × ${e.cylinders} (${e.cylinders} cyl)`)
   }
   if (c.drivetrain === 'D/D') out.push('PSR = CSR when engines coupled')
   if (c.gear) out.push(`PSR = CSR ÷ ${c.gear}`)
-  out.push(`BR = PSR × ${c.blades}`)
+  out.push(`BR = PSR × ${c.blades} blades`)
   if (c.motorSlots) out.push(`MSR = shaft rate × ${c.motorSlots} slots`)
-  if (c.tpk) out.push(c.tpkMinKts ? `SPD = PSRPM ÷ ${c.tpk} (valid above ${c.tpkMinKts} kt)` : `SPD = PSRPM ÷ ${c.tpk}`)
+  if (c.tpk) out.push(c.tpkMinKts ? `SPD = PSRPM ÷ ${r2(c.tpk)} (valid above ${r2(c.tpkMinKts)} kt)` : `SPD = PSRPM ÷ ${r2(c.tpk)}`)
   if (c.shafts > 1) out.push(`${c.shafts} shafts: shaft-line doublets`)
   return out
 }
@@ -141,13 +152,14 @@ export function compendiumCards(catalog: { classes: readonly unknown[] } | undef
       edas: [], speedFeatures: [], hydpHz: typeof x.idKeys?.hydpHz === 'number' ? x.idKeys.hydpHz : typeof x.idKeys?.hydp?.nominalHz === 'number' ? x.idKeys.hydp.nominalHz : typeof x.hydp?.nominalHz === 'number' ? x.hydp.nominalHz : undefined,
       modes: [], ratios: [], demon: '', hulls: Array.isArray(x.hulls) ? x.hulls.length : 0,
     }
+    roundDeep(card)
     card.edas = edasFor(x, card.engines)
     card.speedFeatures = speedFeaturesFor(x)
     card.modes = Array.isArray(x.idKeys?.modes) && x.idKeys.modes.every((m: Any) => typeof m?.mode === 'string' && Array.isArray(m.lines)) ? x.idKeys.modes
       : modesFor(plant, dtCode, !!m?.motor || dtCode === 'DEL' || dtCode === 'NEL', card.motorSlots, !!card.aip, Array.isArray(x.edas) && x.edas.length > 0)
     card.ratios = Array.isArray(x.idKeys?.ratios) && x.idKeys.ratios.every((r: unknown) => typeof r === 'string') ? x.idKeys.ratios : ratiosFor(card)
     card.demon = typeof x.idKeys?.demon === 'string' ? x.idKeys.demon : `Shaft ${shafts > 1 ? 'doublet' : 'line'} with ${blades}-blade BR harmonics${card.propType === 'SKEWED' ? ', weak BR modulation' : card.propType === 'FLAT' ? ', strong BR modulation' : ''}`
-    cards.push(card)
+    cards.push(roundDeep(card))
   }
   return cards.sort((a, b) => FORCE_ORDER[a.force] - FORCE_ORDER[b.force] || a.country.localeCompare(b.country) || a.name.localeCompare(b.name))
 }
