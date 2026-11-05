@@ -1,3 +1,4 @@
+import * as Acoustics from '@acoustics'
 import { AcousticEngine, isAlive } from '@acoustics'
 import type { Band, Bearing, FromWorker, GramConfig, GramRows, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
 import { buildScenario } from '../scenarios/training'
@@ -31,6 +32,7 @@ export class SimHost {
       if (!this.engine) throw new Error('Initialize first')
       if (msg.type === 'release') return this.release(msg.buffers)
       if (msg.type === 'step') return this.step()
+      if (msg.type === 'setSurfaceTraffic') return this.setSurfaceTraffic(msg.value)
       throw new Error('Unknown message')
     } catch (e) {
       this.post({ v: 1, type: 'error', message: e instanceof Error ? e.message : String(e) })
@@ -41,7 +43,8 @@ export class SimHost {
     const band = BANDS[msg.band]
     if (!band) throw new Error('Unknown band')
     if (!Number.isFinite(msg.rowRateHz) || msg.rowRateHz < 0.25 || msg.rowRateHz > 8) throw new Error('rowRateHz out of range')
-    const engine = new AcousticEngine(buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins))
+    const gen = (Acoustics as unknown as { generateScenario?: (p: unknown) => ConstructorParameters<typeof AcousticEngine>[0] }).generateScenario
+    const engine = new AcousticEngine(msg.params && gen ? gen(msg.params) : buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins))
     this.engine = engine
     this.bins = band.bins
     this.n = engine.scenario.buoys.length
@@ -57,6 +60,14 @@ export class SimHost {
     }))
     this.post({ v: 1, type: 'streams', configs })
     this.post(this.tactical)
+    if (msg.surfaceTraffic !== undefined) this.setSurfaceTraffic(msg.surfaceTraffic)
+  }
+
+  /** Forwards to the engine's v1.1 setSurfaceTraffic when present; a no-op on v1 engines. */
+  private setSurfaceTraffic(value: number): void {
+    if (!Number.isFinite(value)) throw new Error('surfaceTraffic must be a number')
+    const e = this.engine as unknown as { setSurfaceTraffic?: (v: number) => void } | undefined
+    e?.setSurfaceTraffic?.(Math.max(0, Math.min(1, value)))
   }
 
   private newFrame(): Frame {

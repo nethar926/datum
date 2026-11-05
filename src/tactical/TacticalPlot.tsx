@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { crossFixes } from './fix'
-import { fitView, toScreenX, toScreenY } from './transform'
+import { fitView, toScreenX, toScreenY, toWorld, type PlotView } from './transform'
+import { bearingTo, distToRay, fixInputs, type FixSource, type ManualBearings } from './manual'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -10,13 +11,21 @@ const MIN_DRAW_Q = 10
 const BEARING_LEN_M = 7000
 const SEL_TOL_HZ = 1.5
 
-interface Props { client: SimClient; showTruth: boolean; spanM?: number; selectedChannel?: number; selectedHz?: number | null; allBearings?: boolean }
+interface Props {
+  client: SimClient; showTruth: boolean; spanM?: number; selectedChannel?: number; selectedHz?: number | null; allBearings?: boolean
+  showAuto?: boolean; showManual?: boolean; manual?: ManualBearings; fixSource?: FixSource
+  /** Manual cursor moved (final=false while dragging, true on release); deg null clears it. */
+  onManual?: (buoyId: number, deg: number | null, final: boolean) => void
+}
+const HIT_PX = 14
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional truth. Canvas 2D. */
-export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false }: Props) {
+export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showTruth, spanM, selectedChannel, selectedHz, allBearings })
-  props.current = { showTruth, spanM, selectedChannel, selectedHz, allBearings }
+  const props = useRef({ showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource })
+  props.current = { showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource }
+  const viewRef = useRef<PlotView | null>(null)
+  const dragRef = useRef<number | null>(null)
 
   useEffect(() => {
     const canvas = ref.current!
@@ -24,20 +33,21 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
     if (!ctx) return
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim() || '#888'
-    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), truth: col('--plot-truth'), text: col('--phosphor-dim') }
+    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), truth: col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim') }
     const p = { x: 0, y: 0 }
     let raf = 0, lastT = -1, lastKey = ''
     const draw = () => {
       raf = requestAnimationFrame(draw)
       const st = client.status, t = st.tactical
-      const { showTruth: truth, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all } = props.current
+      const { showTruth: truth, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs } = props.current
       const dpr = Math.min(2, devicePixelRatio || 1)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
-      const key = `${w}x${h}:${truth}:${span}:${sel}:${selHz}:${all}`
+      const key = `${w}x${h}:${truth}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${JSON.stringify(man)}`
       if (t?.simT === lastT && key === lastKey) return
       lastT = t?.simT ?? -1; lastKey = key
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
       const v = fitView(w, h, span)
+      viewRef.current = v
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.fillStyle = C.bg; ctx.fillRect(0, 0, w, h)
       // Range rings every 2 km + grid.
@@ -52,7 +62,7 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
       // selected buoy's strongest line), all of them as a toggle. Finite length, fading.
       const shown = selectBearings(t.bearings, t.buoys, sel, selHz, all)
       ctx.lineWidth = 1 * dpr
-      for (const b of shown) {
+      for (const b of sa ? shown : []) {
         const buoy = t.buoys.find((x) => x.id === b.buoyId)!
         const th = (b.brgDeg * Math.PI) / 180
         const x0 = toScreenX(v, buoy.x), y0 = toScreenY(v, buoy.y)
@@ -63,6 +73,24 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke()
       }
       ctx.globalAlpha = 1
+
+      // Manual bearing cursors: dashed, operator colour, diamond mark and bearing readout at the end.
+      if (sm) {
+        ctx.strokeStyle = C.man; ctx.fillStyle = C.man; ctx.lineWidth = 1.5 * dpr; ctx.setLineDash([6 * dpr, 4 * dpr])
+        for (const b of t.buoys) {
+          const deg = man[b.id]; if (deg === undefined || b.kind !== 'difar') continue
+          const th = (deg * Math.PI) / 180
+          const x0 = toScreenX(v, b.x), y0 = toScreenY(v, b.y)
+          const x1 = toScreenX(v, b.x + Math.sin(th) * BEARING_LEN_M), y1 = toScreenY(v, b.y + Math.cos(th) * BEARING_LEN_M)
+          ctx.globalAlpha = b.state === 'live' ? 0.95 : 0.35
+          ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke()
+          ctx.setLineDash([]); const r = 4 * dpr
+          ctx.beginPath(); ctx.moveTo(x1, y1 - r); ctx.lineTo(x1 + r, y1); ctx.lineTo(x1, y1 + r); ctx.lineTo(x1 - r, y1); ctx.closePath(); ctx.fill()
+          ctx.fillText(`M${String(Math.round(deg) % 360).padStart(3, '0')}`, x1 + 6 * dpr, y1 - 6 * dpr)
+          ctx.setLineDash([6 * dpr, 4 * dpr])
+        }
+        ctx.setLineDash([]); ctx.globalAlpha = 1
+      }
 
       // Aircraft track + symbol.
       const tr = client.track
@@ -88,10 +116,10 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
 
       // Cross-fixes from DIFAR lines.
       ctx.strokeStyle = C.fix; ctx.lineWidth = 1.5 * dpr
-      for (const f of crossFixes(shown, t.buoys, SEL_TOL_HZ, MIN_DRAW_Q)) {
+      for (const f of crossFixes(fixInputs(shown, sm ? man : {}, t.buoys, fs, selHz), t.buoys, SEL_TOL_HZ, MIN_DRAW_Q)) {
         const sx = toScreenX(v, f.x), sy = toScreenY(v, f.y), r = 6 * dpr
         ctx.beginPath(); ctx.moveTo(sx - r, sy - r); ctx.lineTo(sx + r, sy + r); ctx.moveTo(sx + r, sy - r); ctx.lineTo(sx - r, sy + r); ctx.stroke()
-        ctx.fillStyle = C.fix; ctx.fillText(`${f.freqHz.toFixed(0)}Hz`, sx + 8 * dpr, sy - 6 * dpr)
+        ctx.fillStyle = C.fix; ctx.fillText(f.freqHz < 0 ? 'MAN' : `${f.freqHz.toFixed(0)}Hz`, sx + 8 * dpr, sy - 6 * dpr)
       }
 
       // Truth (instructor view).
@@ -109,7 +137,38 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
     return () => cancelAnimationFrame(raf)
   }, [client])
 
-  return <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot" />
+  // Manual cursors: press on a DIFAR buoy or its manual line and drag to set its bearing; double-click a buoy to clear.
+  const world = (e: React.PointerEvent | React.MouseEvent) => {
+    const v = viewRef.current, c = ref.current; if (!v || !c) return null
+    const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
+    return { ...toWorld(v, (e.clientX - rect.left) * dpr, (e.clientY - rect.top) * dpr), mPerPx: v.mPerPx * dpr }
+  }
+  const hitBuoy = (e: React.PointerEvent | React.MouseEvent) => {
+    const w = world(e), t = client.status.tactical; if (!w || !t) return null
+    let best: { id: number; d: number } | null = null
+    for (const b of t.buoys) {
+      if (b.kind !== 'difar' || b.state !== 'live') continue
+      const dBuoy = Math.hypot(w.x - b.x, w.y - b.y) / w.mPerPx
+      const deg = props.current.manual[b.id]
+      const dLine = deg === undefined ? Infinity : distToRay(b, deg, BEARING_LEN_M, w.x, w.y) / w.mPerPx
+      const d = Math.min(dBuoy, dLine)
+      if (d <= HIT_PX && (!best || d < best.d)) best = { id: b.id, d }
+    }
+    return best && { id: best.id, w }
+  }
+  const setFrom = (id: number, wx: number, wy: number, final: boolean) => {
+    const b = client.status.tactical?.buoys.find((x) => x.id === id); if (!b) return
+    const deg = bearingTo(b, wx, wy); if (deg !== null) onManual?.(id, deg, final)
+  }
+  return (
+    <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot"
+      style={{ cursor: onManual ? 'crosshair' : undefined, touchAction: 'none' }}
+      onPointerDown={(e) => { const h = hitBuoy(e); if (!h || !onManual) return; dragRef.current = h.id; e.currentTarget.setPointerCapture(e.pointerId) }}
+      onPointerMove={(e) => { const id = dragRef.current; if (id === null) return; const w = world(e); if (w) setFrom(id, w.x, w.y, false) }}
+      onPointerUp={(e) => { const id = dragRef.current; dragRef.current = null; if (id === null) return; const w = world(e); if (w) setFrom(id, w.x, w.y, true) }}
+      onPointerCancel={() => { dragRef.current = null }}
+      onDoubleClick={(e) => { const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
+  )
 }
 
 /**

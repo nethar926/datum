@@ -1,4 +1,4 @@
-import { phosphorLut } from './colormap'
+import { paletteLut, type PaletteId } from './colormap'
 
 const VS = `#version 300 es
 in vec2 aPos; out vec2 vUv;
@@ -46,6 +46,7 @@ export class WaterfallRenderer {
   private head: Int32Array
   private filled: Int32Array
   private lost = false
+  private palette: PaletteId = 'green'
   readonly bins: number
   readonly rows: number
   readonly streams: number
@@ -101,8 +102,17 @@ export class WaterfallRenderer {
 
     this.lut = gl.createTexture()!
     gl.bindTexture(gl.TEXTURE_2D, this.lut)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, phosphorLut(256))
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, paletteLut(this.palette, 256))
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v)
+  }
+
+  /** Swap the colour palette (one 1 KB texture upload); survives context restore. */
+  setPalette(id: PaletteId): void {
+    this.palette = id
+    if (this.lost) return
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D, this.lut)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RGBA, gl.UNSIGNED_BYTE, paletteLut(id, 256))
   }
 
   /** Upload one row for stream index s (bins floats starting at offset). */

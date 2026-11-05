@@ -125,3 +125,140 @@ describe('bearing selection', () => {
     expect(selectBearings(br, buoys, 11, null, true)).toHaveLength(3)
   })
 })
+
+import { PALETTE_IDS, isPaletteId, paletteLut } from './gl/colormap'
+describe('palettes', () => {
+  it('every palette is 256 opaque entries, dark at the floor and bright at the top', () => {
+    const lum = (l: Uint8Array, i: number) => 0.2126 * l[i * 4] + 0.7152 * l[i * 4 + 1] + 0.0722 * l[i * 4 + 2]
+    for (const id of PALETTE_IDS) {
+      const l = paletteLut(id)
+      expect(l.length).toBe(1024)
+      for (let i = 0; i < 256; i++) expect(l[i * 4 + 3]).toBe(255)
+      expect(lum(l, 255) - lum(l, 0)).toBeGreaterThan(150)
+      // Luminance never steps down by more than a rounding error: weak lines never read brighter than strong ones.
+      for (let i = 1; i < 256; i++) expect(lum(l, i)).toBeGreaterThanOrEqual(lum(l, i - 1) - 0.5)
+    }
+  })
+  it('validates ids and falls back to green', () => {
+    expect(isPaletteId('amber')).toBe(true); expect(isPaletteId('neon')).toBe(false); expect(isPaletteId(null)).toBe(false)
+    expect(Array.from(paletteLut('neon' as never).slice(1020))).toEqual(Array.from(paletteLut('green').slice(1020)))
+  })
+})
+
+import { bearingTo, distToRay, fixInputs, MANUAL_QUALITY } from './tactical/manual'
+import { OperatorLog } from './log/operatorLog'
+describe('manual bearings', () => {
+  const B = (id: number, x: number, y: number, kind: 'difar' | 'omni' = 'difar', state: 'live' | 'dead' = 'live') =>
+    ({ id, channel: 10 + id, kind, x, y, hydrophoneDepthM: 60, batteryFrac: 1, lifeRemainingS: 1, state })
+  it('computes true bearings and ray distances', () => {
+    expect(bearingTo({ x: 0, y: 0 }, 0, 100)).toBeCloseTo(0)
+    expect(bearingTo({ x: 0, y: 0 }, 100, 0)).toBeCloseTo(90)
+    expect(bearingTo({ x: 0, y: 0 }, -100, 0)).toBeCloseTo(270)
+    expect(bearingTo({ x: 5, y: 5 }, 5, 5)).toBeNull()
+    expect(distToRay({ x: 0, y: 0 }, 90, 1000, 500, 30)).toBeCloseTo(30)
+    expect(distToRay({ x: 0, y: 0 }, 90, 1000, -500, 0)).toBe(Infinity)
+    expect(distToRay({ x: 0, y: 0 }, 90, 1000, 1500, 0)).toBe(Infinity)
+  })
+  it('feeds auto, manual or both into the fix solver', () => {
+    const buoys = [B(1, -2000, 0), B(2, 2000, 0), B(3, 0, 0, 'omni'), B(4, 0, -3000, 'difar', 'dead')]
+    const auto = [{ buoyId: 1, freqHz: 72, brgDeg: 45, quality: 20 }]
+    const man = { 2: 315, 3: 10, 4: 0 }
+    expect(fixInputs(auto, man, buoys, 'auto', null)).toEqual(auto)
+    expect(fixInputs(auto, man, buoys, 'manual', null)).toEqual([{ buoyId: 2, freqHz: 72, brgDeg: 315, quality: MANUAL_QUALITY }])
+    const both = fixInputs(auto, man, buoys, 'both', null)
+    expect(both).toHaveLength(2)
+    const f = crossFixes(both, buoys, 1.5, 10)
+    expect(f).toHaveLength(1); expect(f[0].x).toBeCloseTo(0, 0); expect(f[0].y).toBeCloseTo(2000, 0)
+    // No frequency known: manual lines form their own group and still fix.
+    const mf = crossFixes(fixInputs([], { 1: 45, 2: 315 }, buoys, 'manual', null), buoys, 1.5, 10)
+    expect(mf).toHaveLength(1); expect(mf[0].freqHz).toBe(-1)
+  })
+  it('logs v1.1 events, bounded, exportable', () => {
+    const log = new OperatorLog(3); let n = 0; log.subscribe(() => n++)
+    for (let i = 0; i < 5; i++) log.add({ simT: i, kind: 'bearing', buoyId: 1, data: { source: 'manual', brgDeg: i } })
+    expect(log.size()).toBe(3); expect(n).toBe(5)
+    expect(log.all()[0]).toMatchObject({ v: 1.1, type: 'log', simT: 2, kind: 'bearing' })
+    expect(log.toJsonl().split('\n')).toHaveLength(3)
+  })
+})
+
+describe('harmonic cursor', () => {
+  it('lists harmonics up to fMax', async () => {
+    const { harmonicSeries } = await import('./gram/harmonics')
+    expect(harmonicSeries(2.5, 10)).toEqual([2.5, 5, 7.5, 10])
+    expect(harmonicSeries(0, 10)).toEqual([])
+    expect(harmonicSeries(1, 1000).length).toBe(24)
+  })
+  it('reads RPM and blade count, rejects non-harmonic blade lines', async () => {
+    const { bladeReadout } = await import('./gram/harmonics')
+    const r = bladeReadout(2.4, 16.85)
+    expect(r.rpm).toBeCloseTo(144)
+    expect(r.blades).toBe(7)
+    expect(bladeReadout(2.4, 2.4 * 6.5).blades).toBeNull()
+    expect(bladeReadout(2.4, 2.4).blades).toBeNull() // 1 blade is not a propeller reading
+    expect(bladeReadout(2.4, null).blades).toBeNull()
+  })
+})
+
+describe('CPA cursor', () => {
+  it('model curve is an S: high before CPA, f0 at CPA, low after', async () => {
+    const { cpaModelHz } = await import('./gram/cpa')
+    const fit = { f0: 100, speedMps: 5, tCpaS: 600, rCpaM: 1500 }
+    expect(cpaModelHz(fit, 600)).toBeCloseTo(100, 6)
+    expect(cpaModelHz(fit, 0)).toBeGreaterThan(100.25)
+    expect(cpaModelHz(fit, 1200)).toBeLessThan(99.75)
+    expect(cpaModelHz(fit, 0) - 100).toBeCloseTo(100 - cpaModelHz(fit, 1200), 2)
+  })
+  it('keeps marks time-ordered and replaces near-duplicates', async () => {
+    const { addSample } = await import('./gram/cpa')
+    let l = addSample([], { tS: 10, fHz: 1 })
+    l = addSample(l, { tS: 5, fHz: 2 })
+    l = addSample(l, { tS: 10.4, fHz: 3 })
+    expect(l).toEqual([{ tS: 5, fHz: 2 }, { tS: 10.4, fHz: 3 }])
+  })
+})
+
+describe("Lloyd's mirror overlay", () => {
+  it('K from geometry matches the striation formula and round-trips to zs', async () => {
+    const L = await import('./gram/lloyds')
+    const R = 2000, zs = 60, zr = 30, c = 1500
+    const k = L.kFromGeometry(R, zs, zr)
+    expect(k).toBeCloseTo((c * R) / (2 * zs * zr), 6)
+    const rd = L.lloydReadout('cpaFit', k, zr, R)
+    expect(rd.zsM).toBeCloseTo(zs, 6)
+    expect(rd.depthRatio).toBeCloseTo(zs / R, 9)
+  })
+  it('basis none never reports a depth', async () => {
+    const L = await import('./gram/lloyds')
+    const rd = L.lloydReadout('none', 800, 30, 2000)
+    expect(Number.isNaN(rd.zsM)).toBe(true)
+    expect(rd.depthRatio).toBeGreaterThan(0)
+  })
+  it('drag re-scale puts the picked null through the pointer', async () => {
+    const L = await import('./gram/lloyds')
+    const s = { k: 100, tCpaS: 500, tauS: 300 }
+    const n = L.nearestNull(s, 800, 290)
+    expect(n).toBe(2)
+    const k = L.kThrough(s, n, 800, 290)
+    expect(L.striationHz({ ...s, k }, n, 800)).toBeCloseTo(290, 9)
+  })
+})
+
+describe('surface traffic', () => {
+  it('labels the stops', async () => {
+    const { trafficLabel } = await import('./scenarios/acousticsApi')
+    expect(trafficLabel(0)).toBe('None'); expect(trafficLabel(0.25)).toBe('Light')
+    expect(trafficLabel(0.5)).toBe('Moderate'); expect(trafficLabel(1)).toBe('Heavy')
+    expect(trafficLabel(0.35)).toBe('Light~')
+  })
+  it('host accepts setSurfaceTraffic and rejects NaN', async () => {
+    const { SimHost } = await import('./engine/host')
+    const msgs: { type: string; message?: string }[] = []
+    const h = new SimHost((m) => msgs.push(m as never))
+    h.handle({ type: 'init', seed: 1, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2, surfaceTraffic: 0.25 })
+    h.handle({ type: 'setSurfaceTraffic', value: 1 })
+    expect(msgs.some((m) => m.type === 'error')).toBe(false)
+    h.handle({ type: 'setSurfaceTraffic', value: NaN })
+    expect(msgs.at(-1)?.type).toBe('error')
+  })
+})

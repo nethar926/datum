@@ -10,7 +10,7 @@ body {
 button, select { font: inherit; color: inherit; }
 
 .app { display: grid; grid-template-rows: auto 1fr; height: 100%; gap: var(--space-3); padding: var(--space-3); }
-.toolbar {
+.toolbar { position: relative;
   display: flex; align-items: center; gap: var(--space-4); padding: var(--space-2) var(--space-4);
   background: var(--bg-1); border: 1px solid var(--hairline); border-radius: var(--radius-l); box-shadow: var(--shadow-panel);
 }
@@ -55,3 +55,54 @@ button, select { font: inherit; color: inherit; }
 .plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .sel-marker { position: absolute; top: 0; bottom: 22px; width: 0; border-left: 1px dashed var(--plot-fix); opacity: .7; pointer-events: none; }
 .sel-marker span { position: absolute; top: 4px; left: 4px; font: 10px/1 var(--font-mono); color: var(--plot-fix); text-shadow: 0 0 4px #000; }
+.harm-marker { position: absolute; top: 0; bottom: 22px; width: 0; pointer-events: none; }
+.harm-marker.shaft { border-left: 1px dashed var(--plot-manual); opacity: .75; }
+.harm-marker.blade { border-left: 1.5px solid var(--plot-buoy); opacity: .9; }
+.harm-marker span { position: absolute; top: 4px; left: 3px; font: 10px/1 var(--font-mono); text-shadow: 0 0 4px #000; }
+.harm-marker.shaft span { color: var(--plot-manual); }
+.harm-marker.blade span { color: var(--plot-buoy); top: 16px; }
+.empty-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; font: 12px/1.4 var(--font-mono); color: var(--text-2); }
+.workspace-left { display: grid; grid-template-rows: 2fr 1fr; gap: inherit; min-height: 0; }
+.gram-layer { position: absolute; left: 0; top: 0; bottom: 22px; pointer-events: none; overflow: hidden; }
+.gram-layer .harm-marker { bottom: 0; }
+.cpa-mark { position: absolute; width: 9px; height: 9px; margin: -5px 0 0 -5px; pointer-events: none; }
+.cpa-mark::before, .cpa-mark::after { content: ''; position: absolute; background: var(--plot-manual); }
+.cpa-mark::before { left: 4px; top: 0; width: 1px; height: 9px; }
+.cpa-mark::after { top: 4px; left: 0; height: 1px; width: 9px; }
+.cpa-curve { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.cpa-curve polyline { fill: none; stroke: var(--plot-fix); stroke-width: 1.2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.cpa-tline { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--plot-fix); }
+.cpa-tline span { position: absolute; right: 4px; top: -13px; font: 10px/1 var(--font-mono); color: var(--plot-fix); text-shadow: 0 0 4px #000; }
+.lm-curves { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.lm-curves polyline { fill: none; stroke: #ff9ad5; stroke-width: 1; opacity: .7; vector-effect: non-scaling-stroke; }
+.lm-panel { position: absolute; right: 52px; top: 8px; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(10,11,13,.86);
+  border: 1px solid var(--line, #2a2c31); border-radius: 6px; font: 11px/1.2 var(--font-mono); color: var(--text-2); z-index: 2; }
+.lm-panel label { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
+.lm-panel input[type=number] { width: 64px; background: #0b0c0e; color: inherit; border: 1px solid #2a2c31; border-radius: 4px; padding: 2px 4px; font: inherit; }
+.lm-panel .lm-read { color: #ff9ad5; }
+.modal-scrim { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 20; }
+.modal { width: min(640px, 94vw); max-height: 90vh; overflow: auto; background: var(--surface-1, #121316); border: 1px solid #2a2c31; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.modal-head, .modal-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.modal-foot { justify-content: flex-end; }
+.modal h2 { font-size: 14px; margin: 0; }
+.modal button.primary { background: var(--accent, #3d7cff); color: #fff; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+.field { display: flex; flex-direction: column; gap: 6px; position: relative; font-size: 12px; color: var(--text-2); }
+.field label { display: flex; justify-content: space-between; }
+.field b { color: var(--text-1, #e8e9ec); font: 11px var(--font-mono); font-weight: 500; }
+.field input[type=range] { width: 100%; accent-color: var(--accent, #3d7cff); }
+.field .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.field .stops { position: relative; height: 12px; font: 9px/1 var(--font-mono); }
+.field .stops span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.field .stops span:first-child { transform: none; }
+.field .stops span:last-child { transform: translateX(-100%); }
+.check { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--text-2); }
+.seg.big button { padding: 6px 16px; }
+.empty-note.static { position: static; }
+.popover { position: absolute; top: 44px; right: 12px; width: 280px; z-index: 15; background: var(--surface-1, #121316); border: 1px solid #2a2c31; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.panel-head { min-width: 0; }
+.panel-head > .seg, .panel-head > h2, .panel-head > .seg-label { flex-shrink: 0; }
+.panel-head .readout { min-width: 0; }
+.seg-label { font: 10px/1 var(--font-mono); color: var(--text-2); margin-right: calc(-1 * var(--space-2)); letter-spacing: .04em; }
+.plot-corner { position: absolute; top: 8px; right: 10px; pointer-events: none; z-index: 1; text-shadow: 0 0 4px #000; }
+.gram-note { position: absolute; left: 8px; bottom: 30px; z-index: 2; pointer-events: none; color: var(--plot-manual); background: rgba(0,0,0,.6); padding: 3px 6px; border-radius: 4px; }
