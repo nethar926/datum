@@ -8,14 +8,17 @@ function harness() {
   host.handle({ type: 'init', seed: 7, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2 })
   return { host, out }
 }
-const rowsOf = (out: FromWorker[]) => out.filter((m): m is GramRows => m.type === 'gramRows')
+// LOFAR rows only (v1.1 engines also send DEMON rows in their own, differently sized gramRows message).
+const rowsOf = (out: FromWorker[]) => out.filter((m): m is GramRows => m.type === 'gramRows' && m.data.length === m.streamIds.length * BANDS.lofar1k.bins)
 
 describe('SimHost', () => {
   it('announces one LOFAR stream per buoy with contract fields', () => {
     const { out } = harness()
     const s = out.find((m): m is StreamSet => m.type === 'streams')!
-    expect(s.configs).toHaveLength(6)
-    const c = s.configs[0]
+    const lofar = s.configs.filter((c) => c.kind === 'lofar')
+    expect(lofar).toHaveLength(6)
+    expect(s.configs.every((c) => c.kind === 'lofar' || c.kind === 'demon')).toBe(true)
+    const c = lofar[0]
     expect(c).toMatchObject({ v: 1, kind: 'lofar', bins: 2048, f0: 0, rowRateHz: 2, dbFloor: 40, dbCeil: 110 })
     expect(c.fBin).toBeCloseTo(1000 / 2047, 6)
   })
