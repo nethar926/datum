@@ -11,7 +11,7 @@ import { advance } from './kinematics.js';
 import { isAlive, type ReceiverType, type Buoy } from './buoys.js';
 import { LofarGenerator } from './lofar.js';
 import {ResLofarGenerator,normalizeResSettings} from './resGram.js';
-import {RES_BINS,type ResGramSettings} from './res.js';
+import {RES_BINS,RES_FRAME_S,type ResGramSettings} from './res.js';
 import type {GramFilter} from './protocol.js';
 import type {GramConfig,Tactical,DropBuoy,TruthContact} from './protocol.js';
 export interface BuoyRow { id:string; rfChannel:number; depth:number; type:ReceiverType; alive:boolean; bearing:number|null; row:Float32Array }
@@ -98,8 +98,11 @@ export class AcousticEngine {
   private applyRes(streamId:number,settings:ResGramSettings):GramConfig{
     const i=this.streams.get(streamId)!,s=this.scenario,b=s.buoys[i],old=this.subscriptions.get(streamId);
     const gen=old?.res??new ResLofarGenerator(b,this.allContacts,s.fMax??s.fmax,s.seed,s.environment);gen.configure(settings);
-    const p=gen.params,band=gen.band,config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:b.rfChannel,bins:RES_BINS,f0:band.f0,fBin:p.fBin,rowRateHz:p.rowRateHz,dbFloor:settings.filter==='NB'?0:40,dbCeil:settings.filter==='NB'?30:110,res:settings.res,filter:settings.filter,bandHz:p.bandHz,...(settings.vernierHz!==undefined?{fcHz:band.fcHz}:{}),enbwHz:p.enbwHz,bandLimited:band.bandLimited,liveBins:band.liveBins};
-    this.subscriptions.set(streamId,{config,start:Math.floor(this.time/p.rowPeriodS+1e-9)*p.rowPeriodS,read:0,res:gen});if(!this.legacyIndices.has(streamId))this.legacyIndices.set(streamId,0);return config;
+    // Row phase: buoy index i of N buoys (scenario order, stable across subscribe order) shifts the
+    // P grid by (i/N)·P, quantized down to the 0.25 s frame: φ = floor(i·F/N)·0.25 s, F = P/0.25.
+    const p=gen.params,frames=Math.round(p.rowPeriodS/RES_FRAME_S),phase=Math.floor(i*frames/s.buoys.length)*RES_FRAME_S;
+    const band=gen.band,config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:b.rfChannel,bins:RES_BINS,f0:band.f0,fBin:p.fBin,rowRateHz:p.rowRateHz,dbFloor:settings.filter==='NB'?0:40,dbCeil:settings.filter==='NB'?30:110,res:settings.res,filter:settings.filter,bandHz:p.bandHz,...(settings.vernierHz!==undefined?{fcHz:band.fcHz}:{}),enbwHz:p.enbwHz,bandLimited:band.bandLimited,liveBins:band.liveBins,rowPhaseS:phase};
+    this.subscriptions.set(streamId,{config,start:Math.floor((this.time-phase)/p.rowPeriodS+1e-9)*p.rowPeriodS+phase,read:0,res:gen});if(!this.legacyIndices.has(streamId))this.legacyIndices.set(streamId,0);return config;
   }
   unsubscribe(streamId:number):void{this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);}
   configs():GramConfig[]{return Array.from(this.subscriptions.values(),s=>s.config);}
