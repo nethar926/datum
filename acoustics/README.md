@@ -942,3 +942,66 @@ unchanged (≈34 ms/step legacy contacts, ≈46 ms catalog). Per 0.25 s frame, a
 RES5 NB mean 5.8–5.9 ms, worst 6.3–12.5 ms; RES5 BB mean 5.8–6.2 ms, worst 7.6–11.8 ms; RES1 NB mean
 2.1–2.2 ms, worst 3.0–7.7 ms (ranges over two runs; worst-frame outliers are GC/JIT, p95 ≤ 8.7 ms).
 Before phasing (b4dee75) the frame on which all 32 rows fell due cost ≈46 ms (RES5) / ≈72 ms (RES1).
+
+## Seeded buoy-pattern planner (M3)
+
+`planPattern(opts: PatternOptions): PatternPlan`, `PatternOptions`, `PatternPlan` and
+`PatternKind` are exported from `src/index.ts`. Pure browser-safe geometry for preplanned,
+AUTO and organized manual drops; no state changes or worker protocol additions.
+
+```ts
+const plan = planPattern({ kind: 'barrier', center: { x: 0, y: 0 }, axisDeg: 90,
+  scatter: true, seed: 'training-field' });
+// plan = { points: {x,y}[], types: ReceiverType[], channels: number[],
+//          spacingM: number, detectionRangeM: number, kind: PatternKind }
+// Host maps each entry to dropBuoy/addBuoy, supplying depth/life/IDs as usual.
+// Worker dropBuoy uses kind='omni' for ReceiverType='passive-omni'.
+```
+
+Options: `kind: 'barrier'|'ring'|'grid'|'wedge'|'single'|'auto'`, `center:{x,y}` metres,
+`axisDeg` degrees clockwise from north (+Y; x east), optional `count`, `spacingM`,
+`scatter` (false), `seed:number|string`, `slDb`, `nlDb`, `diDb`, `dtDb`, `fHz`, `spreading`.
+Resolved kind excludes auto; a finite threat axis gives **auto → barrier across axisDeg**.
+A nonfinite auto axis falls back to a north-oriented ring; other kinds require finite axes.
+
+Fictional training defaults (not real platform performance): **SL=140 dB re 1 µPa @ 1 m,
+NL=60 dB in-band, DI=0 dB for every pattern (including DIFAR), DT=10 dB, f=200 Hz**.
+DT is an illustrative conservative threshold. Callers may explicitly supply DIFAR DI
+(e.g. 7.8 dB); receiver type alone does not silently change the range budget.
+Solve `TL(R)=SL-NL+DI-DT` by 48 binary-search iterations in **1–30 km**, using the existing
+`transmissionLoss` (including `thorp`) with planner-default **hybrid** spreading; spherical
+and cylindrical may be selected explicitly. The underlying `transmissionLoss` function
+still defaults to spherical; only the planner default changes. Hybrid transitions at the
+existing 1000 m default: `20log10(1000)+10log10(R/1000)` beyond 1 km, plus absorption.
+Out-of-budget ranges clamp to the endpoints, where equality cannot hold. These defaults
+give FOM=**70 dB** and measured **R=9827.922764 m (about 9.83 km)** at 200 Hz, with
+`TL(R)=70 dB`, rather than the estimated 8.5 km. The TL model and 1–30 km bounds are unchanged.
+
+Spacing S defaults to 1.5R, except grid's specified √2R. Overrides clamp to
+`[max(500,0.5R),3R]` (at least 500 m). Ring radius is always R, independent of S;
+its returned spacingM is the planning/jitter scale, not its neighbor arc/chord distance.
+
+- Barrier: five equally spaced sites centered perpendicular to the axis, DIFAR.
+  At S=1.5R the ideal disk-overlap depth of field is about 1.3R.
+- Ring: **six circumference sites only**, beginning on axisDeg, then clockwise every 60°;
+  omni. Count overrides below five promote to five so neighbor arcs never exceed 1.5R.
+  Larger overrides are honored; no center buoy is ever added.
+- Grid: 3×3 with one axis along threat and the other perpendicular, √2R spacing (2R diagonals),
+  omni. Other counts fill a near-square `ceil(sqrt(count))`-column grid row-major and
+  recenter the occupied sites' centroid; explicit spacing overrides the √2R default.
+- Wedge: **five total = one shared apex + two more per leg**. Apex is center +2R along
+  threat axis. Legs extend **forward** from apex at axisDeg ±30°, with along-leg spacing S.
+  Ordering is apex, +30° distance S, −30° distance S, +30° distance 2S, −30° distance 2S.
+  Count overrides retain one apex then alternate legs (even counts leave one extra +30° site).
+  DIFAR throughout.
+- Single: exactly center, DIFAR; count must be one.
+
+Counts must be integers in 1..9999. Scatter requires an explicit seed; independent Mulberry32
+x/y draws add at most ±5% of S to each coordinate. This is a nominal spacing clamp, not a
+post-jitter pairwise separation guarantee; arbitrary ring counts likewise control angular
+spacing independently of S. Number seeds use uint32 conversion; strings use deriveSeed/FNV.
+RF channels are unique **within this pattern**: sequential integers from a seed-derived
+base in 1..9999 with wraparound, independent of the scatter stream. Omitted seed means zero
+when scatter is off. Hosts must resolve conflicts with already-deployed channels themselves.
+Invalid nonfinite inputs (except auto's absent axis), negative frequency, invalid count or
+unknown kind/spreading throw RangeError. Inputs are not mutated; each result owns its arrays.
