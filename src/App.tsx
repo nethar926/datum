@@ -138,7 +138,6 @@ export default function App() {
             <div className="seg" role="group" aria-label="Lloyd's mirror">
               <button aria-pressed={tool === 'lm'} onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)">LM</button>
             </div>
-            {(cpaMode || cpaMarks.length > 0) && <span className="readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</span>}
             <span className="readout">
               {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} HZ  Δf ${cfg.fBin.toFixed(2)}` : 'STARTING'}
               {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
@@ -156,6 +155,7 @@ export default function App() {
                   {cpaMarks.length > 0 && <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} />}
                 </>) : undefined} />
             )}
+            {(cpaMode || cpaMarks.length > 0) && <div className="gram-note readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</div>}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">
                 <div className="seg" role="group" aria-label="Lloyd's mirror basis">
@@ -181,6 +181,7 @@ export default function App() {
         <section className="panel">
           <div className="panel-head">
             <h2>Tactical</h2>
+            <span className="seg-label">BRG</span>
             <div className="seg" role="group" aria-label="Bearings shown">
               <button aria-pressed={!allBearings} onClick={() => setAllBearings(false)}>{selHz === null ? 'Sel' : `${selHz.toFixed(1)} Hz`}</button>
               <button aria-pressed={allBearings} onClick={() => setAllBearings(true)}>All</button>
@@ -189,14 +190,15 @@ export default function App() {
               <button aria-pressed={showAuto} onClick={() => setShowAuto(!showAuto)} title="DIFAR-computed bearings (solid)">Auto</button>
               <button aria-pressed={showManual} onClick={() => setShowManual(!showManual)} title="Operator bearing cursors (dashed). Drag from a DIFAR buoy; double-click it to clear.">Man</button>
             </div>
+            <span className="seg-label">FIX</span>
             <div className="seg" role="group" aria-label="Fix from">
-              {(['auto', 'manual', 'both'] as const).map((f) => <button key={f} aria-pressed={fixSource === f} onClick={() => setFixSource(f)}>{f === 'auto' ? 'Fix A' : f === 'manual' ? 'Fix M' : 'Fix A+M'}</button>)}
+              {(['auto', 'manual', 'both'] as const).map((f) => <button key={f} aria-pressed={fixSource === f} onClick={() => setFixSource(f)}
+                title={f === 'auto' ? 'Fix from auto bearings' : f === 'manual' ? 'Fix from manual bearings' : 'Fix from both (manual overrides auto per buoy)'}>{f === 'auto' ? 'A' : f === 'manual' ? 'M' : 'A+M'}</button>)}
             </div>
-            <span className="readout">
-              {st.tactical ? `A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')} · ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT · ${st.tactical.aircraft.altM} M` : ''}
-            </span>
           </div>
           <div className="panel-body plot">
+            {st.tactical && <div className="plot-corner readout" data-testid="ac-readout">
+              {`A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</div>}
             <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} />
           </div>

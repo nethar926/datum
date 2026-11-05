@@ -100,3 +100,9 @@ button, select { font: inherit; color: inherit; }
 .seg.big button { padding: 6px 16px; }
 .empty-note.static { position: static; }
 .popover { position: absolute; top: 44px; right: 12px; width: 280px; z-index: 15; background: var(--surface-1, #121316); border: 1px solid #2a2c31; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.panel-head { min-width: 0; }
+.panel-head > .seg, .panel-head > h2, .panel-head > .seg-label { flex-shrink: 0; }
+.panel-head .readout { min-width: 0; }
+.seg-label { font: 10px/1 var(--font-mono); color: var(--text-2); margin-right: calc(-1 * var(--space-2)); letter-spacing: .04em; }
+.plot-corner { position: absolute; top: 8px; right: 10px; pointer-events: none; z-index: 1; text-shadow: 0 0 4px #000; }
+.gram-note { position: absolute; left: 8px; bottom: 30px; z-index: 2; pointer-events: none; color: var(--plot-manual); background: rgba(0,0,0,.6); padding: 3px 6px; border-radius: 4px; }
