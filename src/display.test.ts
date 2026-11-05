@@ -288,3 +288,16 @@ describe('host DEMON streams (v1.1 engines)', () => {
     expect(msgs.some((m) => m.type === 'error')).toBe(false)
   })
 })
+
+describe('host with changing contact count', () => {
+  it('survives surface traffic changes across steps', async () => {
+    const { SimHost } = await import('./engine/host')
+    const msgs: { type: string; message?: string }[] = []
+    const h = new SimHost((m) => msgs.push(m as never))
+    h.handle({ type: 'init', seed: 5, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2, surfaceTraffic: 1 })
+    for (let k = 0; k < 3; k++) h.handle({ type: 'step' })
+    h.handle({ type: 'setSurfaceTraffic', value: 0 })
+    h.handle({ type: 'step' })
+    expect(msgs.filter((m) => m.type === 'error').map((m) => m.message)).toEqual([])
+  })
+})

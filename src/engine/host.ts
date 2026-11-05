@@ -210,6 +210,9 @@ export class SimHost {
       }
     }
     t.bearings = bearings
+    // Contacts can be added/removed at runtime (v1.1 surface traffic); resync the truth list when the count changes.
+    if (t.truth!.contacts.length !== s.contacts.length)
+      t.truth!.contacts = s.contacts.map((c, i) => ({ id: i + 1, label: c.params?.label ?? `C${i + 1}`, x: c.x, y: c.y, crsDeg: 0, spdMps: 0 }))
     const contacts = t.truth!.contacts
     for (let i = 0; i < s.contacts.length; i++) {
       const c = s.contacts[i], tc = contacts[i]
