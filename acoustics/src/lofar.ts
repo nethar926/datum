@@ -1,6 +1,6 @@
 import { deriveSeed, mulberry32, gaussian, type Random } from './prng.js';
 import { dbToPower, powerToDb } from './units.js';
-import { geometry, createGeometry, type Track } from './kinematics.js';
+import { geometry, createGeometry } from './kinematics.js';
 import { doppler } from './doppler.js';
 import { exactGain } from './lloydsMirror.js';
 import { spreadingLoss, thorp } from './transmissionLoss.js';
