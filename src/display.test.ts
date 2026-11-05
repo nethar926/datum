@@ -431,3 +431,13 @@ describe('HARM ratio probe', () => {
     expect(ratioText(0, 5)).toBe('')
   })
 })
+
+import { truthEdaName } from './gram/truthFamilies'
+describe('truth EDA naming', () => {
+  const contacts = [{ id: 1, spdMps: 3, crsDeg: 0, lines: [{ lineFamily: 'EDA' as const, hz: 277.5, eda: { name: 'LOP', cfrMultiple: 27.75 } }] }]
+  it('names the EDA under the probe only within tolerance', () => {
+    expect(truthEdaName(contacts, 277.8, 0.5)).toBe('LOP = CFR ×27.75')
+    expect(truthEdaName(contacts, 280, 0.5)).toBeNull()
+    expect(truthEdaName(undefined, 277.5, 0.5)).toBeNull()
+  })
+})

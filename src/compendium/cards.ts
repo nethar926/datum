@@ -5,7 +5,7 @@
 
 type Any = Record<string, any>
 export type PlantKind = 'diesel' | 'nuclear'
-export type ModeCode = 'SURF' | 'SNORT' | 'D/E' | 'BATT' | 'AIP' | 'NUC'
+export type ModeCode = 'SURF' | 'SNORK' | 'D/E' | 'BATT' | 'AIP' | 'NUC'
 
 export interface CardEngine { count: number; stroke: 2 | 4; cylinders: number; erpm: [number, number] }
 export interface ClassifyingLine { name: string; cfrMultiple: number }
@@ -48,7 +48,7 @@ function modesFor(plant: PlantKind, dt: string, hasMotor: boolean, slots: number
   const running = dt === 'DEL' ? [...eng, 'generator', ...shaft, ...motor] : [...eng, ...shaft, ...(dt === 'D/GR' ? ['gear mesh'] : [])]
   const out: ModeKeys[] = [
     { mode: 'SURF', lines: running },
-    { mode: 'SNORT', lines: [...running, 'snorkel flow'] },
+    { mode: 'SNORK', lines: [...running, 'snorkel flow'] },
     { mode: 'D/E', lines: [...eng, 'generator (charging)', ...(dt === 'DEL' ? [...shaft, ...motor] : [])] },
     { mode: 'BATT', lines: [...shaft, ...motor, 'no engine lines'] },
   ]
@@ -102,7 +102,7 @@ export function compendiumCards(catalog: { classes: readonly unknown[] } | undef
     const ms = x.maxSpeedKts as Any | undefined
     const speeds = ms
       ? (plant === 'diesel'
-        ? [['SUB', ms.submerged], ['SURF', ms.surfaced], ['SNORT', ms.snorkel], ['BATT', ms.battery]]
+        ? [['SUB', ms.submerged], ['SURF', ms.surfaced], ['SNORK', ms.snorkel], ['BATT', ms.battery]]
         : [['SUB', ms.submerged], ['SURF', ms.surfaced]]).filter(([, v]) => typeof v === 'number').map(([l, v]) => ({ label: l as string, kts: r1(v as number) }))
       : typeof p.maxSpeedKn === 'number' ? [{ label: 'SUB', kts: p.maxSpeedKn }] : []
     if (x.aip?.maxSpeedKts) speeds.push({ label: 'AIP', kts: x.aip.maxSpeedKts })

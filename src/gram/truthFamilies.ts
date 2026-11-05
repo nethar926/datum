@@ -7,7 +7,7 @@
 export type LineFamily = 'CSR' | 'CFR' | 'EDA' | 'EFR' | 'PSR' | (string & {})
 export interface EngineTruth { id: string; stroke: number; cylinders: number; erpm: number; running: boolean; csrHz: number; cfrHz: number; efrHz: number }
 export interface PropulsionTruthLite { kind: string; ratio: number; ratioLabel: string; engines: EngineTruth[]; shafts: { rpm: number; hz: number; coupled?: boolean }[]; motor?: { rpm: number } }
-export interface TruthLineLite { lineFamily?: LineFamily; fundamentalHz?: number; engineId?: string; freqHz?: number }
+export interface TruthLineLite { lineFamily?: LineFamily; fundamentalHz?: number; engineId?: string; freqHz?: number; hz?: number; eda?: { name: string; cfrMultiple: number } }
 export interface TruthContactLite { mode?: string; id: number; label?: string; sourceId?: string; active?: boolean; depthM?: number; spdKts?: number; spdMps: number; crsDeg: number; propulsion?: PropulsionTruthLite; lines?: TruthLineLite[] }
 
 export interface FamilyFundamental { family: LineFamily; hz: number; contactId: number; engineId?: string; engineNo?: number; erpm?: number }
@@ -78,4 +78,17 @@ export function truthRows(c: TruthContactLite): string[] {
   if (p.motor) rows.push(`MOTOR ${p.motor.rpm.toFixed(0)} RPM`)
   if (p.kind === 'dieselDirect') rows.push(psrCoupled(p) ? 'PSR = CSR (ENGINES COUPLED)' : 'PSR ≠ CSR (ENGINES DECOUPLED, ON MOTOR)')
   return rows
+}
+
+/** Truth-only: name of the EDA line under a ratio probe (e.g. "LOP ×27.75"), or null. Never call with Truth off. */
+export function truthEdaName(contacts: readonly TruthContactLite[] | undefined, probeHz: number, tolHz: number): string | null {
+  let best: string | null = null, bestD = tolHz
+  for (const c of contacts ?? []) for (const l of c.lines ?? []) {
+    if (l.lineFamily !== 'EDA' || !l.eda) continue
+    const f = l.hz ?? l.freqHz
+    if (typeof f !== 'number') continue
+    const d = Math.abs(f - probeHz)
+    if (d <= bestD) { bestD = d; best = `${l.eda.name} = CFR ×${l.eda.cfrMultiple}` }
+  }
+  return best
 }
