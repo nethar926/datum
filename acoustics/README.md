@@ -838,3 +838,63 @@ Window display labels are `SRC-1`, `SWATH-1` (numbered within each kind). The cl
 truth regression covers all 22 classes x 12 seeded hull/variant draws x four speeds (1056
 states), checking nominal CSR/CFR/EFR and every shaft's BR harmonics to absolute 1e-9.
 Wandered `freqHz` is deliberately not substituted for nominal machinery rates in this test.
+
+
+## Seeded buoy-pattern planner (M3)
+
+`planPattern(opts: PatternOptions): PatternPlan`, `PatternOptions`, `PatternPlan` and
+`PatternKind` are exported from `src/index.ts`. Pure browser-safe geometry for preplanned,
+AUTO and organized manual drops; no state changes or worker protocol additions.
+
+```ts
+const plan = planPattern({ kind: 'barrier', center: { x: 0, y: 0 }, axisDeg: 90,
+  scatter: true, seed: 'training-field' });
+// plan = { points: {x,y}[], types: ReceiverType[], channels: number[],
+//          spacingM: number, detectionRangeM: number, kind: PatternKind }
+// Host maps each entry to dropBuoy/addBuoy, supplying depth/life/IDs as usual.
+// Worker dropBuoy uses kind='omni' for ReceiverType='passive-omni'.
+```
+
+Options: `kind: 'barrier'|'ring'|'grid'|'wedge'|'single'|'auto'`, `center:{x,y}` metres,
+`axisDeg` degrees clockwise from north (+Y; x east), optional `count`, `spacingM`,
+`scatter` (false), `seed:number|string`, `slDb`, `nlDb`, `diDb`, `dtDb`, `fHz`, `spreading`.
+Resolved kind excludes auto; a finite threat axis gives **auto → barrier across axisDeg**.
+A nonfinite auto axis falls back to a north-oriented ring; other kinds require finite axes.
+
+Fictional training defaults (not real platform performance): **SL=120 dB re 1 µPa @ 1 m,
+NL=70 dB in-band, DI=0 dB for every pattern (including DIFAR), DT=10 dB, f=200 Hz**.
+DT is an illustrative conservative threshold. Callers may explicitly supply DIFAR DI
+(e.g. 7.8 dB); receiver type alone does not silently change the range budget.
+Solve `TL(R)=SL-NL+DI-DT` by 48 binary-search iterations in **1–30 km**, using the existing
+`transmissionLoss` (including `thorp`) and its default **spherical** spreading; hybrid and
+cylindrical may be selected. Out-of-budget ranges clamp to the endpoints, where equality
+cannot hold. The above numbers give FOM=**40 dB** (not 50), hence default R=1 km after clamping.
+
+Spacing S defaults to 1.5R, except grid's specified √2R. Overrides clamp to
+`[max(500,0.5R),3R]` (at least 500 m). Ring radius is always R, independent of S;
+its returned spacingM is the planning/jitter scale, not its neighbor arc/chord distance.
+
+- Barrier: five equally spaced sites centered perpendicular to the axis, DIFAR.
+  At S=1.5R the ideal disk-overlap depth of field is about 1.3R.
+- Ring: **six circumference sites only**, beginning on axisDeg, then clockwise every 60°;
+  omni. Count overrides below five promote to five so neighbor arcs never exceed 1.5R.
+  Larger overrides are honored; no center buoy is ever added.
+- Grid: 3×3 with one axis along threat and the other perpendicular, √2R spacing (2R diagonals),
+  omni. Other counts fill a near-square `ceil(sqrt(count))`-column grid row-major and
+  recenter the occupied sites' centroid; explicit spacing overrides the √2R default.
+- Wedge: **five total = one shared apex + two more per leg**. Apex is center +2R along
+  threat axis. Legs extend **forward** from apex at axisDeg ±30°, with along-leg spacing S.
+  Ordering is apex, +30° distance S, −30° distance S, +30° distance 2S, −30° distance 2S.
+  Count overrides retain one apex then alternate legs (even counts leave one extra +30° site).
+  DIFAR throughout.
+- Single: exactly center, DIFAR; count must be one.
+
+Counts must be integers in 1..9999. Scatter requires an explicit seed; independent Mulberry32
+x/y draws add at most ±5% of S to each coordinate. This is a nominal spacing clamp, not a
+post-jitter pairwise separation guarantee; arbitrary ring counts likewise control angular
+spacing independently of S. Number seeds use uint32 conversion; strings use deriveSeed/FNV.
+RF channels are unique **within this pattern**: sequential integers from a seed-derived
+base in 1..9999 with wraparound, independent of the scatter stream. Omitted seed means zero
+when scatter is off. Hosts must resolve conflicts with already-deployed channels themselves.
+Invalid nonfinite inputs (except auto's absent axis), negative frequency, invalid count or
+unknown kind/spreading throw RangeError. Inputs are not mutated; each result owns its arrays.
