@@ -16,6 +16,11 @@ const NUMS: { k: Field; label: string; hint: string }[] = [
   { k: 'turboGenHz', label: 'TG HZ', hint: 'turbo-generator' },
   { k: 'hydpHz', label: 'HYDP HZ', hint: 'hydraulic plant' },
   { k: 'edaCfrMultiples', label: 'EDA × CFR', hint: 'e.g. 10.5, 27.75' },
+  { k: 'srcHz', label: 'SRC HZ', hint: 'SRC line, source frame' },
+  { k: 'srcKts', label: 'SRC KT', hint: 'est. speed (optional)' },
+  { k: 'swathLoHz', label: 'SWATH LO HZ', hint: 'band low edge' },
+  { k: 'swathHiHz', label: 'SWATH HI HZ', hint: 'band high edge' },
+  { k: 'swathKts', label: 'SWATH KT', hint: 'est. speed (optional)' },
 ]
 
 /** Observation form only. Matching is the Physicist's matchClasses; this panel holds no logic and no truth. */
