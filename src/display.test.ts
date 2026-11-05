@@ -1,0 +1,127 @@
+import { describe, expect, it } from 'vitest'
+import { normalizeDb, phosphorLut } from './gl/colormap'
+import { clampView, freqToX, niceTicks, ringRow, xToFreq, zoomView } from './gram/axis'
+import { crossFixes } from './tactical/fix'
+import { fitView, toScreenX, toScreenY, toWorld } from './tactical/transform'
+import { TrackRing } from './engine/client'
+import type { TacticalBuoy } from './engine/contract'
+
+describe('colormap', () => {
+  it('runs black to bright, monotonic in luminance', () => {
+    const l = phosphorLut(256)
+    expect(Array.from(l.slice(0, 4))).toEqual([0, 0, 0, 255])
+    let prev = -1
+    for (let i = 0; i < 256; i++) { const y = 0.2 * l[i * 4] + 0.7 * l[i * 4 + 1] + 0.1 * l[i * 4 + 2]; expect(y).toBeGreaterThanOrEqual(prev - 1e-9); prev = y }
+  })
+  it('normalizes dB with clamping and keeps NaN', () => {
+    expect(normalizeDb(75, 40, 110)).toBeCloseTo(0.5)
+    expect(normalizeDb(0, 40, 110)).toBe(0)
+    expect(normalizeDb(500, 40, 110)).toBe(1)
+    expect(normalizeDb(NaN, 40, 110)).toBeNaN()
+    expect(Number.isFinite(normalizeDb(50, 60, 60))).toBe(true)
+  })
+})
+
+describe('frequency axis', () => {
+  it('maps frequency to pixels and back', () => {
+    const v = { lo: 100, hi: 300 }
+    expect(freqToX(200, v, 800)).toBe(400)
+    expect(xToFreq(400, v, 800)).toBe(200)
+  })
+  it('zooms about the anchor and clamps to the band', () => {
+    const z = zoomView({ lo: 0, hi: 1000 }, 200, 2, 1000)
+    expect(z.lo).toBeCloseTo(100); expect(z.hi).toBeCloseTo(600)
+    const out = zoomView({ lo: 0, hi: 1000 }, 500, 0.1, 1000)
+    expect(out).toEqual({ lo: 0, hi: 1000 })
+    expect(clampView({ lo: 990, hi: 991 }, 1000)).toEqual({ lo: 990, hi: 1000 })
+    expect(clampView({ lo: NaN, hi: NaN }, 1000).hi).toBeLessThanOrEqual(1000)
+  })
+  it('produces nice ticks', () => {
+    expect(niceTicks(0, 1000, 5)).toEqual([0, 200, 400, 600, 800, 1000])
+    expect(niceTicks(10, 10)).toEqual([])
+  })
+  it('wraps ring rows', () => {
+    expect(ringRow(5, 0, 600)).toBe(5)
+    expect(ringRow(5, 6, 600)).toBe(599)
+    expect(ringRow(0, 600, 600)).toBe(0)
+  })
+})
+
+describe('tactical', () => {
+  it('round-trips world and screen coordinates, north up', () => {
+    const v = fitView(800, 600, 12000)
+    expect(toScreenX(v, 0)).toBe(400); expect(toScreenY(v, 0)).toBe(300)
+    expect(toScreenY(v, 1000)).toBeLessThan(300)
+    const w = toWorld(v, toScreenX(v, 1234), toScreenY(v, -567))
+    expect(w.x).toBeCloseTo(1234); expect(w.y).toBeCloseTo(-567)
+  })
+  const buoy = (id: number, x: number, y: number, state: TacticalBuoy['state'] = 'live'): TacticalBuoy =>
+    ({ id, channel: id, kind: 'difar', x, y, hydrophoneDepthM: 60, batteryFrac: 1, lifeRemainingS: 100, state })
+  const brg = (fx: number, fy: number, b: TacticalBuoy) => ((Math.atan2(fx - b.x, fy - b.y) * 180) / Math.PI + 360) % 360
+  it('cross-fixes a contact from two or more DIFAR bearings', () => {
+    const bs = [buoy(1, -2000, 0), buoy(2, 2000, 0), buoy(3, 0, -3000)]
+    const target = { x: 500, y: 2500 }
+    const lines = bs.map((b) => ({ buoyId: b.id, freqHz: 144 + b.id * 0.2, brgDeg: brg(target.x, target.y, b), quality: 15 }))
+    const fixes = crossFixes(lines, bs)
+    expect(fixes).toHaveLength(1)
+    expect(fixes[0].x).toBeCloseTo(500, 0); expect(fixes[0].y).toBeCloseTo(2500, 0); expect(fixes[0].buoys).toBe(3)
+  })
+  it('ignores weak lines, dead buoys, parallel and behind-buoy intersections', () => {
+    const a = buoy(1, -2000, 0), b = buoy(2, 2000, 0), dead = buoy(3, 0, -3000, 'dead')
+    expect(crossFixes([{ buoyId: 1, freqHz: 50, brgDeg: 0, quality: 20 }, { buoyId: 2, freqHz: 50, brgDeg: 0, quality: 20 }], [a, b])).toHaveLength(0)
+    expect(crossFixes([{ buoyId: 1, freqHz: 50, brgDeg: 45, quality: 2 }, { buoyId: 2, freqHz: 50, brgDeg: 315, quality: 2 }], [a, b])).toHaveLength(0)
+    expect(crossFixes([{ buoyId: 1, freqHz: 50, brgDeg: 225, quality: 20 }, { buoyId: 2, freqHz: 50, brgDeg: 135, quality: 20 }], [a, b])).toHaveLength(0)
+    expect(crossFixes([{ buoyId: 1, freqHz: 50, brgDeg: 45, quality: 20 }, { buoyId: 3, freqHz: 50, brgDeg: 0, quality: 20 }], [a, dead])).toHaveLength(0)
+  })
+  it('keeps a bounded track ring in order', () => {
+    const r = new TrackRing(3), p = { x: 0, y: 0 }
+    for (let i = 1; i <= 5; i++) r.push(i, -i)
+    expect(r.count).toBe(3)
+    r.at(0, p); expect(p).toEqual({ x: 3, y: -3 })
+    r.at(2, p); expect(p).toEqual({ x: 5, y: -5 })
+  })
+})
+
+import { AutoLevel } from './gram/autoLevel'
+describe('auto level', () => {
+  it('tracks a low percentile of rows, ignores NaN, starts unset', () => {
+    const a = new AutoLevel(2)
+    expect(a.get(0)).toBeNaN()
+    const row = new Float32Array(2048).fill(60); for (let i = 0; i < 2048; i += 97) row[i] = 120
+    a.update(0, row, 0, 2048)
+    expect(a.get(0)).toBeCloseTo(60)
+    const dead = new Float32Array(2048).fill(NaN)
+    a.update(1, dead, 0, 2048)
+    expect(a.get(1)).toBeNaN()
+  })
+})
+
+import { SplitWindowNormalizer } from './gram/whiten'
+import { selectBearings } from './tactical/TacticalPlot'
+describe('split-window normalization', () => {
+  it('flattens a sloped background, keeps tonals, keeps NaN', () => {
+    const n = 512, src = new Float32Array(n), dst = new Float32Array(n)
+    for (let i = 0; i < n; i++) src[i] = 100 - i * 0.05
+    src[200] += 12
+    const nz = new SplitWindowNormalizer(n)
+    nz.apply(src, 0, dst, 0)
+    for (let i = 40; i < n - 40; i++) if (Math.abs(i - 200) > 30) expect(Math.abs(dst[i])).toBeLessThan(0.01)
+    expect(dst[200]).toBeCloseTo(12, 1)
+    src.fill(NaN); nz.apply(src, 0, dst, 0)
+    expect(dst.every((v) => Number.isNaN(v))).toBe(true)
+  })
+})
+describe('bearing selection', () => {
+  const buoys = [1, 2].map((id) => ({ id, channel: 10 + id, kind: 'difar' as const, x: 0, y: 0, hydrophoneDepthM: 60, batteryFrac: 1, lifeRemainingS: 1, state: 'live' as const }))
+  const br = [
+    { buoyId: 1, freqHz: 72, brgDeg: 10, quality: 20 }, { buoyId: 1, freqHz: 144, brgDeg: 50, quality: 12 },
+    { buoyId: 2, freqHz: 72.5, brgDeg: 300, quality: 15 }, { buoyId: 2, freqHz: 300, brgDeg: 90, quality: 4 },
+  ]
+  it('defaults to the strongest line on the selected buoy', () => {
+    expect(selectBearings(br, buoys, 11, null, false).map((b) => b.freqHz)).toEqual([72, 72.5])
+  })
+  it('follows a picked frequency, and shows all confident lines as a toggle', () => {
+    expect(selectBearings(br, buoys, 11, 144.4, false)).toHaveLength(1)
+    expect(selectBearings(br, buoys, 11, null, true)).toHaveLength(3)
+  })
+})

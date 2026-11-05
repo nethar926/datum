@@ -17,9 +17,11 @@
     "jsx": "react-jsx",
 
     /* Linting */
-    "noUnusedLocals": true,
+    "noUnusedLocals": false,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    "erasableSyntaxOnly": false,
+    "strict": true,
+    "paths": { "@acoustics": ["./acoustics/src/index.ts"] },
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]

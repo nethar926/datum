@@ -1,122 +1,106 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { SimClient } from './engine/client'
+import type { Band } from './engine/contract'
+import { Lofar } from './gram/Lofar'
+import { clampView, type FreqView } from './gram/axis'
+import { TacticalPlot } from './tactical/TacticalPlot'
 
-function App() {
-  const [count, setCount] = useState(0)
+const RATES = [1, 4, 16]
+const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
+const fmtT = (s: number) => { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` }
+
+export default function App() {
+  const client = useMemo(() => new SimClient(), [])
+  const st = useSyncExternalStore(client.subscribe, client.getStatus)
+  const [stream, setStream] = useState(0)
+  const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
+  const [truth, setTruth] = useState(false)
+  const [normalized, setNormalized] = useState(true)
+  const [allBearings, setAllBearings] = useState(false)
+  const [selHz, setSelHz] = useState<number | null>(null)
+
+  useEffect(() => {
+    client.start()
+    const q = new URLSearchParams(location.search)
+    if (q.has('autoplay')) { client.setRate(Number(q.get('rate')) || 16); client.setPlaying(true) }
+    return () => client.dispose()
+  }, [client])
+
+  const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
+  const cfg = st.configs[stream]
+  const buoy = st.tactical?.buoys[stream]
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="app">
+      <header className="toolbar">
+        <div className="brand">DATUM<small>Acoustic operator trainer · fictional patrol aircraft</small></div>
+        <div className="group">
+          <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
+            {st.playing ? 'Pause' : 'Play'}
+          </button>
+          <div className="seg" role="group" aria-label="Sim rate">
+            {RATES.map((r) => <button key={r} aria-pressed={st.rate === r} onClick={() => client.setRate(r)}>{r}×</button>)}
+          </div>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
+        <div className="group">
+          <div className="seg" role="group" aria-label="LOFAR band">
+            <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
+            <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
+          </div>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+        <div className="group">
+          <label className="seg" style={{ padding: '2px 8px', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
+          </label>
+        </div>
+        <span className="readout">T+{fmtT(st.simT)}</span>
+      </header>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      <main className="workspace">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>LOFAR</h2>
+            <div className="seg" role="group" aria-label="LOFAR processing">
+              <button aria-pressed={normalized} onClick={() => setNormalized(true)} title="Split-window background normalization">Norm</button>
+              <button aria-pressed={!normalized} onClick={() => setNormalized(false)}>Raw</button>
+            </div>
+            <div className="seg" role="group" aria-label="Buoy channel">
+              {st.configs.map((c, i) => (
+                <button key={c.streamId} aria-pressed={i === stream} onClick={() => setStream(i)}>
+                  {c.channel}{st.tactical?.buoys[i]?.kind === 'difar' ? 'D' : 'O'}
+                </button>
+              ))}
+            </div>
+            <span className="readout">
+              {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} HZ  Δf ${cfg.fBin.toFixed(2)}` : 'STARTING'}
+              {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
+            </span>
+          </div>
+          <div className="panel-body">
+            {st.configs.length > 0 && (
+              <Lofar client={client} configs={st.configs} streamIndex={stream} view={view}
+                onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
+                normalized={normalized} selectedHz={selHz} onSelectHz={setSelHz} />
+            )}
+            {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
+          </div>
+        </section>
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Tactical</h2>
+            <div className="seg" role="group" aria-label="Bearings shown">
+              <button aria-pressed={!allBearings} onClick={() => setAllBearings(false)}>{selHz === null ? 'Sel' : `${selHz.toFixed(1)} Hz`}</button>
+              <button aria-pressed={allBearings} onClick={() => setAllBearings(true)}>All</button>
+            </div>
+            <span className="readout">
+              {st.tactical ? `A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')} · ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT · ${st.tactical.aircraft.altM} M` : ''}
+            </span>
+          </div>
+          <div className="panel-body plot">
+            <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings} />
+          </div>
+        </section>
+      </main>
+    </div>
   )
 }
-
-export default App
