@@ -113,3 +113,7 @@ button, select { font: inherit; color: inherit; }
 .harm-marker.lofar span { color: var(--plot-manual); }
 .cross-readout { top: auto; left: auto; right: 8px; bottom: 28px; background: rgba(0,0,0,.55); padding: 3px 5px; border-radius: 3px; }
 .ovld { font: 600 11px/1 var(--font-mono); color: #ff5a4a; border: 1px solid #ff5a4a; padding: 2px 4px; border-radius: 3px; margin-left: 6px; }
+.truth-panel { position: absolute; left: 8px; bottom: 8px; max-width: 62%; max-height: 45%; overflow: auto; background: rgba(4,10,8,.82); border: 1px solid var(--line, #24332c); border-radius: 4px; padding: 6px 8px; font: 10px/1.35 var(--font-mono); color: #9fd8b0; pointer-events: auto; }
+.truth-contact + .truth-contact { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(159,216,176,.15); }
+.truth-head { color: #e8c46a; font-weight: 600; }
+.truth-row { white-space: nowrap; }

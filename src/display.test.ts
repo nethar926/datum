@@ -386,3 +386,28 @@ describe('receiver front end', () => {
     expect(rx.gainDb - g0).toBeLessThan((0 - g0) * (dt / DEFAULT_RECEIVER.releaseS) * 1.5)
   })
 })
+
+import { familyFundamentals, familyLabel, snapToFamily, psrCoupled, truthRows, type TruthContactLite } from './gram/truthFamilies'
+describe('engine line families (truth)', () => {
+  const dd = (running: boolean): TruthContactLite => ({ id: 1, label: 'FX-RQ-09-1', spdMps: 4, crsDeg: 90, depthM: 12, spdKts: 7.8,
+    propulsion: { kind: 'dieselDirect', ratio: 1, ratioLabel: '1.00:1', shafts: [{ rpm: 180, hz: 3 }],
+      engines: [{ id: 'e1', stroke: 2, cylinders: 6, erpm: running ? 180 : 0, running, csrHz: running ? 3 : 0, cfrHz: running ? 3 : 0, efrHz: running ? 18 : 0 }] },
+    lines: [{ lineFamily: 'EDA', fundamentalHz: 7.5 }] })
+  it('lists CSR/CFR/EFR from running engines plus EDA from lines', () => {
+    expect(familyFundamentals([dd(true)]).map((f) => `${f.family}:${f.hz}`)).toEqual(['CSR:3', 'CFR:3', 'EFR:18', 'EDA:7.5'])
+    expect(familyFundamentals([dd(false)]).map((f) => f.family)).toEqual(['EDA'])
+    expect(familyFundamentals([{ ...dd(true), active: false }])).toEqual([])
+  })
+  it('snaps a click near a harmonic to that family fundamental', () => {
+    const s = snapToFamily(36.3, familyFundamentals([dd(true)]), 1)
+    expect(s?.fund.family).toBe('EFR'); expect(s?.k).toBe(2)
+    expect(familyLabel(s!.fund)).toBe('EFR E1 ERPM 180')
+    expect(snapToFamily(50, familyFundamentals([dd(true)]), 0.2)).toBeNull()
+  })
+  it('Diesel Direct PSR = CSR only when the engines are coupled', () => {
+    expect(psrCoupled(dd(true).propulsion)).toBe(true)
+    expect(psrCoupled(dd(false).propulsion)).toBe(false)
+    expect(truthRows(dd(true)).join('\n')).toMatch(/ERPM 180  CSR 3.00  CFR 3.00  EFR 18.00 HZ[\s\S]*PSR = CSR/)
+    expect(truthRows(dd(false)).join('\n')).toMatch(/STOPPED[\s\S]*DECOUPLED/)
+  })
+})

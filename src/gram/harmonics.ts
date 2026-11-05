@@ -33,9 +33,9 @@ export function nearestHarmonic(f0: number, hz: number): number {
 }
 
 /** LOFAR harmonic cursor readout. */
-export function harmText(f0: number | null, k: number | null, fMax: number): string {
+export function harmText(f0: number | null, k: number | null, fMax: number, family?: string): string {
   if (f0 === null) return 'HARM  CLICK A LINE TO SET THE FUNDAMENTAL'
   const n = harmonicSeries(f0, fMax).length
   const kk = k ?? 1
-  return `HARM F0 ${f0.toFixed(2)} HZ  ${n} MARKERS  H${kk} ${(kk * f0).toFixed(2)} HZ`
+  return `HARM ${family ? family + '  ' : ''}F0 ${f0.toFixed(2)} HZ  ${n} MARKERS  H${kk} ${(kk * f0).toFixed(2)} HZ`
 }

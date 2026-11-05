@@ -18,7 +18,11 @@ export interface TacticalBuoy {
   rx?: { gainDb: number; overload: boolean }
 }
 export interface Bearing { buoyId: number; freqHz: number; brgDeg: number; quality: number }
-export interface TruthContact { id: number; label: string; x: number; y: number; crsDeg: number; spdMps: number }
+export interface TruthContact { id: number; label: string; x: number; y: number; crsDeg: number; spdMps: number
+  /** v1.2 (m3-lines) fields, optional so older engines still work. */
+  active?: boolean; depthM?: number; spdKts?: number
+  propulsion?: import('../gram/truthFamilies').PropulsionTruthLite; lines?: import('../gram/truthFamilies').TruthLineLite[]
+}
 export interface Tactical {
   v: 1; type: 'tactical'; simT: number
   aircraft: { x: number; y: number; altM: number; hdgDeg: number; gsMps: number }

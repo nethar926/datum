@@ -14,6 +14,7 @@ import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic } from './gram/harmonics'
+import { familyFundamentals, familyLabel, snapToFamily, truthRows } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 
@@ -51,14 +52,20 @@ export default function App() {
   const [crossOn, setCrossOn] = useState(false)
   const [harmF0, setHarmF0] = useState<number | null>(null)
   const [harmK, setHarmK] = useState<number | null>(null)
+  const [harmFam, setHarmFam] = useState<string | null>(null)
   const harmGrab = useRef<number | null>(null)
   const harmDrag = (phase: 'start' | 'move' | 'end', hz: number) => {
     if (phase === 'start') {
-      if (harmF0 === null) { setHarmF0(hz); harmGrab.current = 1; setHarmK(1); return }
+      if (harmF0 === null) {
+        // Truth on: snap to the nearest engine line family (CSR/CFR/EFR/EDA) whose harmonic is under the click.
+        const snap = truth ? snapToFamily(hz, familyFundamentals(st.tactical?.truth?.contacts), Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
+        if (snap) { setHarmF0(snap.fund.hz); setHarmK(snap.k); setHarmFam(familyLabel(snap.fund)); harmGrab.current = null; return }
+        setHarmF0(hz); harmGrab.current = 1; setHarmK(1); setHarmFam(null); return
+      }
       const k = nearestHarmonic(harmF0, hz); harmGrab.current = k; setHarmK(k); return
     }
     const k = harmGrab.current
-    if (k !== null && hz > 0) setHarmF0(hz / k)
+    if (k !== null && hz > 0) { setHarmF0(hz / k); setHarmFam(null) }
     if (phase === 'end') harmGrab.current = null
   }
   const cpaMode = tool === 'cpa'
@@ -162,7 +169,7 @@ export default function App() {
             </div>
             <div className="seg" role="group" aria-label="Harmonic cursor">
               <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust">HARM</button>
-              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null) }}>Clear</button>}
+              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null) }}>Clear</button>}
             </div>
             <div className="seg" role="group" aria-label="Cross cursor">
               <button aria-pressed={crossOn} onClick={() => setCrossOn(!crossOn)} title="Time / frequency crosshair with level readout">CROSS</button>
@@ -192,7 +199,7 @@ export default function App() {
                   {cpaMarks.length > 0 && <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} />}
                 </>) : undefined} />
             )}
-            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, BAND_MAX[st.band])}</div>}
+            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, BAND_MAX[st.band], harmFam ?? undefined)}</div>}
             {(cpaMode || cpaMarks.length > 0) && <div className="gram-note readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</div>}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">
@@ -239,6 +246,11 @@ export default function App() {
               {`A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</div>}
             <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} />
+            {truth && st.tactical?.truth && <div className="truth-panel readout" data-testid="truth-panel">
+              {st.tactical.truth.contacts.filter((c) => c.active !== false).map((c) => <div key={c.id} className="truth-contact">
+                {truthRows(c).map((r, i) => <div key={i} className={i ? 'truth-row' : 'truth-head'}>{r}</div>)}
+              </div>)}
+            </div>}
           </div>
         </section>
       </main>
