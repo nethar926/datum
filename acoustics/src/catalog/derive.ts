@@ -24,7 +24,7 @@ export function deriveSignature(c:SubmarineClass,variant:string|CatalogVariant|u
  * fraction radiates to remote receivers. Pumps/electrical strengths are entirely fictional. */
 export function updateDerivedSignature(out:Signature,p:ClassParams,speedKn:number,depthM:number,mode:OperatingMode):void {
  const speed=clamp(speedKn,0,p.maxSpeedKn),shaft=p.maxShaftRpm/60*speed/p.maxSpeedKn,blade=shaft*p.blades;
- out.shaftHz=shaft;out.blades=p.blades;out.tonalHz=Math.max(.01,blade);out.levelDb=p.levelDb+20*Math.log10(1+2*speed/p.maxSpeedKn)+(mode==='quiet'?-8:mode==='aip'?-5:0);
+ out.shafts=p.shafts;out.electricalHz=p.electricalHz;out.shaftHz=shaft;out.blades=p.blades;out.tonalHz=Math.max(.01,blade);out.levelDb=p.levelDb+20*Math.log10(1+2*speed/p.maxSpeedKn)+(mode==='quiet'?-8:mode==='aip'?-5:0);
  out.inceptionKn=cavitationInceptionKn(p,depthM);const excess=Math.max(0,speed/out.inceptionKn-1);out.cavitationPower=excess*excess*.02;out.modulation=excess>0?Math.min(.8,.15+.4*excess):0;
  out.flowNoiseDb=speed>0?p.flowNoise.levelDb+p.flowNoise.slopeDb*Math.log10(speed/p.flowNoise.referenceKn):-300;out.flowRadiatedFraction=p.flowNoise.radiatedFraction;
  let i=0;tone(out,i++,'shaft',shaft,speed>0?.1*p.shafts:0);for(let h=1;h<=3;h++)tone(out,i++,'blade',blade*h,speed>0?.25*p.shafts/(h*h):0);

@@ -12,7 +12,7 @@ npm run build
 npm run bench
 ```
 
-No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 77 tests;
+No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 88 tests;
 benchmark: 12 warmup + 200 full 60-contact × 32-buoy × 1024-bin steps, mean/p95,
 no timing assertion. `busyScenario()` is a test/benchmark fixture only. No PNG preview.
 
@@ -103,7 +103,7 @@ not physically valid), bins 2..16384. Worker M1 is fixed to 1024 bins.
 - Ambient: illustrative Wenz/Knudsen turbulence/shipping/wind/thermal power sum, not calibration.
   Wind-dominated spectrum decreases 1..10 kHz; thermal noise eventually rises.
 - Fictional source: shaft/blade/machinery harmonics, speed/depth-dependent cavitation/level.
-  Tonals apply Doppler/absorption/Lloyd; smooth broadband excludes Doppler/mirror fringes.
+  Tonals apply Doppler/absorption/Lloyd; broadband includes coherent Lloyd fringes and excludes Doppler warping.
   Incoherent contacts; two-bin tone deposition; independent exponential/chi-square 2-DOF
   fluctuations, not sampled FFT leakage or correlated ocean noise.
 - DIFAR primitive: atan2 of omni×east/north cross terms; worker lines approximate geometric
@@ -163,8 +163,7 @@ local generation input, not a changed worker command. Root contract docs remain 
 sliders edit the resulting plain object. `clampParams(unknown)` repairs NaN/nonfinite/range
 edits, bounds counts to 1..250 and restores positive rarity totals. `generateScenario(params,
 seed?)` respects edits, intersects operating ranges with class envelopes, applies quiet-speed
-caps, and holds cavitation-disabled speeds below inception. surfaceTraffic maps to ambient
-shipping (not unapproved surface-vessel classes). No hidden difficulty settings remain after
+caps, and holds cavitation-disabled speeds below inception. surfaceTraffic activates a seeded prefix of fictional ships and continuously scales ambient shipping. No hidden difficulty settings remain after
 preset expansion. Easy: one shallow/fast contact, light traffic/noise, short range, 8 h buoys.
 Regular: 1–2 contacts, default weights/noise, mid ranges, 4 h. Difficult: 1–3, rare weights ×3,
 deep/slow/quiet without cavitation, high traffic/noise, long range, 1–2 h buoy life.
@@ -177,10 +176,11 @@ fBin=100/511 Hz, 4 rows/s. `rowsReady` and `writeRow` work unchanged. LOFAR subs
 still return their config and permit omitted kind (defaults to 'lofar'). The worker accepts
 DEMON subscriptions with buoyId, and sends separately pooled gramRows for each distinct
 bin count (1024 LOFAR, 512 DEMON); return each batch's three buffers through release.
-Actual acoustic AM synthesis, square-law/LP/Hann/FFT, and median-relative dB are used.
-Selected-band carrier represents the strongest contact only (not full contact waveform
-summation); independent 5.11 s analysis blocks are synthesized for each row. Phase/time
-alignment of overlapping blocks is not modeled. Selected streams allocate DSP buffers once.
+All live contacts contribute TL-weighted, modulated broadband power envelopes, including ships.
+The square-law envelopes are summed directly, then DC removal/Hann/FFT yields median-relative
+dB. Shared source tables contain shaft and blade harmonics; only state changes rebuild them.
+4096 envelope samples span 5.11 s; no ultrasonic carrier waveform or overlapping-block phase
+continuity is modeled. Buffers, weights and FFT tables are preallocated; no row allocation.
 Seek with DEMON currently errors pending window replay; LOFAR-only seek is unchanged.
 
 `fitLloydsMirror(samples, {zrM,cMps?,basis?})` fits measured null spacing samples
@@ -214,3 +214,47 @@ like DEMON seek, is deferred to future window/config replay.
 `engine.setSurfaceTraffic(value)` clamps to 0..1 (nonfinite -> 0.5), updates shipping ambient;
 worker command `{v:1,type:'setSurfaceTraffic',simT,value}` does the same. ScenarioParams and
 all these additions are documented here rather than modifying out-of-scope root docs.
+
+## Completed M2: surface traffic, all-contact DEMON and Lloyd visibility
+
+`catalog/surface.ts` fixes six invented templates. Source offsets are relative to a fictional
+120 dB reference sub (not measured signatures):
+
+| Type | Shafts drawn | Blades | Max RPM | Source offset | Electrical |
+|---|---:|---:|---:|---:|---|
+| fishing-trawler | 1–2 | 3 or 4 | 220 | +12 dB | seeded 50/60 Hz |
+| coastal-freighter | 1–2 | 3 or 4 | 180 | +18 dB | seeded 50/60 Hz |
+| ferry | 2–3 | 3 or 4 | 240 | +20 dB | seeded 50/60 Hz |
+| tug | 1–3 | 3 or 4 | 210 | +16 dB | seeded 50/60 Hz |
+| bulk-carrier | 1–2 | 3 or 4 | 150 | +26 dB | seeded 50/60 Hz |
+| tanker | 1–2 | 3 or 4 | 160 | +28 dB | seeded 50/60 Hz |
+
+Every ship has shaft/blade/electrical/diesel harmonics, modulated cavitation/machinery
+broadband, and a straight seeded track. An independent per-rank PRNG substream fixes an
+18-ship maximum pool (reduced only when the 250-contact limit requires it). Low-rank types
+favor trawlers/tugs/ferries; high ranks favor bulk/tanker traffic. Count is round(traffic×pool).
+Traffic changes cannot alter sub draws. Inactive ships continue moving; live toggles only
+change active flags/prefix visibility, not seeds or tracks. Legacy scenarios start at zero
+ships but have an inactive pool ready. Per-buoy row-keyed noise preserves equivalence to a
+fresh scenario at the same tick history. Ambient shipping power also scales continuously.
+`Contact.category` is surface/subsurface; `classificationTargets` and `getClassificationTargets`
+exclude ships, while additive `LogEvent.category` lets the operator log them as surface contacts.
+
+`m2-lloyds-cpa` (also `lloydsCpaScenario(seed)`) is an invented loud cavitating subsurface
+training pass at 2.5 km horizontal CPA, 40 m source depth and a 60 m buoy. Calm sea; 4096 bins
+0..6000 Hz place hundreds of bins between predicted interference minima. Both tones and
+broadband use the pressure-release image path. Urick/Jensen Rayleigh coherent image amplitude
+factor is exp(-2 k² sigma² sin²(theta)), theta the image-path grazing angle. Illustrative sea-state
+0..6 RMS elevations sigma=[0,.04,.12,.25,.5,.9,1.5] m; not a weather forecast. Cached frequency
+coefficients and a phase recurrence avoid per-bin trigonometric calls. High seas reduce
+coherent fringe contrast as well as increasing ambient noise.
+
+Requirement coverage: `surface.test.ts` (ship constraints/determinism/prefixes/targets/live
+LOFAR+DEMON toggles); `multiDemon.test.ts` (two simultaneous blade families and shaft/blade
+harmonics within one bin); `lloydVisibility.test.ts` (power-averaged row correlation >0.9 with
+predicted gain, >12 dB null contrast, rough-sea contrast reduction); `catalog.test.ts`
+(cavitation formula/monotonicity/zero below threshold, shallow-fast vs deep-slow, 50/60 Hz,
+20,000 weighted draws, real-name denylist). `demonStream.test.ts` covers separate worker
+batch packing; `pinnedApi.test.ts` covers pinned fits/defaults/traffic/bands.
+`npm run bench` measures 60-contact/32-buoy legacy and catalog fields plus all 32 DEMON
+streams on the catalog case (51 subs + 9 ships), 200 steps after warmup, at 4 rows/s sim time.

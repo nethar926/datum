@@ -1,7 +1,7 @@
 import { clamp } from './units.js';
 export type TonalFamily='shaft'|'blade'|'src'|'gear'|'electrical'|'motor'|'diesel'|'pump';
 export interface TonalLine {family:TonalFamily;hz:number;power:number}
-export interface Signature { label: string; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number }
+export interface Signature { label: string; shafts?:number; electricalHz?:50|60; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number }
 export const fictionalSignature: Signature = {label:'Fictional SSK A',shaftHz:2,blades:5,tonalHz:90,levelDb:125,modulation:.35};
 /** Fictional teaching curves only. Urick: machinery harmonics, propeller blade rate and cavitation.
  * Inception speed rises with hydrostatic pressure; this illustrative fit is NOT platform data. */

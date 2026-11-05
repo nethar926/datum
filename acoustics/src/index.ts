@@ -22,3 +22,4 @@ export * from './catalog/randomize.js';
 export * from './scenario/presets.js';
 export * from './fitLloydsMirror.js';
 export * from './fitCpaFromDoppler.js';
+export * from './catalog/surface.js';

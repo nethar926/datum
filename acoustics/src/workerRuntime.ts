@@ -1,5 +1,5 @@
 import {AcousticEngine} from './engine.js';
-import {cpaScenario} from './scenario.js';
+import {cpaScenario,lloydsCpaScenario} from './scenario.js';
 import {isAlive} from './buoys.js';
 import type {GramConfig,GramRows,Tactical,WorkerRequest,WorkerResponse} from './protocol.js';
 type Frame={message:GramRows;transfer:ArrayBuffer[]};
@@ -10,8 +10,8 @@ export class WorkerRuntime {
   private seed=42;private rate=1;private nextId=1;private nextRow=.25;
   private readonly configs:GramConfig[]=[];
   private readonly indices=new Map<number,number>();
-  private readonly groups=[{bins:1024,configs:[] as GramConfig[],pool:[] as Frame[]},{bins:512,configs:[] as GramConfig[],pool:[] as Frame[]}];
-  private readonly scratch=new Float32Array(1024);
+  private readonly groups=[{bins:1024,configs:[] as GramConfig[],pool:[] as Frame[]},{bins:512,configs:[] as GramConfig[],pool:[] as Frame[]},{bins:4096,configs:[] as GramConfig[],pool:[] as Frame[]}];
+  private readonly scratch=new Float32Array(4096);
   private timer:ReturnType<typeof setInterval>|undefined;
   private readonly bearingStore=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
   private readonly tactical:Tactical={v:1,type:'tactical',simT:0,aircraft:{x:0,y:0,altM:300,hdgDeg:0,gsMps:0},buoys:[],bearings:[]};
@@ -21,8 +21,8 @@ export class WorkerRuntime {
   command(m:WorkerRequest):void{try{
     if(m.v!==1||!Number.isFinite(m.simT))throw new Error('Expected v1 and finite simT');
     if(m.type==='init'){
-      if(m.scenarioId!=='cpa-pass'&&m.scenarioId!=='m1-cpa-pass')throw new Error('Unknown scenarioId; M1 supports cpa-pass');
-      const s=cpaScenario();s.seed=m.seed;const engine=new AcousticEngine(s);this.dispose();this.engine=engine;this.seed=m.seed;this.rate=1;this.nextId=1;this.nextRow=.25;this.configs.length=0;this.indices.clear();
+      if(m.scenarioId!=='cpa-pass'&&m.scenarioId!=='m1-cpa-pass'&&m.scenarioId!=='m2-lloyds-cpa')throw new Error('Unknown scenarioId; M1 supports cpa-pass');
+      const s=m.scenarioId==='m2-lloyds-cpa'?lloydsCpaScenario(m.seed):cpaScenario();s.seed=m.seed;const engine=new AcousticEngine(s);this.dispose();this.engine=engine;this.seed=m.seed;this.rate=1;this.nextId=1;this.nextRow=.25;this.configs.length=0;this.indices.clear();
       for(const b of engine.scenario.buoys)this.subscribe(b.rfChannel);this.rebuildPool();this.rebuildTactical();this.sendTactical();return;
     }
     const e=this.engine;if(!e)throw new Error('Initialize first');
@@ -47,7 +47,7 @@ export class WorkerRuntime {
         }
         if(m.kind!==undefined&&m.kind!=='lofar')throw new Error('Unsupported gram kind');
         if(m.channel===undefined)throw new Error('LOFAR requires channel');
-        const band=m.band??[0,500],existing=this.configs.find(c=>c.channel===m.channel&&c.kind==='lofar'&&c.f0===band[0]&&Math.abs(c.f0+c.fBin*(c.bins-1)-band[1])<1e-8);
+        const band=m.band??e.scenario.band??[0,e.scenario.fMax??e.scenario.fmax],existing=this.configs.find(c=>c.channel===m.channel&&c.kind==='lofar'&&c.f0===band[0]&&Math.abs(c.f0+c.fBin*(c.bins-1)-band[1])<1e-8);
         if(existing)this.emit({...existing,simT:e.time});else{const config=e.subscribe({channel:m.channel,kind:'lofar',bins:m.bins,band});this.configs.push(config);this.indices.set(config.streamId,0);this.emit(config);this.rebuildPool();}break;
       }
       case 'unsubscribe':{const i=this.configs.findIndex(c=>c.streamId===m.streamId);if(i>=0){this.configs.splice(i,1);this.indices.delete(m.streamId);e.unsubscribe(m.streamId);this.rebuildPool();}break;}
