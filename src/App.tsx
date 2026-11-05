@@ -4,7 +4,9 @@ import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
-import { DemonPane } from './gram/DemonPane'
+// DemonPane (src/gram/DemonPane.tsx) is kept but off the display layout for now.
+import { isGramMode, type GramMode } from './gram/difarBearing'
+import { DifarLegend } from './gram/DifarLegend'
 import { NewScenario } from './settings/NewScenario'
 import { TrafficSlider } from './settings/TrafficSlider'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
@@ -24,6 +26,8 @@ const RATES = [1, 4, 16]
 const PALETTE_LABEL: Record<PaletteId, string> = { green: 'Green', amber: 'Amber', gray: 'Gray', multi: 'Multi' }
 const PALETTE_KEY = 'datum.palette'
 const loadPalette = (): PaletteId => { try { const v = localStorage.getItem(PALETTE_KEY); return isPaletteId(v) ? v : 'green' } catch { return 'green' } }
+const GRAM_MODE_KEY = 'datum.gramMode'
+const loadGramMode = (): GramMode => { try { const v = localStorage.getItem(GRAM_MODE_KEY); return isGramMode(v) ? v : 'lofar' } catch { return 'lofar' } }
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
 const fmtT = (s: number) => { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` }
 
@@ -36,6 +40,8 @@ export default function App() {
   const [normalized, setNormalized] = useState(true)
   const [palette, setPalette] = useState<PaletteId>(loadPalette)
   useEffect(() => { try { localStorage.setItem(PALETTE_KEY, palette) } catch { /* private mode */ } }, [palette])
+  const [gramMode, setGramMode] = useState<GramMode>(loadGramMode)
+  useEffect(() => { try { localStorage.setItem(GRAM_MODE_KEY, gramMode) } catch { /* private mode */ } }, [gramMode])
   const [allBearings, setAllBearings] = useState(false)
   const [showAuto, setShowAuto] = useState(true)
   const [showManual, setShowManual] = useState(true)
@@ -92,13 +98,13 @@ export default function App() {
     client.start()
     const q = new URLSearchParams(location.search)
     const pq = q.get('palette'); if (isPaletteId(pq)) setPalette(pq)
+    const gm = q.get('gram'); if (isGramMode(gm)) setGramMode(gm)
     if (q.has('autoplay')) { client.setRate(Number(q.get('rate')) || 16); client.setPlaying(true) }
     return () => client.dispose()
   }, [client])
 
   const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
   const lofarCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'lofar'), [st.configs])
-  const demonCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'demon'), [st.configs])
   const cfg = lofarCfgs[stream]
   const probeName = truth && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
   const buoy = st.tactical?.buoys[stream]
@@ -161,7 +167,11 @@ export default function App() {
         <div className="workspace-left">
         <section className="panel">
           <div className="panel-head">
-            <h2>LOFAR</h2>
+            <h2>{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'}</h2>
+            <div className="seg" role="group" aria-label="Gram mode">
+              <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title="Intensity only, in the selected palette">LOFAR</button>
+              <button aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
+            </div>
             <div className="seg" role="group" aria-label="LOFAR processing">
               <button aria-pressed={normalized} onClick={() => setNormalized(true)} title="Split-window background normalization">Norm</button>
               <button aria-pressed={!normalized} onClick={() => setNormalized(false)}>Raw</button>
@@ -200,6 +210,7 @@ export default function App() {
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
                 normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz}
+                mode={gramMode} tactical={st.tactical}
                 onPickPoint={cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
                 onDragPoint={tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
                 crosshair={crossOn} nowS={st.simT}
@@ -230,11 +241,10 @@ export default function App() {
                 <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
               </div>
             )}
+            {gramMode === 'difar' && <DifarLegend omni={!!buoy && buoy.kind !== 'difar'} />}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
         </section>
-        <DemonPane client={client} configs={demonCfgs} palette={palette}
-          streamIndex={Math.max(0, demonCfgs.findIndex((c) => c.channel === cfg?.channel))} />
         </div>
         <section className="panel">
           <div className="panel-head">

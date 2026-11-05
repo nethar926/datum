@@ -62,7 +62,16 @@ button, select { font: inherit; color: inherit; }
 .harm-marker.shaft span { color: var(--plot-manual); }
 .harm-marker.blade span { color: var(--plot-buoy); top: 16px; }
 .empty-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; font: 12px/1.4 var(--font-mono); color: var(--text-2); }
-.workspace-left { display: grid; grid-template-rows: 2fr 1fr; gap: inherit; min-height: 0; }
+.workspace-left { display: grid; grid-template-rows: minmax(0, 1fr); gap: inherit; min-height: 0; }
+.difar-legend { position: absolute; right: 52px; top: 8px; display: grid; justify-items: center; gap: 4px; padding: 6px; background: rgba(0,0,0,.6); border: 1px solid var(--hairline); border-radius: 4px; pointer-events: none; z-index: 3; }
+.difar-wheel { position: relative; width: 56px; height: 56px; border-radius: 50%; }
+.difar-wheel i { position: absolute; inset: 14px; border-radius: 50%; background: #000; }
+.difar-wheel span { position: absolute; font: 600 9px/1 var(--font-mono); color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000; z-index: 1; }
+.difar-wheel .n { top: 2px; left: 50%; transform: translateX(-50%); }
+.difar-wheel .s { bottom: 2px; left: 50%; transform: translateX(-50%); }
+.difar-wheel .e { right: 3px; top: 50%; transform: translateY(-50%); }
+.difar-wheel .w { left: 3px; top: 50%; transform: translateY(-50%); }
+.difar-note { font: 9px/1 var(--font-mono); color: var(--text-2); letter-spacing: .04em; }
 .gram-layer { position: absolute; left: 0; top: 0; bottom: 22px; pointer-events: none; overflow: hidden; }
 .gram-layer .harm-marker { bottom: 0; }
 .cpa-mark { position: absolute; width: 9px; height: 9px; margin: -5px 0 0 -5px; pointer-events: none; }

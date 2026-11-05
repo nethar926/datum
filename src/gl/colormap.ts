@@ -42,3 +42,22 @@ export function normalizeDb(db: number, floor: number, ceil: number): number {
   const span = Math.max(1e-6, ceil - floor)
   return Math.min(1, Math.max(0, (db - floor) / span))
 }
+
+/** DIFAR bearing wheel anchors (deg, RGB): 000 N red, 090 E yellow, 180 S blue, 270 W violet, wrapping back to red. */
+export const DIFAR_ANCHORS: readonly (readonly [number, number, number, number])[] = [
+  [0, 255, 0, 0], [90, 255, 255, 0], [180, 0, 0, 255], [270, 148, 0, 211], [360, 255, 0, 0],
+]
+/** Bearing (deg, any value) to RGB 0..255, linear between the four anchors through every degree. */
+export function difarRgb(deg: number): [number, number, number] {
+  const d = ((deg % 360) + 360) % 360
+  const k = Math.min(3, Math.floor(d / 90))
+  const [a0, r0, g0, b0] = DIFAR_ANCHORS[k], [, r1, g1, b1] = DIFAR_ANCHORS[k + 1]
+  const t = (d - a0) / 90
+  return [Math.round(r0 + (r1 - r0) * t), Math.round(g0 + (g1 - g0) * t), Math.round(b0 + (b1 - b0) * t)]
+}
+/** 360-entry RGBA wheel (one texel per degree) for the GPU; sampled with linear filtering and REPEAT wrap. */
+export function difarWheelLut(size = 360): Uint8Array {
+  const out = new Uint8Array(size * 4)
+  for (let i = 0; i < size; i++) { const [r, g, b] = difarRgb((i * 360) / size); out.set([r, g, b, 255], i * 4) }
+  return out
+}

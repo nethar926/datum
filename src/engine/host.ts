@@ -71,7 +71,7 @@ export class SimHost {
     this.demonIds = []; this.demonPool = []; this.demonBins = 0
     const sub = (engine as unknown as { subscribe?: (r: { kind: 'demon'; buoyId: number }) => number }).subscribe
     const all = (engine as unknown as { configs?: () => GramConfig[] }).configs
-    if (typeof sub === 'function' && typeof all === 'function') {
+    if (msg.demon !== false && typeof sub === 'function' && typeof all === 'function') {
       try {
         engine.scenario.buoys.forEach((b, i) => {
           const id = (b as { id?: string }).id

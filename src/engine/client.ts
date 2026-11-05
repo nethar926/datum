@@ -42,7 +42,7 @@ export class SimClient {
     this.inFlight = false; this.acc = 0
     const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
     this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic })
-    this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic })
+    this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: false })
     if (!this.status.receiver) this.send({ type: 'setReceiver', enabled: false })
     if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(this.tick) }
   }

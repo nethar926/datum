@@ -36,7 +36,7 @@ export type FromWorker = StreamSet | GramRows | Tactical | WorkerError
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'
 export type ToWorker =
-  | { type: 'init'; seed: number; scenarioId: string; band: Band; rowRateHz: number; params?: ScenarioParams; surfaceTraffic?: number }
+  | { type: 'init'; seed: number; scenarioId: string; band: Band; rowRateHz: number; params?: ScenarioParams; surfaceTraffic?: number; demon?: boolean }
   | { type: 'setReceiver'; enabled: boolean }
   | { type: 'setSurfaceTraffic'; value: number }      // 0 none … 1 heavy
   | { type: 'step' }                                    // advance one row period of sim time

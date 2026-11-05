@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GramConfig } from '../engine/contract'
+import type { GramConfig, Tactical } from '../engine/contract'
+import { fillLineBearings, type GramMode } from './difarBearing'
 import type { SimClient } from '../engine/client'
 import { WaterfallRenderer } from '../gl/waterfall'
 import type { PaletteId } from '../gl/colormap'
@@ -23,6 +24,10 @@ interface Props {
   /** Full-width time / full-height frequency crosshair with time, frequency and level readout. */
   crosshair?: boolean; nowS?: number
   auto?: boolean; normalized?: boolean; palette?: PaletteId; selectedHz?: number | null; onSelectHz?: (hz: number) => void
+  /** 'difar' colours each bin by bearing (hue) with intensity as brightness; 'lofar' uses the palette. */
+  mode?: GramMode
+  /** Latest tactical frame, used for per-bin bearings until the engine streams them. */
+  tactical?: Tactical
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
@@ -33,7 +38,7 @@ const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
  * Gram waterfall (LOFAR, DEMON): WebGL2 ring textures, frequency axis below, time axis right, cursor readout.
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
-export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', selectedHz = null, onSelectHz,
+export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', selectedHz = null, onSelectHz, mode = 'lofar', tactical,
   label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0 }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -46,8 +51,9 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
-  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette })
-  viewRef.current = { view, streamIndex, cfg, auto, normalized, palette }
+  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode })
+  viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode }
+  const tacRef = useRef(tactical); tacRef.current = tactical
 
   // (Re)create the renderer when the stream geometry changes.
   useEffect(() => {
@@ -58,11 +64,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     const N = configs.length
     const local = new Map<number, number>()
     configs.forEach((c, i) => local.set(c.streamId, i))
-    try { r = new WaterfallRenderer(canvas, bins, HISTORY_ROWS, N * 2) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
+    try { r = new WaterfallRenderer(canvas, bins, HISTORY_ROWS, N * 2, N) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
     setGlError(null)
     rendererRef.current = r
     const level = new AutoLevel(N)
-    const norm = new SplitWindowNormalizer(bins), scratch = new Float32Array(bins)
+    const norm = new SplitWindowNormalizer(bins), scratch = new Float32Array(bins), brgRow = new Float32Array(bins)
     const hist = new LevelHistory(HISTORY_ROWS, bins); histRef.current = hist
     let histStream = viewRef.current.streamIndex
     let dirty = true, raf = 0
@@ -76,6 +82,10 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         r.pushRow(s, rows.data, k * bins); level.update(s, rows.data, k * bins, bins)
         if (s === histStream) hist.push(rows.data, k * bins)
         norm.apply(rows.data, k * bins, scratch, 0); r.pushRow(N + s, scratch, 0)
+        // Bearing ring stays row-aligned with the power ring (NaN rows for omni buoys).
+        const tac = tacRef.current, c = configs[s]
+        fillLineBearings(brgRow, c, tac?.buoys.find((b) => b.channel === c.channel), tac?.bearings)
+        r.pushBearing(s, brgRow, 0)
       }
       dirty = true
     })
@@ -83,14 +93,15 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     ro.observe(canvas)
     let lastKey = ''
     const frame = () => {
-      const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz, palette: pal } = viewRef.current
-      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal}`
+      const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz, palette: pal, mode: md } = viewRef.current
+      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md}`
       if ((dirty || key !== lastKey) && c) {
         const fl = level.get(s), useAuto = a && Number.isFinite(fl)
         const dbFloor = useAuto ? fl - AUTO_BELOW_DB : c.dbFloor, dbCeil = useAuto ? fl - AUTO_BELOW_DB + AUTO_SPAN_DB : c.dbCeil
         const range = { binLo: (v.lo - c.f0) / c.fBin, binHi: (v.hi - c.f0) / c.fBin }
-        if (nz) r.draw(N + s, { ...range, dbFloor: NORM_FLOOR_DB, dbCeil: NORM_CEIL_DB })
-        else r.draw(s, { ...range, dbFloor, dbCeil })
+        const difar = md === 'difar' ? s : undefined
+        if (nz) r.draw(N + s, { ...range, dbFloor: NORM_FLOOR_DB, dbCeil: NORM_CEIL_DB }, difar)
+        else r.draw(s, { ...range, dbFloor, dbCeil }, difar)
         dirty = false; lastKey = key
       }
       raf = requestAnimationFrame(frame)
