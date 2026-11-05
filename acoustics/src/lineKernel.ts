@@ -18,6 +18,14 @@ export class LineKernel {
   const start=center-this.radius,base=phase*this.taps;let sum=0;for(let j=0;j<this.taps;j++)if(start+j>=0&&start+j<out.length)sum+=this.weights[base+j];if(sum<=0)return;
   const scale=power/sum;for(let j=0;j<this.taps;j++)if(start+j>=0&&start+j<out.length)out[start+j]+=scale*this.weights[base+j];
  }
+ /** Deposit tonal power into the PSD target and the same energy into DIFAR east/north/signal
+  * accumulators in one tap pass (signed sin/cos weights). Allocation-free. */
+ depositBearing(powerOut:Float64Array,eastOut:Float64Array,northOut:Float64Array,signalOut:Float64Array,bin:number,power:number,sinB:number,cosB:number):void{
+  if(!Number.isFinite(bin)||!Number.isFinite(power)||power<=0||bin<0||bin>powerOut.length-1)return;
+  let center=Math.floor(bin),phase=Math.round((bin-center)*PHASES);if(phase===PHASES){center++;phase=0;}
+  const start=center-this.radius,base=phase*this.taps;let sum=0;for(let j=0;j<this.taps;j++)if(start+j>=0&&start+j<powerOut.length)sum+=this.weights[base+j];if(sum<=0)return;
+  const scale=power/sum;for(let j=0;j<this.taps;j++){const i=start+j;if(i<0||i>=powerOut.length)continue;const w=scale*this.weights[base+j];powerOut[i]+=w;signalOut[i]+=w;eastOut[i]+=w*sinB;northOut[i]+=w*cosB;}
+ }
 }
 const kernels=new Map<string,LineKernel>();
 /** Configuration-time cache shared by all buoy renderers. */
