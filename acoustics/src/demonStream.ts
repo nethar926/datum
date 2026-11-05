@@ -12,7 +12,7 @@ const envelopes=new WeakMap<Signature,Envelope>();
 function refresh(s:Signature,e:Envelope):void{
  if(e.shaft===s.shaftHz&&e.blades===s.blades&&e.modulation===s.modulation)return;
  e.shaft=s.shaftHz;e.blades=s.blades;e.modulation=s.modulation;const phase=e.phase;
- for(let i=0;i<SIZE;i++){const a=2*Math.PI*s.shaftHz*i/FS+phase,b=2*Math.PI*s.shaftHz*s.blades*i/FS+phase;e.table[i]=1+s.modulation*(.2*Math.cos(a)+.1*Math.cos(2*a)+.4*Math.cos(b)+.18*Math.cos(2*b)+.08*Math.cos(3*b)+.04*Math.cos(4*b));}
+ for(let i=0;i<SIZE;i++){let sum=0;const shafts=s.propulsion?.shafts,n=shafts?.length??1;for(let j=0;j<n;j++){const hz=shafts?shafts[j].hz:s.shaftHz,a=2*Math.PI*hz*i/FS+phase,b=2*Math.PI*hz*s.blades*i/FS+phase;sum+=.2*Math.cos(a)+.1*Math.cos(2*a)+.4*Math.cos(b)+.18*Math.cos(2*b)+.08*Math.cos(3*b)+.04*Math.cos(4*b);}e.table[i]=1+s.modulation*sum/n;}
 }
 function select(a:Float32Array,k:number):number{let lo=0,hi=a.length-1;while(lo<hi){const pivot=a[(lo+hi)>>>1];let i=lo,j=hi;while(i<=j){while(a[i]<pivot)i++;while(a[j]>pivot)j--;if(i<=j){const v=a[i];a[i++]=a[j];a[j--]=v;}}if(k<=j)hi=j;else if(k>=i)lo=i;else break;}return a[k];}
 /** Urick/Kinsler: DEMON of the incoherent sum of TL-weighted broadband power envelopes.

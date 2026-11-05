@@ -1,3 +1,4 @@
+import {chooseOperatingState} from './operations.js';
 import {catalog} from './classes.js';
 import {effectiveParams,type OperatingState,type SubmarineClass,type Propulsion} from './schema.js';
 import {mulberry32,type Random} from '../prng.js';
@@ -12,8 +13,8 @@ export function drawRarity(rng:Random,weights:RarityWeights=rarityWeights):Rarit
 }
 export interface RandomSelection {rarity:Rarity;klass:SubmarineClass;classId:string;variantId:string;hullId:string;operatingState:OperatingState;course:number}
 export function randomizeSelection(rng:Random,weights:RarityWeights=rarityWeights):RandomSelection {
- const rarity=drawRarity(rng,weights),classes=catalog.classes.filter(c=>rarity==='aip'?c.params.aipCapable:c.params.propulsion===rarity),klass=classes[Math.floor(rng()*classes.length)];if(!klass)throw new Error('No class in rarity bucket');
+ const rarity=drawRarity(rng,weights),classes=catalog.classes.filter(c=>rarity==='aip'?c.plant==='diesel'&&c.aipCapable:c.params.propulsion===rarity&&!((rarity==='dieselElectric')&&c.aipCapable)),klass=classes[Math.floor(rng()*classes.length)];if(!klass)throw new Error('No class in rarity bucket');
  const variantId=klass.variants[Math.floor(rng()*klass.variants.length)].id,hullId=klass.hulls[Math.floor(rng()*klass.hulls.length)].id,p=effectiveParams(klass,variantId);
- return {rarity,klass,classId:klass.id,variantId,hullId,operatingState:{speedKn:p.maxSpeedKn*(.15+.65*rng()),depthM:p.depthM[0]+(p.depthM[1]-p.depthM[0])*rng(),mode:rarity==='aip'?'aip':rarity==='dieselElectric'?'battery':'normal'},course:rng()*Math.PI*2};
+ return {rarity,klass,classId:klass.id,variantId,hullId,operatingState:chooseOperatingState(klass,p.maxSpeedKn*(.15+.65*rng()),p.depthM[0]+(p.depthM[1]-p.depthM[0])*rng(),false,rng),course:rng()*Math.PI*2};
 }
 export const randomize=(seed:number,weights:RarityWeights=rarityWeights):RandomSelection=>randomizeSelection(mulberry32(seed),weights);

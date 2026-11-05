@@ -12,7 +12,7 @@ npm run build
 npm run bench
 ```
 
-No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 105 tests;
+No runtime dependencies. Build emits ignored `dist/` ESM/declarations. 129 tests;
 benchmark: 12 warmup + 200 full 60-contact × 32-buoy × 1024-bin steps, mean/p95,
 no timing assertion. `busyScenario()` is a test/benchmark fixture only. No PNG preview.
 
@@ -126,16 +126,16 @@ Public Mulberry32, Box–Muller (1958), Cooley–Tukey (1965) numerical algorith
 ## Catalog (M2)
 
 `catalog/schema.ts` defines `catalogVersion:1`, forces, hulls, variants and fixed parameter
-sheets. `catalog/classes.ts` contains 12 entirely fictional classes (four per force), spanning
-five propulsion types. Blue/Green electrical buses use 60 Hz; Red uses 50 Hz. AIP is a flag
-on capable diesel classes and an operating mode, never a propulsion class. Country/hull names,
+sheets. `catalog/classes.ts` contains 22 entirely fictional classes across eight approved fictional nations, spanning
+five propulsion types. Blue/Green electrical buses use 60 Hz; Red uses 50 Hz. AIP is optional backup machinery and an operating mode, never a primary propulsion class.
+One Kaelun diesel and one Varkeshna nuclear class have it (nuclear requires reactorOffline). Country/hull names,
 RPMs, levels and tonals are invented. Variants override a fixed subset of class params;
 randomization never rewrites those sheets. Transients/emitters remain data-only placeholders.
 
 `deriveSignature(klass, variantIdOrObject, {speedKn,depthM,mode})` returns existing source params
 plus typed tonal families and broadband/flow state. Shaft RPM scales with speed/max speed;
 blade harmonics, speed-related components and geared mesh/reduction lines follow it. Bus and
-nuclear pump frequencies stay fixed. Battery/AIP omit diesel firing lines; snorkel enables
+nuclear pump frequencies stay fixed. BATT/AIP omit diesel firing lines; SNORT and D/E charging enable
 firing on diesel-electric. Validation rejects incompatible operating modes/envelopes.
 Urick/Ross static-pressure scaling: `V_i(d)=V_i0*sqrt(1+d/10.06)`; cavitation power is exactly
 zero below inception, then grows with excess speed and adds blade/shaft DEMON modulation.
@@ -262,7 +262,7 @@ streams on the catalog case (51 subs + 9 ships), 200 steps after warmup, at 4 ro
 ## v1.1 API shapes
 
 All functions below are exported by `src/index.ts`. Units: sim time seconds, lengths metres,
-speed m/s unless a field ends in `Kn`, frequencies Hz, LOFAR PSD dB re 1 µPa²/Hz,
+speed m/s unless a field ends in `Kn` or `Kts`, frequencies Hz, LOFAR PSD dB re 1 µPa²/Hz,
 DEMON dB relative to that row's median. Inputs are not mutated by the fitting helpers.
 
 ### Doppler CPA fit
@@ -465,7 +465,8 @@ interface TruthLine {
   stability: LineStability; width: LineWidth; sigmaBins: number;
 }
 interface TruthContact {
-  id: number; sourceId: string; active: boolean;
+  id: number; sourceId: string; label: string; active: boolean;
+  spdKts: number; propulsion: PropulsionTruth;
   category: 'surface' | 'subsurface'; classificationTarget: boolean;
   x: number; y: number; depthM: number; crsDeg: number; spdMps: number;
   lines: TruthLine[];
@@ -506,7 +507,8 @@ capacity**, base contacts plus the maximum seeded surface pool, not only live co
 Ordering/IDs and engine-side array/record/line-array identities stay fixed; hosts must filter
 `active`, never infer activity from membership. Existing truth id/x/y/crsDeg/spdMps fields
 remain; sourceId is the scenario contact string ID, id is its stable numeric truth ID.
-Positions/depth are metres, heading degrees clockwise from north, speed m/s.
+Positions/depth are metres, heading degrees clockwise from north. Display speed is spdKts
+(**knots**); legacy spdMps remains m/s for v1 compatibility, never silently reinterpreted.
 Changing traffic toggles flags without resizing truth; inactive tracks/wander continue.
 `scenario.contacts` retains its legacy active-surface view and is not the truth list.
 `tactical()` reuses records; clone only if a historical snapshot is needed.
@@ -517,3 +519,184 @@ window-weighted DC removal, ensuring a pedestal does not leak into the low bins.
 `lines.test.ts` covers width, energy, stochastic bounds, row determinism, tags and fixed
 truth identities; `demonDc.test.ts` covers pedestal rejection and preserved modulation;
 `worker.test.ts` verifies fixed truth capacity through actual worker messages.
+
+
+## Static engine/drivetrain catalog (M3 follow-on)
+
+All machinery dimensions, powers, line strengths and frequencies below are invented.
+Public machine kinematics only: Urick/Ross rotating orders, cylinder event counts, hunting-tooth
+gearing and electrical pole-pair relations. This is not a real-vessel identification catalog.
+
+`SubmarineClass.plant` is **'diesel' | 'nuclear'**; detailed machinery is the separate
+`machinery: DieselPlant | NuclearPlant` object. `params.propulsion` retains its five legacy
+primary types, never AIP. `drivetrainCode` is 'D/D', 'D/GR', 'DEL', 'N/GR' or 'NEL'.
+DEL's `drivetrainLabel` is **DIESEL ELECTRIC**. **D/E is a mode, never a drivetrain label.**
+Legacy reductionRatio/gearTeeth fields remain readable; authoritative ratios come from
+machinery drivetrain teeth, not those old illustrative fields.
+
+```ts
+interface EngineSpec {
+  id: string; stroke: 2 | 4; cylinders: number;
+  erpm: { obsMin: number; obsMax: number; normal: number }; // RPM
+}
+interface GearStage { pinionTeeth: number; bullTeeth: number }
+interface Drivetrain {
+  kind: 'direct' | 'gr1' | 'gr2'; stages: GearStage[];
+  ratio: number; ratioLabel: string; // e.g. 71/20 = 3.55, '3.55:1'
+}
+interface MotorSpec { maxRpm: number; drivetrain: Drivetrain }
+interface DieselPlant {
+  kind: 'dieselDirect' | 'dieselGR' | 'dieselElectric';
+  engines: EngineSpec[]; drivetrain?: Drivetrain;
+  generator?: { polePairs: number }; motor?: MotorSpec;
+}
+interface ReactorSet {
+  id: string; coolantPumpHz: number;
+  turboGenerator: { rpm: number; polePairs: number };
+}
+interface NuclearPlant {
+  kind: 'nuclearGR' | 'nuclearElectric'; reactors: number; reactorSets: ReactorSet[];
+  mainTurbines: { count: number; maxRpm: number; drivetrain: Drivetrain };
+  turbineGenerators: { count: number; rpm: number; polePairs: number };
+  motor?: MotorSpec;
+}
+interface EdaSpec {
+  id: string; perCrankRev: number; harmonics: number[];
+  ramp?: { riseS: number; fallS: number }; modes?: OperatingMode[];
+}
+interface AuxSpec {
+  id: string; kind: 'electrical' | 'acvr' | 'dcvr' | 'ssma' | 'hydp' | 'acPump';
+  fHz: number; harmonics: number[]; stability: LineStability; width: LineWidth;
+  sigmaBins?: number; duty?: { onMedianS: number; offMedianS: number; sigma: number };
+}
+interface AipSpec {
+  kind: 'stirling' | 'fuelcell' | 'closed-cycle';
+  powerKw: number; maxSpeedKts: number; enduranceDays: number;
+}
+// Additional class fields (all speeds knots):
+// maxPsrpm, shafts, shaftMismatchPct:[min,max], edas:EdaSpec[], aux:AuxSpec[],
+// operatorNationId, snorkelDepthM, motorSlots?, aipCapable:boolean, aip?:AipSpec,
+// maxSpeedKts:{surfaced,submerged,snorkel,battery}, quietSpeedKts:[min,max],
+// era:number, quietingTier:'gen2'|'gen3'|'gen4', archetype?:string,
+// emergencyPropulsor?:{maxRpm:number,blades:number,maxSpeedKts:number}.
+```
+
+Two-stroke engines always have six cylinders. Four-stroke engines use 6/8/10/12/16.
+D/D is strictly two-stroke/six-cylinder/direct 1:1, with a clutched electric motor for
+submerged battery propulsion. Reduction stages use coprime teeth; ratio is their product,
+formatted to two decimals. Mesh Hz is pinionHz*pinionTeeth = bullHz*bullTeeth at each stage.
+Nominal max shaft RPM closes within 2% against engine/ratio or motor/ratio. Multi-engine
+selection is seeded at configuration; D/D's engine-per-shaft arrangement runs every coupled
+engine. Shaft mismatch is independently seeded per contact/shaft; primary shaft is nominal.
+Nth blade doublet spacing is n*blades*abs(dRPM)/60. Both LOFAR and shared DEMON envelope
+tables include the installed shafts. No time-series allocation occurs per row.
+
+### Canonical operating modes and speed policy
+
+```ts
+type OperatingMode = 'SURF' | 'SNORT' | 'D/E' | 'BATT' | 'AIP' | 'NUC';
+```
+
+SURF is surfaced diesel operation. SNORT is snorkel-depth transit. D/E is engine-on battery
+charging while surfaced/snorkeling (louder, generators on), with no mechanical engine/shaft
+clutch. BATT uses the electric propulsion motor with diesels stopped. NUC is normal nuclear
+operation, independent of depth. D/D PSR = CSR exactly when coupled in SURF/SNORT; in BATT
+PSR follows motor RPM independently of ERPM. Per-shaft `coupled` flags distinguish these paths.
+V1 lowercase mode strings remain accepted at the input boundary and normalize to these codes;
+new generated scenarios and truth always emit canonical modes.
+
+Generated diesel contacts: depth 0 -> SURF; 0<depth<=snorkelDepthM -> seeded ~85% SNORT,
+otherwise BATT; deeper -> BATT or eligible AIP. Surfaced/snorkel/battery maxima clamp speed.
+~85% of over-patrol battery draws are lowered into quietSpeedKts, never over battery max.
+Quiet-band maximum is below inception at 100 m and below submerged maximum. Nucleus-driven
+contacts use surfaced/submerged speed caps. Operator ranges still obey these physical/mode
+caps, even when an edited lower bound is infeasible. Class identity draws remain independent
+of traffic and static-mode substreams. Modes do not change automatically during timed legs;
+mode transitions and duty/ramp scheduling belong to m3-events.
+
+AIP is **backup**, never a sixth primary kind. `aipCapable === !!aip` is validated. A slow,
+submerged, eligible diesel draw chooses AIP ~10% of the time (seeded). Exactly two classes
+are equipped: Kaelun's Gloamspiral diesel and Varkeshna's Frostwhorl nuclear backup.
+Nuclear AIP requires `reactorOffline:true` in OperatingState or a scenario/contact flag.
+`ScenarioParams.reactorOffline?:boolean` defaults false and enables the eligible nuclear
+backup; non-equipped nuclear contacts remain normally powered. AIP speed is capped by its
+own low maximum. No diesel, main-turbine or reactor-pump families run in AIP; motor and
+invented backup-generator/aux lines remain (illustrative 28/42/34 Hz for the three AIP kinds).
+Normal 50/60-Hz buses derive from synchronous generator/TG RPM and pole pairs; battery
+inverter lines remain when physical generators stop. Direct/GR diesels have independent
+service electrical sets; their main engine ERPM is not forced to bus frequency.
+
+### Pinned display truth and operator line families
+
+```ts
+interface PropulsionTruth {
+  kind: 'dieselDirect' | 'dieselGR' | 'dieselElectric' |
+        'nuclearGR' | 'nuclearElectric' | 'unspecified';
+  mode: OperatingMode;
+  drivetrainCode: 'D/D' | 'D/GR' | 'DEL' | 'N/GR' | 'NEL' | 'unspecified';
+  drivetrainLabel: string; ratio: number; ratioLabel: string;
+  engines: { id: string; stroke: 2|4; cylinders: number; erpm: number;
+    running: boolean; csrHz: number; cfrHz: number; efrHz: number }[];
+  stages: { pinionTeeth: number; bullTeeth: number; ratio: number; meshHz: number }[];
+  shafts: { rpm: number; hz: number; coupled: boolean }[];
+  motor?: { rpm: number; slots: number; msrHz: number };
+  generators?: { rpm: number; hz: number }[];
+  aip?: { kind: AipSpec['kind']; active: boolean };
+  emergencyPropulsor?: { active: boolean; rpm: number; hz: number; blades: number };
+}
+type LineFamily = 'CSR' | 'CFR' | 'EFR' | 'EDA' | 'PSR' | 'MSR' | 'COOLANT' | 'TG';
+// Additional TonalLine/TruthLine metadata:
+// lineFamily?:LineFamily, fundamentalHz?:number, harmonic?:number,
+// engineId?:string, shaftIndex?:number, reactorId?:string.
+```
+
+Every truth contact adds `label:string` (fictional class + hull suffix, else sourceId) and
+`spdKts:number`. Existing spdMps stays m/s for v1 compatibility. Machinery records and rate
+values are preallocated, updated in place only on state changes, and reused by tactical().
+All listed Hz are nominal source-frame rates; per-line freqHz still includes seeded wander,
+not receiver Doppler. MSR is **motor shaft Hz = motor RPM/60**, not multiplied by motorSlots;
+for a direct-coupled motor MSR=PSR. Slots are supplied as metadata, frontend does no rate maths.
+Each primary reduction stage's mesh rate is supplied directly; secondary-shaft mesh lines
+carry the same seeded mismatch as their shaft. Stopped generators expose zero Hz/RPM.
+Raw M1 sources without a machinery sheet report kind/code 'unspecified', preserving their
+old spectra rather than inventing a class/engine identity.
+
+Operator labels/formulas: CSR=ERPM/60; CFR=CSR for 2-stroke, CSR/2 for 4-stroke;
+EFR=CFR*cylinders; ERPM=CSR*60. Four-stroke CFR is the half-order line. CSR/CFR/EFR/EDA
+and PSR/MSR are separately tagged harmonic families at n*fundamentalHz. EDA fundamental
+is CSR*perCrankRev. These fields let harmonic cursors snap without deriving a fundamental.
+Aux duty and EDA ramp/mode fields are typed, validated placeholders only, not timed behavior.
+
+### Approved fictional operators and roster
+
+NATIONS is an allowlist; every unlisted operator (including every ISO country code) is
+rejected. Explicit deny aliases also include North Korea NKO/PRK/KP and South Korea KOR/ROK/KR.
+No class belongs to a real country. The primary rarity weights remain 5/15/40/40/2 for
+D/D, D/GR, DEL, nuclear GR, nuclear electric, plus 2 for the legacy **AIP-equipped diesel
+selection bucket**, not an AIP primary type. Ordinary DEL draws exclude that equipped class.
+
+| Nation | Force / Hz | Nuclear | Diesel |
+|---|---|---:|---:|
+| Varkeshna Federation | Red / 50 | 3 | 1 |
+| Kaelun Republic | Red / 50 | 2 | 2 |
+| Zahrestan | Red / 50 | 0 | 2 |
+| Dorhan Commonwealth | Red / 50 | 0 | 2 |
+| Norrland Union | Blue / 60 | 2 | 0 |
+| Ostmark League | Blue / 60 | 1 | 2 |
+| Tarsian Republic | Green / 60 | 1 | 2 |
+| Meridia | Green / 60 | 0 | 2 |
+
+Dorhan's Pebblewisp and Mistacorn are small coastal/littoral DEL classes. Varkeshna's
+Ivorycoil is our own very-large, older guided-missile nuclear archetype (era 1980, gen2):
+two independently offset shafts, two reactors with separate coolant-pump/TG tonal sets,
+and an invented low-speed emergency propulsor, off by default. Its source reference level
+is intentionally >8 dB above newer Varkeshna nukes at matched speed, not empirical data.
+Emergency-propulsor activation, transient events and time-varying plant modes are reserved
+for m3-events. Every dimension/blade count/frequency is invented, not taken from a real class.
+Surface templates preserve legacy shaft-count ranges and add a full plantSpec; seeded ships
+instantiate their actual 1–3-shaft machinery, direct/GR meshes and SURF-mode truth.
+
+Coverage: drivetrain.test.ts (orders, teeth, meshes, EDA scaling, doublets, cylinder/ratio
+validation, deterministic engine selection, D/D clutch/motor, record reuse); nationsModes.test.ts
+(roster/operator denylist, shallow/deep mode policy, AIP seeded rate/reactor-off, MSR, older
+reactor sets and loudness); pinnedApi.test.ts (exact nested truth fields and both Lloyd inputs).

@@ -14,3 +14,12 @@ it('v1.1 truth adds source-frame tagged lines and fixed active capacity without 
  expect(line).toMatchObject({id:'shaft:0',family:'shaft',f0Hz:2,stability:'stable',width:'discrete',sigmaBins:0});expect(Number.isFinite(line.freqHz)).toBe(true);expect(line.power).toBe(1);
  const size=t.truth!.contacts.length;e.setSurfaceTraffic(1);expect(e.tactical().truth!.contacts.length).toBe(size);expect(e.tactical().truth!.contacts[0].id).toBe(c.id);
 });
+
+it('pinned nested propulsion truth precomputes machinery units and operator families for subs and ships',()=>{
+ const e=new AcousticEngine(generateScenario(presetToParams('regular',47))),truth=e.tactical().truth!;e.setSurfaceTraffic(1);
+ for(const c of e.tactical().truth!.contacts){expect(c.label).toMatch(/^Fictional /);expect(['SURF','SNORT','D/E','BATT','AIP','NUC']).toContain(c.propulsion.mode);if(c.propulsion.motor){expect(c.propulsion.motor.slots).toBeGreaterThan(0);expect(c.propulsion.motor.shaftHz).toBe(c.propulsion.motor.rpm/60);expect(c.propulsion.motor.msrHz).toBe(c.propulsion.motor.shaftHz*c.propulsion.motor.slots);}expect(Number.isFinite(c.spdKts)).toBe(true);expect(c.spdKts).toBeCloseTo(c.spdMps/.5144444444444445);const p=c.propulsion;expect(p.ratio).toBeGreaterThanOrEqual(1);expect(p.ratioLabel).toMatch(/^\d+\.\d{2}:1$/);expect(p.shafts.length).toBeGreaterThan(0);for(const s of p.shafts){expect(s.hz).toBeCloseTo(s.rpm/60);expect(typeof s.coupled).toBe('boolean');}for(const engine of p.engines){expect(Object.keys(engine).sort()).toEqual(['id','stroke','cylinders','erpm','running','csrHz','cfrHz','efrHz'].sort());expect(engine.csrHz).toBe(engine.erpm/60);expect(engine.efrHz).toBe(engine.cfrHz*engine.cylinders);}for(const stage of p.stages){expect(Object.keys(stage).sort()).toEqual(['pinionTeeth','bullTeeth','ratio','meshHz'].sort());expect(stage.ratio).toBe(stage.bullTeeth/stage.pinionTeeth);}for(const line of c.lines)if(line.lineFamily){expect(['CSR','CFR','EFR','EDA','PSR','MSR','COOLANT','TG','BR','GRID','SRC','MESH','AUX','TURBINE']).toContain(line.lineFamily);expect(Number.isFinite(line.fundamentalHz)).toBe(true);expect(line.harmonic).toBeGreaterThan(0);}}
+ expect(e.tactical().truth).toBe(truth);
+});
+it('Lloyd fit keeps both pinned spacing-sample forms identical',()=>{
+ const samples=pass.map(s=>({tS:s.tS,fHz:1500*900/(2*80*40)*Math.hypot(1,8*(s.tS-350)/900)})),opts={zr:40,basis:{kind:'manual' as const,rCPA:900,speed:8,tCPA:350}};expect(fitLloydsMirror(samples,opts)).toEqual(fitLloydsMirror(samples.map(s=>({simT:s.tS,spacingHz:s.fHz})),opts));
+});
