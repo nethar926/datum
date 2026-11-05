@@ -2,14 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GramConfig } from '../engine/contract'
 import type { SimClient } from '../engine/client'
 import { WaterfallRenderer } from '../gl/waterfall'
+import { AutoLevel } from './autoLevel'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 
 const HISTORY_ROWS = 600
 
-interface Props { client: SimClient; configs: GramConfig[]; streamIndex: number; view: FreqView; onView: (v: FreqView) => void }
+interface Props { client: SimClient; configs: GramConfig[]; streamIndex: number; view: FreqView; onView: (v: FreqView) => void; auto?: boolean }
+// Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
+const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
 
 /** LOFAR waterfall: WebGL2 ring textures, frequency axis below, time axis right, cursor readout. */
-export function Lofar({ client, configs, streamIndex, view, onView }: Props) {
+export function Lofar({ client, configs, streamIndex, view, onView, auto = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
   const [glError, setGlError] = useState<string | null>(null)
@@ -18,8 +21,8 @@ export function Lofar({ client, configs, streamIndex, view, onView }: Props) {
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
-  const viewRef = useRef({ view, streamIndex, cfg })
-  viewRef.current = { view, streamIndex, cfg }
+  const viewRef = useRef({ view, streamIndex, cfg, auto })
+  viewRef.current = { view, streamIndex, cfg, auto }
 
   // (Re)create the renderer when the stream geometry changes.
   useEffect(() => {
@@ -29,20 +32,23 @@ export function Lofar({ client, configs, streamIndex, view, onView }: Props) {
     try { r = new WaterfallRenderer(canvas, bins, HISTORY_ROWS, configs.length) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
     setGlError(null)
     rendererRef.current = r
+    const level = new AutoLevel(configs.length)
     let dirty = true, raf = 0
     const off = client.onRows((rows) => {
       const n = rows.streamIds.length
-      for (let k = 0; k < n; k++) r.pushRow(rows.streamIds[k] - 1, rows.data, k * bins)
+      for (let k = 0; k < n; k++) { r.pushRow(rows.streamIds[k] - 1, rows.data, k * bins); level.update(rows.streamIds[k] - 1, rows.data, k * bins, bins) }
       dirty = true
     })
     const ro = new ResizeObserver(() => { dirty = true; setWidth(canvas.clientWidth) })
     ro.observe(canvas)
     let lastKey = ''
     const frame = () => {
-      const { view: v, streamIndex: s, cfg: c } = viewRef.current
-      const key = `${v.lo},${v.hi},${s}`
+      const { view: v, streamIndex: s, cfg: c, auto: a } = viewRef.current
+      const key = `${v.lo},${v.hi},${s},${a}`
       if ((dirty || key !== lastKey) && c) {
-        r.draw(s, { binLo: (v.lo - c.f0) / c.fBin, binHi: (v.hi - c.f0) / c.fBin, dbFloor: c.dbFloor, dbCeil: c.dbCeil })
+        const fl = level.get(s), useAuto = a && Number.isFinite(fl)
+        const dbFloor = useAuto ? fl - AUTO_BELOW_DB : c.dbFloor, dbCeil = useAuto ? fl - AUTO_BELOW_DB + AUTO_SPAN_DB : c.dbCeil
+        r.draw(s, { binLo: (v.lo - c.f0) / c.fBin, binHi: (v.hi - c.f0) / c.fBin, dbFloor, dbCeil })
         dirty = false; lastKey = key
       }
       raf = requestAnimationFrame(frame)

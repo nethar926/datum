@@ -81,3 +81,17 @@ describe('tactical', () => {
     r.at(2, p); expect(p).toEqual({ x: 5, y: -5 })
   })
 })
+
+import { AutoLevel } from './gram/autoLevel'
+describe('auto level', () => {
+  it('tracks a low percentile of rows, ignores NaN, starts unset', () => {
+    const a = new AutoLevel(2)
+    expect(a.get(0)).toBeNaN()
+    const row = new Float32Array(2048).fill(60); for (let i = 0; i < 2048; i += 97) row[i] = 120
+    a.update(0, row, 0, 2048)
+    expect(a.get(0)).toBeCloseTo(60)
+    const dead = new Float32Array(2048).fill(NaN)
+    a.update(1, dead, 0, 2048)
+    expect(a.get(1)).toBeNaN()
+  })
+})

@@ -60,13 +60,13 @@ export default function App() {
             <div className="seg" role="group" aria-label="Buoy channel">
               {st.configs.map((c, i) => (
                 <button key={c.streamId} aria-pressed={i === stream} onClick={() => setStream(i)}>
-                  CH {c.channel}{st.tactical?.buoys[i]?.kind === 'difar' ? ' D' : ''}
+                  {c.channel}{st.tactical?.buoys[i]?.kind === 'difar' ? 'D' : 'O'}
                 </button>
               ))}
             </div>
             <span className="readout">
-              {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} Hz · Δf ${cfg.fBin.toFixed(2)} Hz · ${cfg.rowRateHz} rows/s` : 'starting…'}
-              {buoy ? ` · ${buoy.state.toUpperCase()} · ${buoy.hydrophoneDepthM} m · ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
+              {cfg ? `${view.lo.toFixed(0)}–${view.hi.toFixed(0)} HZ  Δf ${cfg.fBin.toFixed(2)}` : 'STARTING'}
+              {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
             </span>
           </div>
           <div className="panel-body">

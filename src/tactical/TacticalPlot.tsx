@@ -3,6 +3,9 @@ import type { SimClient } from '../engine/client'
 import { crossFixes } from './fix'
 import { fitView, toScreenX, toScreenY } from './transform'
 
+// Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
+const MIN_DRAW_Q = 10
+
 interface Props { client: SimClient; showTruth: boolean; spanM?: number; selectedChannel?: number }
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional truth. Canvas 2D. */
@@ -45,7 +48,7 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
       const reach = span * 1.5
       ctx.strokeStyle = C.brg; ctx.lineWidth = 1 * dpr
       for (const b of t.bearings) {
-        const buoy = t.buoys.find((x) => x.id === b.buoyId); if (!buoy || b.quality < 6) continue
+        const buoy = t.buoys.find((x) => x.id === b.buoyId); if (!buoy || b.quality < MIN_DRAW_Q) continue
         const th = (b.brgDeg * Math.PI) / 180
         ctx.globalAlpha = Math.min(1, 0.25 + b.quality / 30)
         ctx.beginPath(); ctx.moveTo(toScreenX(v, buoy.x), toScreenY(v, buoy.y))
@@ -77,7 +80,7 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
 
       // Cross-fixes from DIFAR lines.
       ctx.strokeStyle = C.fix; ctx.lineWidth = 1.5 * dpr
-      for (const f of crossFixes(t.bearings, t.buoys)) {
+      for (const f of crossFixes(t.bearings, t.buoys, 1.5, MIN_DRAW_Q)) {
         const sx = toScreenX(v, f.x), sy = toScreenY(v, f.y), r = 6 * dpr
         ctx.beginPath(); ctx.moveTo(sx - r, sy - r); ctx.lineTo(sx + r, sy + r); ctx.moveTo(sx + r, sy - r); ctx.lineTo(sx - r, sy + r); ctx.stroke()
         ctx.fillStyle = C.fix; ctx.fillText(`${f.freqHz.toFixed(0)}Hz`, sx + 8 * dpr, sy - 6 * dpr)
