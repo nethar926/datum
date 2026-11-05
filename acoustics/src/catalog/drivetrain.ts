@@ -17,14 +17,16 @@ export interface NuclearPlant {reactors:number;reactorSets:ReactorSet[];kind:'nu
 export type Plant=DieselPlant|NuclearPlant;
 /** Reserved for m3-events: no ramps, intermittent duty or mode switching are simulated here. */
 export interface DutySpec {onMedianS:number;offMedianS:number;sigma:number}
-export interface EdaSpec {id:string;perCrankRev:number;harmonics:number[];ramp?:{riseS:number;fallS:number};modes?:OperatingMode[]}
-export interface AuxSpec {id:string;kind:'electrical'|'acvr'|'dcvr'|'ssma'|'hydp'|'acPump';fHz:number;harmonics:number[];stability:LineStability;width:LineWidth;sigmaBins?:number;duty?:DutySpec}
+export interface EdaSpec {id:string;name:string;cfrMultiple:number;perCrankRev?:number;harmonics:number[];ramp?:{riseS:number;fallS:number};modes?:OperatingMode[]}
+export interface AuxSpec {id:string;kind:'electrical'|'acvr'|'dcvr'|'ssma'|'hydp'|'acPump';fHz:number;harmonics:number[];stability:LineStability;width:LineWidth;sigmaBins?:number;duty:'continuous'|'intermittent';dutyOnS?:[number,number];dutyOffS?:[number,number]}
 export interface AipSpec {kind:'stirling'|'fuelcell'|'closed-cycle';powerKw:number;maxSpeedKts:number;enduranceDays:number}
 export type SpeedWindowSpec={name:string;kind:'SRC';speedKts:[number,number];hz:number;hzPerKnot?:number}|{name:string;kind:'SWATH';speedKts:[number,number];loHz:number;hiHz:number};
 export type SpeedGated={name:string;kind:'SRC';hz:number;active:boolean;gain:number}|{name:string;kind:'SWATH';loHz:number;hiHz:number;active:boolean;gain:number};
-export interface VesselPlantSpec {tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
+export interface PropellerSpec {shafts:number;blades:number;type:'flat'|'skewed'|'cpp'}
+export interface HydpSpec {nominalHz:number;pairSpacingHz:number;durationS:number}
+export interface VesselPlantSpec {propeller?:PropellerSpec;hydp?:HydpSpec;tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
 export interface PropulsionTruth {
- kind:Plant['kind']|'unspecified';emergencyPropulsor?:{active:boolean;rpm:number;hz:number;blades:number};mode:OperatingMode;drivetrainCode:DrivetrainCode|'unspecified';drivetrainLabel:string;aip?:{kind:AipSpec['kind'];active:boolean};ratio:number;ratioLabel:string;
+ kind:Plant['kind']|'unspecified';tpk:number;tpkValid:boolean;tpkMinKts?:number;propulsor:{shafts:number;blades:number;bladeType:PropellerSpec['type'];brHz:number};emergencyPropulsor?:{active:boolean;rpm:number;hz:number;blades:number};mode:OperatingMode;drivetrainCode:DrivetrainCode|'unspecified';drivetrainLabel:string;aip?:{kind:AipSpec['kind'];active:boolean};ratio:number;ratioLabel:string;
  engines:{id:string;stroke:2|4;cylinders:number;erpm:number;running:boolean;csrHz:number;cfrHz:number;efrHz:number}[];
  stages:{pinionTeeth:number;bullTeeth:number;ratio:number;meshHz:number}[];
  shafts:{rpm:number;hz:number;coupled:boolean}[];motor?:{rpm:number;shaftHz:number;slots:number;msrHz:number};generators?:{rpm:number;hz:number}[];
@@ -40,6 +42,8 @@ export function validateDrivetrain(d:Drivetrain):void {
 }
 /** Total firings/s: one event/cylinder/revolution (2 stroke), per two revolutions (4 stroke). */
 export function firingRateHz(engine:Pick<EngineSpec,'stroke'|'cylinders'>,erpm:number):number{return erpm/60*engine.cylinders*(engine.stroke===2?1:.5);}
+/** Fictional engine-driven auxiliary order: CFR multiples need not be integer harmonics. */
+export function edaFrequencyHz(cfrHz:number,cfrMultiple:number):number{return cfrHz*cfrMultiple;}
 /** Each mesh has identical frequency on pinion and bull sides. Writes Hz without allocation. */
 export function meshRates(d:Drivetrain,inputHz:number,out:Float64Array|Float32Array):typeof out {if(out.length<d.stages.length)throw new RangeError('Short mesh buffer');let hz=inputHz;for(let i=0;i<d.stages.length;i++){out[i]=hz*d.stages[i].pinionTeeth;hz/=d.stages[i].bullTeeth/d.stages[i].pinionTeeth;}return out;}
 export function shaftDrivetrain(p:Plant,mode?:ModeInput):Drivetrain {if((mode==='BATT'||mode==='AIP'||mode==='D/E')&&p.motor)return p.motor.drivetrain;return p.kind==='dieselElectric'||p.kind==='nuclearElectric'?p.motor!.drivetrain:'mainTurbines' in p?p.mainTurbines.drivetrain:p.drivetrain!;}
@@ -64,8 +68,10 @@ export function validateVesselPlant(s:VesselPlantSpec,electricalHz:50|60):void {
  if(s.emergencyPropulsor&&(!finite(s.emergencyPropulsor.maxRpm,20,600)||!Number.isInteger(s.emergencyPropulsor.blades)||!finite(s.emergencyPropulsor.blades,2,8)||!finite(s.emergencyPropulsor.maxSpeedKts,1,5)))throw new Error('Invalid emergency propulsor');
  if(p.motor){if(s.motorSlots!==undefined&&(!Number.isInteger(s.motorSlots)||!finite(s.motorSlots,12,240)))throw new Error('Invalid motor slots');if(!finite(p.motor.maxRpm,20,12000))throw new Error('Invalid motor RPM');validateDrivetrain(p.motor.drivetrain);}
  if(Math.abs(rated/s.maxPsrpm-1)>.02)throw new Error('Plant/shaft max RPM mismatch');
+ if(s.hydp&&(!finite(s.hydp.nominalHz,.1,1e5)||!finite(s.hydp.pairSpacingHz,.001,100)||!finite(s.hydp.durationS,.01,3600)))throw new Error('Invalid HYDP metadata');
  if(!Array.isArray(s.edas)||new Set(s.edas.map(e=>e?.id)).size!==s.edas.length||!Array.isArray(s.aux)||new Set(s.aux.map(a=>a?.id)).size!==s.aux.length)throw new Error('Invalid EDA/aux list');
  const harmonics=(a:number[])=>Array.isArray(a)&&a.length>0&&a.length<=8&&a.every(h=>Number.isInteger(h)&&h>0&&h<=20);
- for(const e of s.edas)if(!e||typeof e.id!=='string'||!e.id||!finite(e.perCrankRev,.01,100)||!harmonics(e.harmonics)||(e.ramp&&(!finite(e.ramp.riseS,0,3600)||!finite(e.ramp.fallS,0,3600)))||(e.modes&&(!Array.isArray(e.modes)||e.modes.some(m=>!['SURF','SNORT','D/E','BATT','AIP','NUC'].includes(m)))))throw new Error('Invalid EDA');
- for(const a of s.aux)if(!a||typeof a.id!=='string'||!a.id||!['electrical','acvr','dcvr','ssma','hydp','acPump'].includes(a.kind)||!finite(a.fHz,.01,1e5)||!harmonics(a.harmonics)||!['stable','unstable'].includes(a.stability)||!['discrete','diffuse'].includes(a.width)||(a.width==='diffuse'&&a.sigmaBins!==undefined&&!finite(a.sigmaBins,.75,16))||(a.duty&&(!finite(a.duty.onMedianS,.1,1e6)||!finite(a.duty.offMedianS,.1,1e6)||!finite(a.duty.sigma,0,5))))throw new Error('Invalid auxiliary/duty sheet');
+ if(('engines' in p)&&(s.edas.length<1||s.edas.length>3))throw new Error('Diesel class requires 1-3 EDAs');
+ for(const e of s.edas)if(!e||typeof e.id!=='string'||!e.id||typeof e.name!=='string'||!e.name||!finite(e.cfrMultiple,.01,100)||!harmonics(e.harmonics)||(e.ramp&&(!finite(e.ramp.riseS,0,3600)||!finite(e.ramp.fallS,0,3600)))||(e.modes&&(!Array.isArray(e.modes)||e.modes.some(m=>!['SURF','SNORK','D/E','BATT','AIP','NUC'].includes(m)))))throw new Error('Invalid EDA');
+ for(const a of s.aux)if(!a||typeof a.id!=='string'||!a.id||!['electrical','acvr','dcvr','ssma','hydp','acPump'].includes(a.kind)||!finite(a.fHz,.01,1e5)||!harmonics(a.harmonics)||!['stable','unstable'].includes(a.stability)||!['discrete','diffuse'].includes(a.width)||(a.width==='diffuse'&&a.sigmaBins!==undefined&&!finite(a.sigmaBins,.75,16))||!['continuous','intermittent'].includes(a.duty)||(a.duty==='intermittent'&&(!Array.isArray(a.dutyOnS)||a.dutyOnS.length!==2||!finite(a.dutyOnS[0],.1,1e6)||!finite(a.dutyOnS[1],a.dutyOnS[0],1e6)||!Array.isArray(a.dutyOffS)||a.dutyOffS.length!==2||!finite(a.dutyOffS[0],.1,1e6)||!finite(a.dutyOffS[1],a.dutyOffS[0],1e6))))throw new Error('Invalid auxiliary/duty sheet');
 }

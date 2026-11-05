@@ -135,7 +135,7 @@ randomization never rewrites those sheets. Transients/emitters remain data-only 
 `deriveSignature(klass, variantIdOrObject, {speedKn,depthM,mode})` returns existing source params
 plus typed tonal families and broadband/flow state. Shaft RPM scales with speed/max speed;
 blade harmonics, speed-related components and geared mesh/reduction lines follow it. Bus and
-nuclear pump frequencies stay fixed. BATT/AIP omit diesel firing lines; SNORT and D/E charging enable
+nuclear pump frequencies stay fixed. BATT/AIP omit diesel firing lines; SNORK and D/E charging enable
 firing on diesel-electric. Validation rejects incompatible operating modes/envelopes.
 Urick/Ross static-pressure scaling: `V_i(d)=V_i0*sqrt(1+d/10.06)`; cavitation power is exactly
 zero below inception, then grows with excess speed and adds blade/shaft DEMON modulation.
@@ -561,13 +561,15 @@ interface NuclearPlant {
   motor?: MotorSpec;
 }
 interface EdaSpec {
-  id: string; perCrankRev: number; harmonics: number[];
+  id: string; name: string; cfrMultiple: number; harmonics: number[];
+  perCrankRev?: number; // deprecated compatibility alias, not authoritative
   ramp?: { riseS: number; fallS: number }; modes?: OperatingMode[];
 }
 interface AuxSpec {
   id: string; kind: 'electrical' | 'acvr' | 'dcvr' | 'ssma' | 'hydp' | 'acPump';
   fHz: number; harmonics: number[]; stability: LineStability; width: LineWidth;
-  sigmaBins?: number; duty?: { onMedianS: number; offMedianS: number; sigma: number };
+  sigmaBins?: number; duty: 'continuous' | 'intermittent';
+  dutyOnS?: [number,number]; dutyOffS?: [number,number]; // seconds; required when intermittent
 }
 interface AipSpec {
   kind: 'stirling' | 'fuelcell' | 'closed-cycle';
@@ -594,18 +596,18 @@ tables include the installed shafts. No time-series allocation occurs per row.
 ### Canonical operating modes and speed policy
 
 ```ts
-type OperatingMode = 'SURF' | 'SNORT' | 'D/E' | 'BATT' | 'AIP' | 'NUC';
+type OperatingMode = 'SURF' | 'SNORK' | 'D/E' | 'BATT' | 'AIP' | 'NUC';
 ```
 
-SURF is surfaced diesel operation. SNORT is snorkel-depth transit. D/E is engine-on battery
+SURF is surfaced diesel operation. SNORK is snorkel-depth transit. D/E is engine-on battery
 charging while surfaced/snorkeling (louder, generators on), with no mechanical engine/shaft
 clutch. BATT uses the electric propulsion motor with diesels stopped. NUC is normal nuclear
-operation, independent of depth. D/D PSR = CSR exactly when coupled in SURF/SNORT; in BATT
+operation, independent of depth. D/D PSR = CSR exactly when coupled in SURF/SNORK; in BATT
 PSR follows motor RPM independently of ERPM. Per-shaft `coupled` flags distinguish these paths.
 V1 lowercase mode strings remain accepted at the input boundary and normalize to these codes;
 new generated scenarios and truth always emit canonical modes.
 
-Generated diesel contacts: depth 0 -> SURF; 0<depth<=snorkelDepthM -> seeded ~85% SNORT,
+Generated diesel contacts: depth 0 -> SURF; 0<depth<=snorkelDepthM -> seeded ~85% SNORK,
 otherwise BATT; deeper -> BATT or eligible AIP. Surfaced/snorkel/battery maxima clamp speed.
 ~85% of over-patrol battery draws are lowered into quietSpeedKts, never over battery max.
 Quiet-band maximum is below inception at 100 m and below submerged maximum. Nucleus-driven
@@ -633,29 +635,32 @@ interface PropulsionTruth {
   kind: 'dieselDirect' | 'dieselGR' | 'dieselElectric' |
         'nuclearGR' | 'nuclearElectric' | 'unspecified';
   mode: OperatingMode;
+  tpk: number; tpkValid: boolean; tpkMinKts?: number;
+  propulsor: { shafts: number; blades: number; bladeType: 'flat'|'skewed'|'cpp'; brHz: number };
   drivetrainCode: 'D/D' | 'D/GR' | 'DEL' | 'N/GR' | 'NEL' | 'unspecified';
   drivetrainLabel: string; ratio: number; ratioLabel: string;
   engines: { id: string; stroke: 2|4; cylinders: number; erpm: number;
     running: boolean; csrHz: number; cfrHz: number; efrHz: number }[];
   stages: { pinionTeeth: number; bullTeeth: number; ratio: number; meshHz: number }[];
   shafts: { rpm: number; hz: number; coupled: boolean }[];
-  motor?: { rpm: number; slots: number; msrHz: number };
+  motor?: { rpm: number; shaftHz: number; slots: number; msrHz: number };
   generators?: { rpm: number; hz: number }[];
   aip?: { kind: AipSpec['kind']; active: boolean };
   emergencyPropulsor?: { active: boolean; rpm: number; hz: number; blades: number };
 }
-type LineFamily = 'CSR' | 'CFR' | 'EFR' | 'EDA' | 'PSR' | 'MSR' | 'COOLANT' | 'TG';
+type LineFamily = 'CSR' | 'CFR' | 'EFR' | 'EDA' | 'PSR' | 'MSR' | 'COOLANT' | 'TG' |
+  'BR' | 'GRID' | 'SRC' | 'MESH' | 'AUX' | 'TURBINE';
 // Additional TonalLine/TruthLine metadata:
 // lineFamily?:LineFamily, fundamentalHz?:number, harmonic?:number,
-// engineId?:string, shaftIndex?:number, reactorId?:string.
+// engineId?:string, shaftIndex?:number, reactorId?:string, eda?:{name:string,cfrMultiple:number}.
 ```
 
 Every truth contact adds `label:string` (fictional class + hull suffix, else sourceId) and
 `spdKts:number`. Existing spdMps stays m/s for v1 compatibility. Machinery records and rate
 values are preallocated, updated in place only on state changes, and reused by tactical().
 All listed Hz are nominal source-frame rates; per-line freqHz still includes seeded wander,
-not receiver Doppler. MSR is **motor shaft Hz = motor RPM/60**, not multiplied by motorSlots;
-for a direct-coupled motor MSR=PSR. Slots are supplied as metadata, frontend does no rate maths.
+not receiver Doppler. Motor `shaftHz` is RPM/60 and equals PSR for direct coupling. The existing MSR slot-pass
+family is `motor.msrHz = motor.shaftHz * motor.slots`; all values are precomputed for display.
 Each primary reduction stage's mesh rate is supplied directly; secondary-shaft mesh lines
 carry the same seeded mismatch as their shaft. Stopped generators expose zero Hz/RPM.
 Raw M1 sources without a machinery sheet report kind/code 'unspecified', preserving their
@@ -664,7 +669,7 @@ old spectra rather than inventing a class/engine identity.
 Operator labels/formulas: CSR=ERPM/60; CFR=CSR for 2-stroke, CSR/2 for 4-stroke;
 EFR=CFR*cylinders; ERPM=CSR*60. Four-stroke CFR is the half-order line. CSR/CFR/EFR/EDA
 and PSR/MSR are separately tagged harmonic families at n*fundamentalHz. EDA fundamental
-is CSR*perCrankRev. These fields let harmonic cursors snap without deriving a fundamental.
+is CFR*cfrMultiple (not necessarily an integer cylinder harmonic). These fields let harmonic cursors snap without deriving a fundamental.
 Aux duty and EDA ramp/mode fields are typed, validated placeholders only, not timed behavior.
 
 ### Approved fictional operators and roster
@@ -700,3 +705,82 @@ Coverage: drivetrain.test.ts (orders, teeth, meshes, EDA scaling, doublets, cyli
 validation, deterministic engine selection, D/D clutch/motor, record reuse); nationsModes.test.ts
 (roster/operator denylist, shallow/deep mode policy, AIP seeded rate/reactor-off, MSR, older
 reactor sets and loudness); pinnedApi.test.ts (exact nested truth fields and both Lloyd inputs).
+
+
+## Recovered M3 follow-up: class-only identification keys
+
+Canonical `OPERATING_MODES` is the exported readonly tuple
+`['SURF','SNORK','D/E','BATT','AIP','NUC']`. Legacy lowercase inputs remain accepted; generated
+modes, truth and `idKeys.linesVisiblePerMode` use only these six codes.
+
+Every submarine class supplies `tpk` (propeller RPM per knot), and
+`propeller:{shafts:number,blades:number,type:'flat'|'skewed'|'cpp'}`; blades are integers 3..9.
+The existing `propellerType` and params fields remain compatibility aliases. Truth adds
+`propulsion.tpk`, `propulsion.tpkValid`, and `propulsion.tpkMinKts` on CPP boats. CPP holds a
+shaft-RPM floor below this speed, so its TPK speed inference is invalid there. Fixed-pitch
+TPK remains valid across its linear envelope. Unclassified legacy raw sources expose 0/false
+rather than inventing TPK. `propulsion.propulsor:{shafts,blades,bladeType,brHz}` is filled
+in place; `brHz` is the primary shaft's nominal blade rate in Hz. Per-shaft rates remain in
+`propulsion.shafts[]`. **BR = blades * PSR**, encoded by `idKeys.ratios.brToPsr` and the
+`bladeRateHz` envelope. `idKeys.tpk` encloses installed shaft mismatch and illustrative wander.
+
+Each diesel class has 1–3 EDA definitions with `{id,name,cfrMultiple,harmonics,...}`.
+EDA lines carry `lineFamily:'EDA'`, `eda:{name,cfrMultiple}`, `fundamentalHz` and `harmonic`;
+source `hz` (truth `f0Hz`) is `CFR*cfrMultiple*harmonic`. Truth `freqHz` additionally wanders.
+EDA metadata and line records are reused on refresh. LOP is a fictional fractional-order
+example: CFR 2.5 Hz * 27.75 = 69.375 Hz, strictly between cylinder harmonics H27 and H28.
+`perCrankRev?` is retained only as a deprecated compatibility alias; CFR multiples govern.
+
+Optional class `hydp:{nominalHz:number,pairSpacingHz:number,durationS:number}` is data only,
+including the invented 367.77-Hz case; no pulse, pair, duty or transient is rendered.
+`idKeys.hydp` has the same field names as ranged `[min,max]` values (Hz, Hz, seconds).
+Aux metadata uses `duty:'continuous'|'intermittent'`; intermittent entries require ordered
+`dutyOnS:[min,max]` and `dutyOffS:[min,max]` seconds. These validated tags do not toggle audio.
+Timed duty, EDA ramps, mode transitions and emergency-propulsor activation remain m3-events.
+
+The exported `catalog.classes[].idKeys` and `buildCompendium().classes[].idKeys` are class-only
+ranges/ratios, never current exact hull signatures. The compendium includes id/name/operator/
+force/plant and keys, without params or hull lists; there is deliberately no Markdown renderer.
+Keys span the operating envelope, installed mismatch and a conservative 2% wander allowance.
+Oscillator Gaussian tails are unbounded in principle; this is an illustrative envelope, not a
+statistical guarantee for arbitrarily long histories. Frequencies are source-frame Hz; Doppler
+correction is the caller's responsibility.
+
+Nuclear keys additionally expose `turbineRateHz:[min,max]`, `reductionRatio:[min,max]`,
+`gearMeshHz:Array<[min,max]>` (one per main-turbine reduction stage) and
+`turboGenHz:Array<[min,max]>` (one rotor-rate range per reactor TG set). TG rotor Hz is
+RPM/60; electrical bus Hz is separately `gridHz = RPM/60 * polePairs`. Nuclear-electric
+main turbines can be direct generator drives; motor gearing remains in `gearing`/`ratios.gear`.
+`harmonicFamilies` includes the speed-related BR/PSR/MESH and independent TG/COOLANT families.
+
+`idKeys.speedWindows` uses `{name,kind:'SWATH'|'SRC',speedKts:[min,max],loHz,hiHz}`;
+the latter pair is a frequency envelope for tracking SRCs or the swath bounds.
+Truth `speedGated` uses `{name,kind:'SRC',hz,active,gain}` or
+`{name,kind:'SWATH',loHz,hiHz,active,gain}`. Speed is knots, frequency Hz, gain linear 0..1.
+Each edge fades over one knot; records update in place. No broad schema/runtime refactor.
+
+```ts
+interface ClassObservations {
+  gridHz?: number; mode?: OperatingMode; lineFamilies?: readonly LineFamily[];
+  familyFundamentalsHz?: Partial<Record<LineFamily,number>>;
+  brToPsr?: number; msrToMotorShaft?: number; msrToPsr?: number;
+  gearRatio?: number; efrToCsr?: number; tpk?: number;
+  turbineRateHz?: number; reductionRatio?: number; gearMeshHz?: number;
+  turboGenHz?: number; hydpHz?: number; edaCfrMultiples?: readonly number[];
+}
+interface ClassMatch { id:string; score:number; matched:string[]; ruledOutBy:string[] }
+matchClasses(observations: ClassObservations,
+  source?: readonly {id:string;idKeys:IdKeys}[]): ClassMatch[];
+```
+
+`matchClasses` reads **idKeys only** (defaulting to the compendium), not engine/truth/params.
+It ranks by fraction of supplied constraints agreeing, then ASCII class ID; score is 0..1,
+not a probability. Empty observations score zero; nonfinite numeric observations contradict.
+`matched` lists supporting constraint names; `ruledOutBy` lists contradictions, which callers
+can filter explicitly. Overlapping fictional envelopes intentionally leave ambiguous matches.
+
+Coverage: `m3Followup.test.ts` pins all six modes, TPK/CPP/propulsor shape and record reuse,
+CFR-order EDA/LOP arithmetic and truth metadata, data-only HYDP/duty, one-knot fades, 50 seeded
+nuclear envelopes, and idKeys-only matching. `pinnedApi.test.ts` also pins nested truth.
+Existing `compendium.test.ts` covers deterministic class coverage, JSON, 50 seeded hulls per
+class, BR/TPK/motor/firing ranges and speed-window truth; earlier M3 tests remain unchanged.

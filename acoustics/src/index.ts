@@ -32,3 +32,4 @@ export * from './catalog/plantModel.js';
 export * from './catalog/nations.js';
 export * from './catalog/idKeys.js';
 export * from './catalog/compendium.js';
+export * from './catalog/matchClasses.js';

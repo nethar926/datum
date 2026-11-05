@@ -20,7 +20,7 @@ it('every mesh frequency agrees from the pinion and bull sides without allocatin
  const d=makeDrivetrain('gr2',[{pinionTeeth:20,bullTeeth:71},{pinionTeeth:19,bullTeeth:61}]),out=new Float64Array(2);expect(meshRates(d,30,out)).toBe(out);expect(out[0]).toBe(600);expect(out[1]).toBeCloseTo(30/(71/20)*19);expect(()=>meshRates(d,30,new Float64Array(1))).toThrow(RangeError);
 });
 it('EDA shifts linearly with ERPM, not an independent fixed oscillator',()=>{
- const a=signature(geared,5),b=signature(geared,10),la=a.tonals!.filter(l=>l.lineFamily==='EDA'),lb=b.tonals!.filter(l=>l.lineFamily==='EDA');for(let i=0;i<la.length;i++){expect(lb[i].hz).toBeCloseTo(la[i].hz*2,12);const e=a.propulsion!.engines[la[i].engineIndex!];expect(la[i].fundamentalHz).toBeCloseTo(e.erpm/60*geared.edas[0].perCrankRev,12);}
+ const a=signature(geared,5),b=signature(geared,10),la=a.tonals!.filter(l=>l.lineFamily==='EDA'),lb=b.tonals!.filter(l=>l.lineFamily==='EDA');for(let i=0;i<la.length;i++){expect(lb[i].hz).toBeCloseTo(la[i].hz*2,12);const e=a.propulsion!.engines[la[i].engineIndex!];expect(la[i].fundamentalHz).toBeCloseTo(e.cfrHz*la[i].eda!.cfrMultiple,12);}
 });
 it('two-shaft blade doublet spacing is n*blades*dRPM/60 and grows with harmonic order',()=>{
  const c=catalog.classes.find(c=>c.shafts===2)!,s=signature(c,10,'normal');configurePropulsion(s,123,'doublet');updatePropulsion(s,10/c.params.maxSpeedKn,'normal');writePlantTonals(s,'normal');const shafts=s.propulsion!.shafts,dRpm=Math.abs(shafts[1].rpm-shafts[0].rpm);expect(dRpm).toBeGreaterThan(0);let first=0;
