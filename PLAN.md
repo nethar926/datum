@@ -14,6 +14,11 @@ Browser training tool for reading sonar grams as a **fictional maritime-patrol a
 
 No real class/hull/navy names, measured signatures, or real AIP plant names. Platforms live in a **fixed fictional catalog** — invented classes with fixed configs, never tuned to mimic a real class. Tonals derive only from each class/variant’s catalog params (shaft × blades × gear × electrical × aux) so grams are consistent and teachable. Invented country/hull strings only. No classified freqs, ranges, or sensor performance. UI may evoke operator displays without copying proprietary/classified layouts.
 
+## Sources policy
+
+**Do not use RP-33** (*Fleet Oceanographic and Acoustic Reference Manual*) — distribution-limited **CUI**, even if copies appear online. Build only from public sources, e.g. Urick *Principles of Underwater Sound*; Jensen, Kuperman, Porter & Schmidt *Computational Ocean Acoustics*; Lurton *An Introduction to Underwater Acoustics*; Kinsler et al. *Fundamentals of Acoustics*; Wenz (1962); Mackenzie (1981); NOAA/WOA docs; and public-release Navy training manuals **only** when the distribution statement says “approved for public release.”
+
+
 ---
 
 ## Design language
@@ -36,7 +41,7 @@ Each **fictional class** has: fixed config (propulsion/main-motor; shaft & beari
 
 **Forces:** countries group into forces. Default electrical convention — **Blue** and **Green** → **60 Hz**; **Red** → **50 Hz**. Other force-level conventions may be defined later.
 
-Propulsion families in catalog: **nuclear**, **diesel-electric**, **fictional AIP** (fake plant types only), with an **initial set of classes per force** (Acoustics-owned authoring task). **Derived acoustics:** tonals = f(class/variant config). **Surface-ship classes** added later to the same catalog format.
+Propulsion families in catalog: **nuclear**, **diesel-electric**, **fictional AIP** (fake plant types only), with an **initial set of classes per force** (Acoustics-owned authoring task). **Derived acoustics:** tonals = f(class/variant config). Each class/variant also carries a **classification key** (see below). **Surface-ship classes** added later to the same catalog format.
 
 ---
 
@@ -58,6 +63,15 @@ Real-world **MapLibre** tactical plot + public ocean/weather; platforms/forces s
 - **Acoustics:** SSP from WOA T/S (Mackenzie/UNESCO); bathymetry-limited propagation (pre-baked GEBCO-coarse); wind/sea-state/rain → Wenz ambient (Open-Meteo when online).
 - **Offline fallback:** if live fetch fails → pre-baked climatology + seeded synthetic environment (scenarios still reproducible).
 
+
+## Operator log
+
+Timestamped **automatic + manual** entries (buoy drops/failures, contact gained/lost, classification changes, fixes, Doppler/CPA measurements, operator notes). Filterable; export CSV/JSON; saved with scenario replays. **Frontend** owns UI/storage; **Acoustics** emits truth events. Ship **basic log** with buoy lifecycle; **full log** with classification.
+
+## Contact & classification criteria
+
+Each catalog class/variant carries a **classification key** (which fictional tonal families, 50/60 Hz electrical lines, DEMON blade-rate, aux lines, transients identify it). Operator workflow: possible → probable → certain sub → propulsion family → class → variant, with an **evidence checklist**, scored in quiz. **Acoustics** = criteria data in catalog; **Frontend** = classification panel.
+
 ## Robustness
 
 Seeded determinism · acoustics unit tests · graceful bad-input handling · `npm test` + `npm run build` (+ perf check) green every ship.
@@ -71,23 +85,24 @@ Seeded determinism · acoustics unit tests · graceful bad-input handling · `np
 | **M0** | Scaffold; wire `acoustics/`; Pages `base`; design tokens | Lead · Frontend | Builds; imports acoustics; PLAN approved |
 | **M1 MVP** | Aircraft + omni/DIFAR + LOFAR (WebGL) + Worker + 1 seeded scenario + basic tactical plot | Acoustics · Frontend | Tonals on LOFAR; A/C+buoys; tests; Worker live |
 | **M2** | Catalog schema + initial fictional classes (nuke/DE/fake-AIP × Blue/Green/Red) + loader + tonal derivation + randomized mode + platform card | Acoustics catalog · Frontend card | Versioned JSON loads; tonals match class; seed picks catalog only |
-| **M3** | **Environment & map:** MapLibre real basemap; pre-baked bathymetry + WOA SSP; Open-Meteo weather when online; offline climatology/synthetic fallback; ocean/weather panel | Acoustics (SSP/bathy/Wenz) · Frontend (MapLibre + panel) | Plot on real coastlines; SSP drives TL; ambient tracks sea state; offline seed works |
-| **M4** | Buoy lifecycle (RF, battery, depth) + drop patterns | Frontend (+ Acoustics schema) | Patterns; unique channels; dead buoy silent |
-| **M5** | Perf hardening + benchmark harness | Acoustics · Frontend | 50 contacts / 32 buoys @ ≥60 fps |
-| **M6** | Spectrum + harmonic cursors | Frontend | Cursor + N·f |
-| **M7** | Doppler → speed tool | Acoustics · Frontend | Δf → v ≈ f·v/c in tests |
-| **M8** | DEMON (WebGL) | Acoustics · Frontend | Blade-rate on seed |
-| **M9** | Bearing-time (DIFAR) | Acoustics · Frontend | BTR matches bearings |
-| **M10** | DICASS-style + A-scan | Acoustics · Frontend | Ping/echo range |
-| **M11** | VLAD-style VLA + BT/SVP (live from env SSP) | Acoustics · Frontend | SVP from WOA/baked grid; VLA selectable |
-| **M12** | Lloyd’s / multipath helpers | Acoustics · Frontend | Nulls match tests |
-| **M13** | CPA estimation aid | Acoustics · Frontend | CPA vs truth |
-| **M14** | **Custom Scenario Planner** (catalog platforms; waypoints/transients/env/buoys/objectives; export JSON/link) | Frontend · Acoustics schema | Instructor file loads identically for trainee |
-| **M15** | Quiz/practice scoring (uses planner objectives) | Frontend (+ Acoustics truth) | Scored seeded/custom run |
-| **M16** | Surface-ship classes added to catalog | Acoustics · Frontend card | Seeded surface contact from catalog on LOFAR |
-| **M17** | Polish: Web Audio, motion, Pages deploy, docs | Both · Lead | Hosted demo URL |
+| **M3** | Environment & map (MapLibre, baked bathy/WOA SSP, Open-Meteo, offline fallback) | Acoustics · Frontend | Real coastlines; SSP→TL; ambient↔sea state; offline seed |
+| **M4** | Buoy lifecycle (RF, battery, depth) + drop patterns + **basic operator log** | Frontend (+ Acoustics truth events) | Patterns; dead buoy silent; log shows drops/failures |
+| **M5** | **Classification criteria** in catalog + classification panel (checklist workflow) + **full operator log** (filter/export/replay) | Acoustics criteria · Frontend panel/log | Key matches tonals; classify→score stub; log exports CSV/JSON |
+| **M6** | Perf hardening + benchmark harness | Acoustics · Frontend | 50 contacts / 32 buoys @ ≥60 fps |
+| **M7** | Spectrum + harmonic cursors | Frontend | Cursor + N·f |
+| **M8** | Doppler → speed tool | Acoustics · Frontend | Δf → v ≈ f·v/c in tests |
+| **M9** | DEMON (WebGL) | Acoustics · Frontend | Blade-rate on seed |
+| **M10** | Bearing-time (DIFAR) | Acoustics · Frontend | BTR matches bearings |
+| **M11** | DICASS-style + A-scan | Acoustics · Frontend | Ping/echo range |
+| **M12** | VLAD-style VLA + BT/SVP (from env SSP) | Acoustics · Frontend | SVP from baked grid; VLA selectable |
+| **M13** | Lloyd’s / multipath helpers | Acoustics · Frontend | Nulls match tests |
+| **M14** | CPA estimation aid | Acoustics · Frontend | CPA vs truth |
+| **M15** | Custom Scenario Planner (export JSON/link) | Frontend · Acoustics schema | Instructor file ≡ trainee load |
+| **M16** | Quiz/practice scoring (planner objectives + classification) | Frontend (+ Acoustics truth) | Scored seeded/custom run |
+| **M17** | Surface-ship classes in catalog | Acoustics · Frontend card | Surface contact from catalog on LOFAR |
+| **M18** | Polish: Web Audio, motion, Pages deploy, docs | Both · Lead | Hosted demo URL |
 
-Thin increments after M1; pull M4 earlier if LOFAR janks.
+Thin increments after M1; pull M6 earlier if LOFAR janks.
 
 ---
 
