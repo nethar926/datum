@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GramConfig } from '../engine/contract'
 import type { SimClient } from '../engine/client'
 import { WaterfallRenderer } from '../gl/waterfall'
+import type { PaletteId } from '../gl/colormap'
 import { AutoLevel } from './autoLevel'
 import { SplitWindowNormalizer } from './whiten'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
@@ -10,7 +11,7 @@ const HISTORY_ROWS = 600
 
 interface Props {
   client: SimClient; configs: GramConfig[]; streamIndex: number; view: FreqView; onView: (v: FreqView) => void
-  auto?: boolean; normalized?: boolean; selectedHz?: number | null; onSelectHz?: (hz: number) => void
+  auto?: boolean; normalized?: boolean; palette?: PaletteId; selectedHz?: number | null; onSelectHz?: (hz: number) => void
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
@@ -18,7 +19,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
 const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
 
 /** LOFAR waterfall: WebGL2 ring textures, frequency axis below, time axis right, cursor readout. */
-export function Lofar({ client, configs, streamIndex, view, onView, auto = true, normalized = true, selectedHz = null, onSelectHz }: Props) {
+export function Lofar({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', selectedHz = null, onSelectHz }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
   const [glError, setGlError] = useState<string | null>(null)
@@ -27,8 +28,8 @@ export function Lofar({ client, configs, streamIndex, view, onView, auto = true,
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
-  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized })
-  viewRef.current = { view, streamIndex, cfg, auto, normalized }
+  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette })
+  viewRef.current = { view, streamIndex, cfg, auto, normalized, palette }
 
   // (Re)create the renderer when the stream geometry changes.
   useEffect(() => {
@@ -56,8 +57,8 @@ export function Lofar({ client, configs, streamIndex, view, onView, auto = true,
     ro.observe(canvas)
     let lastKey = ''
     const frame = () => {
-      const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz } = viewRef.current
-      const key = `${v.lo},${v.hi},${s},${a},${nz}`
+      const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz, palette: pal } = viewRef.current
+      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal}`
       if ((dirty || key !== lastKey) && c) {
         const fl = level.get(s), useAuto = a && Number.isFinite(fl)
         const dbFloor = useAuto ? fl - AUTO_BELOW_DB : c.dbFloor, dbCeil = useAuto ? fl - AUTO_BELOW_DB + AUTO_SPAN_DB : c.dbCeil
@@ -71,6 +72,9 @@ export function Lofar({ client, configs, streamIndex, view, onView, auto = true,
     raf = requestAnimationFrame(frame)
     return () => { cancelAnimationFrame(raf); off(); ro.disconnect(); r.dispose(); rendererRef.current = null }
   }, [client, bins, configs.length])
+
+  // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
+  useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, bins, configs.length, client])
 
   const ticks = useMemo(() => niceTicks(view.lo, view.hi, Math.max(3, Math.floor(width / 90))), [view, width])
   const historyS = HISTORY_ROWS / rowRate

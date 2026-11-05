@@ -1,4 +1,4 @@
-// Smoke test + screenshot: serve dist via vite preview, autoplay at 16×, fail on any page/GL error (WebGL readback is blank without preserveDrawingBuffer, so tonals are checked by eye), save docs/m1.png.
+// Smoke test + screenshot: serve dist via vite preview, autoplay at 16×, fail on any page/GL error (WebGL readback is blank without preserveDrawingBuffer, so tonals are checked by eye), save ${process.env.SHOT ?? "docs/m1.png"}.
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
 
@@ -11,11 +11,11 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 860 }, deviceScaleFactor: 1 })
   page.on('pageerror', (e) => errors.push(String(e)))
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
-  await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16`)
+  await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&palette=${process.env.PALETTE ?? "green"}`)
   await page.waitForSelector('[data-testid=lofar]')
   await page.waitForTimeout(Number(process.env.SHOOT_MS ?? 20000))
   if (await page.locator('.gl-error').count()) errors.push(await page.locator('.gl-error').innerText())
-  await page.screenshot({ path: 'docs/m1.png' })
+  await page.screenshot({ path: process.env.SHOT ?? 'docs/m1.png' })
   await browser.close()
   console.log(JSON.stringify({ errors }))
   if (errors.length) process.exitCode = 1

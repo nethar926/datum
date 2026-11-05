@@ -4,8 +4,12 @@ import type { Band } from './engine/contract'
 import { Lofar } from './gram/Lofar'
 import { clampView, type FreqView } from './gram/axis'
 import { TacticalPlot } from './tactical/TacticalPlot'
+import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 
 const RATES = [1, 4, 16]
+const PALETTE_LABEL: Record<PaletteId, string> = { green: 'Green', amber: 'Amber', gray: 'Gray', multi: 'Multi' }
+const PALETTE_KEY = 'datum.palette'
+const loadPalette = (): PaletteId => { try { const v = localStorage.getItem(PALETTE_KEY); return isPaletteId(v) ? v : 'green' } catch { return 'green' } }
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
 const fmtT = (s: number) => { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` }
 
@@ -16,12 +20,15 @@ export default function App() {
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
   const [truth, setTruth] = useState(false)
   const [normalized, setNormalized] = useState(true)
+  const [palette, setPalette] = useState<PaletteId>(loadPalette)
+  useEffect(() => { try { localStorage.setItem(PALETTE_KEY, palette) } catch { /* private mode */ } }, [palette])
   const [allBearings, setAllBearings] = useState(false)
   const [selHz, setSelHz] = useState<number | null>(null)
 
   useEffect(() => {
     client.start()
     const q = new URLSearchParams(location.search)
+    const pq = q.get('palette'); if (isPaletteId(pq)) setPalette(pq)
     if (q.has('autoplay')) { client.setRate(Number(q.get('rate')) || 16); client.setPlaying(true) }
     return () => client.dispose()
   }, [client])
@@ -46,6 +53,11 @@ export default function App() {
           <div className="seg" role="group" aria-label="LOFAR band">
             <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
             <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
+          </div>
+        </div>
+        <div className="group">
+          <div className="seg" role="group" aria-label="Gram palette">
+            {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)}>{PALETTE_LABEL[id]}</button>)}
           </div>
         </div>
         <div className="group">
@@ -80,7 +92,7 @@ export default function App() {
             {st.configs.length > 0 && (
               <Lofar client={client} configs={st.configs} streamIndex={stream} view={view}
                 onView={(v) => setView(clampView(v, BAND_MAX[st.band]))}
-                normalized={normalized} selectedHz={selHz} onSelectHz={setSelHz} />
+                normalized={normalized} palette={palette} selectedHz={selHz} onSelectHz={setSelHz} />
             )}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>

@@ -125,3 +125,22 @@ describe('bearing selection', () => {
     expect(selectBearings(br, buoys, 11, null, true)).toHaveLength(3)
   })
 })
+
+import { PALETTE_IDS, isPaletteId, paletteLut } from './gl/colormap'
+describe('palettes', () => {
+  it('every palette is 256 opaque entries, dark at the floor and bright at the top', () => {
+    const lum = (l: Uint8Array, i: number) => 0.2126 * l[i * 4] + 0.7152 * l[i * 4 + 1] + 0.0722 * l[i * 4 + 2]
+    for (const id of PALETTE_IDS) {
+      const l = paletteLut(id)
+      expect(l.length).toBe(1024)
+      for (let i = 0; i < 256; i++) expect(l[i * 4 + 3]).toBe(255)
+      expect(lum(l, 255) - lum(l, 0)).toBeGreaterThan(150)
+      // Luminance never steps down by more than a rounding error: weak lines never read brighter than strong ones.
+      for (let i = 1; i < 256; i++) expect(lum(l, i)).toBeGreaterThanOrEqual(lum(l, i - 1) - 0.5)
+    }
+  })
+  it('validates ids and falls back to green', () => {
+    expect(isPaletteId('amber')).toBe(true); expect(isPaletteId('neon')).toBe(false); expect(isPaletteId(null)).toBe(false)
+    expect(Array.from(paletteLut('neon' as never).slice(1020))).toEqual(Array.from(paletteLut('green').slice(1020)))
+  })
+})
