@@ -4,37 +4,48 @@ Browser training tool for reading sonar grams as a **fictional maritime-patrol a
 
 **Stack:** React + TypeScript + Vite · Canvas → **WebGL** waterfalls · Web Audio later · **Web Worker** signal engine · typed arrays · static build for **GitHub Pages** (`base` configurable).
 
-**Team:** Project Lead coordinates · **Acoustics Physicist** owns signal/propagation/Doppler/Lloyd’s · **Display Frontend** owns grams, tactical plot, tools, quiz, design system.
+**Team:** Project Lead coordinates · **Acoustics Physicist** owns signal/propagation/Doppler/Lloyd’s/platform generator · **Display Frontend** owns grams, tactical plot, tools, quiz, design system, platform-card / planner UI.
 
-**Physics core:** `/workspace/sonar-sim/acoustics/` (standalone TS: PRNG, kinematics/CPA, Doppler, Lloyd’s, TL, ambient, sources, receivers, LOFAR/DEMON, scenario schema). App consumes it; do not fork physics into `src/`. Any empty `src/signal/` stubs are discarded.
+**Physics core:** `/workspace/sonar-sim/acoustics/` (standalone TS: PRNG, kinematics/CPA, Doppler, Lloyd’s, TL, ambient, sources, receivers, LOFAR/DEMON, scenario schema, platform generator). App consumes it; do not fork physics into `src/`.
 
 ---
 
 ## Fictional data policy
 
-No real class/hull/navy names or measured signatures. Contacts from made-up params. Invented nation/hull strings only. No classified freqs, ranges, or sensor performance. UI may evoke operator displays without copying proprietary/classified layouts.
+No real class/hull/navy names, measured signatures, or real AIP plant names. Every boat/ship is invented from generic, physically sane parameter ranges. Derived tonals must come only from those params (shaft × blades × gear × electrical × aux) so grams are consistent and teachable — never tuned to mimic a real class. Invented nation/hull strings only. No classified freqs, ranges, or sensor performance. UI may evoke operator displays without copying proprietary/classified layouts.
 
 ---
 
 ## Design language
 
-Sleek, “like Apple built it”: `system-ui` / SF-style type stack, generous spacing, refined dark chrome, subtle depth (soft shadows / hairline borders), smooth motion, precise controls. **Grams stay faithful to operator displays** (phosphor LOFAR/DEMON, dense monospace readouts, dark plot). Apple polish lives in chrome around them — toolbar, tactical plot frame, panels, typography — not in fake skeuomorphic sonar glass.
+Sleek, “like Apple built it”: `system-ui` / SF-style type stack, generous spacing, refined dark chrome, subtle depth, smooth motion, precise controls. **Grams stay operator-faithful** (phosphor LOFAR/DEMON, dense monospace). Apple polish = chrome around them (toolbar, plot frame, platform card, planner), not fake sonar glass.
 
 ---
 
 ## Efficient acoustic processing
 
-- Signal engine in a **Web Worker**; main thread = UI + WebGL only.
-- **Typed arrays** + **preallocated buffers**; no per-frame heap alloc in the hot path.
-- **Incremental** FFT / LOFAR row compute (one new row per sim tick, not full-history recompute).
-- **WebGL texture scrolling** for waterfalls (ring texture / `texSubImage2D`), not CPU canvas pixel shifts at scale.
-- **Perf budget (done-criteria):** ≥60 fps UI with **50+ contacts and 32 buoys** on a mid-range laptop; Worker frame time headroom logged. Ship a **perf benchmark** (automated or scripted) that fails CI/local check if budget is missed once the engine is wired.
+Worker signal engine · typed arrays + preallocated buffers (no per-frame alloc) · incremental FFT/LOFAR rows · WebGL texture scrolling. **Budget:** ≥60 fps UI with 50+ contacts / 32 buoys on a mid-range laptop; perf benchmark as done-criteria once engine is wired.
 
 ---
 
-## Robustness bar (“crazy robust”)
+## Fictional platform generator
 
-Seeded deterministic scenarios · thorough unit tests on acoustics models · graceful reject/clamp of bad inputs · `npm test` + `npm run build` (+ perf check when applicable) green every ship.
+**Acoustics** owns the seeded model + JSON schema; **Frontend** owns the platform-card inspector (hidden during quizzes).
+
+Three sub propulsion families: **nuclear**, **diesel-electric**, **fictional AIP** (plausible-sounding fake plant types only). Each draw gets a parameter sheet from invented ranges (never real-class matched): propulsion/main-motor config; shaft & bearing config; reduction gear ratio; max shaft/propulsor RPM; blade count (+ optional pumpjet-style propulsor); max & quiet speeds; auxiliaries (pumps, compressors, generators, ventilation — each with a tonal family); electrical plant (generic supply frequency + harmonics); transient/emitter list (hull pops, door slams, active emitters); depth/speed envelopes. **Derived acoustics:** tonals = f(shaft rate, blades, gear, electrical, aux). Seeded + serializable JSON. **Surface ships** later on the same generator.
+
+---
+
+## Scenario modes
+
+1. **Randomized** — one click: contacts (via platform generator), environment, mission; seed → reproducible.
+2. **Custom Scenario Planner** — instructor builds an exercise (platforms, waypoints + speed/depth over time, timed transients, environment/SSP, buoy load-out, objectives/scoring), saves shareable JSON/link; trainee runs it. Quiz builds on planner objectives.
+
+---
+
+## Robustness
+
+Seeded determinism · acoustics unit tests · graceful bad-input handling · `npm test` + `npm run build` (+ perf check) green every ship.
 
 ---
 
@@ -42,28 +53,31 @@ Seeded deterministic scenarios · thorough unit tests on acoustics models · gra
 
 | ID | Scope (one line) | Owner | Done when |
 |----|------------------|-------|-----------|
-| **M0** | Scaffold Vite app; wire `acoustics/`; Pages `base`; design tokens (dark system-ui chrome) | Project Lead · Frontend tokens | App builds; imports acoustics; PLAN approved |
-| **M1 MVP** | Aircraft + omni & DIFAR + LOFAR (WebGL scroll) + Worker engine + 1 seeded scenario + basic tactical plot | Acoustics: spectra/scenario · Frontend: LOFAR/plot/controls | Seeded tonals on LOFAR; A/C+buoys on plot; unit tests green; Worker path live |
-| **M2** | Buoy lifecycle (RF, battery, depth) + drop patterns (line/field/barrier) | Frontend (+ Acoustics schema) | Patterns drop; unique channels; dead buoy silent |
-| **M3** | Perf hardening: buffer pools, incremental rows, benchmark harness | Acoustics · Frontend | Benchmark passes 50 contacts / 32 buoys @ ≥60 fps UI |
-| **M4** | Spectrum slice + harmonic cursors | Frontend | Cursor + N·f marks |
-| **M5** | Doppler → radial speed tool (truth toggle) | Acoustics · Frontend | Δf → v ≈ `f·v/c` (c≈1500) in tests |
-| **M6** | DEMON display (WebGL) | Acoustics DEMON · Frontend | Blade-rate lines on seeded contact |
-| **M7** | Bearing-time from DIFAR | Acoustics · Frontend | BTR matches scenario bearings |
-| **M8** | Active DICASS-style + A-scan | Acoustics · Frontend | Ping/echo range on A-scan |
-| **M9** | VLAD-style VLA (generic) + BT / simple SVP | Acoustics · Frontend | SVP affects TL sketch; VLA selectable |
-| **M10** | Lloyd’s mirror / multipath helpers | Acoustics · Frontend | Nulls match model tests |
-| **M11** | CPA estimation aid | Acoustics · Frontend | CPA vs scenario truth |
-| **M12** | Quiz/practice scoring | Frontend (+ Acoustics truth) | Scored seeded run |
-| **M13** | Polish: Web Audio listen-through, motion polish, Pages deploy, docs | Both · Lead | Hosted demo URL; small pushes |
+| **M0** | Scaffold; wire `acoustics/`; Pages `base`; design tokens | Lead · Frontend | Builds; imports acoustics; PLAN approved |
+| **M1 MVP** | Aircraft + omni/DIFAR + LOFAR (WebGL) + Worker + 1 seeded scenario + basic tactical plot | Acoustics · Frontend | Tonals on LOFAR; A/C+buoys; tests; Worker live |
+| **M2** | **Platform generator** (nuke/DE/fake-AIP) + **randomized scenario** one-click + platform card UI | Acoustics model · Frontend card | Seed→JSON boat; tonals match params; random mission runs |
+| **M3** | Buoy lifecycle (RF, battery, depth) + drop patterns | Frontend (+ Acoustics schema) | Patterns; unique channels; dead buoy silent |
+| **M4** | Perf hardening + benchmark harness | Acoustics · Frontend | 50 contacts / 32 buoys @ ≥60 fps |
+| **M5** | Spectrum + harmonic cursors | Frontend | Cursor + N·f |
+| **M6** | Doppler → speed tool | Acoustics · Frontend | Δf → v ≈ f·v/c in tests |
+| **M7** | DEMON (WebGL) | Acoustics · Frontend | Blade-rate on seed |
+| **M8** | Bearing-time (DIFAR) | Acoustics · Frontend | BTR matches bearings |
+| **M9** | DICASS-style + A-scan | Acoustics · Frontend | Ping/echo range |
+| **M10** | VLAD-style VLA + BT/SVP | Acoustics · Frontend | SVP affects TL; VLA selectable |
+| **M11** | Lloyd’s / multipath helpers | Acoustics · Frontend | Nulls match tests |
+| **M12** | CPA estimation aid | Acoustics · Frontend | CPA vs truth |
+| **M13** | **Custom Scenario Planner** (edit platforms/waypoints/transients/env/buoys/objectives; export JSON/link) | Frontend · Acoustics schema | Instructor file loads identically for trainee |
+| **M14** | Quiz/practice scoring (uses planner objectives) | Frontend (+ Acoustics truth) | Scored seeded/custom run |
+| **M15** | Surface-ship generator pass (same engine) | Acoustics · Frontend card | Seeded surface contact on LOFAR |
+| **M16** | Polish: Web Audio, motion, Pages deploy, docs | Both · Lead | Hosted demo URL |
 
-After M1, prefer thin increments; M3 may slip earlier if LOFAR janks.
+Thin increments after M1; pull M4 earlier if LOFAR janks.
 
 ---
 
 ## Open questions for Wilson
 
-1. Approve this plan / milestone order?
+1. Approve plan / milestone order?
 2. GitHub repo name + Pages base (`/` vs `/sonar-sim/`)?
-3. After M1: buoy patterns (M2), perf (M3), or DEMON (M6) first?
-4. Default LOFAR band (0–500 Hz vs 0–1 kHz)?
+3. Default LOFAR band (0–500 Hz vs 0–1 kHz)?
+4. **Shorthand mapping (correct us):** PMs→propulsion/main-motor config; S/B→shaft & bearing; MAX PSRPMS→max shaft/propulsor RPM; Emitters→transient/active emitter list; EDAs→aux machinery (pumps/compressors/vents)?; ELECTRICAL→supply freq + harmonics; swaths→?; SRCs→radiated source characteristics / levels? Which did we misread?
