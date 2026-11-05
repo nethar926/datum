@@ -1,3 +1,4 @@
+import { TruthPanel } from './gram/TruthPanel'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
@@ -15,7 +16,7 @@ import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
-import { familyFundamentals, familyLabel, snapToFamily, truthRows, truthRowDim, truthEdaName } from './gram/truthFamilies'
+import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 
@@ -258,11 +259,7 @@ export default function App() {
               {`A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</div>}
             <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} />
-            {truth && st.tactical?.truth && <div className="truth-panel readout" data-testid="truth-panel">
-              {st.tactical.truth.contacts.filter((c) => c.active !== false).map((c) => <div key={c.id} className="truth-contact">
-                {truthRows(c).map((r, i) => <div key={i} className={i ? `truth-row${truthRowDim(r) ? ' dim' : ''}` : 'truth-head'}>{r}</div>)}
-              </div>)}
-            </div>}
+            {truth && st.tactical?.truth && <TruthPanel contacts={st.tactical.truth.contacts} />}
           </div>
         </section>
       </main>

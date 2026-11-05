@@ -475,3 +475,16 @@ describe('truth panel propulsion rows (m3-lines)', () => {
     expect(truthRows(c).join('\n')).not.toMatch(/TPK/)
   })
 })
+
+import { DEFAULT_TRUTH_PREFS, loadTruthPrefs, nextDock } from './gram/TruthPanel'
+describe('truth panel prefs', () => {
+  it('cycles all four corners', () => {
+    expect(['bl', 'tl', 'tr', 'br'].map((d) => nextDock(d as 'bl'))).toEqual(['tl', 'tr', 'br', 'bl'])
+  })
+  it('loads saved prefs and survives junk', () => {
+    expect(loadTruthPrefs('{"collapsed":true,"dock":"tr"}')).toEqual({ collapsed: true, dock: 'tr', open: [] })
+    expect(loadTruthPrefs('{"dock":"middle"}').dock).toBe('bl')
+    expect(loadTruthPrefs('not json')).toEqual(DEFAULT_TRUTH_PREFS)
+    expect(loadTruthPrefs(null)).toEqual(DEFAULT_TRUTH_PREFS)
+  })
+})
