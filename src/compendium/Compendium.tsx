@@ -1,12 +1,25 @@
 import { Fragment, useMemo, useState } from 'react'
-import { catalog } from '@acoustics'
+import { NarrowDown } from './NarrowDown'
+import { EMPTY_NARROW, constraintCount, keyLabel, rankIds, toObservations, type NarrowForm } from './narrow'
+import { catalog, matchClasses, type ClassMatch } from '@acoustics'
 import { compendiumCards, filterCards, r2, type CardFilter, type CompendiumCard } from './cards'
 
 const TIER: Record<string, string> = { gen1: 'GEN 1', gen2: 'GEN 2', gen3: 'GEN 3', gen4: 'GEN 4' }
 
-function Card({ c }: { c: CompendiumCard }) {
+function MatchBadge({ m }: { m: ClassMatch }) {
+  const n = m.matched.length + m.ruledOutBy.length
   return (
-    <article className={`cmp-card force-${c.force.toLowerCase()}`} data-testid="cmp-card">
+    <div className={`cmp-match${m.ruledOutBy.length ? ' out' : ''}`} data-testid="cmp-match">
+      <b>{m.matched.length}/{n} KEYS AGREE</b>
+      {m.ruledOutBy.length > 0 && <span> · RULED OUT BY {m.ruledOutBy.map(keyLabel).join(', ')}</span>}
+    </div>
+  )
+}
+
+function Card({ c, m }: { c: CompendiumCard; m?: ClassMatch }) {
+  return (
+    <article className={`cmp-card force-${c.force.toLowerCase()}${m?.ruledOutBy.length ? ' ruled-out' : ''}`} data-testid="cmp-card" data-class-id={c.id}>
+      {m && <MatchBadge m={m} />}
       <header>
         <h3>{c.name}</h3>
         <span className="cmp-tag">{c.country.toUpperCase()} · {c.force.toUpperCase()} · {c.gridHz} HZ</span>
@@ -48,7 +61,16 @@ export function Compendium({ onClose }: { onClose: () => void }) {
   const cards = useMemo(() => compendiumCards(catalog), [])
   const countries = useMemo(() => [...new Set(cards.map((c) => c.country))], [cards])
   const [f, setF] = useState<CardFilter>({ query: '', country: '', plant: '' })
-  const shown = filterCards(cards, f)
+  const [narrowOpen, setNarrowOpen] = useState(false)
+  const [nf, setNf] = useState<NarrowForm>(EMPTY_NARROW)
+  const [hide, setHide] = useState(false)
+  const obs = useMemo(() => toObservations(nf), [nf])
+  const keys = constraintCount(obs)
+  const matches = useMemo(() => (narrowOpen && keys ? matchClasses(obs) : undefined), [narrowOpen, keys, obs])
+  const filtered = filterCards(cards, f)
+  const byId = new Map(filtered.map((c) => [c.id, c]))
+  const ranked = rankIds(filtered.map((c) => c.id), matches, hide)
+  const shown = ranked.map((r) => byId.get(r.id)!)
   return (
     <div className="compendium" role="dialog" aria-label="Compendium" data-testid="compendium">
       <div className="cmp-bar">
@@ -62,10 +84,17 @@ export function Compendium({ onClose }: { onClose: () => void }) {
           {(['', 'diesel', 'nuclear'] as const).map((p) => <button key={p} aria-pressed={f.plant === p} onClick={() => setF({ ...f, plant: p })}>{p ? p.toUpperCase() : 'ALL'}</button>)}
         </div>
         <span className="readout">{shown.length}/{cards.length} CLASSES</span>
+        <button className="btn" aria-pressed={narrowOpen} onClick={() => setNarrowOpen(!narrowOpen)}>Narrow down</button>
         <button className="btn" onClick={() => window.print()}>Print</button>
         <button className="btn" onClick={onClose} aria-label="Close compendium">Close</button>
       </div>
-      <div className="cmp-grid">{shown.map((c) => <Card key={c.id} c={c} />)}</div>
+      <div className="cmp-body">
+        {narrowOpen && <NarrowDown f={nf} set={setNf} hide={hide} setHide={setHide} count={keys} onClear={() => setNf(EMPTY_NARROW)} />}
+        <div className="cmp-grid">
+          {ranked.map((r) => <Card key={r.id} c={byId.get(r.id)!} m={r.match} />)}
+          {!ranked.length && <p className="cmp-empty" data-testid="cmp-empty">{hide && matches ? 'No class agrees with every key. Untick HIDE RULED-OUT to see the closest, or recheck a value.' : 'No classes match the filter.'}</p>}
+        </div>
+      </div>
       <p className="cmp-foot">All classes, nations and signatures are fictional. Values shown are class ranges and ratios; each hull is seeded with its own jitter.</p>
     </div>
   )
