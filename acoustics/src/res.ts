@@ -22,6 +22,8 @@ import {gaussian,type Random} from './prng.js';
 import type {ResLevel,GramFilter} from './protocol.js';
 export interface ResGramSettings {res:ResLevel;filter:GramFilter;vernierHz?:number}
 export const RES_BINS=1024,RES_CENTER_BIN=512,RES_SOURCE_RATE_HZ=16384,RES_FFT_POINTS=1280,RES_OVERSAMPLE=1.25,RES_DEFAULT:ResLevel=5,RES_MIN_ROW_PERIOD_S=2;
+/** Worker frame cadence; RES row phases are whole frames so rows land on 0.25 s ticks. */
+export const RES_FRAME_S=.25;
 export const HANN_ENBW_BINS=1.5,HANN_SCALLOP_DB=1.42;
 /** Struzinski & Lowe (1984, JASA 76:1738) two-pass split-window (TPSW) background for NB.
  * Window: ±32 bins; centre gap: ±3 bins (covers the ±2-bin Hann main lobe plus one guard bin);

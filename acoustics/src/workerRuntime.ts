@@ -5,7 +5,8 @@ import type {GramConfig,GramRows,Tactical,WorkerRequest,WorkerResponse} from './
 type Frame={message:GramRows;transfer:ArrayBuffer[]};
 /** Row period: legacy grams 0.25 s; RES grams P=1/rowRateHz (exact: 8, 4 or 2 s). */
 const periodOf=(c:GramConfig):number=>c.res===undefined?.25:1/c.rowRateHz;
-const due=(period:number,t:number):boolean=>period===.25||Math.abs(t/period-Math.round(t/period))<1e-9;
+const phaseOf=(c:GramConfig):number=>c.rowPhaseS??0;
+const due=(period:number,t:number,phase=0):boolean=>period===.25||Math.abs((t-phase)/period-Math.round((t-phase)/period))<1e-9;
 /** M1 worker controller, independently testable without Worker/Node APIs. Fixed three-batch pool.
  * Commands/config changes may allocate; tick/writeRow allocate no sample/row arrays. */
 export class WorkerRuntime {
@@ -13,9 +14,10 @@ export class WorkerRuntime {
   private seed=42;private rate=1;private nextId=1;private nextRow=.25;
   private readonly configs:GramConfig[]=[];
   private readonly indices=new Map<number,number>();
-  /** Packed batch groups: legacy 4 Hz LOFAR/DEMON by bin count, then RES 1024-bin grams by row
-   * period P (8/4/2 s). Every stream in a group is due on the same 0.25 s tick (rows at multiples of P). */
-  private readonly groups=[{bins:1024,period:.25},{bins:512,period:.25},{bins:4096,period:.25},{bins:1024,period:8},{bins:1024,period:4},{bins:1024,period:2}].map(g=>({...g,configs:[] as GramConfig[],pool:[] as Frame[]}));
+  /** Packed batch groups: fixed legacy 4 Hz LOFAR/DEMON groups by bin count, then one RES 1024-bin
+   * group per (row period P, row phase) present, ordered P desc, phase asc. Every stream in a group is
+   * due on the same 0.25 s tick (t = k·P + rowPhaseS). Rebuilt on (un)subscribe/setGram only. */
+  private readonly groups:{bins:number;period:number;phase:number;configs:GramConfig[];pool:Frame[]}[]=[{bins:1024,period:.25},{bins:512,period:.25},{bins:4096,period:.25}].map(g=>({...g,phase:0,configs:[] as GramConfig[],pool:[] as Frame[]}));
   private readonly scratch=new Float32Array(4096);
   private timer:ReturnType<typeof setInterval>|undefined;
   private readonly bearingStore=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
@@ -76,7 +78,9 @@ export class WorkerRuntime {
   }
   private frame(ids:Int32Array,indices:Uint32Array,data:Float32Array,bearingDeg:Float32Array):Frame{return {message:{v:1,type:'gramRows',simT:this.simT,streamIds:ids,rowIndex:indices,data,bearingDeg},transfer:[ids.buffer as ArrayBuffer,indices.buffer as ArrayBuffer,data.buffer as ArrayBuffer,bearingDeg.buffer as ArrayBuffer]};}
   private rebuildPool():void{
-    for(const g of this.groups){g.pool.length=0;g.configs.length=0;for(const c of this.configs)if(c.bins===g.bins&&periodOf(c)===g.period)g.configs.push(c);const n=g.configs.length;if(n)for(let i=0;i<3;i++)g.pool.push(this.frame(new Int32Array(n),new Uint32Array(n),new Float32Array(n*g.bins),new Float32Array(n*g.bins)));}
+    this.groups.length=3;const keys=new Map<string,{period:number;phase:number}>();for(const c of this.configs)if(c.res!==undefined)keys.set(`${periodOf(c)}@${phaseOf(c)}`,{period:periodOf(c),phase:phaseOf(c)});
+    for(const k of [...keys.values()].sort((a,b)=>b.period-a.period||a.phase-b.phase))this.groups.push({bins:1024,period:k.period,phase:k.phase,configs:[],pool:[]});
+    for(const g of this.groups){g.pool.length=0;g.configs.length=0;for(const c of this.configs)if(c.bins===g.bins&&periodOf(c)===g.period&&(g.period===.25||phaseOf(c)===g.phase))g.configs.push(c);const n=g.configs.length;if(n)for(let i=0;i<3;i++)g.pool.push(this.frame(new Int32Array(n),new Uint32Array(n),new Float32Array(n*g.bins),new Float32Array(n*g.bins)));}
   }
   private release(buffers:ArrayBuffer[]):void{
     if(buffers.length%4!==0)throw new Error('Release complete batches: ids, rowIndex, data, bearingDeg');
@@ -93,8 +97,8 @@ export class WorkerRuntime {
     if(!Number.isFinite(dt)||dt<0||dt>1e6||e.time+dt>1e9)throw new Error('Invalid tick dt');
     const target=e.time+dt;
     while(this.nextRow<=target){const t=this.nextRow;e.advance(t-e.time);this.nextRow+=.25;
-      for(const c of this.configs)if(due(periodOf(c),t))this.indices.set(c.streamId,(this.indices.get(c.streamId)??0)+1);
-      for(const g of this.groups){if(!g.configs.length||!due(g.period,t))continue;const frame=g.pool.pop();
+      for(const c of this.configs)if(due(periodOf(c),t,phaseOf(c)))this.indices.set(c.streamId,(this.indices.get(c.streamId)??0)+1);
+      for(const g of this.groups){if(!g.configs.length||!due(g.period,t,g.phase))continue;const frame=g.pool.pop();
         if(frame){const m=frame.message;m.simT=e.time;for(let i=0;i<g.configs.length;i++){const c=g.configs[i];m.streamIds[i]=c.streamId;m.rowIndex[i]=this.indices.get(c.streamId)!-1;e.writeRow(c.streamId,m.data,i*g.bins);e.writeBearingRow(c.streamId,m.bearingDeg!,i*g.bins);}this.emit(m,frame.transfer);}
         else for(const c of g.configs)e.writeRow(c.streamId,this.scratch);
       }
@@ -117,8 +121,8 @@ export class WorkerRuntime {
     // RES streams replay as if their gram settings were applied at t=0 (rows on the P grid).
     this.dispose();const s=cpaScenario();s.seed=this.seed;this.engine=new AcousticEngine(s);
     for(let k=0;k<this.configs.length;k++){const c=this.configs[k];this.engine.registerStream(c.streamId,c.channel);if(c.res!==undefined)this.configs[k]=this.engine.setGram(c.streamId,{res:c.res,filter:c.filter,vernierHz:c.fcHz});}
-    const scratch=new Float32Array(1024);const steps=Math.floor(target*4);for(let i=0;i<steps;i++){this.engine.advance(.25);const t=(i+1)*.25;for(const c of this.configs)if(due(periodOf(c),t))this.engine.writeRow(c.streamId,scratch);}
+    const scratch=new Float32Array(1024),rows=new Map<number,number>();const steps=Math.floor(target*4);for(let i=0;i<steps;i++){this.engine.advance(.25);const t=(i+1)*.25;for(const c of this.configs)if(due(periodOf(c),t,phaseOf(c))){this.engine.writeRow(c.streamId,scratch);rows.set(c.streamId,(rows.get(c.streamId)??0)+1);}}
     if(target>this.engine.time)this.engine.advance(target-this.engine.time);
-    this.nextRow=(steps+1)*.25;for(const c of this.configs){const p=periodOf(c);this.indices.set(c.streamId,Math.floor(steps*.25/p+1e-9));c.simT=target;this.emit(c);}this.rebuildPool();this.rebuildTactical();this.sendTactical();
+    this.nextRow=(steps+1)*.25;for(const c of this.configs){this.indices.set(c.streamId,c.res===undefined?steps:rows.get(c.streamId)??0);c.simT=target;this.emit(c);}this.rebuildPool();this.rebuildTactical();this.sendTactical();
   }
 }

@@ -911,12 +911,24 @@ applied to the smoothed SNR.
 {type:'setGram'; streamId:number; res?:ResLevel; filter?:'NB'|'BB'; vernierHz?:number|null}
 // gramConfig for RES grams (legacy/DEMON configs omit the RES fields):
 {v:1; type:'gramConfig'; simT; streamId; kind:'lofar'; channel; bins:1024; f0; fBin; rowRateHz /* 1/P */;
- dbFloor; dbCeil; res; filter; bandHz; fcHz? /* vernier only */; enbwHz; bandLimited; liveBins}
+ dbFloor; dbCeil; res; filter; bandHz; fcHz? /* vernier only */; enbwHz; bandLimited; liveBins;
+ rowPhaseS /* rows at k·P + rowPhaseS */}
 ```
 
-`GramRows` layout is unchanged (`data` + `bearingDeg`, 1024 per stream). RES streams are packed in
-their own batch groups by row period (8/4/2 s); rows are emitted at sim times that are multiples of
-P. Engine API: `subscribe({channel,res?,filter?,vernierHz?})`, `setGram(streamId,patch)`,
+`GramRows` layout is unchanged (`data` + `bearingDeg`, 1024 per stream).
+
+**Row phase (`rowPhaseS`, additive).** To avoid every buoy's RES row falling on the same frame, each
+RES stream's grid is shifted: rows are due at `t = k·P + rowPhaseS`. For the stream's buoy at index
+i of N buoys (scenario order, so independent of subscribe order; N = buoy count when the stream is
+subscribed or `setGram`'d), `rowPhaseS = floor(i·F/N)·0.25 s` with F = P/0.25 frames per period, i.e.
+(i/N)·P quantized down to the 0.25 s worker frame (always 0 ≤ rowPhaseS < P). With N streams this
+gives at most ceil(N·0.25/P)+1 RES rows per frame (32 buoys: 4 per frame at RES3+, 1 at RES1).
+`setGram` re-phases the stream on its new P. The worker packs RES streams in one batch group per
+(P, rowPhaseS). The phase only changes *when* a stream's generator runs, not its row sequence
+(per-row seeded draws, AR(1) state carried row to row), so rows stay deterministic and seek replay
+reproduces them (it re-applies settings at t=0 and counts the phased rows). Single-buoy scenarios
+get rowPhaseS 0, i.e. the m3-res grid. The frontend places row n of a stream at
+`rowPhaseS + k·P` (the `simT` of the batch that carries it). Engine API: `subscribe({channel,res?,filter?,vernierHz?})`, `setGram(streamId,patch)`,
 `gramSettings(streamId)`; client: `subscribe(channel,opts)`, `setGram(streamId,opts)`. `setGram`
 restarts the stream's row clock on the new P grid (engine row counter restarts; worker rowIndex stays
 monotonic). Worker `seek` replays RES streams as if their settings were applied at t=0.
@@ -925,7 +937,8 @@ monotonic). Worker `seek` replays RES streams as if their settings were applied 
 streams keep the legacy 4 Hz analytic gram (`rowRateHz 4`, `fBin = fmax/(bins−1)`, 40–110 dB) that
 existing tests and the frontend rely on; RES mode is opt-in per stream. No existing default changed.
 
-**Benchmark** (`npm run bench`, 60 contacts × 32 buoys): legacy path unchanged (≈34–36 ms/step
-legacy contacts, ≈46–48 ms catalog). RES5 NB, all 32 buoys subscribed: 4.4 ms mean per 0.25 s frame
-(legacy contacts) / 5.9 ms (catalog); the frame on which all 32 rows are due costs ≈34 / 46 ms
-(every 2 s). RES5 BB 6.7 ms mean; RES1 2.4 ms mean (72 ms row frame every 8 s); RES9 2.1 ms mean.
+**Benchmark** (`npm run bench`, 60 contacts × 32 buoys, catalog field, phased rows): legacy path
+unchanged (≈34 ms/step legacy contacts, ≈46 ms catalog). Per 0.25 s frame, all 32 buoys subscribed:
+RES5 NB mean 5.8–5.9 ms, worst 6.3–12.5 ms; RES5 BB mean 5.8–6.2 ms, worst 7.6–11.8 ms; RES1 NB mean
+2.1–2.2 ms, worst 3.0–7.7 ms (ranges over two runs; worst-frame outliers are GC/JIT, p95 ≤ 8.7 ms).
+Before phasing (b4dee75) the frame on which all 32 rows fell due cost ≈46 ms (RES5) / ≈72 ms (RES1).
