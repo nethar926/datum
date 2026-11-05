@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
@@ -48,6 +49,7 @@ export default function App() {
   const [selHz, setSelHz] = useState<number | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showCmp, setShowCmp] = useState(false)
   const [tool, setTool] = useState<'select' | 'cpa' | 'lm' | 'harm'>('select')
   const [crossOn, setCrossOn] = useState(false)
   const [harmF0, setHarmF0] = useState<number | null>(null)
@@ -132,6 +134,9 @@ export default function App() {
             <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
           </label>
         </div>
+        <div className="group">
+          <button className="btn" data-testid="cmp-open" onClick={() => setShowCmp(true)} title="Recognition guide for every fictional class">Compendium</button>
+        </div>
         <div className="group" style={{ position: 'relative' }}>
           <button className="btn" aria-expanded={showSettings} onClick={() => setShowSettings(!showSettings)}>Settings</button>
         </div>
@@ -145,6 +150,7 @@ export default function App() {
           </div>
         )}
       </header>
+      {showCmp && <Compendium onClose={() => setShowCmp(false)} />}
 
       <main className="workspace">
         <div className="workspace-left">
