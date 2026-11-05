@@ -1,0 +1,33 @@
+import {it,expect} from 'vitest';
+import {execFileSync} from 'node:child_process';
+import {catalog,surfaceTypes,createSurfacePool,deriveSignature,matchClasses,type ClassObservations,type IdKeys} from '../src/index.js';
+import {identityBands,varyPlantIdentity} from '../src/catalog/plantIdentity.js';
+const mid=(r:readonly number[]) => (r[0]+r[1])/2;
+const disjoint=(a:readonly number[],b:readonly number[])=>a[1]<b[0]||b[1]<a[0];
+const observations=(k:IdKeys):ClassObservations=>{
+ const mode=k.engine?'SNORK':'NUC',visible=k.linesVisiblePerMode[mode];
+ return {gridHz:k.gridHz,mode,lineFamilies:visible,familyFundamentalsHz:Object.fromEntries(k.harmonicFamilies.filter(f=>visible.includes(f.lineFamily)).map(f=>[f.lineFamily,mid(f.fundamentalHz)])),brToPsr:mid(k.ratios.brToPsr),gearRatio:mid(k.ratios.gear),tpk:mid(k.tpk),hydpHz:mid(k.hydp!.nominalHz),...(k.ratios.efrToCsr?{efrToCsr:mid(k.ratios.efrToCsr)}:{}),...(k.ratios.msrToMotorShaft?{msrToMotorShaft:mid(k.ratios.msrToMotorShaft),msrToPsr:mid(k.ratios.msrToPsr!)}:{}),...(k.turbineRateHz?{turbineRateHz:mid(k.turbineRateHz),reductionRatio:mid(k.reductionRatio!),...(k.gearMeshHz?.length?{gearMeshHz:mid(k.gearMeshHz[0])}:{}),turboGenHz:mid(k.turboGenHz![0])}:{}),...(k.edas?{edaCfrMultiples:k.edas.map(e=>mid(e.cfrMultiple))}:{})};
+};
+it('all 231 class pairs have at least two non-overlapping physical ID keys',()=>{
+ for(let i=0;i<catalog.classes.length;i++)for(let j=i+1;j<catalog.classes.length;j++){const a=catalog.classes[i].idKeys,b=catalog.classes[j].idKeys,aw=a.speedWindows.find(w=>w.kind==='SWATH')!,bw=b.speedWindows.find(w=>w.kind==='SWATH')!;
+  expect(disjoint(a.hydp!.nominalHz,b.hydp!.nominalHz),`${catalog.classes[i].id}/${catalog.classes[j].id}: HYDP`).toBe(true);expect(disjoint([aw.loHz,aw.hiHz],[bw.loHz,bw.hiHz]),'SWATH').toBe(true);expect(aw.hiHz).toBeLessThan(500);expect(bw.hiHz).toBeLessThan(500);
+ }
+});
+it('midpoint observations of each class rank it uniquely first using unchanged matchClasses',()=>{
+ for(const c of catalog.classes){const obs=observations(c.idKeys),ranked=matchClasses(obs);expect(ranked[0].id).toBe(c.id);expect(ranked[0].score).toBe(1);expect(ranked[0].ruledOutBy).toEqual([]);expect(ranked[0].score).toBeGreaterThan(ranked[1].score);expect(matchClasses(JSON.parse(JSON.stringify(obs)))).toEqual(ranked);const hydpOnly=matchClasses({hydpHz:obs.hydpHz});expect(hydpOnly[0].id).toBe(c.id);expect(hydpOnly[0].score).toBeGreaterThan(hydpOnly[1].score);}
+});
+it('ID-keyed EDA definitions are varied fractional orders, including the LOP teaching example',()=>{
+ const diesel=catalog.classes.filter(c=>c.plant==='diesel'),orders=new Set<string>();for(const c of diesel){expect(c.edas.length).toBeGreaterThanOrEqual(1);expect(c.edas.length).toBeLessThanOrEqual(3);for(const e of c.edas){expect([.25,.5,.75]).toContain(e.cfrMultiple%1);expect(e.name.length).toBeGreaterThan(0);}orders.add(JSON.stringify(c.edas.map(e=>e.cfrMultiple)));const copy=varyPlantIdentity(structuredClone(c),c.id);expect(copy.edas).toEqual(c.edas);}expect(orders.size).toBe(diesel.length);expect(new Set(diesel.flatMap(c=>c.edas.map(e=>e.name))).size).toBeGreaterThan(3);expect(diesel.some(c=>c.edas.some(e=>e.name==='LOP'&&e.cfrMultiple===27.75))).toBe(true);
+});
+it('slot-pass features occur on only some diesel classes, with 2.5 Hz x 124 = 310 Hz preserved',()=>{
+ const diesel=catalog.classes.filter(c=>c.plant==='diesel'),fitted=diesel.filter(c=>c.motorSlots!==undefined);expect(fitted.length).toBeGreaterThan(1);expect(fitted.length).toBeLessThan(diesel.length);expect(catalog.classes.filter(c=>c.plant==='nuclear').every(c=>c.motorSlots===undefined)).toBe(true);for(const c of fitted){expect(c.motorSlots).toBeGreaterThanOrEqual(48);expect(c.motorSlots).toBeLessThanOrEqual(200);expect(Number.isInteger(c.motorSlots)).toBe(true);}
+ const example=fitted.find(c=>c.motorSlots===124)!,motor=example.machinery.motor!,speedKn=2.5*60/(example.maxPsrpm*motor.drivetrain.ratio)*example.params.maxSpeedKn,s=deriveSignature(example,'base',{speedKn,depthM:50,mode:'BATT'});expect(2.5*example.motorSlots!).toBe(310);expect(s.propulsion!.motor!.shaftHz).toBeCloseTo(2.5,12);expect(s.propulsion!.motor!.msrHz).toBeCloseTo(310,10);expect(s.tonals!.some(l=>l.lineFamily==='MSR'&&l.harmonic===1&&Math.abs(l.hz-310)<1e-9)).toBe(true);
+ for(const c of diesel.filter(c=>c.motorSlots===undefined)){const s=deriveSignature(c,'base',{speedKn:4,depthM:50,mode:'BATT'});expect(s.propulsion!.motor!.slots).toBe(0);expect(s.propulsion!.motor!.msrHz).toBe(0);expect(s.tonals!.some(l=>l.lineFamily==='MSR')).toBe(false);expect(s.tonals!.some(l=>l.family==='motor'&&l.power>0)).toBe(true);expect(c.idKeys.ratios.msrToMotorShaft).toBeUndefined();}
+});
+it('surface hydraulics and non-direct gearing/auxiliary sources vary by fictional type',()=>{
+ const hydraulic=surfaceTypes.map(t=>t.plantSpec.hydp!.nominalHz);expect(new Set(hydraulic).size).toBe(surfaceTypes.length);for(const t of surfaceTypes)expect(t.plantSpec.aux.find(a=>a.kind==='hydp')!.fHz).toBe(t.plantSpec.hydp!.nominalHz);for(const c of createSurfacePool(371))expect(c.params.plantSpec!.hydp).toEqual(surfaceTypes.find(t=>t.id===c.surface!.type)!.plantSpec.hydp);
+ const reduced=catalog.classes.filter(c=>c.idKeys.gearing.some(g=>g.kind!=='direct'));expect(new Set(reduced.map(c=>JSON.stringify(c.idKeys.gearing))).size).toBeGreaterThan(reduced.length/2);expect(new Set(catalog.classes.map(c=>c.aux[0].fHz)).size).toBe(catalog.classes.length);expect(new Set(catalog.classes.map(c=>c.params.srcHzPerKn.join(','))).size).toBe(catalog.classes.length);
+});
+it('fresh independent module runs reproduce all class and surface identities; hash bands ignore input order',()=>{
+ const script="import {catalog,surfaceTypes} from './src/index.ts';console.log(JSON.stringify({catalog,surfaceTypes}));",run=()=>execFileSync(process.execPath,['--import','tsx','--input-type=module','-e',script],{encoding:'utf8'});expect(run()).toBe(run());const ids=catalog.classes.map(c=>c.id),a=identityBands(ids),b=identityBands([...ids].reverse());for(const id of ids)expect(a.get(id)).toEqual(b.get(id));
+});
