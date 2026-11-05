@@ -9,6 +9,8 @@ export interface GramConfig {
 export interface GramRows {
   v: 1; type: 'gramRows'; simT: number
   streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array
+  /** m3-difar-bearing: per-bin bearing (deg true 0..360, NaN for omni), same layout as data. */
+  bearingDeg?: Float32Array
 }
 export type BuoyKind = 'omni' | 'difar' | 'dicass' | 'vlad' | 'bt'
 export interface TacticalBuoy {

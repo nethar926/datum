@@ -83,9 +83,14 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         if (s === histStream) hist.push(rows.data, k * bins)
         norm.apply(rows.data, k * bins, scratch, 0); r.pushRow(N + s, scratch, 0)
         // Bearing ring stays row-aligned with the power ring (NaN rows for omni buoys).
-        const tac = tacRef.current, c = configs[s]
-        fillLineBearings(brgRow, c, tac?.buoys.find((b) => b.channel === c.channel), tac?.bearings)
-        r.pushBearing(s, brgRow, 0)
+        // Engine per-bin bearings when streamed; else interim colouring from the tracked line bearings.
+        const bd = (rows as { bearingDeg?: Float32Array }).bearingDeg
+        if (bd && bd.length === rows.data.length) r.pushBearing(s, bd, k * bins)
+        else {
+          const tac = tacRef.current, c = configs[s]
+          fillLineBearings(brgRow, c, tac?.buoys.find((b) => b.channel === c.channel), tac?.bearings)
+          r.pushBearing(s, brgRow, 0)
+        }
       }
       dirty = true
     })
