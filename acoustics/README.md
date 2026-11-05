@@ -784,3 +784,36 @@ CFR-order EDA/LOP arithmetic and truth metadata, data-only HYDP/duty, one-knot f
 nuclear envelopes, and idKeys-only matching. `pinnedApi.test.ts` also pins nested truth.
 Existing `compendium.test.ts` covers deterministic class coverage, JSON, 50 seeded hulls per
 class, BR/TPK/motor/firing ranges and speed-window truth; earlier M3 tests remain unchanged.
+
+
+### Class-discriminating static identities (m3-lines-ids)
+
+Public signatures and field names are unchanged. Static machinery variation is keyed by
+fictional class ID using independent seeded feature substreams, never the scenario/hull seed.
+Diesels have 1–3 named EDA orders in quarter increments (fraction .25/.5/.75), not a universal
+list; Brindleflux retains LOP x27.75. Hunting-tooth gearing, auxiliary frequencies, SRC rates
+and speed-window settings vary deterministically as well. Mandated direct 1:1 drives and
+force-wide 50/60-Hz electrical buses deliberately remain invariant.
+
+Only selected diesel classes specify the optional coherent `motorSlots` signature (48–200).
+Orbelune has 124: motor shaft 2.5 Hz gives MSR 310 Hz. Without that feature, catalog
+`motorSlots` is absent, existing truth `motor.slots`/`motor.msrHz` are zero and no MSR family
+is advertised/emitted; ordinary motor rotation harmonics remain as AUX lines. Motor power,
+shaft rates and the existing truth shape are unchanged. No artificial 48-slot fallback.
+
+Every sub has distinct HYDP metadata, with Brindleflux retaining 367.77 Hz; ship hydraulic
+metadata likewise varies per fictional ship type. HYDP remains data-only, not rendered.
+A seeded hash ordering of the fixed 22-class roster spaces HYDP design ranges and SWATH
+bands so every pair has two non-overlapping keys; SWATH bands all fit below 500 Hz. This
+assignment ignores input-list order and is configuration work only. All values are invented
+teaching signatures, not real-vessel data or calibrated identification probabilities.
+
+`classIds.test.ts` checks all 231 pairs, uniquely first-ranked midpoint observations through
+the unchanged `matchClasses`, optional slots and the 310-Hz example, ship hydraulics,
+class-specific auxiliary/gearing/SRC data, and independent-process determinism. Existing
+physics/seed/row/worker tests continue to apply; no per-row allocation was introduced.
+
+Window display labels are `SRC-1`, `SWATH-1` (numbered within each kind). The closed-form
+truth regression covers all 22 classes x 12 seeded hull/variant draws x four speeds (1056
+states), checking nominal CSR/CFR/EFR and every shaft's BR harmonics to absolute 1e-9.
+Wandered `freqHz` is deliberately not substituted for nominal machinery rates in this test.

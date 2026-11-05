@@ -66,7 +66,7 @@ export function validateVesselPlant(s:VesselPlantSpec,electricalHz:50|60):void {
   if(p.kind==='nuclearElectric'){if(!p.motor)throw new Error('Electric plant requires motor');rated=p.motor.maxRpm/p.motor.drivetrain.ratio;}else{if((p.motor&&!s.aip)||t.drivetrain.kind==='direct')throw new Error('Nuclear GR requires reduction');rated=t.maxRpm/t.drivetrain.ratio;}
  }
  if(s.emergencyPropulsor&&(!finite(s.emergencyPropulsor.maxRpm,20,600)||!Number.isInteger(s.emergencyPropulsor.blades)||!finite(s.emergencyPropulsor.blades,2,8)||!finite(s.emergencyPropulsor.maxSpeedKts,1,5)))throw new Error('Invalid emergency propulsor');
- if(p.motor){if(s.motorSlots!==undefined&&(!Number.isInteger(s.motorSlots)||!finite(s.motorSlots,12,240)))throw new Error('Invalid motor slots');if(!finite(p.motor.maxRpm,20,12000))throw new Error('Invalid motor RPM');validateDrivetrain(p.motor.drivetrain);}
+ if(p.motor){if(s.motorSlots!==undefined&&(!Number.isInteger(s.motorSlots)||!finite(s.motorSlots,48,200)))throw new Error('Invalid motor slots');if(!finite(p.motor.maxRpm,20,12000))throw new Error('Invalid motor RPM');validateDrivetrain(p.motor.drivetrain);}
  if(Math.abs(rated/s.maxPsrpm-1)>.02)throw new Error('Plant/shaft max RPM mismatch');
  if(s.hydp&&(!finite(s.hydp.nominalHz,.1,1e5)||!finite(s.hydp.pairSpacingHz,.001,100)||!finite(s.hydp.durationS,.01,3600)))throw new Error('Invalid HYDP metadata');
  if(!Array.isArray(s.edas)||new Set(s.edas.map(e=>e?.id)).size!==s.edas.length||!Array.isArray(s.aux)||new Set(s.aux.map(a=>a?.id)).size!==s.aux.length)throw new Error('Invalid EDA/aux list');

@@ -1,3 +1,4 @@
+import {varyPlantIdentity} from './plantIdentity.js';
 import {makeDrivetrain,type VesselPlantSpec,type EngineSpec,type DieselPlant,type AuxSpec} from './drivetrain.js';
 import type {ClassParams} from './schema.js';
 /** Invented static machinery sheets. Hunting-tooth ratios are computed, never rounded internally. */
@@ -14,10 +15,10 @@ export function defaultVesselPlant(p:ClassParams,index:number):VesselPlantSpec {
   plant={reactors:1,reactorSets:[{id:'fictional-reactor-1',coolantPumpHz:18+index*.4,turboGenerator:{rpm:p.electricalHz*60/2,polePairs:2}}],kind:electric?'nuclearElectric':'nuclearGR',mainTurbines:{count:shafts,maxRpm:electric?p.electricalHz*60:maxPsrpm*gear.ratio,drivetrain:electric?direct:gear},turbineGenerators:{count:1,rpm:p.electricalHz*60/2,polePairs:2},...(electric?{motor:{maxRpm:maxPsrpm*gr1.ratio,drivetrain:gr1}}:{})};
  }
  if((index===12||index===13)&&plant.kind==='dieselElectric'){plant.engines.length=index===13?1:2;for(const e of plant.engines){e.stroke=4;e.cylinders=6;}}
- return {maxPsrpm,shafts,shaftMismatchPct:shafts>1?[.12,.65]:[0,0],machinery:plant,...(plant.motor?{motorSlots:48}:{}),edas:plant.kind.startsWith('diesel')?Array.from({length:1+index%3},(_,i)=>({id:`fictional-eda-${i}`,name:['LOP','Cooling auxiliary','Transfer auxiliary'][i],cfrMultiple:[27.75,9.4,13.25][i],perCrankRev:[27.75,9.4,13.25][i]*('engines' in plant&&plant.engines[0].stroke===4?.5:1),harmonics:[1,2],ramp:{riseS:3,fallS:2}})):[],aux:legacyAux(p).map((a,i)=>i===0&&index%3!==1?{...a,duty:'intermittent' as const,dutyOnS:[45+index,90+2*index] as [number,number],dutyOffS:[60+index,120+2*index] as [number,number]}:a)};
+ return varyPlantIdentity({maxPsrpm,shafts,shaftMismatchPct:shafts>1?[.12,.65]:[0,0],machinery:plant,edas:[],aux:legacyAux(p).map((a,i)=>i===0&&index%3!==1?{...a,duty:'intermittent' as const,dutyOnS:[45+index,90+2*index] as [number,number],dutyOffS:[60+index,120+2*index] as [number,number]}:a)},`catalog-index:${index}`);
 }
 export function surfaceVesselPlant(id:string,maxPsrpm:number,shafts:number,hz:50|60,geared:boolean):VesselPlantSpec {
  const drivetrain=geared?makeDrivetrain('gr1',[{pinionTeeth:20,bullTeeth:71}]):makeDrivetrain('direct'),stroke=geared?4:2,cylinders=geared?8:6,max=maxPsrpm*drivetrain.ratio;
  const plant:DieselPlant={kind:geared?'dieselGR':'dieselDirect',drivetrain,...(!geared?{motor:{maxRpm:maxPsrpm,drivetrain:makeDrivetrain('direct')}}:{}),engines:Array.from({length:shafts+(geared?1:0)},(_,i)=>({id:`fictional-${id}-engine-${i+1}`,stroke,cylinders,erpm:{obsMin:.15*max,obsMax:max,normal:.7*max}}))};
- return {maxPsrpm,shafts,shaftMismatchPct:shafts>1?[.15,.8]:[0,0],machinery:plant,...(plant.motor?{motorSlots:48}:{}),edas:[{id:'fictional-ship-eda',name:'LOP',cfrMultiple:27.75,perCrankRev:geared?13.875:27.75,harmonics:[1,2]}],aux:[{id:'fictional-service-bus',kind:'electrical',duty:'continuous',fHz:hz,harmonics:[1,2,3],stability:'stable',width:'discrete'},{id:'fictional-hydraulics',kind:'hydp',fHz:27,harmonics:[1,2],stability:'unstable',width:'discrete',duty:'intermittent',dutyOnS:[60,120],dutyOffS:[90,180]}]};
+ return varyPlantIdentity({maxPsrpm,shafts,shaftMismatchPct:shafts>1?[.15,.8]:[0,0],machinery:plant,edas:[],aux:[{id:'fictional-service-bus',kind:'electrical',duty:'continuous',fHz:hz,harmonics:[1,2,3],stability:'stable',width:'discrete'},{id:'fictional-hydraulics',kind:'hydp',fHz:27,harmonics:[1,2],stability:'unstable',width:'discrete',duty:'intermittent',dutyOnS:[60,120],dutyOffS:[90,180]}]},id);
 }
