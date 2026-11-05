@@ -10,6 +10,9 @@ import { validateScenario, loadScenario, type Scenario, type ScenarioInput, type
 import { advance } from './kinematics.js';
 import { isAlive, type ReceiverType, type Buoy } from './buoys.js';
 import { LofarGenerator } from './lofar.js';
+import {ResLofarGenerator,normalizeResSettings} from './resGram.js';
+import {RES_BINS,type ResGramSettings} from './res.js';
+import type {GramFilter} from './protocol.js';
 import type {GramConfig,Tactical,DropBuoy,TruthContact} from './protocol.js';
 export interface BuoyRow { id:string; rfChannel:number; depth:number; type:ReceiverType; alive:boolean; bearing:number|null; row:Float32Array }
 /** Deterministic mutable simulation; construction owns a JSON-safe copy. step has no allocations.
@@ -22,7 +25,7 @@ export class AcousticEngine {
   private readonly baseContacts:Contact[];
   private readonly catalogStates:{contact:Contact;params:ClassParams;speed:number;depth:number}[]=[];
   private readonly streams=new Map<number,number>();
-  private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator}>();
+  private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator;res?:ResLofarGenerator}>();
   private readonly legacyIndices=new Map<number,number>();
   private nextStreamId=1;
   private readonly bearingStorage=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
@@ -43,7 +46,7 @@ export class AcousticEngine {
   get time():number {return this.scenario.time;}
   setEnvironment(environment:Environment):void {
     const next={...this.scenario,environment};validateScenario(next);
-    this.scenario.environment={...environment};for(const generator of this.generators)generator.setEnvironment(environment);for(const sub of this.subscriptions.values()){sub.lofar?.setEnvironment(environment);sub.renderer?.setEnvironment(environment);}
+    this.scenario.environment={...environment};for(const generator of this.generators)generator.setEnvironment(environment);for(const sub of this.subscriptions.values()){sub.lofar?.setEnvironment(environment);sub.res?.setEnvironment(environment);sub.renderer?.setEnvironment(environment);}
   }
   setSurfaceTraffic(v:number):void{v=Number.isFinite(v)?clamp(v,0,1):.5;this.scenario.surfaceTraffic=v;const pool=this.scenario.surfacePool;if(pool){const n=surfaceCount(v,pool.length),contacts=this.scenario.contacts;contacts.length=this.baseContacts.length;for(let i=0;i<pool.length;i++){pool[i].active=i<n;if(i<n)contacts.push(pool[i]);}}this.setEnvironment({...this.scenario.environment,shippingDensity:v,shipping:v<.33?'light':v<.67?'moderate':'heavy'});}
   registerStream(id:number,channel:number):void {const i=this.scenario.buoys.findIndex(b=>b.rfChannel===channel);if(i<0)throw new Error('Unknown RF channel');this.streams.set(id,i);if(!this.legacyIndices.has(id))this.legacyIndices.set(id,0);}
@@ -51,8 +54,10 @@ export class AcousticEngine {
   /** Subscription rows are ready at 4 Hz since subscribe; legacy registered streams remain pull-based.
    * If multiple rows accumulate, each is rendered using current geometry (no historical snapshot queue). */
   subscribe(req:{kind:'demon';buoyId:number;band?:[number,number]}):number;
-  subscribe(req:{channel:number;kind?:'lofar';bins?:number;band?:[number,number]}):GramConfig;
-  subscribe(req:{channel?:number;buoyId?:number;kind?:'lofar'|'demon';bins?:number;band?:[number,number]}):GramConfig|number {
+  /** RES mode: any of res/filter/vernierHz selects the RES 1–9 zoom-FFT gram (1024 bins, defaults
+   * res 5, NB, full band). Without them the legacy 4 Hz analytic gram is kept for compatibility. */
+  subscribe(req:{channel:number;kind?:'lofar';bins?:number;band?:[number,number];res?:number;filter?:GramFilter;vernierHz?:number}):GramConfig;
+  subscribe(req:{channel?:number;buoyId?:number;kind?:'lofar'|'demon';bins?:number;band?:[number,number];res?:number;filter?:GramFilter;vernierHz?:number}):GramConfig|number {
     if(req.kind==='demon'){
       const i=this.scenario.buoys.findIndex((b,i)=>(Number(b.id.replace(/\D/g,''))||i+1)===req.buoyId);if(i<0)throw new Error('Unknown buoyId');
       const band=req.band??[1000,4000];if(band.length!==2||!band.every(Number.isFinite)||band[0]<20||band[1]>6000||band[1]-band[0]<1e-6)throw new Error('Invalid DEMON carrier band (20..6000 Hz)');
@@ -63,6 +68,13 @@ export class AcousticEngine {
 
     const s=this.scenario;
     if(req.kind!==undefined&&req.kind!=='lofar')throw new Error('Unsupported gram kind: M1 supports lofar only');
+    if(req.res!==undefined||req.filter!==undefined||req.vernierHz!==undefined){
+      if(req.bins!==undefined&&req.bins!==RES_BINS)throw new Error(`Unsupported bins: RES grams use ${RES_BINS}`);
+      if(req.band!==undefined)throw new Error('band and res/filter/vernierHz are exclusive; use vernierHz');
+      if(req.channel===undefined)throw new Error('LOFAR channel required');
+      const settings=normalizeResSettings(req);while(this.streams.has(this.nextStreamId))this.nextStreamId++;
+      const id=this.nextStreamId;this.registerStream(id,req.channel);this.nextStreamId++;return this.applyRes(id,settings);
+    }
     if(req.bins!==undefined&&req.bins!==s.bins)throw new Error(`Unsupported bins: scenario requires ${s.bins}`);
     const band=req.band??s.band??[0,s.fMax??s.fmax];if(band.length!==2||!band.every(Number.isFinite)||band[0]<0||band[1]>1e6||band[1]-band[0]<1e-6)throw new Error('Invalid LOFAR band');
     while(this.streams.has(this.nextStreamId))this.nextStreamId++;
@@ -70,6 +82,24 @@ export class AcousticEngine {
     const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:req.channel,bins:s.bins,f0:band[0],fBin:(band[1]-band[0])/(s.bins-1),rowRateHz:4,dbFloor:40,dbCeil:110};
     const index=this.streams.get(streamId)!,base=this.generators[index],lofar=base.f0===band[0]&&base.fmax===band[1]?undefined:new LofarGenerator(s.buoys[index],this.allContacts,s.bins,band[1],s.seed,s.environment,band[0]);
     this.subscriptions.set(streamId,{config,start:Math.floor(this.time*4)/4,read:0,lofar});return config;
+  }
+  /** Change RES/filter/vernier on an existing LOFAR stream (legacy registered, legacy subscribed or
+   * RES). Omitted fields keep the stream's current RES settings (legacy streams start from res 5,
+   * NB, full band); vernierHz:null returns to full band. Restarts the row clock on the new period
+   * grid (rows at multiples of P) and the row counter; returns the new gramConfig. */
+  setGram(streamId:number,patch:{res?:number;filter?:GramFilter;vernierHz?:number|null}):GramConfig{
+    if(!this.streams.has(streamId))throw new Error('Unknown streamId');const sub=this.subscriptions.get(streamId);
+    if(sub?.renderer||(sub&&sub.config.kind!=='lofar'))throw new Error('setGram applies to LOFAR streams only');
+    const base:ResGramSettings=sub?.res?.settings??{res:5,filter:'NB'};
+    return this.applyRes(streamId,normalizeResSettings({res:patch.res??base.res,filter:patch.filter??base.filter,vernierHz:patch.vernierHz===null?undefined:patch.vernierHz??base.vernierHz}));
+  }
+  /** Current RES settings of a stream, or undefined for legacy/DEMON streams. */
+  gramSettings(streamId:number):ResGramSettings|undefined{const r=this.subscriptions.get(streamId)?.res;return r?{...r.settings}:undefined;}
+  private applyRes(streamId:number,settings:ResGramSettings):GramConfig{
+    const i=this.streams.get(streamId)!,s=this.scenario,b=s.buoys[i],old=this.subscriptions.get(streamId);
+    const gen=old?.res??new ResLofarGenerator(b,this.allContacts,s.fMax??s.fmax,s.seed,s.environment);gen.configure(settings);
+    const p=gen.params,band=gen.band,config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:b.rfChannel,bins:RES_BINS,f0:band.f0,fBin:p.fBin,rowRateHz:p.rowRateHz,dbFloor:settings.filter==='NB'?0:40,dbCeil:settings.filter==='NB'?30:110,res:settings.res,filter:settings.filter,bandHz:p.bandHz,...(settings.vernierHz!==undefined?{fcHz:band.fcHz}:{}),enbwHz:p.enbwHz,bandLimited:band.bandLimited,liveBins:band.liveBins};
+    this.subscriptions.set(streamId,{config,start:Math.floor(this.time/p.rowPeriodS+1e-9)*p.rowPeriodS,read:0,res:gen});if(!this.legacyIndices.has(streamId))this.legacyIndices.set(streamId,0);return config;
   }
   unsubscribe(streamId:number):void{this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);}
   configs():GramConfig[]{return Array.from(this.subscriptions.values(),s=>s.config);}
@@ -80,7 +110,7 @@ export class AcousticEngine {
     if(!Number.isInteger(offset)||offset<0||out.length<offset+bins)throw new Error('Row size mismatch');
     if(sub&&this.rowsReady(streamId)===0)return -1;
     const rowIndex=sub?sub.read++:this.legacyIndices.get(streamId)??0;if(!sub)this.legacyIndices.set(streamId,rowIndex+1);
-    const b=this.scenario.buoys[i];if(!isAlive(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
+    const b=this.scenario.buoys[i];if(!isAlive(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);sub?.res?.bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else if(sub?.res)sub.res.generate(out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
   }
   /** Copy the last generated per-bin DIFAR bearings (call after writeRow). NaN for omni/DEMON/dead. */
   writeBearingRow(streamId:number,out:Float32Array,offset=0):void {
@@ -89,7 +119,7 @@ export class AcousticEngine {
     if(!Number.isInteger(offset)||offset<0||out.length<offset+bins)throw new Error('Row size mismatch');
     const b=this.scenario.buoys[i];
     if(sub?.renderer||b.type!=='difar'||!isAlive(b,this.time)){out.fill(NaN,offset,offset+bins);return;}
-    out.set((sub?.lofar??this.generators[i]).bearingRow,offset);
+    out.set((sub?.res??sub?.lofar??this.generators[i]).bearingRow,offset);
   }
   dropBuoy(spec:DropBuoy):number {
     if(spec.kind!=='omni'&&spec.kind!=='difar')throw new Error('Receiver type pending approved plan');
