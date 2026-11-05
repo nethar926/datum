@@ -3,6 +3,8 @@ import {catalog} from './classes.js';
 import {normalizeMode,effectiveParams,isDiesel,isGeared,type CatalogReference,type SubmarineClass,type CatalogVariant,type ClassParams,type OperatingState,type ModeInput} from './schema.js';
 import {tagLine,type Signature,type TonalFamily,type LineProfile} from '../sourceModel.js';
 import {clamp} from '../units.js';
+/** Strip the catalog's required leading "Fictional " for operator-facing labels. */
+export function displayName(name:string):string{return name.startsWith('Fictional ')?name.slice(10):name;}
 export function getClass(id:string):SubmarineClass {const c=catalog.classes.find(c=>c.id===id);if(!c)throw new Error(`Unknown fictional class ${id}`);return c;}
 export function resolveReference(ref:CatalogReference):{klass:SubmarineClass;params:ClassParams}{
  const klass=getClass(ref.classId);if(ref.hullId!==undefined&&!klass.hulls.some(h=>h.id===ref.hullId))throw new Error(`Unknown hull ${ref.hullId}`);return {klass,params:effectiveParams(klass,ref.variantId)};
@@ -19,7 +21,7 @@ function tone(out:Signature,i:number,family:TonalFamily,hz:number,power:number,p
 /** Allocates on catalog/config changes only. Fixed class params, state-derived mechanisms. */
 export function deriveSignature(c:SubmarineClass,variant:string|CatalogVariant|undefined,state:OperatingState):Signature {
  const p=effectiveParams(c,typeof variant==='string'?variant:variant?.id);validateOperatingState(p,state);
- const out:Signature={label:c.name,shaftHz:0,blades:p.blades,tonalHz:1,levelDb:p.levelDb,modulation:0,tonals:[],reactorOffline:state.reactorOffline??false};updateDerivedSignature(out,p,state.speedKn,state.depthM,state.mode);return out;
+ const out:Signature={label:displayName(c.name),shaftHz:0,blades:p.blades,tonalHz:1,levelDb:p.levelDb,modulation:0,tonals:[],reactorOffline:state.reactorOffline??false};updateDerivedSignature(out,p,state.speedKn,state.depthM,state.mode);return out;
 }
 /** In-place state refresh. No allocation if operating mode/line topology is unchanged.
  * Ross/Urick: flow self-noise grows roughly 50–60 log10(speed); only a small invented

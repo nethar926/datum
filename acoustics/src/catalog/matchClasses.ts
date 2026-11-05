@@ -9,9 +9,14 @@ export interface ClassObservations {
  brToPsr?:number;msrToMotorShaft?:number;msrToPsr?:number;gearRatio?:number;efrToCsr?:number;tpk?:number;
  turbineRateHz?:number;reductionRatio?:number;gearMeshHz?:number;turboGenHz?:number;hydpHz?:number;
  edaCfrMultiples?:readonly number[];
+ /** Observed SRC lines / SWATH bands (source-frame Hz); optional estimated speed in knots. */
+ speedWindows?:readonly {kind:'SWATH'|'SRC';hz?:number;loHz?:number;hiHz?:number;speedKts?:number}[];
 }
 export interface ClassMatch {id:string;score:number;matched:string[];ruledOutBy:string[]}
 const inside=(v:number,r:Range|undefined):boolean=>!!r&&Number.isFinite(v)&&v>=r[0]&&v<=r[1];
+/** One-knot edge fade: speeds within 1 kt of the design window still count. */
+const speedOk=(speed:number|undefined,r:Range):boolean=>speed===undefined||(Number.isFinite(speed)&&speed>=r[0]-1&&speed<=r[1]+1);
+const overlapFrac=(lo:number,hi:number,wLo:number,wHi:number):number=>{const width=hi-lo;if(!(width>0)||!Number.isFinite(lo)||!Number.isFinite(hi))return 0;return Math.max(0,Math.min(hi,wHi)-Math.max(lo,wLo))/width;}
 /** Pure ranged-key comparison. Score is the fraction of supplied constraints that agree,
  * not a probability; ruledOutBy records contradictions. Empty observations score zero.
  * Optional source is deliberately restricted to the exported class-only catalog view. */
@@ -32,6 +37,12 @@ export function matchClasses(observations:ClassObservations,source:readonly {id:
   if(observations.gearMeshHz!==undefined)check('gearMeshHz',!!k.gearMeshHz?.some(r=>inside(observations.gearMeshHz!,r)));
   if(observations.turboGenHz!==undefined)check('turboGenHz',!!k.turboGenHz?.some(r=>inside(observations.turboGenHz!,r)));
   for(const v of observations.edaCfrMultiples??[])check(`edaCfrMultiple:${v}`,!!k.edas?.some(e=>inside(v,e.cfrMultiple)));
+  for(const obs of observations.speedWindows??[]){
+   const windows=k.speedWindows.filter(w=>w.kind===obs.kind);
+   if(!windows.length){check(obs.kind,false);continue;}
+   if(obs.kind==='SRC')check('SRC',windows.some(w=>inside(obs.hz!,[w.loHz,w.hiHz])&&speedOk(obs.speedKts,w.speedKts)));
+   else check('SWATH',windows.some(w=>overlapFrac(obs.loHz!,obs.hiHz!,w.loHz,w.hiHz)>=.5&&speedOk(obs.speedKts,w.speedKts)));
+  }
   const count=matched.length+ruledOutBy.length;return {id,score:count?matched.length/count:0,matched,ruledOutBy};
  }).sort((a,b)=>b.score-a.score||(a.id<b.id?-1:a.id>b.id?1:0));
 }

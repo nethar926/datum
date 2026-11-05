@@ -1,12 +1,12 @@
 import {it,expect} from 'vitest';
 import {execFileSync} from 'node:child_process';
-import {catalog,surfaceTypes,createSurfacePool,deriveSignature,matchClasses,AcousticEngine,cpaScenario,knotsToMps,type ClassObservations,type IdKeys} from '../src/index.js';
+import {catalog,surfaceTypes,createSurfacePool,deriveSignature,updateDerivedSignature,effectiveParams,configurePropulsion,matchClasses,AcousticEngine,cpaScenario,knotsToMps,type ClassObservations,type IdKeys} from '../src/index.js';
 import {identityBands,varyPlantIdentity} from '../src/catalog/plantIdentity.js';
 const mid=(r:readonly number[]) => (r[0]+r[1])/2;
 const disjoint=(a:readonly number[],b:readonly number[])=>a[1]<b[0]||b[1]<a[0];
 const observations=(k:IdKeys):ClassObservations=>{
  const mode=k.engine?'SNORK':'NUC',visible=k.linesVisiblePerMode[mode];
- return {gridHz:k.gridHz,mode,lineFamilies:visible,familyFundamentalsHz:Object.fromEntries(k.harmonicFamilies.filter(f=>visible.includes(f.lineFamily)).map(f=>[f.lineFamily,mid(f.fundamentalHz)])),brToPsr:mid(k.ratios.brToPsr),gearRatio:mid(k.ratios.gear),tpk:mid(k.tpk),hydpHz:mid(k.hydp!.nominalHz),...(k.ratios.efrToCsr?{efrToCsr:mid(k.ratios.efrToCsr)}:{}),...(k.ratios.msrToMotorShaft?{msrToMotorShaft:mid(k.ratios.msrToMotorShaft),msrToPsr:mid(k.ratios.msrToPsr!)}:{}),...(k.turbineRateHz?{turbineRateHz:mid(k.turbineRateHz),reductionRatio:mid(k.reductionRatio!),...(k.gearMeshHz?.length?{gearMeshHz:mid(k.gearMeshHz[0])}:{}),turboGenHz:mid(k.turboGenHz![0])}:{}),...(k.edas?{edaCfrMultiples:k.edas.map(e=>mid(e.cfrMultiple))}:{})};
+ return {gridHz:k.gridHz,mode,lineFamilies:visible,familyFundamentalsHz:Object.fromEntries(k.harmonicFamilies.filter(f=>visible.includes(f.lineFamily)).map(f=>[f.lineFamily,mid(f.fundamentalHz)])),brToPsr:mid(k.ratios.brToPsr),gearRatio:mid(k.ratios.gear),tpk:mid(k.tpk),hydpHz:mid(k.hydp!.nominalHz),...(k.ratios.efrToCsr?{efrToCsr:mid(k.ratios.efrToCsr)}:{}),...(k.ratios.msrToMotorShaft?{msrToMotorShaft:mid(k.ratios.msrToMotorShaft),msrToPsr:mid(k.ratios.msrToPsr!)}:{}),...(k.turbineRateHz?{turbineRateHz:mid(k.turbineRateHz),reductionRatio:mid(k.reductionRatio!),...(k.gearMeshHz?.length?{gearMeshHz:mid(k.gearMeshHz[0])}:{}),turboGenHz:mid(k.turboGenHz![0])}:{}),...(k.edas?{edaCfrMultiples:k.edas.map(e=>mid(e.cfrMultiple))}:{}),speedWindows:k.speedWindows.map(w=>w.kind==='SRC'?{kind:'SRC' as const,hz:mid([w.loHz,w.hiHz]),speedKts:mid(w.speedKts)}:{kind:'SWATH' as const,loHz:w.loHz,hiHz:w.hiHz,speedKts:mid(w.speedKts)})};
 };
 it('all 231 class pairs have at least two non-overlapping physical ID keys',()=>{
  for(let i=0;i<catalog.classes.length;i++)for(let j=i+1;j<catalog.classes.length;j++){const a=catalog.classes[i].idKeys,b=catalog.classes[j].idKeys,aw=a.speedWindows.find(w=>w.kind==='SWATH')!,bw=b.speedWindows.find(w=>w.kind==='SWATH')!;
@@ -49,4 +49,23 @@ it('all 22 classes and twelve seeded hull draws obey nominal truth CSR/CFR/EFR a
 });
 it('speed window display names are numbered SRC and SWATH labels for every class',()=>{
  for(const c of catalog.classes){let src=0,swath=0;for(const w of c.speedWindows!)expect(w.name).toBe(w.kind==='SRC'?`SRC-${++src}`:`SWATH-${++swath}`);}
+});
+
+it('seeded-truth speedGated windows match SRC/SWATH idKeys; off-window SRC rules out; matcher never reads truth',()=>{
+ const src=matchClasses.toString();expect(src.includes('truth')).toBe(false);expect(src.includes('AcousticEngine')).toBe(false);expect(src.includes('speedGated')).toBe(false);
+ for(const c of catalog.classes){
+  const row=[{id:c.id,idKeys:c.idKeys}],mode=c.plant==='nuclear'?'NUC' as const:'SNORK' as const,depth=c.plant==='diesel'?Math.max(5,c.snorkelDepthM/2):100;
+  for(const kind of ['SRC','SWATH'] as const){
+   const design=c.speedWindows!.find(w=>w.kind===kind)!,speed=(design.speedKts[0]+design.speedKts[1])/2;
+   for(let seed=0;seed<3;seed++){
+    const s=deriveSignature(c,'base',{speedKn:speed,depthM:depth,mode});configurePropulsion(s,seed,`window-${c.id}`,mode);updateDerivedSignature(s,effectiveParams(c),speed,depth,mode);
+    const gate=s.speedGated!.find(g=>g.kind===kind&&g.active)!;expect(gate).toBeTruthy();
+    const obs:ClassObservations={speedWindows:[gate.kind==='SRC'?{kind:'SRC',hz:gate.hz,speedKts:speed}:{kind:'SWATH',loHz:gate.loHz,hiHz:gate.hiHz,speedKts:speed}]};
+    const hit=matchClasses(obs,row)[0];expect(hit.matched).toContain(kind);expect(hit.ruledOutBy).not.toContain(kind);expect(hit.score).toBe(1);
+   }
+  }
+  const srcs=c.idKeys.speedWindows.filter(w=>w.kind==='SRC'),outside=Math.min(...srcs.map(w=>w.speedKts[0]))-2,hz=mid([srcs[0].loHz,srcs[0].hiHz]);
+  const miss=matchClasses({speedWindows:[{kind:'SRC',hz,speedKts:outside}]},row)[0];expect(miss.ruledOutBy).toContain('SRC');expect(miss.matched).not.toContain('SRC');
+  expect(matchClasses({speedWindows:[{kind:'SRC',hz,speedKts:outside}]},[{id:c.id,idKeys:structuredClone(c.idKeys)}])).toEqual(matchClasses({speedWindows:[{kind:'SRC',hz,speedKts:outside}]},row));
+ }
 });

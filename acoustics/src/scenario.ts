@@ -45,7 +45,7 @@ const receiver=(id:string,x:number,y:number):Buoy => ({id,x,y,depth:40,course:0,
 /** Generic fictional maritime patrol aircraft operator lays these patterns; no real platform signatures. */
 export function cpaScenario():Scenario {return {v:1,seed:42,mode:'aviation',bins:1024,fmax:500,time:0,ownship:{x:0,y:0,depth:0,course:0,speed:100},environment:{seaState:1,shipping:'light',soundSpeed:1500,spreading:'spherical',transition:1000},contacts:[{id:'fictional-a',category:'subsurface',classificationTarget:true,x:-3000,y:300,depth:80,course:Math.PI/2,speed:8,motion:[{at:0,course:Math.PI/2,speed:8,depth:80}],params:{...fictionalSignature}}],buoys:[receiver('buoy-1',0,0)]};}
 export function busyScenario():Scenario {const s=cpaScenario();s.seed=131;s.environment.seaState=4;s.environment.shipping='heavy';s.contacts=[];s.buoys=[];
-  for(let i=0;i<12;i++)s.contacts.push({id:`fictional-${i}`,x:(i%4-2)*1800,y:(Math.floor(i/4)-1)*2100,depth:30+15*i,course:i*.7,speed:2+i%7,motion:[{at:0,course:i*.7,speed:2+i%7,depth:30+15*i}],params:{...fictionalSignature,label:`Fictional vessel ${i}`,tonalHz:55+i*11,shaftHz:1+i*.13}});
+  for(let i=0;i<12;i++)s.contacts.push({id:`fictional-${i}`,x:(i%4-2)*1800,y:(Math.floor(i/4)-1)*2100,depth:30+15*i,course:i*.7,speed:2+i%7,motion:[{at:0,course:i*.7,speed:2+i%7,depth:30+15*i}],params:{...fictionalSignature,label:`Vessel ${i}`,tonalHz:55+i*11,shaftHz:1+i*.13}});
   for(let i=0;i<8;i++)s.buoys.push(receiver(`buoy-${i+1}`,(i%4-1.5)*1200,Math.floor(i/4)*1500));return s;
 }
 
@@ -92,6 +92,6 @@ export const exampleScenarios:Record<string,Scenario>={'m1-cpa-pass':cpaScenario
 export function lloydsCpaScenario(seed=712):Scenario {
  const s=cpaScenario();s.seed=seed;s.bins=4096;s.fmax=s.fMax=6000;s.fBin=6000/4095;s.band=[0,6000];s.environment.seaState=0;s.environment.shipping='light';s.buoys[0].depth=60;
  const c=s.contacts[0];c.id='fictional-broadband-pass';c.x=-1800+(seed%101);c.y=2500;c.depth=40;c.speed=14;c.motion=[{at:0,course:Math.PI/2,speed:14,depth:40}];
- c.params={label:'Fictional Cavitating Training Contact',shaftHz:2.5,blades:5,tonalHz:100,levelDb:175,modulation:.6,tonals:[],cavitationPower:.3};return s;
+ c.params={label:'Cavitating Training Contact',shaftHz:2.5,blades:5,tonalHz:100,levelDb:175,modulation:.6,tonals:[],cavitationPower:.3};return s;
 }
 exampleScenarios['m2-lloyds-cpa']=lloydsCpaScenario();
