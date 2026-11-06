@@ -53,3 +53,5 @@ export const IcShare = (p: P) => <S {...p}><path d="M12 14.5V4.5" /><path d="M8.
 export const IcPlusBox = (p: P) => <S {...p}><rect x="4" y="4" width="16" height="16" rx="3.5" /><path d="M12 8.5v7M8.5 12h7" /></S>
 /** Overflow / Android menu: three vertical dots. */
 export const IcMore = (p: P) => <S {...p}><circle cx="12" cy="5.5" r="1.35" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none" /><circle cx="12" cy="18.5" r="1.35" fill="currentColor" stroke="none" /></S>
+/** Lock (cursor locked): body + shackle. Drawn in-house; not an SF Symbol. */
+export const IcLock = (p: P) => <S {...p}><rect x="7" y="11" width="10" height="8.5" rx="1.6" /><path d="M9 11V8.2a3 3 0 0 1 6 0V11" /></S>

@@ -32,6 +32,7 @@ import { bearingTo, type FixSource, type ManualBearings } from './tactical/manua
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
+import { EMPTY_LOCKS, toggleLock, type CursorKind } from './gram/cursorLock'
 import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
 import { CONTRAST_DEFAULT, CONTRAST_KEY, CONTRAST_MAX, CONTRAST_MIN, CONTRAST_STEP, clampContrast, loadContrast } from './gram/contrast'
@@ -50,7 +51,7 @@ import { DETENT_SPRING_MS, detentProgress, segmentCssVars, type PlotDetent } fro
 import { CutController } from './cuts/session'
 import { CutsTab } from './cuts/CutsTab'
 import { listCutSeeds } from './cuts/api'
-import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
+import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcLock, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
 import { Splash } from './ui/Splash'
 import { hardReloadApp } from './ui/appReload'
 import { useStandalone, useUpdateAvailable } from './ui/useAppUpdate'
@@ -242,6 +243,9 @@ export default function App() {
   useEffect(() => { if (!compact || tab !== 'live') setTabMin(false) }, [compact, tab])
   useEffect(() => installAudioUnlock(), [])
   const [tool, setTool] = useState<'select' | 'dop' | 'lm' | 'harm'>('select')
+  // CURLOCK: session-only locks for HARM / DOP / LM (default scrub lock lives inside Gram).
+  const [locks, setLocks] = useState(EMPTY_LOCKS)
+  const flipLock = (kind: CursorKind) => setLocks((s) => toggleLock(s, kind))
   // HORZ: horizontal hairline on the default gram cursor (off by default, persisted).
   const [horzOn, setHorzOn] = useState<boolean>(loadHorz)
   useEffect(() => saveHorz(horzOn), [horzOn])
@@ -251,6 +255,7 @@ export default function App() {
   const harmGrab = useRef<number | null>(null)
   const [harmProbe, setHarmProbe] = useState<number | null>(null)
   const harmDrag = (phase: 'start' | 'move' | 'end', hz: number, _ago = 0, shift = false) => {
+    if (locks.harm && phase !== 'end') return
     // Shift-click (or PROBE toggle on touch) with a fundamental set drops a ratio probe instead of moving harmonics.
     if ((shift || harmProbeOn) && harmF0 !== null) { if (hz > 0) { setHarmProbe(hz); setHarmProbeOn(false) }; harmGrab.current = null; return }
     if (phase === 'start') {
@@ -262,9 +267,13 @@ export default function App() {
       }
       const k = nearestHarmonic(harmF0, hz); harmGrab.current = k; setHarmK(k); return
     }
-    const k = harmGrab.current
-    if (k !== null && hz > 0) { setHarmF0(hz / k); setHarmFam(null) }
-    if (phase === 'end') harmGrab.current = null
+    // Move only: applying hz on end made a lock-tap jump F0 to the tap point.
+    if (phase === 'move') {
+      const k = harmGrab.current
+      if (k !== null && hz > 0) { setHarmF0(hz / k); setHarmFam(null) }
+      return
+    }
+    harmGrab.current = null
   }
   const dopMode = tool === 'dop'
   // One gram arm at a time: DOP drops vernier/PROBE/BRG/drop; BRG/drop/HARM/LM/PROBE/vernier drop DOP.
@@ -280,13 +289,17 @@ export default function App() {
   // Doppler ruler (f0 at CPA, f1 on the approach leg, f2 mirrored): its pass geometry also feeds Lloyd's mirror.
   const ruler = useMemo(() => new RulerStore(acousticsV11.fitCpaFromDoppler), [])
   const rulerCommit = useSyncExternalStore(ruler.subscribe, ruler.getCommitted)
-  useEffect(() => { ruler.clear() }, [ruler, stream, st.band])
+  useEffect(() => { ruler.clear(); setLocks((s) => (s.dop ? { ...s, dop: false } : s)) }, [ruler, stream, st.band])
   const cpaGeom: CpaGeom | null = useMemo(() => {
     if (!ruler.placed || !(ruler.geom.speedMps > 0)) return null
     const g = ruler.fit?.ok ? ruler.fit : ruler.geom
     return { tCpaS: g.tCpaS, rCpaM: g.rCpaM, speedMps: g.speedMps }
   }, [ruler, rulerCommit]) // eslint-disable-line react-hooks/exhaustive-deps
-  const lmDrag = useLloydDrag(lm, setLm, cpaGeom, st.simT)
+  const lmDragRaw = useLloydDrag(lm, setLm, cpaGeom, st.simT)
+  const lmDrag = (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => {
+    if (locks.lm && phase !== 'end') return
+    lmDragRaw(phase, hz, agoS, shift)
+  }
   const toggleLm = () => {
     if (tool === 'lm') { setTool('select'); return }
     if (lm.tCpaS === 0) setLm({ ...lm, tCpaS: st.simT - 100 })
@@ -556,7 +569,7 @@ export default function App() {
       {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
     </select>
   )
-  const clearHarm = () => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false) }
+  const clearHarm = () => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false); setLocks((s) => s.harm ? { ...s, harm: false } : s) }
   const freshCount = st.tactical
     ? freshRays(manual, manualAges, st.tactical.buoys, st.tactical.simT, FRESH_WINDOW_S).length
     : 0
@@ -590,7 +603,7 @@ export default function App() {
         <IcDop /><span>DOP</span></button>
       {ruler.placed && <button className="tool sub" onClick={() => applyCenter(ruler.s.f0Hz)} data-testid="dop-center" title="Center the gram on f0 (C while DOP is armed)."><IcTarget /><span>CTR f0</span></button>}
       {ruler.placed && !ruler.s.linked && <button className="tool sub" onClick={() => ruler.relink()} data-testid="dop-link" title="Re-link f2 to the mirror of f1"><IcLink /><span>Link</span></button>}
-      {ruler.placed && <button className="tool sub" onClick={() => ruler.clear()} data-testid="dop-clear" aria-label="Clear Doppler ruler"><IcTrash /><span>Clear</span></button>}
+      {ruler.placed && <button className="tool sub" onClick={() => { ruler.clear(); setLocks((s) => s.dop ? { ...s, dop: false } : s) }} data-testid="dop-clear" aria-label="Clear Doppler ruler"><IcTrash /><span>Clear</span></button>}
       <button className="tool" aria-pressed={tool === 'harm'} aria-label="HARM" onClick={() => {
         if (tool === 'harm') { setTool('select'); return }
         setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('harm')
@@ -768,9 +781,12 @@ export default function App() {
                 onCenterFreq={applyCenter} onCursorHz={setCursorHz} cursorSuffix={focusSuffix} bearingAtRef={bearingAtRef}
                 onPickPoint={isPickFreq(brgArm) ? (hz) => { sendBrgAtFreq(hz) }
                   : vernierPick ? (hz) => centerVernier(hz)
-                  : dopMode ? (hz, ago) => ruler.tap(hz, st.simT - ago)
+                  : dopMode ? (hz, ago) => { if (locks.dop) { flipLock('dop'); return }; ruler.tap(hz, st.simT - ago) }
                   : harmProbeOn && harmF0 !== null ? (hz) => { setHarmProbe(hz); setHarmProbeOn(false) } : undefined}
                 onDragPoint={isPickFreq(brgArm) || vernierPick || (harmProbeOn && harmF0 !== null) ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
+                dragLocked={(tool === 'harm' && locks.harm) || (tool === 'lm' && locks.lm)}
+                dragLockable={(tool === 'harm' && harmF0 !== null) || tool === 'lm'}
+                onDragLockTap={() => flipLock(tool === 'lm' ? 'lm' : 'harm')}
                 horz={horzOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
                 overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
@@ -778,11 +794,11 @@ export default function App() {
                   {harmF0 !== null && harmProbe !== null && harmProbe >= ctx.view.lo && harmProbe <= ctx.view.hi && (
                     <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(harmProbe, ctx.view, ctx.width) }}><span>×{(harmProbe / harmF0).toFixed(2)}</span></div>)}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
-                  {(ruler.placed || dopMode) && <DopplerOverlay ctx={ctx} store={ruler} nowS={st.simT} active={dopMode} />}
+                  {(ruler.placed || dopMode) && <DopplerOverlay ctx={ctx} store={ruler} nowS={st.simT} active={dopMode} locked={locks.dop} onLockTap={() => flipLock('dop')} />}
                 </>) : undefined} />
             )}
-            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, cfg ? fullView(cfg).hi : BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
-            {(dopMode || ruler.placed) && <DopplerReadout store={ruler} fBin={cfg?.fBin ?? 1} />}
+            {(tool === 'harm' || harmF0 !== null) && <div className={`gram-note readout harm-note${locks.harm ? ' locked' : ''}`} data-testid="harm-readout" data-locked={locks.harm ? '1' : '0'}>{locks.harm && <IcLock size={11} className="cursor-lock-ic" />}{harmText(harmF0, harmK, cfg ? fullView(cfg).hi : BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
+            {(dopMode || ruler.placed) && <DopplerReadout store={ruler} fBin={cfg?.fBin ?? 1} locked={locks.dop} />}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">
                 <div className="seg" role="group" aria-label="Lloyd's mirror basis">
@@ -802,7 +818,7 @@ export default function App() {
                     <button type="button" onClick={() => setLm({ ...lm, tCpaS: lm.tCpaS + 10 })} title="CPA time +10 s">CPA +</button>
                   </div>
                 )}
-                <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
+                <span className={`lm-read${locks.lm ? " locked" : ""}`} data-testid="lm-readout" data-locked={locks.lm ? "1" : "0"}>{locks.lm && <IcLock size={11} className="cursor-lock-ic" />}{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
               </div>
             )}
             {gramMode === 'difar' && wheelOpen && <DifarApplet wheel={wheel} onChange={setWheel} onClose={() => setWheelOpen(false)} />}

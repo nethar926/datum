@@ -56,6 +56,12 @@ button, select { font: inherit; color: inherit; }
 .axis-y span { left: 6px; transform: translateY(-50%); }
 .tick-x { position: absolute; top: 0; width: 1px; height: 4px; background: var(--phosphor-dim); }
 .cursor-readout { position: absolute; top: 6px; left: 8px; font: 11px/1 var(--font-mono); color: var(--phosphor); pointer-events: none; text-shadow: 0 0 4px #000; }
+.cursor-readout { display: inline-flex; align-items: center; gap: 4px; }
+.cursor-readout .cursor-lock-ic { flex: none; opacity: .95; filter: drop-shadow(0 0 2px #000); }
+.cursor-readout.locked { color: var(--phosphor); }
+.gram-note .cursor-lock-ic, .readout .cursor-lock-ic { display: inline-block; vertical-align: -2px; margin-right: 4px; }
+.harm-note.locked, .dop-note.locked, .lm-note.locked { outline: 1px solid rgba(255,255,255,.2); }
+
 .gl-error { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); padding: var(--space-5); text-align: center; }
 .plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .sel-marker { position: absolute; top: 0; bottom: 22px; width: 0; border-left: 1px dashed var(--plot-fix); opacity: .7; pointer-events: none; }

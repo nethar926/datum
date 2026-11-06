@@ -2,6 +2,8 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { freqToX, xToFreq } from './axis'
 import type { OverlayCtx } from './Gram'
 import { capDpr, exceedsSlop } from '../touch/gestures'
+import { isLockTap } from './cursorLock'
+import { IcLock } from '../ui/icons'
 import { rulerHz, rulerText, type Handle, type RulerStore } from './dopplerRuler'
 import { newestAtBottom, timeFromY, yFromTime } from './timeAxis'
 
@@ -19,11 +21,11 @@ const LABEL: Record<Handle, string> = { f0: 'f0', f1: 'f1', f2: 'f2' }
  * Everything that moves is written imperatively from a rAF loop (no React render per drag frame). Handles take their
  * own pointers (captured, touch-action: none), so gram pan / pinch / other cursors never see a handle drag.
  */
-export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; store: RulerStore; nowS: number; active: boolean }) {
+export function DopplerOverlay({ ctx, store, nowS, active, locked = false, onLockTap }: { ctx: OverlayCtx; store: RulerStore; nowS: number; active: boolean; locked?: boolean; onLockTap?: () => void }) {
   const layer = useRef<HTMLDivElement>(null), cv = useRef<HTMLCanvasElement>(null)
   const hEls = useRef<Record<Handle, HTMLDivElement | null>>({ f0: null, f1: null, f2: null })
   const live = useRef({ ctx, nowS }); live.current = { ctx, nowS }
-  const grab = useRef<{ h: Handle; id: number; x0: number; y0: number; dx: number; dy: number; moved: boolean } | null>(null)
+  const grab = useRef<{ h: Handle; id: number; x0: number; y0: number; dx: number; dy: number; moved: boolean; t0: number } | null>(null)
 
   useEffect(() => {
     const el = layer.current, c = cv.current
@@ -91,6 +93,7 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return // Esc already used (bearing arm, drop)
       if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (e.key === 'Escape') { if (store.placed) { store.clear(); e.preventDefault() } return }
+      if (locked) return // CURLOCK: arrows don't nudge a locked ruler
       const k = e.shiftKey ? 10 : 1
       // Arrows move the handle on screen. Horizontal = Hz; vertical = time, signed so "up" is toward the top of the gram.
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -106,7 +109,7 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, store])
+  }, [active, store, locked])
 
   const pointAt = (e: React.PointerEvent, dx: number, dy: number) => {
     const el = layer.current!, r = (gramCanvas(el) ?? el).getBoundingClientRect(), { ctx: o, nowS: now } = live.current
@@ -118,12 +121,13 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic pointer */ }
     const r = e.currentTarget.getBoundingClientRect()
     // Keep the grab offset so the point doesn't jump under the finger.
-    grab.current = { h, id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: e.clientX - (r.left + r.width / 2), dy: e.clientY - (r.top + r.height / 2), moved: false }
+    grab.current = { h, id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: e.clientX - (r.left + r.width / 2), dy: e.clientY - (r.top + r.height / 2), moved: false, t0: e.timeStamp }
     store.select(h)
   }
   const move = (e: React.PointerEvent<HTMLDivElement>) => {
     const G = grab.current; if (!G || G.id !== e.pointerId) return
     e.stopPropagation()
+    if (locked) return // CURLOCK: locked ruler ignores drags
     if (!G.moved && !exceedsSlop(G.x0, G.y0, e.clientX, e.clientY, 4)) return
     G.moved = true
     const p = pointAt(e, G.dx, G.dy); store.drag(G.h, p.hz, p.t)
@@ -132,12 +136,15 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
     const G = grab.current; if (!G || G.id !== e.pointerId) return
     e.stopPropagation(); grab.current = null
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
+    const tap = !G.moved && isLockTap(e.clientX - G.x0, e.clientY - G.y0, e.timeStamp - G.t0)
+    // CURLOCK: tap a handle toggles the ruler lock (does not move f0/f1/f2).
+    if (tap && onLockTap) { onLockTap(); return }
     // Tap on an unlinked f2 (legacy) re-links it to the f1 mirror; normal f2 drags stay linked and mirror f1.
     if (!G.moved && G.h === 'f2' && !store.s.linked) { store.relink(); return }
-    store.changed(true)
+    if (!locked) store.changed(true)
   }
   return (
-    <div ref={layer} className={`dop-layer${active ? ' active' : ''}`} data-testid="dop-layer">
+    <div ref={layer} className={`dop-layer${active ? ' active' : ''}${locked ? ' locked' : ''}`} data-testid="dop-layer" data-locked={locked ? '1' : '0'}>
       <canvas ref={cv} className="dop-curve" data-testid="dop-curve" aria-hidden />
       {HANDLES.map((k) => (
         <div key={k} ref={(e) => { hEls.current[k] = e }} className={`dop-handle h-${k}`} data-testid={`dop-${k}`} role="button" tabIndex={active ? 0 : -1}
@@ -152,10 +159,11 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
 }
 
 /** Live readout under the gram (re-renders only on ruler changes). */
-export function DopplerReadout({ store, fBin }: { store: RulerStore; fBin: number }) {
+export function DopplerReadout({ store, fBin, locked = false }: { store: RulerStore; fBin: number; locked?: boolean }) {
   useSyncExternalStore(store.subscribe, store.getVersion)
   const close = store.placed && (store.s.f1Hz - store.s.f0Hz) / Math.max(1e-9, store.m.hzPerPx) < 8
-  return <div className="gram-note readout dop-note" data-testid="dop-readout">
+  return <div className={`gram-note readout dop-note${locked ? ' locked' : ''}`} data-testid="dop-readout" data-locked={locked ? '1' : '0'}>
+    {locked && <IcLock size={11} className="cursor-lock-ic" />}
     {rulerText(store.placed, store.geom, store.s.linked, fBin, store.fit?.ok ? store.fit : null)}
     {store.placed && <span className="dop-hint">{close ? '  ZOOM IN TO SEE ΔF' : store.sel ? `  SEL ${store.sel.toUpperCase()}` : ''}</span>}
   </div>

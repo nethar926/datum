@@ -14,6 +14,8 @@ import { freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 import { placeFreqAxisTicks } from './freqAxis'
 import { bandLimitHz, fullView, minSpanOf } from './res'
 import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
+import { isLockTap } from './cursorLock'
+import { IcLock } from '../ui/icons'
 import { agoFromY, formatZulu, formatZuluSec, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
 import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
@@ -57,6 +59,14 @@ interface Props {
   dir?: GramDir
   /** Wall-clock ms (UTC) corresponding to sim t=0; used for Zulu Y labels. */
   zuluOriginMs?: number
+  /**
+   * CURLOCK: when true, onDragPoint moves are ignored (HARM/LM locked by the parent). Taps still fire
+   * onDragLockTap when dragLockable so the parent can unlock.
+   */
+  dragLocked?: boolean
+  /** When true, a classified tap calls onDragLockTap instead of falling through to default-cursor lock. */
+  dragLockable?: boolean
+  onDragLockTap?: () => void
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
@@ -68,7 +78,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -78,9 +88,13 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const [glGen, setGlGen] = useState(0)
   const [pressHint, setPressHint] = useState(false)
   const [cursor, setCursor] = useState<number | null>(null)
+  // CURLOCK: session-only default scrub lock (Cuts inherits; not persisted).
+  const [cursorLocked, setCursorLocked] = useState(false)
+  const cursorRef = useRef<number | null>(null)
   const [cross, setCross] = useState<{ hz: number; agoS: number; x: number; db: number } | null>(null)
   const [hoverAgo, setHoverAgo] = useState<number | null>(null)
   const histRef = useRef<LevelHistory | null>(null)
+  useLayoutEffect(() => { cursorRef.current = cursor }, [cursor])
   const brgHistRef = useRef<BearingHistory | null>(null)
   const [width, setWidth] = useState(800)
   const [height, setHeight] = useState(400)
@@ -347,11 +361,22 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     const anchor = xToFreq(e.clientX - rect.left, view, rect.width)
     onView(zoomView(view, anchor, e.deltaY < 0 ? 1.25 : 0.8, fMax, minSpan, fMin))
   }
-  // Pointer gestures (mouse, pen, touch). One finger: tap = pick/select, drag = tool drag or scrub cursor,
-  // long-press = crosshair details at that point, double-tap = full band. Two fingers: pinch zoom + pan.
+  // Pointer gestures (mouse, pen, touch). One finger: drag = scrub / tool drag (when unlocked),
+  // tap = toggle CURLOCK (no jump to tap point) or armed pick, long-press = crosshair, double-tap = full band.
+  // Two fingers: pinch zoom + pan. Tab-bar minimize stays on the workspace capture handlers in App.
   type P = { id: number; x: number; y: number; x0: number; y0: number; t0: number; type: string }
   const ptr = useRef(new Map<number, P>())
-  const g = useRef({ pinch: null as null | { v: FreqView; a0: number; b0: number }, dragging: false, moved: false, longFired: false, longTimer: 0, lastTap: { t: 0, x: 0, y: 0 } })
+  const g = useRef({
+    pinch: null as null | { v: FreqView; a0: number; b0: number },
+    dragging: false, moved: false, longFired: false, longTimer: 0,
+    lastTap: { t: 0, x: 0, y: 0, lockedBefore: false },
+    /** Cursor Hz before this gesture — restored on a lock tap so the tap point never jumps the cursor. */
+    hzAtDown: null as number | null,
+    /** Lock state at pointerdown (double-tap undoes a first-tap toggle). */
+    lockedAtDown: false,
+    /** dragLockable captured at pointerdown — ignore mid-gesture re-renders after a place. */
+    dragLockableAtDown: false,
+  })
   const local = (e: React.PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height } }
   const ago = (y: number, h: number) => agoFromY(y, h, historyS, dir)
   const showAt = (x: number, y: number, w: number, h: number, withCross: boolean) => {
@@ -378,6 +403,23 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       return { hz: c.hz, agoS: c.agoS, x: c.x, db }
     })
   }, [nowS, cfg, rowRate, fBin])
+  const restorePreGestureCursor = () => {
+    const hz = g.current.hzAtDown
+    setCursor(hz); onCursorHz?.(hz)
+    if (hz === null) setHoverAgo(null)
+  }
+  const applyDefaultLockToggle = () => {
+    // Restore first so a lock tap never commits the tap-point Hz.
+    restorePreGestureCursor()
+    const hz = g.current.hzAtDown
+    setCursorLocked((was) => {
+      // Only lock when there is a Hz to hold; unlocking is always allowed.
+      if (!was && hz === null) return false
+      return !was
+    })
+    // Commit selection to the locked Hz (outside the updater — no side effects in setState).
+    if (!cursorLocked && hz !== null) onSelectHz?.(hz)
+  }
   const onPDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic or already-released pointer */ }
@@ -392,27 +434,49 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     }
     if (ptr.current.size > 2) return
     G.moved = false; G.longFired = false; G.pinch = null
+    G.hzAtDown = cursorRef.current
+    G.lockedAtDown = cursorLocked
+    G.dragLockableAtDown = dragLockable
     setCross(null)
-    if (onDragPoint) { G.dragging = true; onDragPoint('start', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
+    // Tool drag (HARM/LM): start unless that tool cursor is locked.
+    if (onDragPoint && !dragLocked) { G.dragging = true; onDragPoint('start', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
+    else G.dragging = false
     if (e.pointerType !== 'mouse') {
-      showAt(x, y, w, h, false); setPressHint(true)
+      // Scrub preview under the finger only while the default cursor is unlocked.
+      if (!cursorLocked) showAt(x, y, w, h, false)
+      setPressHint(true)
       G.longTimer = window.setTimeout(() => {
         const p = ptr.current.get(e.pointerId); if (!p || G.moved || ptr.current.size !== 1) return
-        G.longFired = true; setPressHint(false); showAt(p.x, p.y, w, h, true)
+        G.longFired = true; setPressHint(false)
+        // Long-press crosshair may inspect under the finger without moving a locked cursor Hz.
+        if (cursorLocked) {
+          const hist = histRef.current
+          const hz = cursorRef.current
+          if (hz !== null) {
+            const agoS = ago(p.y, h)
+            const db = hist && cfg ? hist.at(agoS * rowRate, (hz - cfg.f0) / fBin) : NaN
+            setCross({ hz, agoS, x: p.x, db })
+          }
+        } else showAt(p.x, p.y, w, h, true)
       }, LONG_PRESS_MS)
     }
   }
   const onPMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y, w, h } = local(e), G = g.current, p = ptr.current.get(e.pointerId)
-    if (!p) { if (e.pointerType === 'mouse') showAt(x, y, w, h, false); return }
+    if (!p) {
+      // Mouse hover scrub: ignore while locked so the readout stays put.
+      if (e.pointerType === 'mouse' && !cursorLocked) showAt(x, y, w, h, false)
+      return
+    }
     p.x = x; p.y = y
     if (G.pinch && ptr.current.size >= 2) {
       const [a, b] = [...ptr.current.values()]
       onView(pinchView(G.pinch.v, G.pinch.a0, G.pinch.b0, a.x, b.x, w, fMax, minSpan, fMin)); return
     }
     if (!G.moved && exceedsSlop(p.x0, p.y0, x, y)) { G.moved = true; clearTimeout(G.longTimer); setPressHint(false) }
-    if (G.dragging) { if (G.moved) onDragPoint?.('move', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
-    showAt(x, y, w, h, G.longFired)
+    if (G.dragging && G.moved && !dragLocked) onDragPoint?.('move', xToFreq(x, view, w), ago(y, h), e.shiftKey)
+    if (!cursorLocked) showAt(x, y, w, h, G.longFired)
+    else if (horz) setHoverAgo(ago(y, h))
   }
   const onPUp = (e: React.PointerEvent<HTMLCanvasElement>, cancel = false) => {
     const { x, y, w, h } = local(e), G = g.current, p = ptr.current.get(e.pointerId)
@@ -420,17 +484,45 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     ptr.current.delete(e.pointerId); clearTimeout(G.longTimer); setPressHint(false)
     if (!p) return
     if (G.pinch) { if (ptr.current.size < 2) G.pinch = null; return }
-    if (G.dragging) { G.dragging = false; onDragPoint?.('end', xToFreq(x, view, w), ago(y, h), e.shiftKey); return }
+    const dt = e.timeStamp - p.t0
+    const tap = !cancel && !G.moved && !G.longFired && isLockTap(x - p.x0, y - p.y0, dt)
+    if (G.dragging) {
+      G.dragging = false
+      if (tap && G.dragLockableAtDown && onDragLockTap) {
+        // Tool lock tap: revert any start-phase side effects by ending without a move commit, then toggle.
+        onDragPoint?.('end', xToFreq(x, view, w), ago(y, h), e.shiftKey)
+        onDragLockTap()
+        return
+      }
+      onDragPoint?.('end', xToFreq(x, view, w), ago(y, h), e.shiftKey)
+      // Drag-end selects the scrub Hz when the default cursor is free (tap-to-select became tap-to-lock).
+      if (G.moved && !cursorLocked && !onPickPoint && cursorRef.current !== null) onSelectHz?.(cursorRef.current)
+      return
+    }
+    // Locked tool, no drag started: still allow a tap to unlock.
+    if (tap && (dragLocked || G.dragLockableAtDown) && onDragLockTap) { onDragLockTap(); return }
     if (cancel || G.moved || G.longFired) return
     // Tap.
     const hz = xToFreq(x, view, w), lt = G.lastTap
     if (p.type !== 'mouse' && e.timeStamp - lt.t < DOUBLE_TAP_MS && !exceedsSlop(lt.x, lt.y, x, y, 24)) {
-      G.lastTap = { t: 0, x: 0, y: 0 }; onView(full()); return
+      // Double-tap full band: undo a lock toggle the first tap may have applied, then zoom.
+      G.lastTap = { t: 0, x: 0, y: 0, lockedBefore: false }
+      // Undo the first tap's lock toggle so a double-tap zooms without changing lock.
+      if (!onPickPoint && !dragLockable) setCursorLocked(lt.lockedBefore)
+      restorePreGestureCursor()
+      onView(full()); return
     }
-    G.lastTap = { t: e.timeStamp, x, y }
-    if (onPickPoint) onPickPoint(hz, ago(y, h))
-    else onSelectHz?.(hz)
+    if (onPickPoint) { G.lastTap = { t: e.timeStamp, x, y, lockedBefore: G.lockedAtDown }; onPickPoint(hz, ago(y, h)); return }
+    // CURLOCK: classified tap toggles the default cursor lock and never jumps to the tap point.
+    if (tap || isLockTap(x - p.x0, y - p.y0, dt)) {
+      G.lastTap = { t: e.timeStamp, x, y, lockedBefore: G.lockedAtDown }
+      applyDefaultLockToggle(); return
+    }
+    G.lastTap = { t: e.timeStamp, x, y, lockedBefore: G.lockedAtDown }
+    // Non-tap click fallback (shouldn't normally hit): keep prior select behaviour.
+    onSelectHz?.(hz)
   }
+
   const selLabelText = selectedHz !== null ? selectedHz.toFixed(fBin < 0.1 ? 2 : 1) : ''
   const cursorReadoutText = cross
     ? null
@@ -461,11 +553,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   })()
 
   return (
-    <div className="gram" ref={gramBoxRef} data-testid={`${testId}-frame`} data-dir={dir}>
+    <div className="gram" ref={gramBoxRef} data-testid={`${testId}-frame`} data-dir={dir} data-cursor-locked={cursorLocked ? '1' : '0'} data-drag-locked={dragLocked ? '1' : '0'} data-drag-lockable={dragLockable ? '1' : '0'}>
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas key={glGen} ref={canvasRef} data-testid={testId} onWheel={onWheel}
           onPointerDown={onPDown} onPointerMove={onPMove} onPointerUp={(e) => onPUp(e)} onPointerCancel={(e) => onPUp(e, true)}
-          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size) { setCursor(null); setCross(null); setHoverAgo(null); onCursorHz?.(null) } }}
+          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size && !cursorLocked) { setCursor(null); setCross(null); setHoverAgo(null); onCursorHz?.(null) } }}
           onContextMenu={(e) => e.preventDefault()}
           className={pressHint ? 'pressing' : undefined}
           style={{ touchAction: 'none', cursor: onPickPoint ? 'crosshair' : onDragPoint ? 'ew-resize' : undefined }}
@@ -530,7 +622,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           <div className="cross-v" style={{ left: cross.x }} />
         </div>
       )}
-      {cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}{cursorSuffix ?? ''}</div> : cursor !== null && <div className="cursor-readout" ref={readoutElRef} data-testid={`${testId}-cursor`}>{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}{cursorSuffix ?? ''}</div>}
+      {cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}{cursorSuffix ?? ''}</div> : cursor !== null && <div className={`cursor-readout${cursorLocked ? ' locked' : ''}`} ref={readoutElRef} data-testid={`${testId}-cursor`} data-locked={cursorLocked ? '1' : '0'}>{cursorLocked && <IcLock size={11} className="cursor-lock-ic" />}<span>{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}{cursorSuffix ?? ''}</span></div>}
     </div>
   )
 }
