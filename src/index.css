@@ -59,7 +59,8 @@ button, select { font: inherit; color: inherit; }
 .gl-error { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); padding: var(--space-5); text-align: center; }
 .plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .sel-marker { position: absolute; top: 0; bottom: 22px; width: 0; border-left: 1px dashed var(--plot-fix); opacity: .7; pointer-events: none; }
-.sel-marker span { position: absolute; top: 4px; left: 4px; font: 10px/1 var(--font-mono); color: var(--plot-fix); text-shadow: 0 0 4px #000; }
+.sel-marker span { position: absolute; top: 4px; left: 4px; font: 10px/1 var(--font-mono); color: var(--plot-fix); text-shadow: 0 0 4px #000; white-space: nowrap; }
+.sel-marker span[data-side='left'] { left: auto; right: 4px; }
 .harm-marker { position: absolute; top: 0; bottom: 22px; width: 0; pointer-events: none; }
 .harm-marker.shaft { border-left: 1px dashed var(--plot-manual); opacity: .75; }
 .harm-marker.blade { border-left: 1.5px solid var(--plot-buoy); opacity: .9; }

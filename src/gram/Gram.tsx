@@ -14,6 +14,7 @@ import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from 
 import { bandLimitHz, fullView, minSpanOf } from './res'
 import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
 import { agoFromY, formatZulu, formatZuluSec, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
+import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
 
 export interface OverlayCtx { view: FreqView; width: number; cfg: GramConfig; historyS: number; dir: GramDir }
@@ -81,6 +82,9 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const brgHistRef = useRef<BearingHistory | null>(null)
   const [width, setWidth] = useState(800)
   const [height, setHeight] = useState(400)
+  const gramBoxRef = useRef<HTMLDivElement>(null)
+  const readoutElRef = useRef<HTMLDivElement>(null)
+  const [readoutBox, setReadoutBox] = useState<ReadoutRect | null>(null)
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
@@ -342,6 +346,28 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     if (onPickPoint) onPickPoint(hz, ago(y, h))
     else onSelectHz?.(hz)
   }
+  const selLabelText = selectedHz !== null ? selectedHz.toFixed(fBin < 0.1 ? 2 : 1) : ''
+  const cursorReadoutText = cross
+    ? null
+    : cursor !== null
+      ? `${cursor.toFixed(fBin < 0.1 ? 2 : 1)} ${unit} · bin ${Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}${cursorSuffix ?? ''}`
+      : null
+  useLayoutEffect(() => {
+    // Measure the live top-left readout so the sel-marker label clears real glyphs (FOCUS etc.).
+    const gEl = gramBoxRef.current, rEl = readoutElRef.current
+    if (!gEl || !rEl || cross) { setReadoutBox(null); return }
+    const gb = gEl.getBoundingClientRect(), rb = rEl.getBoundingClientRect()
+    setReadoutBox({ x: rb.left - gb.left, y: rb.top - gb.top, w: rb.width, h: rb.height })
+  }, [cursorReadoutText, cross, width, height, selectedHz, cursorSuffix])
+  const selPlace = (() => {
+    if (selectedHz === null || selectedHz < view.lo || selectedHz > view.hi) return null
+    const size = estimateSelLabelSize(selLabelText)
+    const markerX = freqToX(selectedHz, view, width)
+    // Prefer the measured box; fall back to a text estimate before the first layout pass.
+    const readout = readoutBox ?? estimateCursorReadout(cursorReadoutText)
+    return { markerX, ...placeSelMarkerLabel({ markerX, gramW: width, labelW: size.w, labelH: size.h, readout }) }
+  })()
+
   const crossText = (() => {
     if (!cross || !cfg) return ''
     const t = nowS - cross.agoS, h = histRef.current
@@ -351,7 +377,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   })()
 
   return (
-    <div className="gram" data-testid={`${testId}-frame`} data-dir={dir}>
+    <div className="gram" ref={gramBoxRef} data-testid={`${testId}-frame`} data-dir={dir}>
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas key={glGen} ref={canvasRef} data-testid={testId} onWheel={onWheel}
           onPointerDown={onPDown} onPointerMove={onPMove} onPointerUp={(e) => onPUp(e)} onPointerCancel={(e) => onPUp(e, true)}
@@ -403,8 +429,16 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         <span className="axis-x-unit" aria-hidden>{unit}</span>
       </div>
       <div />
-      {selectedHz !== null && selectedHz >= view.lo && selectedHz <= view.hi && (
-        <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(fBin < 0.1 ? 2 : 1)}</span></div>
+      {selPlace && (
+        <div className="sel-marker" data-testid={`${testId}-sel-marker`} style={{ left: selPlace.markerX }} aria-hidden>
+          <span
+            data-testid={`${testId}-sel-label`}
+            data-side={selPlace.side}
+            style={selPlace.side === 'right'
+              ? { top: selPlace.top, left: 8, right: 'auto' }
+              : { top: selPlace.top, right: 8, left: 'auto' }}
+          >{selLabelText}</span>
+        </div>
       )}
       {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS, dir })}</div>}
       {horz && hoverAgo !== null && cursor !== null && (
@@ -418,7 +452,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           <div className="cross-v" style={{ left: cross.x }} />
         </div>
       )}
-      {cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}{cursorSuffix ?? ''}</div> : cursor !== null && <div className="cursor-readout" data-testid={`${testId}-cursor`}>{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}{cursorSuffix ?? ''}</div>}
+      {cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}{cursorSuffix ?? ''}</div> : cursor !== null && <div className="cursor-readout" ref={readoutElRef} data-testid={`${testId}-cursor`}>{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}{cursorSuffix ?? ''}</div>}
     </div>
   )
 }
