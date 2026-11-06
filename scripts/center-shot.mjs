@@ -96,6 +96,12 @@ try {
 
     ok(await page.locator('[data-testid=hz-field]').count() === 1, F('hz field missing on iPad'))
 
+    // Leave the gram so B arms the tactical two-tap flow (hover+B is covered by brgfreq-shot).
+    const tacPre = page.locator('[data-testid=tactical]')
+    const tpb = await tacPre.boundingBox()
+    await page.mouse.move(tpb.x + tpb.width * 0.2, tpb.y + tpb.height * 0.2)
+    await page.waitForTimeout(100)
+
     const brg = page.locator('[data-testid=brg-btn]')
     ok(await brg.count() === 1, F('BRG missing'))
     const bb = await brg.boundingBox()
@@ -167,14 +173,16 @@ try {
     const tb = await tac.boundingBox()
     let phase = await tac.getAttribute('data-arm')
     console.log(`${slug}: arm phase after BRG = ${phase}`)
-    if (phase === 'pick-buoy') {
+    // Phone BRG arms pick-freq (gram tap) when a DIFAR is selected; pick-buoy otherwise.
+    ok(phase === 'pick-freq' || phase === 'pick-buoy' || phase === 'aim', F(`phone unexpected arm ${phase}`))
+    if (phase === 'pick-freq' || phase === 'pick-buoy') {
       let picked = false
       for (const [fx, fy] of [[0.5, 0.55], [0.45, 0.5], [0.55, 0.5], [0.4, 0.6], [0.6, 0.45], [0.35, 0.45]]) {
         await page.touchscreen.tap(tb.x + tb.width * fx, tb.y + tb.height * fy)
         await page.waitForTimeout(150)
         if (await tac.getAttribute('data-arm') === 'aim') { picked = true; break }
       }
-      ok(picked, F('phone: could not pick DIFAR buoy'))
+      ok(picked, F('phone: could not pick DIFAR buoy from pick-freq/pick-buoy'))
     }
     ok(await tac.getAttribute('data-arm') === 'aim', F(`phone expected aim, got ${await tac.getAttribute('data-arm')}`))
     await page.touchscreen.tap(tb.x + tb.width * 0.8, tb.y + tb.height * 0.2)

@@ -32,7 +32,8 @@ import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './g
 import { freqToX } from './gram/axis'
 import { CONTRAST_DEFAULT, CONTRAST_KEY, CONTRAST_MAX, CONTRAST_MIN, CONTRAST_STEP, clampContrast, loadContrast } from './gram/contrast'
 import { ctrLabel, parseHz, planCenter } from './gram/center'
-import { ARM_IDLE, armLabel, cancelArm, isArmed, pickBuoy, toggleArm, type BearingArm } from './tactical/bearingArm'
+import { ARM_IDLE, armLabel, cancelArm, isArmed, isPickFreq, pickBuoy, toggleArm, togglePickFreq, type BearingArm } from './tactical/bearingArm'
+import { OMNI_BRG_MSG, NO_BRG_MSG, formatBrgHud, bearingFromTracked } from './gram/brgFreq'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { Sheet } from './touch/Sheet'
@@ -101,6 +102,9 @@ export default function App() {
   const [cursorHz, setCursorHz] = useState<number | null>(null)
   const [ctrFlash, setCtrFlash] = useState<number | null>(null)
   const ctrTimer = useRef(0)
+  const [brgFlash, setBrgFlash] = useState<string | null>(null)
+  const brgTimer = useRef(0)
+  const bearingAtRef = useRef<((hz: number) => number | null) | null>(null)
   const [hzField, setHzField] = useState('')
   const [brgArm, setBrgArm] = useState<BearingArm>(ARM_IDLE)
   const [harmProbeOn, setHarmProbeOn] = useState(false)
@@ -221,22 +225,61 @@ export default function App() {
     const b = buoy
     return b && b.kind === 'difar' && b.state === 'live' ? b.id : null
   })()
+  const flashBrg = (msg: string) => {
+    setBrgFlash(msg); clearTimeout(brgTimer.current)
+    brgTimer.current = window.setTimeout(() => setBrgFlash(null), 1800)
+  }
+  const disarmOthersForBrg = () => {
+    setShowManual(true)
+    if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
+    setVernierPick(false); setHarmProbeOn(false)
+    if (tool === 'cpa' || tool === 'lm' || tool === 'harm') setTool('select')
+  }
+  /** Send a manual bearing from DIFAR per-bin data at hz for the current buoy. */
+  const sendBrgAtFreq = (hz: number): boolean => {
+    const b = buoy
+    if (!b) { flashBrg(NO_BRG_MSG); return true }
+    if (b.kind !== 'difar') { flashBrg(OMNI_BRG_MSG); return true }
+    if (b.state !== 'live') { flashBrg(NO_BRG_MSG); return true }
+    const sampled = bearingAtRef.current?.(hz) ?? null
+    const deg = sampled ?? bearingFromTracked(st.tactical?.bearings, b.id, hz)
+    if (deg === null) { flashBrg(NO_BRG_MSG); return true }
+    onManual(b.id, deg, true)
+    setBrgArm(ARM_IDLE)
+    flashBrg(formatBrgHud(deg, hz, b.channel))
+    return true
+  }
+  /** Desktop/iPad: if the pointer is over the gram, B sends BRG at cursorHz; else arm tactical. */
+  const tryBrgFromCursor = (): boolean => {
+    if (cursorHz === null) return false
+    return sendBrgAtFreq(cursorHz)
+  }
   const toggleBrg = () => {
+    // Phone/touch has no hover: arm pick-freq when a live DIFAR is on screen; else tactical pick-buoy.
+    if (phone) {
+      setBrgArm((a) => {
+        if (isArmed(a)) return ARM_IDLE
+        disarmOthersForBrg()
+        if (selectedDifarId !== null) return togglePickFreq(ARM_IDLE)
+        return toggleArm(ARM_IDLE, null)
+      })
+      return
+    }
     setBrgArm((a) => {
       const next = toggleArm(a, selectedDifarId)
-      if (isArmed(next)) {
-        setShowManual(true)
-        // Only one plot arm at a time: put the drop palette away.
-        if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
-      }
+      if (isArmed(next)) disarmOthersForBrg()
       return next
     })
+  }
+  const onBrgButton = () => {
+    if (!phone && cursorHz !== null) { tryBrgFromCursor(); return }
+    toggleBrg()
   }
   // Drop pattern arm clears the bearing arm (and the reverse is in toggleBrg).
   const dropCapturing = useSyncExternalStore(drop.subscribe, () => dropCapturesPlot(drop.state))
   useEffect(() => { if (dropCapturing) setBrgArm(ARM_IDLE) }, [dropCapturing])
-  const keyRef = useRef({ centerFromSelection, toggleBrg, brgArm })
-  keyRef.current = { centerFromSelection, toggleBrg, brgArm }
+  const keyRef = useRef({ centerFromSelection, toggleBrg, tryBrgFromCursor, brgArm })
+  keyRef.current = { centerFromSelection, toggleBrg, tryBrgFromCursor, brgArm }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
@@ -245,7 +288,12 @@ export default function App() {
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
       const r = keyRef.current
       if (k === 'c') { e.preventDefault(); r.centerFromSelection(); return }
-      if (k === 'b') { e.preventDefault(); r.toggleBrg(); return }
+      if (k === 'b') {
+        e.preventDefault()
+        if (r.tryBrgFromCursor()) return
+        r.toggleBrg()
+        return
+      }
       if (k === 'Escape' && isArmed(r.brgArm)) { e.preventDefault(); setBrgArm(cancelArm()); return }
     }
     window.addEventListener('keydown', onKey)
@@ -414,6 +462,7 @@ export default function App() {
               </form>
             )}
             {ctrFlash !== null && <span className="ctr-readout" data-testid="ctr-readout" aria-live="polite">{ctrLabel(ctrFlash, cfg?.fBin)}</span>}
+            {brgFlash !== null && <span className="ctr-readout brg-readout" data-testid="brg-readout" aria-live="polite">{brgFlash}</span>}
             {cfg?.bandLimited && <span className="band-limit-tag" data-testid="band-limit-tag" title="Part of this band is above the simulated top frequency">BAND LIMIT</span>}
             {!phone && <span className="seg-label">BUOY</span>}
             <div className="seg" role="group" aria-label="Buoy channel">
@@ -432,9 +481,12 @@ export default function App() {
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
                 mode={gramMode} tactical={st.tactical} handoff={st.handoff}
-                onCenterFreq={applyCenter} onCursorHz={setCursorHz}
-                onPickPoint={vernierPick ? (hz) => centerVernier(hz) : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : harmProbeOn && harmF0 !== null ? (hz) => { setHarmProbe(hz); setHarmProbeOn(false) } : undefined}
-                onDragPoint={vernierPick || (harmProbeOn && harmF0 !== null) ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
+                onCenterFreq={applyCenter} onCursorHz={setCursorHz} bearingAtRef={bearingAtRef}
+                onPickPoint={isPickFreq(brgArm) ? (hz) => { sendBrgAtFreq(hz) }
+                  : vernierPick ? (hz) => centerVernier(hz)
+                  : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz }))
+                  : harmProbeOn && harmF0 !== null ? (hz) => { setHarmProbe(hz); setHarmProbeOn(false) } : undefined}
+                onDragPoint={isPickFreq(brgArm) || vernierPick || (harmProbeOn && harmF0 !== null) ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
                 crosshair={crossOn} nowS={st.simT}
                 overlay={cpaMarks.length || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
@@ -490,8 +542,8 @@ export default function App() {
               <button aria-pressed={showAuto} onClick={() => setShowAuto(!showAuto)} title="DIFAR-computed bearings (solid)">Auto</button>
               <button aria-pressed={showManual} onClick={() => setShowManual(!showManual)} title="Operator bearing cursors (dashed). Drag from a DIFAR buoy; double-click it to clear.">Man</button>
               <button className={`brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)}
-                onClick={toggleBrg}
-                title="Arm manual bearing: tap a DIFAR buoy, then tap the plot to aim (B). Esc cancels. Disarms the drop palette if it was armed. Drag still works.">{armLabel(brgArm)}</button>
+                onClick={onBrgButton}
+                title="Hover a DIFAR gram line and press B to send that bearing. On touch: BRG then tap the gram (or a buoy on the plot to aim). Esc cancels. Drag still works.">{armLabel(brgArm)}</button>
             </div>
             <span className="seg-label">FIX</span>
             <div className="seg" role="group" aria-label="Fix from">

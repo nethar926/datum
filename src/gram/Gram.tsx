@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { GramConfig, Tactical } from '../engine/contract'
 import { fillLineBearings, type GramMode } from './difarBearing'
+import { BearingHistory, BRG_RECENT_ROWS, sampleBearingAt } from './brgFreq'
 import type { SimClient } from '../engine/client'
 import { WaterfallRenderer } from '../gl/waterfall'
 import { NORM_CEIL_DB, NORM_FLOOR_DB, bakeMaps, texturesFor } from './bands'
@@ -42,6 +43,8 @@ interface Props {
   onCenterFreq?: (hz: number) => void
   /** Live cursor frequency (mouse move / touch scrub); null when the cursor leaves. */
   onCursorHz?: (hz: number | null) => void
+  /** Filled each frame with a sampler: Hz → DIFAR bearing deg (circular mean over recent rows), or null. */
+  bearingAtRef?: React.MutableRefObject<((hz: number) => number | null) | null>
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
@@ -53,7 +56,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0, handoff, onCenterFreq, onCursorHz }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0, handoff, onCenterFreq, onCursorHz, bearingAtRef }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -64,6 +67,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const [cursor, setCursor] = useState<number | null>(null)
   const [cross, setCross] = useState<{ hz: number; agoS: number; x: number } | null>(null)
   const histRef = useRef<LevelHistory | null>(null)
+  const brgHistRef = useRef<BearingHistory | null>(null)
   const [width, setWidth] = useState(800)
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
@@ -114,6 +118,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     rendererRef.current = r
     let level = new AutoLevel(N)
     let hist = new LevelHistory(HISTORY_ROWS, g.bins); histRef.current = hist
+    let brgHist = new BearingHistory(BRG_RECENT_ROWS, g.bins); brgHistRef.current = brgHist
+    if (bearingAtRef) bearingAtRef.current = (hz) => {
+      const c = viewRef.current.cfg; if (!c) return null
+      return sampleBearingAt(brgHist, c, hz)
+    }
     let histStream = viewRef.current.streamIndex
     let dirty = true, raf = 0
     let pendingCfgs: GramConfig[] = []
@@ -131,13 +140,17 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       // No pending bank (context lost/restored mid-handoff): route the new ids into a fresh bank of the new size.
       if (!r.hasPending()) { r.beginPending(h.to[0].bins, texturesFor(h.to)); pg = mk(h.to) }
       r.promotePending(bakeMaps(h.from, h.to, texturesFor(h.from), texturesFor(h.to)))
-      if (pg !== g) { g = pg; hist = new LevelHistory(HISTORY_ROWS, g.bins); histRef.current = hist; level = new AutoLevel(N) } else hist.clear()
+      if (pg !== g) {
+        g = pg; hist = new LevelHistory(HISTORY_ROWS, g.bins); histRef.current = hist
+        brgHist = new BearingHistory(BRG_RECENT_ROWS, g.bins); brgHistRef.current = brgHist
+        level = new AutoLevel(N)
+      } else { hist.clear(); brgHist.clear() }
       local = pendingLocal; pendingLocal = new Map(); pendingCfgs = []
       liveRef.current = h.to; promotedRef.current = h.to
       dirty = true
     })
     const off = client.onRows((rows) => {
-      if (viewRef.current.streamIndex !== histStream) { hist.clear(); histStream = viewRef.current.streamIndex }
+      if (viewRef.current.streamIndex !== histStream) { hist.clear(); brgHist.clear(); histStream = viewRef.current.streamIndex }
       const n = rows.streamIds.length
       if (!n) return
       const bd = (rows as { bearingDeg?: Float32Array }).bearingDeg
@@ -163,11 +176,14 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         if (!g.filtered) { g.norm.apply(rows.data, o, g.scratch, 0); r.pushRow(N + s, g.scratch, 0) }
         // Bearing ring stays row-aligned with the power ring (NaN rows for omni buoys).
         // Engine per-bin bearings when streamed; else interim colouring from the tracked line bearings.
-        if (bd && bd.length === rows.data.length) r.pushBearing(s, bd, o)
-        else {
+        if (bd && bd.length === rows.data.length) {
+          r.pushBearing(s, bd, o)
+          if (s === histStream) brgHist.push(bd, o)
+        } else {
           const tac = tacRef.current, c = liveRef.current[s]
           fillLineBearings(g.brgRow, c, tac?.buoys.find((x) => x.channel === c.channel), tac?.bearings)
           r.pushBearing(s, g.brgRow, 0)
+          if (s === histStream) brgHist.push(g.brgRow, 0)
         }
       }
       dirty = true
@@ -227,7 +243,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     return () => {
       cancelAnimationFrame(raf); clearTimeout(lostTimer); off(); offHandoff(); ro.disconnect()
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
-      r.dispose(); rendererRef.current = null; histRef.current = null; growRef.current = null
+      r.dispose(); rendererRef.current = null; histRef.current = null; brgHistRef.current = null
+      if (bearingAtRef) bearingAtRef.current = null; growRef.current = null
     }
   }, [client, configs.length > 0, rendererKey, HISTORY_ROWS])
 
