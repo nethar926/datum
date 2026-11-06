@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   agoFromY, yFromAgo, yFromTime, timeFromY, pctFromAgo, dtFromScreenDy,
-  newestAtBottom, parseGramDir, formatZulu, timeTickAges, flipUniform, DEFAULT_GRAM_DIR,
+  newestAtBottom, parseGramDir, formatZulu, formatZuluSec, timeTickAges, flipUniform, DEFAULT_GRAM_DIR,
 } from './timeAxis'
 
 describe('timeAxis direction', () => {
@@ -79,5 +79,13 @@ describe('timeAxis direction', () => {
     expect(timeTickAges(1200, 500).length).toBe(6)
     expect(timeTickAges(1200, 86)[0]).toBe(0)
     expect(timeTickAges(1200, 86).at(-1)).toBeCloseTo(1200)
+  })
+})
+
+describe('formatZuluSec', () => {
+  it('formats HHmmssZ in UTC', () => {
+    const origin = Date.UTC(2026, 10, 5, 2, 13, 0)
+    expect(formatZuluSec(47, origin)).toBe('021347Z')
+    expect(formatZuluSec(-1, origin)).toBe('021259Z')
   })
 })

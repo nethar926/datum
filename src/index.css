@@ -210,46 +210,7 @@ button, select { font: inherit; color: inherit; }
 }
 .gram canvas.pressing { outline: 1px solid rgba(92,255,122,.25); outline-offset: -1px; }
 
-/* Phones: compact top bar; everything else lives in a bottom sheet. */
-.toolbar.compact, .toolbar.compact:is(*) { flex-wrap: nowrap; gap: var(--space-2); padding: var(--space-1) var(--space-2); }
-.toolbar.compact .readout { min-width: 0; flex-shrink: 1; }
-.toolbar.compact .brand { margin-right: auto; }
-.layout-phonePortrait, .layout-phoneLandscape { gap: var(--space-2); }
-.layout-phonePortrait .panel-head, .layout-phoneLandscape .panel-head {
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; padding: var(--space-1) var(--space-2);
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
-}
-.layout-phonePortrait .panel-head::-webkit-scrollbar, .layout-phoneLandscape .panel-head::-webkit-scrollbar { display: none; }
-.layout-phonePortrait .panel-head .readout, .layout-phoneLandscape .panel-head .readout { flex-shrink: 0; }
-.layout-phonePortrait .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--space-2); }
-.layout-phoneLandscape .workspace { grid-template-columns: minmax(0, 1fr); position: relative; overflow: hidden; }
-.layout-phoneLandscape .tac-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 55%); z-index: 12;
-  transform: translateX(calc(100% + 16px)); transition: transform var(--motion) var(--ease); will-change: transform; }
-.layout-phoneLandscape .tac-panel.open { transform: none; }
-.tac-scrim { position: absolute; inset: 0; z-index: 11; background: rgba(0,0,0,.4); opacity: 0; pointer-events: none; transition: opacity var(--motion) var(--ease); }
-.tac-scrim.open { opacity: 1; pointer-events: auto; }
-.tac-toggle { flex-shrink: 0; }
-.truth-chip { position: absolute; left: 8px; bottom: 8px; z-index: 3; font: 600 11px/1 var(--font-mono); color: #e8c46a; background: rgba(4,10,8,.85); }
 
-/* Bottom sheet */
-.sheet-root { position: fixed; inset: 0; z-index: 30; pointer-events: none; transition: opacity var(--motion) var(--ease); }
-.sheet-root.open { pointer-events: auto; }
-.sheet-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.5); opacity: 0; transition: opacity var(--motion) var(--ease); }
-.sheet-root.open .sheet-scrim { opacity: 1; }
-.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 85dvh; display: flex; flex-direction: column;
-  background: var(--bg-1); border: 1px solid var(--hairline-strong); border-bottom: 0; border-radius: var(--radius-l) var(--radius-l) 0 0;
-  box-shadow: 0 -12px 32px rgba(0,0,0,.5); padding: 0 max(var(--space-4), env(safe-area-inset-right)) max(var(--space-4), env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
-  transform: translateY(100%); transition: transform var(--motion) var(--ease); will-change: transform; }
-.sheet-root.open .sheet { transform: none; }
-.sheet-grab { display: grid; place-items: center; height: 24px; touch-action: none; cursor: grab; }
-.sheet-grab i { width: 36px; height: 5px; border-radius: 3px; background: var(--hairline-strong); }
-.sheet-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--space-2); }
-.sheet-head h2 { margin: 0; font-size: 15px; }
-.sheet-body { overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; display: flex; flex-direction: column; gap: var(--space-3); }
-.sheet-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.sheet-col { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--hairline); }
-.sheet .truth-panel { position: static; max-width: none; max-height: none; overflow: visible; }
-.sheet .truth-bar { position: static; margin: 0 0 4px; }
 .cmp-sheet .compendium { top: max(24px, env(safe-area-inset-top)); border-radius: var(--radius-l) var(--radius-l) 0 0; border-top: 1px solid var(--hairline-strong);
   animation: sheet-up var(--motion) var(--ease); padding-bottom: env(safe-area-inset-bottom); }
 .layout-phonePortrait .cmp-body { flex-direction: column; }
@@ -284,11 +245,7 @@ button, select { font: inherit; color: inherit; }
 @keyframes gram-veil { from { opacity: .55; } to { opacity: 0; } }
 @media (pointer: coarse) { .res-step button.icon { min-width: 44px; } }
 .layout-phonePortrait .res-step .res-read { min-width: 13ch; }
-.layout-phonePortrait .panel-head.gram-tools { border-top: 1px solid var(--line, #22262c); border-bottom: 0; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
 @media (prefers-reduced-motion: reduce) { .res-step .res-read, .gram .gram-veil, .btn.vernier.pick { animation: none; } .gram .band-limit { transition: none; } }
-/* LOFAR panel has two head rows (view + tools); on phone portrait the tools row sits below the gram. */
-.panel.gram-panel { grid-template-rows: auto auto minmax(0, 1fr); }
-.layout-phonePortrait .panel.gram-panel { grid-template-rows: auto minmax(0, 1fr) auto; }
 
 /* Gram contrast slider (tools row). Touch-sized: 44 px hit area. */
 .contrast { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
@@ -421,14 +378,11 @@ button, select { font: inherit; color: inherit; }
 /* Phones: hint / confirm ride at the top of the plot, tools at the bottom; in portrait the plot grows while dropping. */
 .layout-phonePortrait .drop-bar, .layout-phoneLandscape .drop-bar { top: 6px; justify-content: space-between; }
 .layout-phonePortrait .drop-confirm, .layout-phoneLandscape .drop-confirm { width: 100%; }
-.layout-phonePortrait .workspace { transition: grid-template-rows var(--motion) var(--ease); }
-:root:is([data-drop='armed'], [data-drop='placing'], [data-drop='preview']) .layout-phonePortrait .workspace { grid-template-rows: minmax(0, .62fr) minmax(0, 1.6fr); }
 .plot canvas.tac-overlay { pointer-events: none; }
-/* Phone landscape: the tactical slide-over opens to full width while dropping, so the confirm bar fits one row. */
-.layout-phoneLandscape .tac-panel { transition: transform var(--motion) var(--ease), width var(--motion) var(--ease); }
-:root:is([data-drop='armed'], [data-drop='placing'], [data-drop='preview']) .layout-phoneLandscape .tac-panel { width: 100%; }
-.layout-phoneLandscape .drop-confirm { flex-wrap: nowrap; padding-block: 4px; }
-.layout-phoneLandscape .drop-readout { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.layout-phoneLandscape .drop-confirm { flex-wrap: wrap; padding-block: 4px; gap: 4px 8px; }
+/* Own row so the ghost string never collapses to 0 width beside the Drop/Cancel buttons. */
+.layout-phoneLandscape .drop-readout { flex: 1 0 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.layout-phoneLandscape .drop-actions { margin-left: 0; }
 /* m3-fe-center: center-on-frequency + manual bearing arm */
 .btn.center-btn { font: 600 11px/1 var(--font-mono); letter-spacing: .04em; color: #d6ffe2; border: 1px solid rgba(110, 220, 150, .7); background: rgba(50, 140, 80, .28); min-height: 44px; min-width: 44px; transition: background-color 150ms ease, border-color 150ms ease; }
 .btn.center-btn:hover, .btn.center-btn:focus-visible { background: rgba(60, 160, 90, .4); }
@@ -506,81 +460,6 @@ button, select { font: inherit; color: inherit; }
 .panel.gram-panel > .panel-head .buoy-seg::-webkit-scrollbar,
 .panel.tac-panel > .panel-head .seg::-webkit-scrollbar { display: none; }
 
-/* Phone portrait: taller gram (>=150 canvas) without crushing the tactical plot.
-   Both tracks must be able to shrink (minmax(0,…)) so 100dvh actually constrains them. */
-.layout-phonePortrait .workspace {
-  grid-template-rows: minmax(0, 1.7fr) minmax(160px, 1fr);
-  min-height: 0;
-  overflow: hidden;
-}
-.layout-phonePortrait .workspace-left,
-.layout-phonePortrait .panel.tac-panel {
-  min-height: 0;
-  overflow: hidden;
-}
-.layout-phonePortrait .panel.tac-panel {
-  min-height: 160px;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-.layout-phonePortrait .panel.tac-panel .panel-body,
-.layout-phonePortrait .panel.tac-panel .plot {
-  min-height: 120px;
-}
-.layout-phonePortrait .panel.gram-panel {
-  /* Reserve the waterfall first; chrome is single-line auto strips. */
-  grid-template-rows: auto minmax(160px, 1fr) auto;
-  min-height: 0;
-}
-.layout-phonePortrait .panel.gram-panel .panel-body { min-height: 0; }
-.layout-phonePortrait .gram { min-height: 160px; }
-.layout-phonePortrait .panel-head.gram-tools {
-  padding-block: 2px;
-  min-height: 44px;
-  max-height: 52px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-.layout-phonePortrait .panel.gram-panel > .panel-head {
-  /* Single compact strip — wrapping here stole the gram body (auto/0/auto). */
-  gap: 6px;
-  padding-block: 4px;
-  flex-wrap: nowrap !important;
-  max-height: 52px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  align-items: center;
-}
-.layout-phonePortrait .panel.gram-panel > .panel-head .vernier,
-.layout-phonePortrait .panel.gram-panel > .panel-head .buoy-seg,
-.layout-phonePortrait .panel.gram-panel > .panel-head [data-testid=band-seg] {
-  flex: 0 0 auto;
-}
-.layout-phonePortrait .panel.tac-panel > .panel-head {
-  flex-wrap: nowrap !important;
-  max-height: 52px;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-/* Phone landscape: taller gram; TAC lives in the toolbar (always on-screen) */
-.layout-phoneLandscape .workspace {
-  grid-template-rows: minmax(0, 1fr);
-  min-height: 0;
-}
-.layout-phoneLandscape .panel.gram-panel {
-  min-height: 0;
-  grid-template-rows: auto auto minmax(160px, 1fr);
-}
-.layout-phoneLandscape .panel.gram-panel .panel-body {
-  min-height: 120px;
-}
-.layout-phoneLandscape .gram { min-height: 120px; }
-.layout-phoneLandscape .toolbar.compact .tac-toggle {
-  flex-shrink: 0;
-  order: 2;
-}
-.layout-phoneLandscape .toolbar.compact [data-testid=menu-open] { order: 3; }
 
 /* Drop hint: sit with the tools at the bottom of the plot, not over the PPI centre */
 .drop-bar {
@@ -608,12 +487,18 @@ button, select { font: inherit; color: inherit; }
 .layout-phonePortrait .drop-bar .drop-hint,
 .layout-phoneLandscape .drop-bar .drop-hint {
   margin: 0;
+  /* Phones: short copy on two fixed lines (count over status) at its natural width, never ellipsized;
+     the drop tools beside it scroll instead. */
   flex: 0 0 auto;
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: none;
+  overflow: visible;
   white-space: nowrap;
+  line-height: 1.25;
 }
+.layout-phonePortrait .drop-bar .drop-hint-count,
+.layout-phoneLandscape .drop-bar .drop-hint-count { display: block; }
+.layout-phonePortrait .drop-bar .drop-hint-sep,
+.layout-phoneLandscape .drop-bar .drop-hint-sep { display: none; }
 .layout-phonePortrait .drop-bar .drop-tools,
 .layout-phoneLandscape .drop-bar .drop-tools {
   flex: 1 1 auto;
@@ -653,10 +538,3 @@ button, select { font: inherit; color: inherit; }
 /* Vernier: short label already on phone; prevent flex blowout */
 .btn.vernier { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
-/* Smooth layout transitions (150–200 ms) */
-.panel-head, .drop-bar, .tac-panel, .workspace, .gram {
-  transition: grid-template-rows var(--motion) var(--ease), transform var(--motion) var(--ease), opacity var(--motion) var(--ease);
-}
-@media (prefers-reduced-motion: reduce) {
-  .panel-head, .drop-bar, .tac-panel, .workspace, .gram { transition: none; }
-}

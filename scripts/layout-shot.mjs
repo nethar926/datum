@@ -79,6 +79,7 @@ const measure = async (page) => page.evaluate(() => {
     yLabels: axisY ? [...axisY.querySelectorAll('span')].map((s) => s.textContent) : [],
     xLabels: axisX ? [...axisX.querySelectorAll('span')].map((s) => s.textContent) : [],
     tacBox: tacOpen ? rect(tacOpen) : null,
+    plotBox: document.querySelector('[data-testid=tactical]') ? rect(document.querySelector('[data-testid=tactical]')) : null,
   }
 })
 
@@ -112,10 +113,11 @@ try {
       ok(!m.outside.filter((o) => /^TAC$/i.test(o.t)).length, F(`TAC outside`))
       ok(!m.overlaps.length, F(`${m.overlaps.length} overlaps e.g. ${JSON.stringify(m.overlaps.slice(0, 4))}`))
       ok(!m.small.length, F(`${m.small.length} targets < 44 e.g. ${JSON.stringify(m.small.slice(0, 6))}`))
-      if (slug === 'iphone-landscape') {
-        const t = m.tacBox
-        ok(!!t && t.w >= 44 && t.h >= 44 && t.x >= -1 && t.right <= m.vw + 2 && t.y >= -1 && t.bottom <= m.vh + 2,
-          F(`TAC not reachable (${JSON.stringify(t)} vw=${m.vw})`))
+      {
+        // The tactical plot is always on screen (side by side in landscape, stacked in portrait).
+        const t = m.plotBox
+        ok(!!t && t.w >= 120 && t.h >= 100 && t.x >= -1 && t.right <= m.vw + 2 && t.y >= -1 && t.bottom <= m.vh + 2,
+          F(`tactical plot not on screen (${JSON.stringify(t)} vw=${m.vw})`))
       }
       ok(m.yLabels.some((t) => t === 'now') && m.yLabels.some((t) => /^\d{4}Z$/.test(t || '')),
         F(`Y labels not Zulu: ${JSON.stringify(m.yLabels)}`))
@@ -139,7 +141,7 @@ try {
       })
       await goto(page, `http://127.0.0.1:${port}/datum/?autoplay&rate=16`)
       await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(1500)
-      await page.getByRole('button', { name: 'Settings' }).click()
+      await page.getByRole('tab', { name: 'Settings' }).click()
       await page.locator('[data-testid=gram-dir-top]').click()
       await page.waitForTimeout(150)
       ok((await page.locator('[data-gram-dir]').getAttribute('data-gram-dir')) === 'top', 'settings did not flip to top')

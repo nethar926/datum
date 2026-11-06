@@ -25,8 +25,7 @@ try {
     await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16`)
     const plot = page.locator('[data-testid=tactical]'), bar = page.locator('[data-testid=drop-bar]')
     await plot.waitFor(); await page.waitForTimeout(5000)
-    // Phone landscape: the tactical plot is a slide-over behind the TAC button.
-    if (slug === 'iphone-land') { await page.locator('[data-testid=tac-open]').tap(); await page.waitForTimeout(400) }
+    // Phone landscape: the tactical plot sits beside the gram (no slide-over any more).
     // Let the 160–180 ms appear transitions finish so the shot shows the settled UI.
     const shot = async (name) => { await page.waitForTimeout(250); await page.screenshot({ path: `docs/m3-drop-${slug}-${name}.png` }) }
     const count = async () => parseInt((await page.locator('[data-testid=buoy-count]').textContent()) ?? 'NaN')

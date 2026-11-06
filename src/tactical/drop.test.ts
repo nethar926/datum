@@ -4,7 +4,7 @@ import {
   AUTO_LINE_M, AUTO_RING_M, COUNT_RANGE, DEFAULT_COUNT, DEFAULT_EXTENT_M, DROP_PATTERNS, EXTENT_RANGE_M, autoPlacement, bearingDeg,
   gesturePlacement, planDrop, planReadout, snapDeg, snapM, snapPt, type DropPlan, type Pt,
 } from './drop'
-import { AUTO_COOLDOWN_S, AUTO_GAP_M, MAX_BUOYS, autoShouldLay, dropCapturesPlot, dropHint, dropReducer, initialDrop, type DropState } from './fieldMode'
+import { AUTO_COOLDOWN_S, AUTO_GAP_M, MAX_BUOYS, autoShouldLay, dropCapturesPlot, dropHint, dropHintShort, dropReducer, initialDrop, type DropState } from './fieldMode'
 
 const pts = (p: DropPlan): Pt[] => Array.from({ length: p.n }, (_, i) => ({ x: p.xy[2 * i], y: p.xy[2 * i + 1] }))
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y)
@@ -180,6 +180,8 @@ describe('drop tool / field mode state', () => {
   })
   it('the hint always says what the tool is doing', () => {
     expect(dropHint(initialDrop(), false)).toBe('Pick a pattern to drop')
+    expect(dropHintShort(initialDrop(), false)).toBe('Pick a pattern')
+    expect(dropHintShort(initialDrop(), true)).toBe('Field full')
     expect(dropHint(initialDrop('auto'), false)).toMatch(/^AUTO/)
     expect(dropHint(run(initialDrop(), { type: 'arm', pattern: 'single' }), false)).toBe('Tap the plot to place one buoy')
     expect(dropHint(run(initialDrop(), { type: 'arm', pattern: 'line' }), false)).toMatch(/drag to orient and size/)

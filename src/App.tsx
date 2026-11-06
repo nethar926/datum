@@ -39,6 +39,9 @@ import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
+import { CutsScreen, GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, useAppearance, useGlass } from './ui/chrome'
+import { IcBrg, IcChevron, IcContrast, IcDop, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcTarget, IcTrash } from './ui/icons'
+import { SPLIT_DEFAULT_H, SPLIT_DEFAULT_V, SPLIT_KEY_H, SPLIT_KEY_V, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
 
 const RATES = [1, 4, 16]
@@ -66,6 +69,18 @@ const loadGram = (): GramSettings => {
 const loadGramMode = (): GramMode => { try { const v = localStorage.getItem(GRAM_MODE_KEY); return isGramMode(v) ? v : 'lofar' } catch { return 'lofar' } }
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
 const fmtT = (s: number) => { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` }
+
+/** Portrait orientation (stacked gram over plot) vs landscape (side by side). */
+function usePortrait(): boolean {
+  const get = () => typeof window === 'undefined' || window.innerHeight > window.innerWidth
+  const [p, setP] = useState(get)
+  useEffect(() => {
+    const on = () => setP(get())
+    window.addEventListener('resize', on); window.addEventListener('orientationchange', on)
+    return () => { window.removeEventListener('resize', on); window.removeEventListener('orientationchange', on) }
+  }, [])
+  return p
+}
 
 const PALETTE_LABEL: Record<PaletteId, string> = { green: 'Green', amber: 'Amber', red: 'Red' }
 const PALETTE_KEY = 'datum.palette'
@@ -115,16 +130,38 @@ export default function App() {
   const [brgArm, setBrgArm] = useState<BearingArm>(ARM_IDLE)
   const [harmProbeOn, setHarmProbeOn] = useState(false)
   const [showNew, setShowNew] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
   const [showCmp, setShowCmp] = useState(false)
   const layout = useLayout(), phone = layout !== 'wide'
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [tacOpen, setTacOpen] = useState(false)
   const [truthSheet, setTruthSheet] = useState(false)
-  useEffect(() => { if (!phone) { setMenuOpen(false); setTruthSheet(false) } if (layout !== 'phoneLandscape') setTacOpen(false) }, [layout, phone])
+  const [buoySheet, setBuoySheet] = useState(false)
+  const [layersSheet, setLayersSheet] = useState(false)
+  const [trafficSheet, setTrafficSheet] = useState(false)
+  useEffect(() => { if (!phone) setTruthSheet(false) }, [phone])
+  // iOS app structure: tabs, appearance, glass strength, split, tab bar minimize.
+  const [tab, setTab] = useState<Tab>(() => parseTab(new URLSearchParams(location.search).get('tab')))
+  const appearance = useAppearance(), glass = useGlass()
+  const portrait = usePortrait(), splitAxis: 'x' | 'y' = portrait ? 'y' : 'x'
+  const splitKey = splitAxis === 'y' ? SPLIT_KEY_V : SPLIT_KEY_H, splitDefault = splitAxis === 'y' ? SPLIT_DEFAULT_V : SPLIT_DEFAULT_H
+  const [split, setSplit] = useState(() => loadSplit(splitKey, splitDefault))
+  useEffect(() => { setSplit(loadSplit(splitKey, splitDefault)) }, [splitKey, splitDefault])
+  const wsRef = useRef<HTMLElement>(null)
+  const compact = layout !== 'wide'
+  const [tabMin, setTabMin] = useState(false)
+  const tabMinTimer = useRef(0)
+  const onWorkspaceDown = () => {
+    if (!compact) return
+    setTabMin(true); clearTimeout(tabMinTimer.current)
+  }
+  const onWorkspaceUp = () => {
+    if (!compact) return
+    clearTimeout(tabMinTimer.current); tabMinTimer.current = window.setTimeout(() => setTabMin(false), 4000)
+  }
+  useEffect(() => { if (!compact || tab !== 'live') setTabMin(false) }, [compact, tab])
   useEffect(() => installAudioUnlock(), [])
   const [tool, setTool] = useState<'select' | 'dop' | 'lm' | 'harm'>('select')
-  const [crossOn, setCrossOn] = useState(false)
+  // HORZ: horizontal hairline on the default gram cursor (off by default, persisted).
+  const [horzOn, setHorzOn] = useState<boolean>(loadHorz)
+  useEffect(() => saveHorz(horzOn), [horzOn])
   const [harmF0, setHarmF0] = useState<number | null>(null)
   const [harmK, setHarmK] = useState<number | null>(null)
   const [harmFam, setHarmFam] = useState<string | null>(null)
@@ -333,154 +370,80 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const scenarioSelect = (
+    <select className="ios-select scn-select" data-testid="scenario-select" aria-label="Scenario"
+      value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
+      onChange={(e) => { ruler.clear(); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
+      {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
+      {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
+    </select>
+  )
+  const clearHarm = () => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false) }
+  // One glass bottom toolbar for the gram tools (horizontally scrollable on narrow screens).
   const toolsRow = (
-    <div className="panel-head gram-tools" data-testid="gram-tools">
-      {!phone && <span className="seg-label">TOOLS</span>}
-            <div className="seg" role="group" aria-label="Doppler ruler">
-              <button aria-pressed={dopMode} onClick={() => armDop(!dopMode)} data-testid="dop-tool"
-                title="Doppler ruler: tap a line at CPA to place f0, drag f1 in both axes (f2 mirrors through f0/CPA), or drag f2 (f1 mirrors). Keys: arrows nudge, Shift ×10, Esc clears.">DOP</button>
-              {ruler.placed && <button onClick={() => applyCenter(ruler.s.f0Hz)} data-testid="dop-center" title="Center the gram on f0 (C while DOP is armed). Finer RES is the way to see a sub-Hz shift.">CTR f0</button>}
-              {ruler.placed && !ruler.s.linked && <button onClick={() => ruler.relink()} data-testid="dop-link" title="Re-link f2 to the mirror of f1">Link</button>}
-              {ruler.placed && <button onClick={() => ruler.clear()} data-testid="dop-clear">Clear</button>}
-            </div>
-            <div className="seg" role="group" aria-label="Harmonic cursor">
-              <button aria-pressed={tool === 'harm'} onClick={() => {
-                if (tool === 'harm') { setTool('select'); return }
-                setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('harm')
-              }} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click (or PROBE) another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
-              {harmF0 !== null && <button aria-pressed={harmProbeOn} onClick={() => {
-                if (!harmProbeOn) { setBrgArm(ARM_IDLE); if (dopMode) setTool('harm') }
-                setHarmProbeOn((v) => !v)
-              }} title="Next tap sets a ratio probe (touch stand-in for shift-click)" data-testid="harm-probe-btn">PROBE</button>}
-              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false) }}>Clear</button>}
-            </div>
-            <div className="seg" role="group" aria-label="Cross cursor">
-              <button aria-pressed={crossOn} onClick={() => setCrossOn(!crossOn)} title="Time / frequency crosshair with level readout">CROSS</button>
-            </div>
-            <div className="seg" role="group" aria-label="Lloyd's mirror">
-              <button aria-pressed={tool === 'lm'} onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)">LM</button>
-            </div>
-            <div className="contrast" data-testid="contrast">
-              <button className="contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label="Reset contrast to 1.0" title="Gram contrast (tap to reset to 1.0×)" data-testid="contrast-reset">CON {contrast.toFixed(2)}×</button>
-              <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="contrast-slider"
-                onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
-            </div>
-            <span className="readout">
-              {cfg ? `${view.lo.toFixed(viewDigits)}–${view.hi.toFixed(viewDigits)} HZ  Δf ${cfg.fBin < 0.1 ? cfg.fBin.toFixed(3) : cfg.fBin.toFixed(2)}` : 'STARTING'}
-              {buoy ? `  ${buoy.state.toUpperCase()}  ${buoy.hydrophoneDepthM}M  BATT ${(buoy.batteryFrac * 100).toFixed(0)}%` : ''}
-              {buoy?.rx ? `  AGC ${buoy.rx.gainDb >= 0 ? '+' : ''}${buoy.rx.gainDb.toFixed(0)}` : ''}
-            </span>
-            {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
+    <div className="toolbar-glass glass" role="toolbar" aria-label="Gram tools" data-testid="gram-tools">
+      <ToolScroll testId="gram-tools-scroll">
+        <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)} onClick={onBrgButton}
+          title="Hover a DIFAR gram line and press B to send that bearing. On touch: BRG then tap the gram (or a buoy on the plot to aim). Esc cancels.">
+          <IcBrg /><span>{armLabel(brgArm)}</span></button>
+        <button className="tool" aria-pressed={dopMode} onClick={() => armDop(!dopMode)} data-testid="dop-tool" aria-label="DOP"
+          title="Doppler ruler: tap a line at CPA to place f0, drag f1 in both axes (f2 mirrors through f0/CPA), or drag f2 (f1 mirrors). Keys: arrows nudge, Shift ×10, Esc clears.">
+          <IcDop /><span>DOP</span></button>
+        {ruler.placed && <button className="tool sub" onClick={() => applyCenter(ruler.s.f0Hz)} data-testid="dop-center" title="Center the gram on f0 (C while DOP is armed)."><IcTarget /><span>CTR f0</span></button>}
+        {ruler.placed && !ruler.s.linked && <button className="tool sub" onClick={() => ruler.relink()} data-testid="dop-link" title="Re-link f2 to the mirror of f1"><IcLink /><span>Link</span></button>}
+        {ruler.placed && <button className="tool sub" onClick={() => ruler.clear()} data-testid="dop-clear" aria-label="Clear Doppler ruler"><IcTrash /><span>Clear</span></button>}
+        <button className="tool" aria-pressed={tool === 'harm'} aria-label="HARM" onClick={() => {
+          if (tool === 'harm') { setTool('select'); return }
+          setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('harm')
+        }} title="Harmonic cursor: tap a line to set the fundamental, drag any marker to adjust, PROBE (or shift-click) another line for its ratio"><IcHarm /><span>HARM</span></button>
+        {harmF0 !== null && <button className="tool sub" aria-pressed={harmProbeOn} onClick={() => {
+          if (!harmProbeOn) { setBrgArm(ARM_IDLE); if (dopMode) setTool('harm') }
+          setHarmProbeOn((v) => !v)
+        }} title="Next tap sets a ratio probe" data-testid="harm-probe-btn" aria-label="PROBE"><IcProbe /><span>PROBE</span></button>}
+        {harmF0 !== null && <button className="tool sub" onClick={clearHarm} aria-label="Clear harmonics" data-testid="harm-clear"><IcTrash /><span>Clear</span></button>}
+        <button className="tool" aria-pressed={tool === 'lm'} aria-label="LM" onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)"><IcLm /><span>LM</span></button>
+        <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
+          title="HORZ: horizontal hairline on the cursor with the Zulu time of the hover row"><IcHorz /><span>HORZ</span></button>
+        <div className="contrast tool-contrast" data-testid="contrast">
+          <button className="tool contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label="Reset contrast to 1.0" title="Gram contrast (tap to reset to 1.0×)" data-testid="contrast-reset"><IcContrast /><span>CON {contrast.toFixed(2)}×</span></button>
+          <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="contrast-slider"
+            onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
+        </div>
+      </ToolScroll>
     </div>
   )
+  const viewReadout = cfg ? `${view.lo.toFixed(viewDigits)}–${view.hi.toFixed(viewDigits)} HZ  Δf ${cfg.fBin < 0.1 ? cfg.fBin.toFixed(3) : cfg.fBin.toFixed(2)}` : 'STARTING'
+  const playBtn = (
+    <button className={`nav-btn glass-btn play-btn${st.playing ? '' : ' primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}
+      aria-label={st.playing ? 'Pause' : 'Play'} data-testid="play-btn">{st.playing ? <IcPause /> : <IcPlay />}</button>
+  )
+  const rateSeg = (
+    <div className="seg ios-seg rate-seg" role="group" aria-label="Sim rate">
+      {RATES.map((r) => <button key={r} aria-pressed={st.rate === r} onClick={() => client.setRate(r)}>{r}×</button>)}
+    </div>
+  )
+  const scnName = (SCENARIOS as readonly string[]).includes(st.scenarioId) ? SCENARIO_LABEL[st.scenarioId as (typeof SCENARIOS)[number]] : `Generated · ${st.seed}`
+  // Static on purpose: the ticking sim clock lives on the opaque plot (below), so the glass nav never repaints per tick.
+  const navSub = <span className="nav-scn">{scnName}{!phone && ` · LOG ${logCount}`}</span>
+  const instrumentsVisible = tab === 'live' || tab === 'plot'
 
   return (
-    <div className={`app layout-${layout}`} data-layout={layout} data-gram-dir={gramDir}>
+    <div className={`app ios layout-${layout}`} data-layout={layout} data-gram-dir={gramDir} data-tab={tab} data-split={splitAxis}
+      data-tabbar={tabMin ? 'min' : 'full'}>
+      <GlassDefs />
       {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
-      {phone ? (
-        <header className="toolbar compact">
-          <div className="brand">DATUM</div>
-          <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
-            {st.playing ? 'Pause' : 'Play'}
-          </button>
-          <div className="seg" role="group" aria-label="Sim rate">
-            {RATES.map((r) => <button key={r} aria-pressed={st.rate === r} onClick={() => client.setRate(r)}>{r}×</button>)}
-          </div>
-          <span className="readout">T+{fmtT(st.simT)}</span>
-          {layout === 'phoneLandscape' && <button className="btn icon tac-toggle" data-testid="tac-open" aria-expanded={tacOpen} onClick={() => setTacOpen(!tacOpen)} title="Tactical plot">TAC</button>}
-          <button className="btn icon" data-testid="menu-open" aria-label="More controls" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button>
-        </header>
-      ) : (
-      <header className="toolbar">
-        <div className="brand">DATUM<small>Acoustic operator trainer · fictional patrol aircraft</small></div>
-        <div className="group">
-          <button className="btn" onClick={() => setShowNew(true)}>New</button>
-          <select className="btn scn-select" data-testid="scenario-select" aria-label="Scenario"
-            value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
-            onChange={(e) => { ruler.clear(); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
-            {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
-            {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
-          </select>
-          {st.scenarioId === 'generated' && <SeedChip seed={st.seed} />}
-          <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
-            {st.playing ? 'Pause' : 'Play'}
-          </button>
-          <div className="seg" role="group" aria-label="Sim rate">
-            {RATES.map((r) => <button key={r} aria-pressed={st.rate === r} onClick={() => client.setRate(r)}>{r}×</button>)}
-          </div>
-        </div>
-        <div className="group">
-          <div className="seg" role="group" aria-label="LOFAR band">
-            <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
-            <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
-          </div>
-        </div>
-        <div className="group">
-        </div>
-        <div className="group">
-          <label className="seg" style={{ padding: '2px 8px', gap: 6, alignItems: 'center' }}>
-            <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
-          </label>
-        </div>
-        <div className="group">
-          <button className="btn" data-testid="cmp-open" onClick={() => setShowCmp(true)} title="Recognition guide for every fictional class">Compendium</button>
-        </div>
-        <div className="group" style={{ position: 'relative' }}>
-          <button className="btn" aria-expanded={showSettings} onClick={() => setShowSettings(!showSettings)}>Settings</button>
-        </div>
-        <span className="readout">LOG {logCount}  T+{fmtT(st.simT)}</span>
-        {showSettings && (
-          <div className="popover" role="dialog" aria-label="Settings" data-testid="settings">
-            <TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} />
-            <label className="check" title="Off = ideal receiver with unlimited dynamic range (for comparison)">
-              <input type="checkbox" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /> Realistic receiver (AGC, limited range)
-            </label>
-            <fieldset className="seg" data-testid="gram-dir" style={{ border: 0, padding: 0, margin: 0, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-              <legend className="seg-label" style={{ padding: 0, marginRight: 6 }}>GRAM</legend>
-              <button type="button" aria-pressed={gramDir === 'bottom'} data-testid="gram-dir-bottom" onClick={() => { setGramDir('bottom'); saveGramDir('bottom') }} title="Newest data enters at the bottom">Newest bottom</button>
-              <button type="button" aria-pressed={gramDir === 'top'} data-testid="gram-dir-top" onClick={() => { setGramDir('top'); saveGramDir('top') }} title="Newest data enters at the top">Newest top</button>
-            </fieldset>
-          </div>
-        )}
-      </header>
+      {instrumentsVisible && (
+        <NavBar title={tab === 'plot' ? 'Plot' : 'DATUM'} sub={navSub}
+          trailing={<>{rateSeg}{playBtn}</>} />
       )}
-      {phone && (
-        <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Controls" testId="menu-sheet">
-          <div className="sheet-row"><span className="seg-label">SCENARIO</span><button className="btn" onClick={() => { setMenuOpen(false); setShowNew(true) }}>New</button><select className="btn scn-select" data-testid="scenario-select" aria-label="Scenario"
-            value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
-            onChange={(e) => { ruler.clear(); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
-            {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
-            {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
-          </select>{st.scenarioId === 'generated' && <SeedChip seed={st.seed} />}</div>
-          <div className="sheet-row"><span className="seg-label">LOFAR</span><div className="seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
-            {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)} title={gramMode === 'difar' ? 'LOFAR colour (DIFAR uses the bearing wheel)' : `LOFAR amplitude in ${PALETTE_LABEL[id].toLowerCase()}`}>{PALETTE_LABEL[id]}</button>)}
-          </div></div>
-          <div className="sheet-row"><span className="seg-label">GRAM BAND</span>{bandSeg('band-seg-sheet')}</div>
-          <div className="sheet-row"><span className="seg-label">BAND</span><div className="seg" role="group" aria-label="LOFAR band">
-            <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
-            <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
-          </div></div>
-          <div className="sheet-row"><label className="seg" style={{ padding: '2px 8px', gap: 6, alignItems: 'center' }}>
-            <input type="checkbox" checked={truth} onChange={(e) => setTruth(e.target.checked)} /> Truth
-          </label><button className="btn" data-testid="cmp-open" onClick={() => { setMenuOpen(false); setShowCmp(true) }} title="Recognition guide for every fictional class">Compendium</button><span className="readout">LOG {logCount}</span></div>
-          <div className="sheet-col">
-            <TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} />
-            <label className="check" title="Off = ideal receiver with unlimited dynamic range (for comparison)">
-              <input type="checkbox" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /> Realistic receiver (AGC, limited range)
-            </label>
-            <div className="sheet-row"><span className="seg-label">GRAM</span><div className="seg" role="group" aria-label="Gram scroll direction" data-testid="gram-dir">
-              <button type="button" aria-pressed={gramDir === 'bottom'} data-testid="gram-dir-bottom" onClick={() => { setGramDir('bottom'); saveGramDir('bottom') }}>Newest bottom</button>
-              <button type="button" aria-pressed={gramDir === 'top'} data-testid="gram-dir-top" onClick={() => { setGramDir('top'); saveGramDir('top') }}>Newest top</button>
-            </div></div>
-          </div>
-        </Sheet>
-      )}
-      {showCmp && <div className={phone ? "cmp-sheet" : undefined}><Compendium onClose={() => setShowCmp(false)} /></div>}
+      {showCmp && <div className={phone ? 'cmp-wrap cmp-sheet' : 'cmp-wrap'}><Compendium onClose={() => setShowCmp(false)} /></div>}
 
-      <main className="workspace">
+      <main ref={wsRef} className="workspace" data-testid="workspace" aria-hidden={!instrumentsVisible || undefined}
+        style={{ '--split-a': `${split}fr`, '--split-b': `${1 - split}fr` } as React.CSSProperties}
+        onPointerDownCapture={onWorkspaceDown} onPointerUpCapture={onWorkspaceUp} onPointerCancelCapture={onWorkspaceUp}>
         <div className="workspace-left">
         <section className="panel gram-panel">
-          <div className="panel-head">
+          <div className="panel-head gram-head">
             <h2 data-testid="gram-title">{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'} · {filter}</h2>
             <div className="seg" role="group" aria-label="Gram mode">
               <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title={`Amplitude as ${PALETTE_LABEL[palette].toLowerCase()} brightness`}>LOFAR</button>
@@ -490,13 +453,11 @@ export default function App() {
               <button aria-pressed={wantFilter === 'NB'} onClick={() => setFilter('NB')} title="Narrowband: background-normalized (TPSW), 0–30 dB above the local noise">NB</button>
               <button aria-pressed={wantFilter === 'BB'} onClick={() => setFilter('BB')} title="Broadband: absolute level, 40–110 dB">BB</button>
             </div>
-            {!phone && <span className="seg-label">RES</span>}
             <div className="seg res-step" role="group" aria-label="Resolution" data-testid="res-step">
               <button className="icon" onClick={() => stepRes(-1)} disabled={!cfg || (!bandOn && wantRes <= RES_MIN)} aria-label="Finer resolution (RES down)" title="Finer bins, narrower band">−</button>
               <span key={cfg?.res ?? cfg?.bandPreset} className="res-read" data-testid="res-readout" aria-live="polite">{bandReadout(cfg) ?? resReadout(cfg, layout === 'phonePortrait')}</span>
               <button className="icon" onClick={() => stepRes(1)} disabled={!cfg || (!bandOn && wantRes >= RES_MAX)} aria-label="Coarser resolution (RES up)" title="Wider bins, wider band">+</button>
             </div>
-            {!phone && <span className="seg-label">BAND</span>}
             {bandSeg('band-seg')}
             <button disabled={bandOn && !vLabel} className={`btn vernier${vLabel ? ' on' : vernierPick ? ' pick' : ''}`} data-testid="vernier" aria-pressed={!!vLabel || vernierPick} onClick={onVernier}
               title={vLabel ? 'Back to the full band' : bandOn ? 'Vernier needs RES (band presets use the analytic band gram)' : 'Center the band on a line: uses the selected line, or tap one on the gram'}>
@@ -515,7 +476,6 @@ export default function App() {
             {ctrFlash !== null && <span className="ctr-readout" data-testid="ctr-readout" aria-live="polite">{ctrLabel(ctrFlash, cfg?.fBin)}</span>}
             {brgFlash !== null && <span className="ctr-readout brg-readout" data-testid="brg-readout" aria-live="polite">{brgFlash}</span>}
             {cfg?.bandLimited && <span className="band-limit-tag" data-testid="band-limit-tag" title="Part of this band is above the simulated top frequency">BAND LIMIT</span>}
-            {!phone && <span className="seg-label">BUOY</span>}
             <div className="seg buoy-seg" role="group" aria-label="Buoy channel" data-testid="buoy-seg">
               {lofarCfgs.map((c, i) => (
                 <button key={c.streamId} aria-pressed={i === stream} onClick={() => setStream(i)}>
@@ -523,8 +483,10 @@ export default function App() {
                 </button>
               ))}
             </div>
-                      </div>
-          {layout !== 'phonePortrait' && toolsRow}
+            <button className="btn icon info-btn" data-testid="buoy-info" aria-label="Buoy info" onClick={() => setBuoySheet(true)} disabled={!buoy}><IcInfo /></button>
+            <span className="readout" data-testid="view-readout">{viewReadout}</span>
+            {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
+          </div>
           <div className="panel-body">
             {lofarCfgs.length > 0 && (
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
@@ -537,7 +499,7 @@ export default function App() {
                   : dopMode ? (hz, ago) => ruler.tap(hz, st.simT - ago)
                   : harmProbeOn && harmF0 !== null ? (hz) => { setHarmProbe(hz); setHarmProbeOn(false) } : undefined}
                 onDragPoint={isPickFreq(brgArm) || vernierPick || (harmProbeOn && harmF0 !== null) ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
-                crosshair={crossOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
+                horz={horzOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
                 overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
                     <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
@@ -575,35 +537,15 @@ export default function App() {
             {gramMode === 'difar' && wheelOpen && <DifarApplet wheel={wheel} onChange={setWheel} onClose={() => setWheelOpen(false)} />}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
-          {layout === 'phonePortrait' && toolsRow}
         </section>
         </div>
-        {layout === 'phoneLandscape' && <div className={`tac-scrim${tacOpen ? ' open' : ''}`} onClick={() => setTacOpen(false)} aria-hidden />}
-        <section className={`panel tac-panel${tacOpen ? ' open' : ''}`} data-testid="tac-panel">
-          <div className="panel-head">
-            <h2>Tactical</h2>
-            {layout === 'phoneLandscape' && <button className="btn icon" onClick={() => setTacOpen(false)} aria-label="Close tactical">✕</button>}
-            <span className="seg-label">BRG</span>
-            <div className="seg" role="group" aria-label="Bearings shown">
-              <button aria-pressed={!allBearings} onClick={() => setAllBearings(false)}>{selHz === null ? 'Sel' : `${selHz.toFixed(1)} Hz`}</button>
-              <button aria-pressed={allBearings} onClick={() => setAllBearings(true)}>All</button>
-            </div>
-            <div className="seg" role="group" aria-label="Bearing layers">
-              <button aria-pressed={showAuto} onClick={() => setShowAuto(!showAuto)} title="DIFAR-computed bearings (solid)">Auto</button>
-              <button aria-pressed={showManual} onClick={() => setShowManual(!showManual)} title="Operator bearing cursors (dashed). Drag from a DIFAR buoy; double-click it to clear.">Man</button>
-              <button className={`brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)}
-                onClick={onBrgButton}
-                title="Hover a DIFAR gram line and press B to send that bearing. On touch: BRG then tap the gram (or a buoy on the plot to aim). Esc cancels. Drag still works.">{armLabel(brgArm)}</button>
-            </div>
-            <span className="seg-label">FIX</span>
-            <div className="seg" role="group" aria-label="Fix from">
-              {(['auto', 'manual', 'both'] as const).map((f) => <button key={f} aria-pressed={fixSource === f} onClick={() => setFixSource(f)}
-                title={f === 'auto' ? 'Fix from auto bearings' : f === 'manual' ? 'Fix from manual bearings' : 'Fix from both (manual overrides auto per buoy)'}>{f === 'auto' ? 'A' : f === 'manual' ? 'M' : 'A+M'}</button>)}
-            </div>
-          </div>
+        <SplitHandle axis={splitAxis} frac={split} onFrac={setSplit} storeKey={splitKey} targetRef={wsRef} defaultFrac={splitDefault} />
+        <section className="panel tac-panel" data-testid="tac-panel">
           <div className="panel-body plot">
-            {st.tactical && <div className="plot-corner readout" data-testid="ac-readout">
-              {`A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</div>}
+            <div className="plot-corner readout">
+              <span className="sim-clock" data-testid="sim-clock">T+{fmtT(st.simT)}</span>
+              {st.tactical && <span data-testid="ac-readout">{`A/C ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}°  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</span>}
+            </div>
             <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource}
               onManual={(id, deg, final) => {
@@ -618,12 +560,132 @@ export default function App() {
                 const deg = bearingTo(b, wx, wy); if (deg === null) return
                 onManual(id, deg, true); setBrgArm(ARM_IDLE)
               }} />
+            <div className="plot-float">
+              <button className="glass glass-btn float-btn" data-testid="layers-open" aria-label="Plot layers" onClick={() => setLayersSheet(true)}><IcLayers /></button>
+              {truth && st.tactical?.truth && phone && <button className="glass glass-btn float-btn truth-chip" data-testid="truth-open" onClick={() => setTruthSheet(true)}>TRUTH · {st.tactical.truth.contacts.filter((c) => c.active !== false).length}</button>}
+            </div>
             <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} />
             {truth && st.tactical?.truth && !phone && <TruthPanel contacts={st.tactical.truth.contacts} />}
-            {truth && st.tactical?.truth && phone && <button className="btn truth-chip" data-testid="truth-open" onClick={() => setTruthSheet(true)}>TRUTH · {st.tactical.truth.contacts.filter((c) => c.active !== false).length}</button>}
           </div>
         </section>
       </main>
+
+      {tab === 'cuts' && <CutsScreen />}
+      {tab === 'settings' && (
+        <LargeTitleScreen title="Settings" testId="settings">
+          <div className="ios-section">
+            <h3>Scenario</h3>
+            <div className="ios-group">
+              <button className="ios-row" onClick={() => setShowNew(true)} data-testid="settings-new"><span className="row-label">New Scenario…</span><IcChevron className="chev" size={16} /></button>
+              <label className="ios-row"><span className="row-label">Scenario</span>{scenarioSelect}</label>
+              {st.scenarioId === 'generated' && <div className="ios-row"><span className="row-label">Seed</span><SeedChip seed={st.seed} /></div>}
+            </div>
+          </div>
+          <div className="ios-section">
+            <h3>Appearance</h3>
+            <div className="ios-group">
+              <div className="ios-row"><span className="row-label">Appearance</span>
+                <div className="seg ios-seg" role="group" aria-label="Appearance" data-testid="scheme-seg">
+                  {(['system', 'light', 'dark'] as const).map((k) => <button key={k} aria-pressed={appearance.pref === k} data-testid={`scheme-${k}`} onClick={() => appearance.setPref(k)}>{k === 'system' ? 'Auto' : k === 'light' ? 'Light' : 'Dark'}</button>)}
+                </div></div>
+              <div className="ios-row"><span className="row-label">Glass<small>Reduced is more opaque and lighter on the GPU</small></span>
+                <div className="seg ios-seg" role="group" aria-label="Glass" data-testid="glass-seg">
+                  {(['auto', 'full', 'reduced'] as const).map((k) => <button key={k} aria-pressed={glass.pref === k} data-testid={`glass-${k}`} onClick={() => glass.setPref(k)}>{k === 'auto' ? 'Auto' : k === 'full' ? 'Full' : 'Reduced'}</button>)}
+                </div></div>
+            </div>
+            <p className="ios-foot">Grams, LOFAR palettes and the DIFAR wheel stay dark in both modes.</p>
+          </div>
+          <div className="ios-section">
+            <h3>Gram</h3>
+            <div className="ios-group">
+              <div className="ios-row"><span className="row-label">Newest data</span>
+                <div className="seg ios-seg" role="group" aria-label="Gram scroll direction" data-testid="gram-dir">
+                  <button type="button" aria-pressed={gramDir === 'bottom'} data-testid="gram-dir-bottom" onClick={() => { setGramDir('bottom'); saveGramDir('bottom') }}>Bottom</button>
+                  <button type="button" aria-pressed={gramDir === 'top'} data-testid="gram-dir-top" onClick={() => { setGramDir('top'); saveGramDir('top') }}>Top</button>
+                </div></div>
+              <label className="ios-row"><span className="row-label">HORZ cursor line<small>Hairline + Zulu time at the hover row</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="horz-switch" checked={horzOn} onChange={(e) => setHorzOn(e.target.checked)} /></label>
+              <div className="ios-row"><span className="row-label">LOFAR colour</span>
+                <div className="seg ios-seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
+                  {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)} title={gramMode === 'difar' ? 'LOFAR colour (DIFAR uses the bearing wheel)' : `LOFAR amplitude in ${PALETTE_LABEL[id].toLowerCase()}`}>{PALETTE_LABEL[id]}</button>)}
+                </div></div>
+              <div className="ios-row"><span className="row-label">Band preset</span>{bandSeg('band-seg-sheet')}</div>
+              <div className="ios-row"><span className="row-label">Sim band</span>
+                <div className="seg ios-seg" role="group" aria-label="LOFAR band">
+                  <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
+                  <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
+                </div></div>
+            </div>
+          </div>
+          <div className="ios-section">
+            <h3>Simulation</h3>
+            <div className="ios-group">
+              <label className="ios-row"><span className="row-label">Truth overlay</span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="truth-switch" checked={truth} onChange={(e) => setTruth(e.target.checked)} /></label>
+              <label className="ios-row" title="Off = ideal receiver with unlimited dynamic range (for comparison)"><span className="row-label">Realistic receiver<small>AGC, limited dynamic range</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /></label>
+              <button className="ios-row" data-testid="traffic-open" onClick={() => setTrafficSheet(true)}><span className="row-label">Surface traffic</span><span className="row-value">{Math.round(st.surfaceTraffic * 100)}%</span><IcChevron className="chev" size={16} /></button>
+            </div>
+          </div>
+          <div className="ios-section">
+            <h3>Reference</h3>
+            <div className="ios-group">
+              <button className="ios-row" data-testid="cmp-open" onClick={() => setShowCmp(true)}><span className="row-label">Compendium<small>Recognition guide for every fictional class</small></span><IcChevron className="chev" size={16} /></button>
+              <div className="ios-row"><span className="row-label">Operator log</span><span className="row-value" data-testid="log-count">{logCount}</span></div>
+            </div>
+            <p className="ios-foot">DATUM · training simulator. Every platform, country and acoustic signature is fictional.</p>
+          </div>
+        </LargeTitleScreen>
+      )}
+
+      <div className="dock" data-testid="dock">
+        <TabBar tab={tab} onTab={(t) => { setTab(t) }} minimized={tabMin} onExpand={() => { clearTimeout(tabMinTimer.current); setTabMin(false) }} />
+        {tab === 'live' && toolsRow}
+        {tab === 'plot' && (
+          <div className="toolbar-glass glass" role="toolbar" aria-label="Plot tools">
+            <div className="tool-scroll">
+              <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} aria-pressed={isArmed(brgArm)} onClick={onBrgButton}><IcBrg /><span>{armLabel(brgArm)}</span></button>
+              <button className="tool" onClick={() => setLayersSheet(true)} aria-label="Layers"><IcLayers /><span>Layers</span></button>
+            </div>
+          </div>
+        )}
+        {(tab === 'cuts' || tab === 'settings') && <div className="dock-spacer" aria-hidden />}
+      </div>
+
+      <Sheet open={buoySheet} onClose={() => setBuoySheet(false)} title={buoy ? `Buoy ${buoy.channel}` : 'Buoy'} testId="buoy-sheet">
+        {buoy ? (
+          <div className="ios-group">
+            <div className="ios-row"><span className="row-label">Type</span><span className="row-value">{buoy.kind === 'difar' ? 'DIFAR (directional)' : 'Omni (passive)'}</span></div>
+            <div className="ios-row"><span className="row-label">State</span><span className="row-value">{buoy.state.toUpperCase()}</span></div>
+            <div className="ios-row"><span className="row-label">Hydrophone depth</span><span className="row-value">{buoy.hydrophoneDepthM} m</span></div>
+            <div className="ios-row"><span className="row-label">Battery</span><span className="row-value">{(buoy.batteryFrac * 100).toFixed(0)}%</span></div>
+            {buoy.rx && <div className="ios-row"><span className="row-label">AGC gain</span><span className="row-value">{buoy.rx.gainDb >= 0 ? '+' : ''}{buoy.rx.gainDb.toFixed(0)} dB{buoy.rx.overload ? ' · OVLD' : ''}</span></div>}
+            <div className="ios-row"><span className="row-label">Gram</span><span className="row-value readout">{viewReadout}</span></div>
+          </div>
+        ) : <p className="ios-foot">No buoy on this channel yet.</p>}
+      </Sheet>
+      <Sheet open={layersSheet} onClose={() => setLayersSheet(false)} title="Plot layers" testId="layers-sheet" detents={['medium', 'large']}>
+        <div className="ios-group">
+          <div className="ios-row"><span className="row-label">Bearings shown</span>
+            <div className="seg ios-seg" role="group" aria-label="Bearings shown">
+              <button aria-pressed={!allBearings} onClick={() => setAllBearings(false)}>{selHz === null ? 'Selected' : `${selHz.toFixed(1)} Hz`}</button>
+              <button aria-pressed={allBearings} onClick={() => setAllBearings(true)}>All</button>
+            </div></div>
+          <label className="ios-row"><span className="row-label">Auto bearings<small>DIFAR-computed (solid)</small></span>
+            <input type="checkbox" role="switch" className="ios-switch" checked={showAuto} onChange={(e) => setShowAuto(e.target.checked)} /></label>
+          <label className="ios-row"><span className="row-label">Manual bearings<small>Operator cursors (dashed)</small></span>
+            <input type="checkbox" role="switch" className="ios-switch" checked={showManual} onChange={(e) => setShowManual(e.target.checked)} /></label>
+          <div className="ios-row"><span className="row-label">Fix from</span>
+            <div className="seg ios-seg" role="group" aria-label="Fix from">
+              {(['auto', 'manual', 'both'] as const).map((f) => <button key={f} aria-pressed={fixSource === f} onClick={() => setFixSource(f)}
+                title={f === 'auto' ? 'Fix from auto bearings' : f === 'manual' ? 'Fix from manual bearings' : 'Fix from both (manual overrides auto per buoy)'}>{f === 'auto' ? 'Auto' : f === 'manual' ? 'Manual' : 'Both'}</button>)}
+            </div></div>
+        </div>
+      </Sheet>
+      <Sheet open={trafficSheet} onClose={() => setTrafficSheet(false)} title="Surface traffic" testId="traffic-sheet" detents={['medium']}>
+        <div className="ios-group pad"><TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} /></div>
+        <p className="ios-foot">Shipping noise from fictional merchant traffic. Heavier traffic raises the broadband floor and adds distant tonals.</p>
+      </Sheet>
       {phone && truth && st.tactical?.truth && (
         <Sheet open={truthSheet} onClose={() => setTruthSheet(false)} title="Truth" testId="truth-sheet">
           <TruthPanel contacts={st.tactical.truth.contacts} />

@@ -43,7 +43,7 @@ try {
     await page.close()
   }
   for (const [slug, dev] of [['ipad', 'iPad Pro 11 landscape'], ['iphone', 'iPhone 15 landscape']]) {
-    const ctx = await browser.newContext({ ...devices[dev] }), page = await ctx.newPage(), errs = []
+    const ctx = await browser.newContext({ ...devices[dev], colorScheme: 'dark' }), page = await ctx.newPage(), errs = []
     page.on('pageerror', (e) => errs.push(String(e)))
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     // Fresh storage on the first load only (reloads must see what the app saved).
@@ -52,6 +52,16 @@ try {
     await page.goto(url)
     const cv = page.locator('[data-testid=lofar]')
     await cv.waitFor(); await page.waitForTimeout(9000)
+    console.log(slug, 'layout', await page.evaluate(() => {
+      const c=document.querySelector('[data-testid=lofar]'); const r=c.getBoundingClientRect(); const a=document.querySelector('.app')
+      return { cls:a.className, buf:[c.width,c.height], css:[r.width,r.height],
+        nav:document.querySelector('.navbar')?.getBoundingClientRect().height,
+        dock:document.querySelector('.dock,.tabbar')?.getBoundingClientRect().height,
+        head:document.querySelector('.gram-head')?.getBoundingClientRect().height,
+        body:document.querySelector('.gram-panel .panel-body')?.getBoundingClientRect().height,
+        panel:document.querySelector('.gram-panel')?.getBoundingClientRect().height,
+        vh:innerHeight, vw:innerWidth, scheme:document.documentElement.dataset.scheme }
+    }))
     const lit = async () => {
       const png = (await cv.screenshot()).toString('base64')
       return page.evaluate(async ([b64, LIT]) => {
@@ -87,12 +97,18 @@ try {
           let n = 0; for (let x = x0, i = (y * c.width + x0) * 4; x < x1; x++, i += 4) if (Math.max(d[i], d[i + 1], d[i + 2]) > LIT) n++
           cov.push(n / (x1 - x0))
         }
+        // Dark-run length scales with canvas height so a taller gram (iOS chrome frees vertical space)
+        // doesn't flag ordinary tonal gaps as the m3-fe-mf-line seam. Floor stays 20 px.
+        const darkNeed = Math.max(20, Math.round(c.height * (20 / 740)))
+        // Playwright's WebGL element screenshot under a rounded/overflow panel can light the first/last
+        // device-pixel rows (cov 1.0); skip a thin edge so that artifact can't arm the detector.
+        const y0s = 3, y1s = c.height - 3
         const out = []; let seenLit = false, dark = 0, armed = false
-        for (let y = 0; y < c.height; y++) {
+        for (let y = y0s; y < y1s; y++) {
           if (cov[y] >= 0.3) {
-            if (armed) { let e = y; while (e + 1 < c.height && cov[e + 1] >= 0.3) e++; if (e > y) out.push(`y${y}-${e} of ${c.height} (${(100 * y / c.height).toFixed(0)}%) cov ${cov[y].toFixed(2)}`); y = e; continue }
+            if (armed) { let e = y; while (e + 1 < y1s && cov[e + 1] >= 0.3) e++; if (e > y) out.push(`y${y}-${e} of ${c.height} (${(100 * y / c.height).toFixed(0)}%) cov ${cov[y].toFixed(2)}`); y = e; continue }
             seenLit = true; dark = 0
-          } else if (cov[y] < 0.05) { if (seenLit && ++dark >= 20) armed = true } else dark = 0
+          } else if (cov[y] < 0.05) { if (seenLit && ++dark >= darkNeed) armed = true } else dark = 0
         }
         return out
       }, [png, LIT])
@@ -142,20 +158,19 @@ try {
     await page.screenshot({ path: `docs/m3-bands-${slug}-res5.png` })
     const harmCount = () => page.locator('.harm-marker.lofar').count()
     const harmN = async () => parseInt((/(\d+) MARKERS/.exec(await page.locator('[data-testid=harm-readout]').innerText()) ?? [])[1] ?? 'NaN')
-    // On the phone the picker in the Controls sheet is used for one change (the inline seg for the others).
+    // On the phone the picker in the Settings tab is used for one change (the inline seg for the others).
     const viaSheet = async (id) => {
-      await page.locator('[data-testid=menu-open]').tap(); await page.waitForTimeout(350)
+      await page.locator('[data-testid=tab-settings]').tap(); await page.waitForTimeout(350)
       const sheetSeg = page.locator('[data-testid=band-seg-sheet]')
-      ok(await sheetSeg.isVisible(), `${slug}: sheet band seg not visible`)
-      // Measure once the sheet's open animation has settled (a transform mid-slide shrinks the rects).
-      await page.waitForFunction(() => document.querySelector('[data-testid=menu-sheet]')?.getAnimations({ subtree: true }).every((a) => a.playState !== 'running') ?? false, null, { timeout: 3000 }).catch(() => {})
+      await sheetSeg.scrollIntoViewIfNeeded()
+      ok(await sheetSeg.isVisible(), `${slug}: settings band seg not visible`)
       const sizes = await sheetSeg.locator('button').evaluateAll((bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)] }))
       const small = sizes.filter(([w, h]) => w < 44 || h < 44).length
       ok(!small, `${slug}: ${small} sheet band targets < 44 (${JSON.stringify(sizes)})`)
       await sheetSeg.locator('button', { hasText: new RegExp(`^${id}$`) }).tap()
       ok((await sheetSeg.locator('button[aria-pressed=true]').allInnerTexts()).join() === id, `${slug}: sheet seg not pressed on ${id}`)
       await page.screenshot({ path: `docs/m3-bands-${slug}-sheet.png` })
-      await page.getByRole('button', { name: 'Close Controls' }).tap(); await page.waitForTimeout(400)
+      await page.locator('[data-testid=tab-live]').tap(); await page.waitForTimeout(400)
     }
     let harmLF = NaN
     const tapBand = (id) => seg.locator('button', { hasText: new RegExp(`^${id}$`) }).tap()

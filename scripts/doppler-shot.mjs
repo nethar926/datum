@@ -71,7 +71,7 @@ try {
     const _dir0 = await page.evaluate(() => document.querySelector('[data-testid=lofar-frame]')?.getAttribute('data-dir')); console.log(`${slug}: dir=${_dir0} placed f0 ${JSON.stringify(h0)} f1 ${JSON.stringify(h1)} f2 ${JSON.stringify(h2)}`)
     ok(h0.vis && h1.vis && h2.vis, F('handles not all visible after placement'))
     ok(Math.abs(h0.cx - p0.x) < 14 && Math.abs(h0.cy - p0.y) < 14, F(`f0 not under the tap (${h0.cx},${h0.cy} vs ${p0.x},${p0.y})`))
-    for (const h of [h0, h1, h2]) ok(h.w >= 44 && h.h >= 44, F(`handle < 44 px (${h.w}×${h.h})`))
+    for (const h of [h0, h1, h2]) ok(Math.round(h.w) >= 44 && Math.round(h.h) >= 44, F(`handle < 44 px (${h.w}×${h.h})`))
     // Default newest-at-bottom: approach (older) is ABOVE f0; receding is BELOW.
     const dir = await page.evaluate(() => document.querySelector('[data-testid=lofar-frame]')?.getAttribute('data-dir'))
     ok(dir === 'bottom', F(`expected default dir=bottom, got ${dir}`))

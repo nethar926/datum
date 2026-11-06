@@ -5,8 +5,8 @@ const port = Number(process.env.PORT) || 4183
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 const openNew = async (page) => {
-  if (await page.locator('[data-testid=menu-open]').isVisible()) { await page.locator('[data-testid=menu-open]').tap(); await page.waitForTimeout(250) }
-  await page.locator('button:visible', { hasText: /^New$/ }).first().tap()
+  await page.locator('[data-testid=tab-settings]').tap(); await page.waitForTimeout(250)
+  await page.locator('[data-testid=settings-new]').tap()
   await page.waitForSelector('[data-testid=sim-start]')
 }
 try {
@@ -40,10 +40,10 @@ try {
     await page.locator('[data-testid=ns-seed]').fill('#12,345'); await page.waitForTimeout(100)
     ok(!(await page.locator('[data-testid=ns-start]').isDisabled()), `${slug}: good seed left Start disabled`)
     await page.locator('[data-testid=ns-start]').tap(); await page.waitForTimeout(1500)
-    if (await page.locator('[data-testid=menu-open]').isVisible()) { await page.locator('[data-testid=menu-open]').tap(); await page.waitForTimeout(300) }
+    await page.locator('[data-testid=tab-settings]').tap(); await page.waitForTimeout(300)
     ok(/12345/.test(await page.locator('[data-testid=seed-chip]:visible').innerText()), `${slug}: seed chip missing`)
     await page.screenshot({ path: `docs/m3-seed-${slug}-chip.png` })
-    if (await page.locator('[data-testid=menu-open]').isVisible()) await page.keyboard.press('Escape')
+    await page.locator('[data-testid=tab-live]').tap(); await page.waitForTimeout(200)
     ok(await page.locator('[data-testid=sim-start]').count() === 0, `${slug}: start did not close`)
     await page.reload(); await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(800)
     await openNew(page)

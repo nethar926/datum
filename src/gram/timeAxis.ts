@@ -97,6 +97,12 @@ export function formatZulu(simS: number, originMs: number): string {
   return `${hh}${mm}Z`
 }
 
+/** Zulu clock to the second (`HHmmssZ`) for the HORZ hover row label. */
+export function formatZuluSec(simS: number, originMs: number): string {
+  const d = new Date(originMs + simS * 1000)
+  return `${String(d.getUTCHours()).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}${String(d.getUTCSeconds()).padStart(2, '0')}Z`
+}
+
 /**
  * Tick ages (seconds before now) for the Y axis. Short canvases get fewer labels so `0213Z` doesn't collide.
  */

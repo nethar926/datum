@@ -13,7 +13,7 @@ import { LevelHistory } from './levelHistory'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 import { bandLimitHz, fullView, minSpanOf } from './res'
 import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
-import { agoFromY, formatZulu, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
+import { agoFromY, formatZulu, formatZuluSec, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
 
 
 export interface OverlayCtx { view: FreqView; width: number; cfg: GramConfig; historyS: number; dir: GramDir }
@@ -27,8 +27,11 @@ interface Props {
   onPickPoint?: (hz: number, agoS: number) => void
   /** When set, pointer drags on the waterfall call this (overlay dragging); clicks are suppressed. */
   onDragPoint?: (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => void
-  /** Full-width time / full-height frequency crosshair with time, frequency and level readout. */
-  crosshair?: boolean; nowS?: number
+  /**
+   * HORZ: a thin full-width horizontal hairline on the default cursor at the hover row, with the Zulu time at the
+   * time-axis edge. Cursor chrome only (not a crosshair mode, not a bearing fix).
+   */
+  horz?: boolean; nowS?: number
   auto?: boolean; normalized?: boolean; palette?: PaletteId
   /** Colour-scale gain about the dB midpoint (1 = engine range). Applies to LOFAR and DIFAR. */
   contrast?: number
@@ -61,7 +64,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0, handoff, onCenterFreq, onCursorHz, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -71,6 +74,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const [pressHint, setPressHint] = useState(false)
   const [cursor, setCursor] = useState<number | null>(null)
   const [cross, setCross] = useState<{ hz: number; agoS: number; x: number } | null>(null)
+  const [hoverAgo, setHoverAgo] = useState<number | null>(null)
   const histRef = useRef<LevelHistory | null>(null)
   const brgHistRef = useRef<BearingHistory | null>(null)
   const [width, setWidth] = useState(800)
@@ -280,6 +284,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const ago = (y: number, h: number) => agoFromY(y, h, historyS, dir)
   const showAt = (x: number, y: number, w: number, h: number, withCross: boolean) => {
     const hz = xToFreq(x, view, w); setCursor(hz); onCursorHz?.(hz)
+    if (horz) setHoverAgo(ago(y, h))
     if (withCross) setCross({ hz, agoS: ago(y, h), x })
   }
   const onPDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -296,7 +301,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     }
     if (ptr.current.size > 2) return
     G.moved = false; G.longFired = false; G.pinch = null
-    if (!crosshair) setCross(null)
+    setCross(null)
     if (onDragPoint) { G.dragging = true; onDragPoint('start', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
     if (e.pointerType !== 'mouse') {
       showAt(x, y, w, h, false); setPressHint(true)
@@ -308,7 +313,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   }
   const onPMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y, w, h } = local(e), G = g.current, p = ptr.current.get(e.pointerId)
-    if (!p) { if (e.pointerType === 'mouse') showAt(x, y, w, h, crosshair); return }
+    if (!p) { if (e.pointerType === 'mouse') showAt(x, y, w, h, false); return }
     p.x = x; p.y = y
     if (G.pinch && ptr.current.size >= 2) {
       const [a, b] = [...ptr.current.values()]
@@ -316,7 +321,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     }
     if (!G.moved && exceedsSlop(p.x0, p.y0, x, y)) { G.moved = true; clearTimeout(G.longTimer); setPressHint(false) }
     if (G.dragging) { if (G.moved) onDragPoint?.('move', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
-    showAt(x, y, w, h, crosshair || G.longFired)
+    showAt(x, y, w, h, G.longFired)
   }
   const onPUp = (e: React.PointerEvent<HTMLCanvasElement>, cancel = false) => {
     const { x, y, w, h } = local(e), G = g.current, p = ptr.current.get(e.pointerId)
@@ -348,7 +353,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas key={glGen} ref={canvasRef} data-testid={testId} onWheel={onWheel}
           onPointerDown={onPDown} onPointerMove={onPMove} onPointerUp={(e) => onPUp(e)} onPointerCancel={(e) => onPUp(e, true)}
-          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size) { setCursor(null); setCross(null); onCursorHz?.(null) } }}
+          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size) { setCursor(null); setCross(null); setHoverAgo(null); onCursorHz?.(null) } }}
           onContextMenu={(e) => e.preventDefault()}
           className={pressHint ? 'pressing' : undefined}
           style={{ touchAction: 'none', cursor: onPickPoint ? 'crosshair' : onDragPoint ? 'ew-resize' : undefined }}
@@ -364,7 +369,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         {timeTicks.map((t) => {
           const top = pctFromAgo(t, historyS, dir)
           const label = t < 1e-6 ? 'now' : formatZulu(nowS - t, zuluOrigin)
-          return <span key={t} style={{ top: `${top}%` }}>{label}</span>
+          // Clamp so the end labels (oldest / NOW) sit fully inside the axis instead of half-clipped at the edge.
+          return <span key={t} style={{ top: `clamp(7px, ${top}%, calc(100% - 7px))` }}>{label}</span>
         })}
       </div>
       <div className="axis axis-x" data-testid={`${testId}-freq-axis`} role="slider" aria-label="Frequency axis · tap to center"
@@ -391,6 +397,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(fBin < 0.1 ? 2 : 1)}</span></div>
       )}
       {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS, dir })}</div>}
+      {horz && hoverAgo !== null && cursor !== null && (
+        <div className="horz-layer" aria-hidden data-testid={`${testId}-horz`} style={{ top: `calc((100% - 44px) * ${(pctFromAgo(hoverAgo, historyS, dir) / 100).toFixed(5)})` }}>
+          <i className="horz-line" /><span className="horz-zulu" data-testid={`${testId}-horz-zulu`}>{formatZuluSec(nowS - hoverAgo, zuluOrigin)}</span>
+        </div>
+      )}
       {cross && (
         <div className="gram-layer cross-layer" style={{ width }} aria-hidden>
           <div className="cross-h" style={{ top: `${pctFromAgo(cross.agoS, historyS, dir)}%` }} />

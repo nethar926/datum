@@ -72,6 +72,16 @@ export function dropHint(s: DropState, full: boolean): string {
   return 'Confirm to drop · tap again to move'
 }
 
+/** Phone-width version of {@link dropHint}: same states, copy short enough for a chip beside the drop tools. */
+export function dropHintShort(s: DropState, full: boolean): string {
+  if (full) return 'Field full'
+  if (!s.pattern) return s.mode === 'auto' ? 'AUTO · or pick one' : 'Pick a pattern'
+  const name = s.pattern.toUpperCase()
+  if (s.phase === 'armed') return s.pattern === 'single' ? 'Tap to place' : `Tap to place ${name}`
+  if (s.phase === 'placing') return s.placement?.dragged ? 'Sizing…' : 'Placing…'
+  return 'Confirm or move'
+}
+
 /** AUTO re-lay rules: a fix farther than AUTO_GAP_M from every live buoy, at most once per AUTO_COOLDOWN_S. */
 export const AUTO_GAP_M = 4000, AUTO_COOLDOWN_S = 300
 export interface AutoMemo { lastLayS: number | null }

@@ -5,7 +5,7 @@ import type { OperatorLog } from '../log/operatorLog'
 import { crossFixes } from './fix'
 import { DEFAULT_COUNT, DROP_PATTERNS, PATTERN_LABEL, autoPlacement, planDrop, planReadout, type DropPattern, type DropPlan, type Pt } from './drop'
 import type { DropController } from './dropController'
-import { FIELD_MODES, FIELD_MODE_LABEL, MAX_BUOYS, autoShouldLay, dropHint, type AutoMemo } from './fieldMode'
+import { FIELD_MODES, FIELD_MODE_LABEL, MAX_BUOYS, autoShouldLay, dropHint, dropHintShort, type AutoMemo } from './fieldMode'
 
 interface Props {
   client: SimClient; drop: DropController; tactical?: Tactical; log: OperatorLog
@@ -96,6 +96,7 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS }: Props) {
   // Phones: the plot grows while the drop tool is out (see .layout-phonePortrait in index.css).
   useEffect(() => { document.documentElement.dataset.drop = s.phase; return () => { delete document.documentElement.dataset.drop } }, [s.phase])
   const hint = toast ?? (ready ? dropHint(s, full) : 'Starting…')
+  const hintShort = toast ?? (ready ? dropHintShort(s, full) : 'Starting…')
   return (
     <div className="drop-bar" data-testid="drop-bar" data-mode={s.mode} data-phase={s.phase} data-pattern={s.pattern ?? ''}>
       {s.phase === 'preview' && ghost ? (
@@ -114,7 +115,7 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS }: Props) {
           </div>
         </div>
       ) : (
-        <div key={hint} className={`drop-hint${toast ? ' toast' : ''}`} data-testid="drop-hint" aria-live="polite"><span className="drop-hint-count">{count}/{MAX_BUOYS} · </span>{hint}</div>
+        <div key={hint} className={`drop-hint${toast ? ' toast' : ''}`} data-testid="drop-hint" aria-live="polite"><span className="drop-hint-count">{count}/{MAX_BUOYS}<span className="drop-hint-sep"> · </span></span><span className="lbl-full">{hint}</span><span className="lbl-short">{hintShort}</span></div>
       )}
       <div className="drop-tools">
         <div className="seg field-mode" role="group" aria-label="Field mode" data-testid="field-mode">

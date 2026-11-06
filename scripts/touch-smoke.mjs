@@ -72,22 +72,20 @@ try {
     { const a = pt(0.3, 0.4); await touch('pointerdown', 1, a); for (let k = 1; k <= 4; k++) await touch('pointermove', 1, { x: a.x + k * 10, y: a.y }); await touch('pointerup', 1, { x: a.x + 40, y: a.y }) }
     ok(/F0|Hz/i.test(await page.locator('[data-testid=harm-readout]').innerText().catch(() => '')), F('HARM drag: no readout'))
     await page.getByRole('button', { name: 'HARM', exact: true }).tap()
-    // Phones: controls sheet opens and closes; landscape tactical slide-over.
+    // Phones: the Settings tab opens and the Live tab returns; the tactical plot is always on screen (no slide-over).
     if (want !== 'wide') {
-      await page.locator('[data-testid=menu-open]').tap(); await page.waitForTimeout(350)
-      ok(await page.locator('[data-testid=menu-sheet]').isVisible(), F('menu sheet not visible'))
-      const fs = await page.locator('[data-testid=menu-sheet] select').evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
+      await page.locator('[data-testid=tab-settings]').tap(); await page.waitForTimeout(350)
+      ok(await page.locator('[data-testid=settings]').isVisible(), F('settings screen not visible'))
+      const fs = await page.locator('[data-testid=settings] select').first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
       ok(fs >= 16, F(`select font ${fs}px < 16`))
       await page.screenshot({ path: `docs/m3-touch-${slug}-sheet.png` })
-      await page.getByRole('button', { name: 'Close Controls' }).tap(); await page.waitForTimeout(400)
-      ok(await page.locator('[data-testid=menu-sheet]').count() === 0, F('menu sheet did not close'))
+      await page.locator('[data-testid=tab-live]').tap(); await page.waitForTimeout(400)
+      ok(await page.locator('[data-testid=settings]').count() === 0, F('settings screen did not close'))
     }
-    if (want === 'phoneLandscape') {
-      await page.locator('[data-testid=tac-open]').tap(); await page.waitForTimeout(350)
-      const tf = await page.locator('[data-testid=tac-panel]').evaluate((e) => getComputedStyle(e).transform)
-      ok(tf === 'none', F(`tactical slide-over not open (${tf})`))
-      await page.screenshot({ path: `docs/m3-touch-${slug}-tac.png` })
-      await page.locator('.tac-scrim').tap({ position: { x: 20, y: 100 } }); await page.waitForTimeout(350)
+    {
+      const tb = await page.locator('[data-testid=tactical]').boundingBox(), vp = page.viewportSize()
+      ok(tb && tb.width > 120 && tb.height > 100 && tb.x >= 0 && tb.y >= 0 && tb.x + tb.width <= vp.width + 1 && tb.y + tb.height <= vp.height + 1, F(`tactical plot not fully on screen ${JSON.stringify(tb)}`))
+      if (want === 'phoneLandscape') await page.screenshot({ path: `docs/m3-touch-${slug}-tac.png` })
     }
     // WebGL context loss without restore (iOS background): canvas must rebuild and keep drawing.
     const before = await page.locator('[data-testid=lofar]').elementHandle()

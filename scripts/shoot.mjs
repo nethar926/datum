@@ -55,19 +55,21 @@ try {
     await page.click('button:has-text("HARM")')
     const c = await page.locator('[data-testid="lofar"]').boundingBox()
     await page.mouse.click(c.x + c.width * 0.072, c.y + c.height * 0.5)
-    await page.click('button:has-text("CROSS")')
+    await page.click('[data-testid=horz-tool]')
     await page.mouse.move(c.x + c.width * 0.3, c.y + c.height * 0.35)
     await page.waitForTimeout(300)
   }
   if (process.env.SETTINGS) {
-    await page.getByRole('button', { name: 'Settings' }).click()
+    await page.getByRole('tab', { name: 'Settings' }).click()
+    await page.locator('[data-testid=traffic-open]').click(); await page.waitForTimeout(300)
     await page.locator('#traffic').fill('1')
     const t = await page.locator('[data-testid=traffic-label]').innerText()
     if (t !== 'Heavy') errors.push('traffic label ' + t)
     console.log('traffic:', t)
   }
   if (process.env.NEWSCN) {
-    await page.getByRole('button', { name: 'New', exact: true }).click()
+    await page.getByRole('tab', { name: 'Settings' }).click()
+    await page.locator('[data-testid=settings-new]').click()
     await page.waitForSelector('.modal')
   }
   await page.screenshot({ path: process.env.SHOT ?? 'docs/m1.png' })

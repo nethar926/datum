@@ -1,0 +1,281 @@
+/*
+ * DATUM iOS 26-style app chrome + Liquid Glass.
+ * Glass lives on chrome only (nav bar, tab bar, tool bar, floating buttons, sheets). The gram and the tactical plot
+ * are opaque dark instruments and are never under glass. Small glass areas only; backdrop-filter is never applied
+ * over a large region (sheets use a translucent fill with the glass rim instead).
+ */
+:root { --dock-h: 64px; --nav-h: 48px; --split-handle: 20px; --spring: cubic-bezier(.34, 1.36, .5, 1); --t-fast: 160ms; --t: 190ms; }
+body { background: var(--sys-grouped); color: var(--sys-label); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif; }
+
+/* ---------- App frame: nav / workspace / dock ---------- */
+.app.ios { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); gap: 8px;
+  height: 100%; height: 100dvh; overflow: hidden; position: relative; background: var(--sys-grouped);
+  padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left)); }
+
+/* ---------- Liquid Glass ---------- */
+.glass { position: relative; isolation: isolate; background: transparent; color: var(--sys-label);
+  border-radius: 999px; box-shadow: var(--glass-shadow); }
+/* Body: small blur + saturation (the "material"), tinted. */
+.glass::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(14px) saturate(190%) brightness(1.04); backdrop-filter: blur(14px) saturate(190%) brightness(1.04); }
+/* Lens + specular rim: brighter, more saturated edge band (cheap faked refraction), top-left specular glint,
+   inner highlight on the top edge, faint lower rim. No backdrop here (cheap). */
+.glass::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background:
+    radial-gradient(140% 120% at 18% -30%, var(--glass-spec), transparent 42%),
+    radial-gradient(90% 90% at 100% 130%, rgba(255, 255, 255, .10), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, .10), transparent 30%, transparent 72%, rgba(255, 255, 255, .05));
+  box-shadow: inset 0 1px 0 var(--glass-rim), inset 0 -1px 0 var(--glass-rim-lo), inset 0 0 0 .5px var(--glass-edge),
+    inset 0 0 12px rgba(255, 255, 255, .05), inset 0 0 2px 1px rgba(255, 255, 255, .06);
+  mix-blend-mode: normal; }
+/* Chromium accepts an SVG displacement in backdrop-filter: real refraction there. WebKit keeps the gradient lens. */
+:root[data-refract='svg'] .glass::before { backdrop-filter: url(#lg-refract) blur(12px) saturate(190%) brightness(1.04); }
+/* The Live nav and the dock only ever sit over the flat app background (instruments get their own reserved
+   rows), so a backdrop blur there samples a flat colour and costs a full re-filter on every repaint for no
+   visible change. Same material without the backdrop pass; real backdrop stays on scrolling navs, sheets and
+   the floating plot buttons. */
+.app.ios > .navbar::before, .app.ios > .dock .glass::before { -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* Reduced transparency / low power: more opaque, no blur. */
+:root[data-glass='reduced'] .glass::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (prefers-reduced-transparency: reduce) { :root:not([data-glass='full']) .glass::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+.glass-btn { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 999px; cursor: pointer;
+  color: var(--sys-label); font: 600 13px/1 inherit; background: transparent;
+  transition: transform var(--t-fast) var(--spring), color var(--t-fast) ease, background-color var(--t-fast) ease; }
+.glass-btn:active { transform: scale(.92); }
+.glass-btn:disabled { opacity: .4; }
+.glass-btn:focus-visible, .tool:focus-visible, .tabbar button:focus-visible, .ios-row:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+
+/* ---------- Navigation bar ---------- */
+.navbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: var(--nav-h);
+  padding: 2px 4px 2px 16px; border-radius: 26px; z-index: 6; }
+.navbar .nav-lead:empty { display: none; }
+.nav-title { min-width: 0; display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; transition: opacity var(--t) ease, transform var(--t) var(--ease); }
+.nav-title b { font: 600 17px/1.2 inherit; letter-spacing: -.02em; }
+.nav-title small { font-size: 12px; color: var(--sys-label-2); overflow: hidden; text-overflow: ellipsis; }
+.nav-title .readout { font: 500 12px/1 var(--font-mono); color: var(--sys-label-2); }
+.navbar.title-hidden .nav-title { opacity: 0; transform: translateY(4px); }
+.nav-trail { display: flex; align-items: center; gap: 6px; }
+.play-btn { width: 44px; height: 44px; padding: 0; color: var(--sys-label); background: transparent; }
+.play-btn.primary { color: #fff; background: var(--tint); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+
+/* iOS segmented control (chrome). */
+.navbar .seg, .panel-head .seg, .ios-row .seg, .ios-seg { background: var(--sys-fill); border: 0; border-radius: 999px; padding: 2px; gap: 0; }
+:is(.navbar, .panel-head, .ios-row, .sheet-body) .seg button { min-height: 44px; min-width: 44px; padding: 0 12px; border-radius: 999px; color: var(--sys-label); font-weight: 500;
+  transition: background-color var(--t-fast) ease, color var(--t-fast) ease, box-shadow var(--t-fast) ease, transform var(--t-fast) var(--spring); }
+:is(.navbar, .panel-head, .ios-row, .sheet-body) .seg button[aria-pressed='true'] { background: var(--sys-cell); color: var(--sys-label); box-shadow: 0 2px 6px rgba(0,0,0,.18), inset 0 .5px 0 rgba(255,255,255,.25); }
+:root[data-scheme='light'] :is(.navbar, .panel-head, .ios-row, .sheet-body) .seg button[aria-pressed='true'] { background: #fff; }
+@media (pointer: coarse) { :is(.navbar, .panel-head, .ios-row, .sheet-body) .seg button { min-height: 44px; } }
+.navbar .rate-seg button { min-width: 44px; padding: 0 8px; font-variant-numeric: tabular-nums; }
+
+/* ---------- Workspace: gram + grabber + plot ---------- */
+.app.ios .workspace { display: grid; gap: 0; min-height: 0; min-width: 0; position: relative; }
+.app.ios[data-split='y'] .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, var(--split-a, .6fr)) var(--split-handle) minmax(0, var(--split-b, .4fr)); }
+.app.ios[data-split='x'] .workspace { grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, var(--split-a, .62fr)) var(--split-handle) minmax(0, var(--split-b, .38fr)); }
+.app.ios .workspace.settling { transition: grid-template-rows 190ms var(--spring), grid-template-columns 190ms var(--spring); }
+.app.ios .workspace.dragging { cursor: grabbing; }
+.app.ios .workspace.dragging * { pointer-events: none; }
+.app.ios .workspace.dragging .split-handle { pointer-events: auto; }
+/* While dropping on a stacked phone, the plot grows (as before). */
+:root:is([data-drop='armed'], [data-drop='placing'], [data-drop='preview']) .app.ios.layout-phonePortrait[data-split='y'] .workspace { grid-template-rows: minmax(0, .38fr) var(--split-handle) minmax(0, .62fr); }
+.app.ios .workspace-left { display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; min-width: 0; }
+.app.ios[data-tab='plot'] .workspace { grid-template-rows: minmax(0, 1fr) !important; grid-template-columns: minmax(0, 1fr) !important; }
+.app.ios[data-tab='plot'] .workspace-left, .app.ios[data-tab='plot'] .split-handle { display: none; }
+.app.ios:is([data-tab='cuts'], [data-tab='settings']) .workspace { visibility: hidden; }
+
+.split-handle { position: relative; display: grid; place-items: center; touch-action: none; cursor: row-resize; z-index: 4; -webkit-user-select: none; user-select: none; }
+.split-handle::before { content: ''; position: absolute; inset: -12px 0; } /* 44 pt hit area */
+.split-handle.split-x { cursor: col-resize; }
+.split-handle.split-x::before { inset: 0 -12px; }
+.split-handle i { width: 40px; height: 5px; border-radius: 3px; background: var(--sys-label-3); transition: background-color var(--t-fast) ease, transform var(--t-fast) var(--spring); }
+.split-handle.split-x i { width: 5px; height: 40px; }
+.split-handle:hover i, .workspace.dragging .split-handle i { background: var(--sys-label-2); transform: scale(1.12); }
+.split-handle:focus-visible { outline: none; }
+.split-handle:focus-visible i { background: var(--tint); }
+
+/* Instrument cards: opaque, dark, continuous-corner. */
+.app.ios .panel { background: var(--sys-cell); border: 0; border-radius: 22px; box-shadow: var(--shadow-panel); overflow: hidden; min-height: 0; min-width: 0; }
+.app.ios .panel.gram-panel { grid-template-rows: auto minmax(0, 1fr); }
+.app.ios .panel.tac-panel { grid-template-rows: minmax(0, 1fr); }
+.app.ios .panel-body { background: var(--gram-bg); }
+.app.ios .tac-panel .panel-body { background: var(--plot-bg); }
+.app.ios .panel-head { border-bottom: .5px solid var(--sys-sep); padding: 4px 6px 4px 14px; gap: 6px; background: var(--sys-cell);
+  flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; min-height: 52px; max-height: 52px;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); }
+.app.ios .panel-head::-webkit-scrollbar { display: none; }
+.app.ios .panel-head > * { flex: 0 0 auto; }
+.app.ios.layout-wide .panel-head { flex-wrap: wrap; max-height: none; -webkit-mask-image: none; mask-image: none; row-gap: 6px; padding-block: 6px; }
+.app.ios .panel-head h2 { font: 600 13px/1 var(--font-mono); letter-spacing: .04em; color: var(--sys-label); }
+.app.ios .panel-head .readout { color: var(--sys-label-2); margin-left: auto; padding-right: 10px; }
+.app.ios .panel-head .btn { min-height: 44px; border-radius: 999px; border: 0; background: var(--sys-fill); color: var(--sys-label); padding: 0 14px; }
+.app.ios .panel-head .btn.vernier { color: var(--sys-label); background: var(--sys-fill); border: 1px dashed var(--sys-label-3); font: 600 11px/1 var(--font-mono); }
+.app.ios .panel-head .btn.vernier.on { background: var(--tint-fill); border: 1px solid var(--tint); }
+.app.ios .panel-head .btn.vernier.pick { background: var(--tint-fill); border-style: solid; border-color: var(--tint); }
+.app.ios .panel-head .btn.center-btn { background: var(--tint); color: #fff; border: 0; }
+.app.ios .res-step .res-read { color: var(--sys-label); }
+.app.ios .info-btn { width: 44px; padding: 0; display: inline-grid; place-items: center; color: var(--tint); background: transparent !important; }
+.app.ios .hz-field input { background: var(--sys-fill); color: var(--sys-label); border: 0; border-radius: 999px; padding: 0 14px; }
+
+/* Floating glass buttons on the plot: in the corner, never over the PPI centre. */
+.plot-float { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; gap: 6px; }
+.float-btn { --glass-tint: rgba(20, 22, 26, .5); color: #f2f3f5; }
+.float-btn.truth-chip { font: 600 11px/1 var(--font-mono); color: #e8c46a; padding: 0 14px; }
+.app.ios .plot-corner { top: 10px; right: 12px; font-size: 11px; color: #a4a7b0; display: grid; justify-items: end; gap: 2px; }
+.app.ios .plot-corner .sim-clock { color: #e6e8ee; font-variant-numeric: tabular-nums; }
+
+/* ---------- Dock: tab bar + tool bar (same row → minimize never resizes the gram) ---------- */
+.dock { display: flex; align-items: center; gap: 8px; min-height: var(--dock-h); padding: 2px 0 max(8px, env(safe-area-inset-bottom)); z-index: 8; position: relative; }
+.dock-spacer { flex: 1; }
+.tabbar { display: flex; align-items: center; gap: 0; padding: 4px; height: 60px; flex: 0 0 auto; border-radius: 999px; overflow: hidden;
+  transition: width var(--t) var(--spring), padding var(--t) var(--spring); }
+.tabbar button { position: relative; display: grid; justify-items: center; align-content: center; gap: 1px; width: 66px; min-width: 44px; height: 52px; padding: 0;
+  border: 0; border-radius: 999px; background: transparent; color: var(--sys-label); cursor: pointer; font: 600 10px/1.1 inherit; letter-spacing: .01em;
+  transition: width var(--t) var(--spring), opacity var(--t-fast) ease, color var(--t-fast) ease, background-color var(--t-fast) ease, transform var(--t-fast) var(--spring); }
+.tabbar button.on { color: var(--tint); background: var(--glass-sel); }
+.tabbar button:active { transform: scale(.94); }
+.tabbar.min button:not(.on) { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
+.tabbar.min button.on { width: 52px; background: transparent; }
+.tabbar.min button.on span { display: none; }
+.layout-phonePortrait .tabbar button { width: 56px; }
+.layout-phonePortrait .tabbar button span { font-size: 10px; }
+.toolbar-glass { flex: 1 1 auto; min-width: 0; height: 60px; padding: 4px; border-radius: 999px; overflow: hidden; }
+.tool-scroll { display: flex; align-items: center; gap: 2px; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x;
+  border-radius: 999px; overscroll-behavior-x: contain; scroll-padding-inline: 4px; scroll-snap-type: x proximity; }
+.tool-scroll > * { scroll-snap-align: start; }
+/* Overflow affordance: fade only the edge that has more, plus a chevron that pages the strip. */
+.tool-scroll-wrap { position: relative; height: 100%; min-width: 0; border-radius: 999px; overflow: hidden;
+  --fl: 0px; --fr: 0px; }
+.tool-scroll-wrap[data-more-l='1'] { --fl: 40px; }
+.tool-scroll-wrap[data-more-r='1'] { --fr: 52px; }
+.tool-scroll-wrap > .tool-scroll {
+  /* Content is fully faded out under the chevron (last ~34px), easing in over the 30px before it. */
+  --ml: calc(var(--fl) * .85); --mr: calc(var(--fr) * .65);
+  -webkit-mask-image: linear-gradient(90deg, transparent var(--ml), #000 calc(var(--ml) + var(--fl) * .7), #000 calc(100% - var(--mr) - var(--fr) * .6), transparent calc(100% - var(--mr)));
+  mask-image: linear-gradient(90deg, transparent var(--ml), #000 calc(var(--ml) + var(--fl) * .7), #000 calc(100% - var(--mr) - var(--fr) * .6), transparent calc(100% - var(--mr))); }
+.tool-more { position: absolute; top: 50%; width: 44px; height: 44px; margin-top: -22px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 999px; background: transparent; color: var(--sys-label-2); cursor: pointer; z-index: 1;
+  transition: transform var(--t-fast) var(--spring), color var(--t-fast) ease; }
+.tool-more:active { transform: scale(.9); color: var(--tint); }
+.tool-more .ic { width: 18px; height: 18px; }
+.tool-more-r { right: 0; }
+.tool-more-l { left: 0; }
+.tool-more-l .ic { transform: scaleX(-1); }
+.tool-scroll::-webkit-scrollbar { display: none; }
+.tool { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; height: 52px; padding: 0 14px 0 12px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--sys-label); cursor: pointer; font: 600 12px/1 inherit; letter-spacing: .02em; white-space: nowrap;
+  transition: background-color var(--t-fast) ease, color var(--t-fast) ease, transform var(--t-fast) var(--spring); }
+.tool .ic { flex: none; }
+.tool:active { transform: scale(.94); }
+.tool[aria-pressed='true'], .tool.armed { color: var(--tint); background: var(--tint-fill); }
+.tool.sub { color: var(--sys-label-2); padding-inline: 10px; }
+.tool.brg-btn { min-height: 44px; font: 600 12px/1 inherit; background: transparent; border: 0; animation: none; box-shadow: none; }
+.tool.brg-btn.armed { color: #ff9f0a; background: rgba(255, 159, 10, .2); }
+.tool-contrast { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding-right: 10px; }
+.tool-contrast .contrast-label { border: 0; min-width: 0; font-variant-numeric: tabular-nums; }
+.tool-contrast input[type=range] { width: 96px; height: 44px; accent-color: var(--tint); }
+.layout-wide .tool-contrast input[type=range] { width: 140px; }
+
+/* ---------- Large title screens (Settings, Cuts) ---------- */
+.screen { position: absolute; inset: 0; z-index: 5; display: grid; grid-template-rows: minmax(0, 1fr); background: var(--sys-grouped); }
+.screen > .navbar { position: absolute; top: max(6px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); z-index: 7;
+  grid-template-columns: 1fr; justify-items: center; padding-left: 4px; transition: opacity var(--t) ease; }
+.screen > .navbar .nav-title { justify-content: center; }
+.screen > .navbar .nav-trail:empty { display: none; }
+.screen[data-collapsed='0'] > .navbar::before, .screen[data-collapsed='0'] > .navbar::after { opacity: 0; transition: opacity var(--t) ease; }
+.screen[data-collapsed='0'] > .navbar { box-shadow: none; }
+.screen[data-collapsed='1'] > .navbar::before, .screen[data-collapsed='1'] > .navbar::after { opacity: 1; transition: opacity var(--t) ease; }
+.screen-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  padding: calc(max(6px, env(safe-area-inset-top)) + 46px) max(16px, env(safe-area-inset-right)) calc(var(--dock-h) + 24px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+.screen-scroll > * { max-width: 720px; margin-inline: auto; }
+.large-title { font: 700 34px/1.2 inherit; letter-spacing: -.025em; margin: 6px auto 10px; padding-left: 4px; color: var(--sys-label); }
+
+/* Inset grouped list */
+.ios-section { margin: 0 auto 26px; }
+.ios-section h3 { margin: 0 0 6px 16px; font: 400 13px/1.3 inherit; text-transform: uppercase; letter-spacing: .02em; color: var(--sys-label-2); }
+.ios-group { background: var(--sys-cell); border-radius: 12px; overflow: hidden; }
+.ios-group.pad { padding: 12px 16px; }
+.ios-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 6px 16px; position: relative; text-align: left;
+  background: transparent; border: 0; color: var(--sys-label); font: 400 16px/1.25 inherit; cursor: default; }
+button.ios-row, label.ios-row { cursor: pointer; }
+button.ios-row:active { background: var(--sys-fill); }
+.ios-row + .ios-row::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--sys-sep); }
+.ios-row .row-label { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ios-row .row-label small { font-size: 12px; color: var(--sys-label-2); }
+.ios-row .row-value { color: var(--sys-label-2); font-variant-numeric: tabular-nums; }
+.ios-row .chev { color: var(--sys-label-3); flex: none; }
+.ios-row > .seg, .ios-row > .ios-select, .ios-row > .btn { flex: 0 0 auto; }
+.ios-row .seed-chip { min-height: 44px; border-radius: 999px; border: 0; background: var(--sys-fill); color: var(--sys-label); }
+.ios-foot { margin: 8px 16px 0; font-size: 13px; line-height: 1.35; color: var(--sys-label-2); }
+.ios-select { -webkit-appearance: none; appearance: none; min-height: 44px; max-width: 60%; border: 0; border-radius: 10px; padding: 0 30px 0 12px; color: var(--tint); font: 400 16px/1 inherit; text-align: right; text-align-last: right; cursor: pointer;
+  background: var(--sys-fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 9l5-5 5 5M7 15l5 5 5-5'/%3E%3C/svg%3E") no-repeat right 10px center; }
+.ios-switch { -webkit-appearance: none; appearance: none; flex: none; position: relative; width: 51px !important; height: 31px !important; margin: 0; border-radius: 999px;
+  background: var(--sys-fill); cursor: pointer; transition: background-color 180ms ease; }
+.ios-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.16); transition: transform 190ms var(--spring); }
+.ios-switch:checked { background: var(--switch-on); }
+.ios-switch:checked::after { transform: translateX(20px); }
+.ios-switch:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+.field label { color: var(--sys-label); }
+
+/* Cuts placeholder */
+.empty-state { text-align: center; padding: 48px 24px; color: var(--sys-label-2); }
+.empty-icon { display: inline-grid; place-items: center; width: 84px; height: 84px; border-radius: 24px; background: var(--sys-cell); color: var(--tint); margin-bottom: 12px; }
+.empty-state h2 { margin: 0 0 6px; font: 600 22px/1.2 inherit; color: var(--sys-label); }
+.empty-state p { margin: 0 auto; max-width: 34ch; font-size: 15px; line-height: 1.4; }
+
+/* ---------- Sheets (medium / large detents) ---------- */
+.sheet-root { position: fixed; inset: 0; z-index: 30; pointer-events: none; }
+.sheet-root.open { pointer-events: auto; }
+.sheet-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.4); opacity: 0; transition: opacity var(--t) ease; }
+.sheet-root.open .sheet-scrim { opacity: 1; }
+.sheet { position: absolute; left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: 0; display: flex; flex-direction: column;
+  max-width: 640px; margin-inline: auto; border-radius: 34px 34px 0 0; color: var(--sys-label); background: var(--sheet-fill);
+  box-shadow: 0 -10px 40px rgba(0,0,0,.35), inset 0 1px 0 var(--glass-rim), inset 0 0 0 .5px var(--glass-edge);
+  transition: transform 200ms cubic-bezier(.32, .72, 0, 1); will-change: transform; padding: 0 0 env(safe-area-inset-bottom); }
+.sheet::before { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(120% 60% at 15% -20%, var(--glass-spec), transparent 40%); opacity: .5; }
+.sheet.dragging { transition: none; }
+.sheet-top { position: relative; touch-action: none; cursor: grab; padding: 0 12px 0 20px; }
+.sheet-grab { display: grid; place-items: center; width: 100%; height: 44px; min-height: 44px; margin-bottom: -18px; padding: 0; border: 0; background: transparent; cursor: grab; }
+.sheet-grab i { width: 36px; height: 5px; border-radius: 3px; background: var(--sys-label-3); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
+.sheet-head h2 { margin: 0; font: 600 17px/1.2 inherit; }
+.sheet-close { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--sys-fill); color: var(--sys-label-2); cursor: pointer; }
+.sheet-body { overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+.sheet .truth-panel { position: static; max-width: none; max-height: none; overflow: visible; }
+.sheet .truth-bar { position: static; margin: 0 0 4px; }
+
+/* ---------- HORZ: hover-row hairline + Zulu label (crisp, solid label) ---------- */
+.horz-layer { position: absolute; left: 0; right: 0; height: 0; z-index: 3; pointer-events: none; }
+.horz-line { position: absolute; left: 0; right: 44px; top: 0; height: 0; border-top: 1px solid rgba(255, 255, 255, .78); transform: translateY(-.5px); }
+.horz-zulu { position: absolute; right: 0; top: 0; transform: translateY(-50%); width: 44px; padding: 2px 0; text-align: center; background: #e8eaed; color: #000;
+  font: 600 9px/1 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; border-radius: 3px; }
+
+/* ---------- Layout variants ---------- */
+/* Phone portrait: stacked, small gutters. */
+.app.ios.layout-phonePortrait { gap: 6px; padding-inline: max(6px, env(safe-area-inset-left)) max(6px, env(safe-area-inset-right)); }
+.app.ios.layout-phonePortrait .panel { border-radius: 18px; }
+.app.ios.layout-phonePortrait .navbar { padding-left: 14px; }
+/* Phone landscape: compact bars so the gram keeps its height. */
+.app.ios.layout-phoneLandscape { --nav-h: 44px; --dock-h: 56px; gap: 6px; }
+.app.ios.layout-phoneLandscape .dock { padding-bottom: max(4px, env(safe-area-inset-bottom)); }
+.app.ios.layout-phoneLandscape .tabbar, .app.ios.layout-phoneLandscape .toolbar-glass { height: 52px; }
+.app.ios.layout-phoneLandscape .tabbar button { height: 44px; width: 60px; }
+.app.ios.layout-phoneLandscape .tool { height: 44px; }
+.app.ios.layout-phoneLandscape .panel-head { min-height: 50px; max-height: 50px; padding-block: 3px; }
+.app.ios.layout-phoneLandscape .panel { border-radius: 16px; }
+/* Wide (iPad, desktop): roomier, tab bar centred with the tools beside it. */
+.app.ios.layout-wide { gap: 10px; padding-inline: max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right)); }
+.app.ios.layout-wide .tabbar button { width: 76px; font-size: 11px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tabbar, .tabbar button, .tool, .glass-btn, .split-handle i, .app.ios .workspace.settling, .sheet, .sheet-scrim, .ios-switch::after, .nav-title { transition: none !important; }
+}
+
+/* Grid areas so screens that hide the nav bar never shift the dock. */
+.app.ios { grid-template-areas: 'nav' 'main' 'dock'; }
+.app.ios > .navbar { grid-area: nav; }
+.app.ios > .workspace { grid-area: main; }
+.app.ios > .dock { grid-area: dock; }
+.app.ios > .cmp-wrap { display: contents; }
