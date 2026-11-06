@@ -5,7 +5,7 @@ export type LineStability='stable'|'unstable';
 export type LineWidth='discrete'|'diffuse';
 export interface LineProfile {stability:LineStability;width:LineWidth;sigmaBins?:number}
 export type LineProfiles=Partial<Record<TonalFamily,LineProfile>>;
-export type LineFamily='CSR'|'CFR'|'EFR'|'EDA'|'PSR'|'MSR'|'COOLANT'|'TG'|'BR'|'GRID'|'SRC'|'MESH'|'AUX'|'TURBINE';
+export type LineFamily='CSR'|'CFR'|'EFR'|'EDA'|'PSR'|'MSR'|'COOLANT'|'TG'|'BR'|'GRID'|'SRC'|'MESH'|'AUX'|'TURBINE'|'VANE';
 export type EngineLineFamily=LineFamily;
 export interface TonalLine {eda?:{name:string;cfrMultiple:number};reactorId?:string;lineFamily?:EngineLineFamily;fundamentalHz?:number;engineId?:string;family:TonalFamily;hz:number;power:number;id?:string;stability?:LineStability;width?:LineWidth;sigmaBins?:number;frequencyHz?:number;shaftIndex?:number;harmonic?:number;engineIndex?:number}
 const stable:LineProfile={stability:'stable',width:'discrete'},aux:LineProfile={stability:'unstable',width:'discrete'},diffuse:LineProfile={stability:'unstable',width:'diffuse',sigmaBins:2.5};

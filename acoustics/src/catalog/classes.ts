@@ -25,7 +25,7 @@ const legacy:{catalogVersion:1;classes:Omit<SubmarineClass,keyof VesselPlantSpec
 // Two extra invented Dorhan coastal/littoral boats; no real-country analogues or signature data.
 for(const [id,name,maxSpeedKn,quietSpeedKn,depth,maxRpm,blades,levelDb] of [
  ['red-dorhan-pebblewisp','Pebblewisp',14,4,180,180,4,112],
- ['red-dorhan-mistacorn','Mistacorn',9,3.5,90,220,4,108],
+ ['red-dorhan-mistacorn','Mistacorn',12,3.5,90,150,4,108], // fictional TPK softened: was 220 rpm / 9 kn = 24.4; now 150 rpm / 12 kn = 12.5 (diesel band ~8-13)
 ] as const){const c=structuredClone(legacy.classes[10]);c.id=id;c.name=`Fictional ${name}`;c.country='Dorhan Commonwealth';Object.assign(c.params,{maxSpeedKn,quietSpeedKn,maxShaftRpm:maxRpm,blades,levelDb,depthM:[0,depth],dieselCylinders:6});c.hulls=[1,2].map(n=>({id:`fx-${id}-${n}`,number:`FX-DH-${name.slice(0,2).toUpperCase()}-${n}`,name:`${name} Lantern ${n}`}));legacy.classes.push(c);}
 // Project Lead roster: 22 invented classes across eight fictional nations.
 legacy.classes[7].params=structuredClone(legacy.classes[5].params); // Meridia's Opalweft is D/E.

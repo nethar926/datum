@@ -3,6 +3,8 @@ import {makeDrivetrain,type VesselPlantSpec,type EngineSpec,type DieselPlant,typ
 import type {ClassParams} from './schema.js';
 /** Invented static machinery sheets. Hunting-tooth ratios are computed, never rounded internally. */
 export function legacyAux(p:ClassParams):AuxSpec[]{return p.aux.map(a=>({id:a.id,duty:'continuous',kind:a.kind==='pump'?'acPump':'dcvr',fHz:a.rate*(a.basis==='electrical'?p.electricalHz:1),harmonics:a.harmonics,stability:a.stability??(p.propulsion.startsWith('nuclear')?'stable':'unstable'),width:a.width??'discrete',...(a.sigmaBins===undefined?{}:{sigmaBins:a.sigmaBins})}));}
+/** Invented, deterministic per-class turbine vane count in 20..80 (from catalog index only; no real platform data). */
+export function fictionalVaneCount(index:number):number{return 20+(index*37+11)%61;}
 export function defaultVesselPlant(p:ClassParams,index:number):VesselPlantSpec {
  const maxPsrpm=p.maxShaftRpm,shafts=p.shafts,direct=makeDrivetrain('direct'),gr1=makeDrivetrain('gr1',[{pinionTeeth:20,bullTeeth:71}]),gr2=makeDrivetrain('gr2',[{pinionTeeth:17,bullTeeth:47},{pinionTeeth:19,bullTeeth:61}]),turbineGear=makeDrivetrain('gr2',[{pinionTeeth:20,bullTeeth:71},{pinionTeeth:19,bullTeeth:107}]);
  let plant:VesselPlantSpec['machinery'];
@@ -12,7 +14,7 @@ export function defaultVesselPlant(p:ClassParams,index:number):VesselPlantSpec {
   plant=electric?{kind:'dieselElectric',engines,generator:{polePairs:4},motor:{maxRpm:maxPsrpm*(index%2?gr1.ratio:1),drivetrain:index%2?gr1:direct}}:{kind:p.propulsion==='dieselDirect'?'dieselDirect':'dieselGR',engines,drivetrain:drive,motor:{maxRpm:maxPsrpm,drivetrain:direct}};
  }else {
   const electric=p.propulsion==='nuclearElectric',gear=index%2?gr1:turbineGear;
-  plant={reactors:1,reactorSets:[{id:'fictional-reactor-1',coolantPumpHz:18+index*.4,turboGenerator:{rpm:p.electricalHz*60/2,polePairs:2}}],kind:electric?'nuclearElectric':'nuclearGR',mainTurbines:{count:shafts,maxRpm:electric?p.electricalHz*60:maxPsrpm*gear.ratio,drivetrain:electric?direct:gear},turbineGenerators:{count:1,rpm:p.electricalHz*60/2,polePairs:2},...(electric?{motor:{maxRpm:maxPsrpm*gr1.ratio,drivetrain:gr1}}:{})};
+  plant={reactors:1,reactorSets:[{id:'fictional-reactor-1',coolantPumpHz:18+index*.4,turboGenerator:{rpm:p.electricalHz*60/2,polePairs:2}}],kind:electric?'nuclearElectric':'nuclearGR',mainTurbines:{count:shafts,maxRpm:electric?p.electricalHz*60:maxPsrpm*gear.ratio,drivetrain:electric?direct:gear,vaneCount:fictionalVaneCount(index)},turbineGenerators:{count:1,rpm:p.electricalHz*60/2,polePairs:2},...(electric?{motor:{maxRpm:maxPsrpm*gr1.ratio,drivetrain:gr1}}:{})};
  }
  if((index===12||index===13)&&plant.kind==='dieselElectric'){plant.engines.length=index===13?1:2;for(const e of plant.engines){e.stroke=4;e.cylinders=6;}}
  return varyPlantIdentity({maxPsrpm,shafts,shaftMismatchPct:shafts>1?[.12,.65]:[0,0],machinery:plant,edas:[],aux:legacyAux(p).map((a,i)=>i===0&&index%3!==1?{...a,duty:'intermittent' as const,dutyOnS:[45+index,90+2*index] as [number,number],dutyOffS:[60+index,120+2*index] as [number,number]}:a)},`catalog-index:${index}`);

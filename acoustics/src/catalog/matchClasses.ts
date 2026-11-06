@@ -7,7 +7,7 @@ export interface ClassObservations {
  gridHz?:number;mode?:OperatingMode;lineFamilies?:readonly LineFamily[];
  familyFundamentalsHz?:Partial<Record<LineFamily,number>>;
  brToPsr?:number;msrToMotorShaft?:number;msrToPsr?:number;gearRatio?:number;efrToCsr?:number;tpk?:number;
- turbineRateHz?:number;reductionRatio?:number;gearMeshHz?:number;turboGenHz?:number;hydpHz?:number;
+ turbineRateHz?:number;vaneRateHz?:number;vaneCount?:number;reductionRatio?:number;gearMeshHz?:number;turboGenHz?:number;hydpHz?:number;
  edaCfrMultiples?:readonly number[];
  /** Observed SRC lines / SWATH bands (source-frame Hz); optional estimated speed in knots. */
  speedWindows?:readonly {kind:'SWATH'|'SRC';hz?:number;loHz?:number;hiHz?:number;speedKts?:number}[];
@@ -33,7 +33,7 @@ export function matchClasses(observations:ClassObservations,source:readonly {id:
   }
   ranged('brToPsr',observations.brToPsr,k.ratios.brToPsr);ranged('msrToMotorShaft',observations.msrToMotorShaft,k.ratios.msrToMotorShaft);ranged('msrToPsr',observations.msrToPsr,k.ratios.msrToPsr);
   ranged('gearRatio',observations.gearRatio,k.ratios.gear);ranged('efrToCsr',observations.efrToCsr,k.ratios.efrToCsr);ranged('tpk',observations.tpk,k.tpk);
-  ranged('turbineRateHz',observations.turbineRateHz,k.turbineRateHz);ranged('reductionRatio',observations.reductionRatio,k.reductionRatio);ranged('hydpHz',observations.hydpHz,k.hydp?.nominalHz);
+  ranged('turbineRateHz',observations.turbineRateHz,k.turbineRateHz);ranged('vaneRateHz',observations.vaneRateHz,k.vaneRateHz);ranged('vaneCount',observations.vaneCount,k.vaneCount);ranged('reductionRatio',observations.reductionRatio,k.reductionRatio);ranged('hydpHz',observations.hydpHz,k.hydp?.nominalHz);
   if(observations.gearMeshHz!==undefined)check('gearMeshHz',!!k.gearMeshHz?.some(r=>inside(observations.gearMeshHz!,r)));
   if(observations.turboGenHz!==undefined)check('turboGenHz',!!k.turboGenHz?.some(r=>inside(observations.turboGenHz!,r)));
   for(const v of observations.edaCfrMultiples??[])check(`edaCfrMultiple:${v}`,!!k.edas?.some(e=>inside(v,e.cfrMultiple)));

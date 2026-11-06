@@ -658,7 +658,7 @@ interface PropulsionTruth {
   emergencyPropulsor?: { active: boolean; rpm: number; hz: number; blades: number };
 }
 type LineFamily = 'CSR' | 'CFR' | 'EFR' | 'EDA' | 'PSR' | 'MSR' | 'COOLANT' | 'TG' |
-  'BR' | 'GRID' | 'SRC' | 'MESH' | 'AUX' | 'TURBINE';
+  'BR' | 'GRID' | 'SRC' | 'MESH' | 'AUX' | 'TURBINE' | 'VANE';
 // Additional TonalLine/TruthLine metadata:
 // lineFamily?:LineFamily, fundamentalHz?:number, harmonic?:number,
 // engineId?:string, shaftIndex?:number, reactorId?:string, eda?:{name:string,cfrMultiple:number}.
@@ -762,6 +762,13 @@ RPM/60; electrical bus Hz is separately `gridHz = RPM/60 * polePairs`. Nuclear-e
 main turbines can be direct generator drives; motor gearing remains in `gearing`/`ratios.gear`.
 `harmonicFamilies` includes the speed-related BR/PSR/MESH and independent TG/COOLANT families.
 
+Turbine vane-pass: each nuclear `mainTurbines` sheet carries an invented `vaneCount`
+(deterministic per catalog index, 20..80; not a real platform figure). The plant emits a
+dedicated `lineFamily:'VANE'` (TonalFamily `'turbine'`) at `rotorHz × vaneCount × h`, h=1..3,
+alongside the unchanged rotor `TURBINE` lines, so Narrow-down can key it separately.
+Nuclear keys add `vaneRateHz:[min,max]` (= `turbineRateHz × vaneCount`) and `vaneCount:[n,n]`;
+diesel classes have neither. `ClassObservations` accepts `vaneRateHz` and `vaneCount`.
+
 `idKeys.speedWindows` uses `{name,kind:'SWATH'|'SRC',speedKts:[min,max],loHz,hiHz}`;
 the latter pair is a frequency envelope for tracking SRCs or the swath bounds.
 Truth `speedGated` uses `{name,kind:'SRC',hz,active,gain}` or
@@ -774,7 +781,8 @@ interface ClassObservations {
   familyFundamentalsHz?: Partial<Record<LineFamily,number>>;
   brToPsr?: number; msrToMotorShaft?: number; msrToPsr?: number;
   gearRatio?: number; efrToCsr?: number; tpk?: number;
-  turbineRateHz?: number; reductionRatio?: number; gearMeshHz?: number;
+  turbineRateHz?: number; vaneRateHz?: number; vaneCount?: number;
+  reductionRatio?: number; gearMeshHz?: number;
   turboGenHz?: number; hydpHz?: number; edaCfrMultiples?: readonly number[];
   speedWindows?: readonly {
     kind: 'SWATH' | 'SRC'; hz?: number; loHz?: number; hiHz?: number; speedKts?: number;
