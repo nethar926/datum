@@ -77,7 +77,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const [glGen, setGlGen] = useState(0)
   const [pressHint, setPressHint] = useState(false)
   const [cursor, setCursor] = useState<number | null>(null)
-  const [cross, setCross] = useState<{ hz: number; agoS: number; x: number } | null>(null)
+  const [cross, setCross] = useState<{ hz: number; agoS: number; x: number; db: number } | null>(null)
   const [hoverAgo, setHoverAgo] = useState<number | null>(null)
   const histRef = useRef<LevelHistory | null>(null)
   const brgHistRef = useRef<BearingHistory | null>(null)
@@ -94,13 +94,21 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const limitHz = bandLimitHz(cfg)
   const [wheelTick, setWheelTick] = useState(0)
   const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick })
-  viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick }
-  const tacRef = useRef(tactical); tacRef.current = tactical
+  const tacRef = useRef(tactical)
+  // Latest props for the RAF/handoff closures — layout effect so render stays ref-free (oxlint react/refs).
+  useLayoutEffect(() => {
+    viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick }
+    tacRef.current = tactical
+  }, [view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick, tactical])
   // Streams the renderer is drawing right now. A handoff promote swaps this synchronously (before React
   // re-renders with the new configs), so the frame loop never pairs new textures with the old grid.
   const liveRef = useRef(configs), promotedRef = useRef<GramConfig[] | null>(null), epochRef = useRef(0)
   // m3-fe-drop: buoys joined the field (same streams + new ones at the end, same grid) → grow the renderer in place.
   const growRef = useRef<((cs: GramConfig[]) => void) | null>(null), growTo = useRef<GramConfig[] | null>(null)
+  // Render-phase sync is required: epochRef feeds rendererKey (a React key) in this same commit, and liveRef
+  // must match before the frame loop runs. State/effect deferral either loops on new configs[] each render
+  // or pairs new configs with the old WebGL grid for a frame. oxlint react/refs forbids this pattern.
+  /* oxlint-disable react/refs -- WebGL lifetime sync; see comment above */
   if (configs[0]?.streamId === liveRef.current[0]?.streamId) {
     const prev = liveRef.current
     const grew = configs !== prev && configs.length > prev.length && configs[0]?.bins === prev[0]?.bins && prev.every((c, i) => configs[i].streamId === c.streamId)
@@ -120,6 +128,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   // One renderer per stream set lifetime: handoffs (RES, filter, vernier, band) swap banks inside it, even when
   // the bin count changes (RES 1024 ↔ band 2048). A restart (new set, not a handoff) bumps the epoch → rebuild.
   const rendererKey = `${epochRef.current}:${glGen}`
+  /* oxlint-enable react/refs */
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -305,9 +314,28 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const ago = (y: number, h: number) => agoFromY(y, h, historyS, dir)
   const showAt = (x: number, y: number, w: number, h: number, withCross: boolean) => {
     const hz = xToFreq(x, view, w); setCursor(hz); onCursorHz?.(hz)
-    if (horz) setHoverAgo(ago(y, h))
-    if (withCross) setCross({ hz, agoS: ago(y, h), x })
+    const agoS = ago(y, h)
+    if (horz) setHoverAgo(agoS)
+    if (withCross) {
+      // Sample hist in the handler (not during render) so the cross readout stays ref-free.
+      const hist = histRef.current
+      const db = hist && cfg ? hist.at(agoS * rowRate, (hz - cfg.f0) / fBin) : NaN
+      setCross({ hz, agoS, x, db })
+    }
   }
+  // Live cross dB: as nowS advances (App re-renders on new rows), re-sample hist under the
+  // fixed (hz, agoS) hairline. Same cell-under-finger behaviour as the old render-time histRef
+  // read, without touching refs during render. Bail out with the same state object when unchanged
+  // so we allocate and re-render only when the dB value actually moves.
+  useEffect(() => {
+    setCross((c) => {
+      if (!c || !cfg) return c
+      const hist = histRef.current
+      const db = hist ? hist.at(c.agoS * rowRate, (c.hz - cfg.f0) / fBin) : NaN
+      if (Object.is(db, c.db)) return c
+      return { hz: c.hz, agoS: c.agoS, x: c.x, db }
+    })
+  }, [nowS, cfg, rowRate, fBin])
   const onPDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic or already-released pointer */ }
@@ -385,8 +413,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
 
   const crossText = (() => {
     if (!cross || !cfg) return ''
-    const t = nowS - cross.agoS, h = histRef.current
-    const db = h ? h.at(cross.agoS * rowRate, (cross.hz - cfg.f0) / fBin) : NaN
+    const t = nowS - cross.agoS, db = cross.db
     const mm = Math.floor(Math.max(0, t) / 60), ss = Math.floor(Math.max(0, t) % 60)
     return `T+${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')} (-${cross.agoS.toFixed(0)}s)  ${cross.hz.toFixed(fBin < 0.1 ? 2 : 1)} ${unit}  ${Number.isFinite(db) ? `${db.toFixed(1)} dB` : '-- dB'}`
   })()
