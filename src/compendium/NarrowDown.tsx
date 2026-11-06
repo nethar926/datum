@@ -11,6 +11,8 @@ const NUMS: { k: Field; label: string; hint: string }[] = [
   { k: 'msrToMotorShaft', label: 'SLOTS', hint: 'MSR ÷ motor shaft' },
   { k: 'tpk', label: 'TPK', hint: 'shaft RPM per knot' },
   { k: 'turbineRateHz', label: 'TURBINE HZ', hint: 'turbine rate' },
+  { k: 'vaneRateHz', label: 'VANE HZ', hint: 'vane-pass, often >1 kHz' },
+  { k: 'vaneCount', label: 'VANES', hint: 'VANE ÷ TURBINE' },
   { k: 'reductionRatio', label: 'REDUCTION', hint: 'turbine ÷ PSR' },
   { k: 'gearMeshHz', label: 'MESH HZ', hint: 'gear mesh' },
   { k: 'turboGenHz', label: 'TG HZ', hint: 'turbo-generator' },

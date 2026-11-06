@@ -12,9 +12,9 @@ export interface PropulsionTruthLite { kind: string; ratio: number; ratioLabel: 
   mode?: string; drivetrainLabel?: string; tpk?: number; tpkValid?: boolean; tpkMinKts?: number
   propulsor?: { shafts: number; blades: number; bladeType: string; brHz: number }
   emergencyPropulsor?: { active: boolean; rpm: number; hz: number; blades: number }; aip?: { kind: string; active: boolean } }
-export interface TruthLineLite { lineFamily?: LineFamily; fundamentalHz?: number; engineId?: string; freqHz?: number; hz?: number; eda?: { name: string; cfrMultiple: number } }
+export interface TruthLineLite { lineFamily?: LineFamily; fundamentalHz?: number; harmonic?: number; power?: number; engineId?: string; freqHz?: number; hz?: number; eda?: { name: string; cfrMultiple: number } }
 export interface SpeedGatedLite { name: string; kind: 'SWATH' | 'SRC'; hz?: number; loHz?: number; hiHz?: number; active: boolean; gain?: number }
-export interface TruthContactLite { speedGated?: SpeedGatedLite[]; classifiers?: SpeedGatedLite[]; mode?: string; id: number; label?: string; sourceId?: string; active?: boolean; depthM?: number; spdKts?: number; spdMps: number; crsDeg: number; propulsion?: PropulsionTruthLite; lines?: TruthLineLite[] }
+export interface TruthContactLite { behaviour?: string; category?: string; speedGated?: SpeedGatedLite[]; classifiers?: SpeedGatedLite[]; mode?: string; id: number; label?: string; sourceId?: string; active?: boolean; depthM?: number; spdKts?: number; spdMps: number; crsDeg: number; propulsion?: PropulsionTruthLite; lines?: TruthLineLite[] }
 
 export interface FamilyFundamental { family: LineFamily; hz: number; contactId: number; engineId?: string; engineNo?: number; erpm?: number }
 
@@ -79,7 +79,9 @@ export function truthRows(c: TruthContactLite): string[] {
   const p = c.propulsion
   const mode = c.mode ?? p?.mode
   const rows = [`${(c.label ?? c.sourceId ?? 'C' + c.id).toUpperCase()}  CRS ${c.crsDeg.toFixed(0).padStart(3, '0')}  ${kts.toFixed(1)} KT${c.depthM !== undefined ? `  ${c.depthM.toFixed(0)} M` : ''}${mode ? `  MODE ${mode.toUpperCase()}` : ''}`]
-  if (!p) return rows
+  if (c.behaviour) rows.push(`BEHAVIOUR ${c.behaviour.toUpperCase()}`)
+  const fam = familyLineRow(c)
+  if (!p) { if (fam) rows.push(fam); return rows }
   const plant = KIND[p.kind] ?? p.kind.toUpperCase()
   const label = p.drivetrainLabel ? p.drivetrainLabel.toUpperCase() : ''
   rows.push(`PLANT ${label && /DIESEL|NUCLEAR/.test(label) ? label : [plant, label].filter(Boolean).join(' ')}${p.aip ? `  AIP ${p.aip.kind.toUpperCase()}${p.aip.active ? ' ON' : ' OFF'}` : ''}  RATIO ${p.ratioLabel}`)
@@ -101,6 +103,7 @@ export function truthRows(c: TruthContactLite): string[] {
   const sg = c.speedGated ?? c.classifiers ?? []
   const on = sg.filter((g) => g.active).map((g) => `${g.kind} ${g.name} ${g.hz !== undefined ? g.hz.toFixed(1) : `${g.loHz?.toFixed(0)}–${g.hiHz?.toFixed(0)}`} HZ${g.gain !== undefined && g.gain < 0.99 ? ' (FADING)' : ''}`)
   if (sg.length) rows.push(on.length ? `ACTIVE ${on.join('  ')}` : 'SWATH/SRC NONE AT THIS SPEED')
+  if (fam) rows.push(fam)
   if (p.kind === 'dieselDirect') rows.push(psrCoupled(p) ? 'PSR = CSR (ENGINES COUPLED)' : 'PSR ≠ CSR (ENGINES DECOUPLED, ON MOTOR)')
   return rows
 }
@@ -116,4 +119,17 @@ export function truthEdaName(contacts: readonly TruthContactLite[] | undefined, 
     if (d <= bestD) { bestD = d; best = `${l.eda.name} = CFR ×${l.eda.cfrMultiple}` }
   }
   return best
+}
+
+/** Turbine / vane-pass / hydraulic-plant fundamentals from the truth line list (h1 only). HYDP shows its live
+ * frequency when a manoeuvre transient has it off nominal ("HYDP 373.3 → 367.8 HZ"). */
+export function familyLineRow(c: TruthContactLite): string | null {
+  const parts: string[] = []
+  for (const fam of ['TURBINE', 'VANE', 'HYDP'] as const) {
+    const l = (c.lines ?? []).find((x) => x.lineFamily === fam && (x.harmonic ?? 1) === 1 && (x.fundamentalHz ?? 0) > 0)
+    if (!l) continue
+    const f0 = l.fundamentalHz!, now = l.freqHz ?? l.hz ?? f0
+    parts.push(fam === 'HYDP' && Math.abs(now - f0) > f0 * 2e-3 ? `HYDP ${now.toFixed(1)} → ${f0.toFixed(1)} HZ` : `${fam} ${f0.toFixed(fam === 'VANE' ? 0 : 2)} HZ`)
+  }
+  return parts.length ? parts.join('  ') : null
 }

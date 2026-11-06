@@ -7,7 +7,7 @@ export interface NarrowForm {
   lineFamilies: LineFamily[]
   csrHz: string; cfrHz: string; psrHz: string
   blades: string; efrToCsr: string; gearRatio: string; msrToMotorShaft: string; tpk: string
-  turbineRateHz: string; reductionRatio: string; gearMeshHz: string; turboGenHz: string; hydpHz: string
+  turbineRateHz: string; vaneRateHz: string; vaneCount: string; reductionRatio: string; gearMeshHz: string; turboGenHz: string; hydpHz: string
   edaCfrMultiples: string
   srcHz: string; srcKts: string; swathLoHz: string; swathHiHz: string; swathKts: string
 }
@@ -15,13 +15,13 @@ export interface NarrowForm {
 export const EMPTY_NARROW: NarrowForm = {
   gridHz: '', mode: '', lineFamilies: [], csrHz: '', cfrHz: '', psrHz: '',
   blades: '', efrToCsr: '', gearRatio: '', msrToMotorShaft: '', tpk: '',
-  turbineRateHz: '', reductionRatio: '', gearMeshHz: '', turboGenHz: '', hydpHz: '', edaCfrMultiples: '',
+  turbineRateHz: '', vaneRateHz: '', vaneCount: '', reductionRatio: '', gearMeshHz: '', turboGenHz: '', hydpHz: '', edaCfrMultiples: '',
   srcHz: '', srcKts: '', swathLoHz: '', swathHiHz: '', swathKts: '',
 }
 
 export const NARROW_MODES = OPERATING_MODES
 /** Families a trainee can tick as "seen on the gram". */
-export const NARROW_FAMILIES: readonly LineFamily[] = ['CSR', 'CFR', 'EFR', 'EDA', 'PSR', 'BR', 'MSR', 'TG', 'MESH', 'TURBINE', 'COOLANT', 'SRC', 'AUX']
+export const NARROW_FAMILIES: readonly LineFamily[] = ['CSR', 'CFR', 'EFR', 'EDA', 'PSR', 'BR', 'MSR', 'TG', 'MESH', 'TURBINE', 'VANE', 'COOLANT', 'HYDP', 'SRC', 'AUX']
 
 const num = (s: string): number | undefined => {
   const t = s.trim()
@@ -44,7 +44,7 @@ export function toObservations(f: NarrowForm): ClassObservations {
   if (Object.keys(fund).length) o.familyFundamentalsHz = fund
   const set = <K extends keyof ClassObservations>(k: K, s: string) => { const v = num(s); if (v !== undefined) (o as Record<string, unknown>)[k] = v }
   set('brToPsr', f.blades); set('efrToCsr', f.efrToCsr); set('gearRatio', f.gearRatio); set('msrToMotorShaft', f.msrToMotorShaft)
-  set('tpk', f.tpk); set('turbineRateHz', f.turbineRateHz); set('reductionRatio', f.reductionRatio)
+  set('tpk', f.tpk); set('turbineRateHz', f.turbineRateHz); set('vaneRateHz', f.vaneRateHz); set('vaneCount', f.vaneCount); set('reductionRatio', f.reductionRatio)
   set('gearMeshHz', f.gearMeshHz); set('turboGenHz', f.turboGenHz); set('hydpHz', f.hydpHz)
   const edas = f.edaCfrMultiples.split(/[\s,;]+/).map(num).filter((v): v is number => v !== undefined)
   if (edas.length) o.edaCfrMultiples = edas
@@ -72,7 +72,7 @@ export const constraintCount = (o: ClassObservations): number => {
 
 const KEY_LABEL: Record<string, string> = {
   gridHz: 'GRID', mode: 'MODE', brToPsr: 'BLADES (BR÷PSR)', msrToMotorShaft: 'MOTOR SLOTS', msrToPsr: 'MSR÷PSR',
-  gearRatio: 'GEAR', efrToCsr: 'EFR÷CSR', tpk: 'TPK', turbineRateHz: 'TURBINE', reductionRatio: 'REDUCTION',
+  gearRatio: 'GEAR', efrToCsr: 'EFR÷CSR', tpk: 'TPK', turbineRateHz: 'TURBINE', vaneRateHz: 'VANE', vaneCount: 'VANES', reductionRatio: 'REDUCTION',
   gearMeshHz: 'MESH', turboGenHz: 'TG', hydpHz: 'HYDP', SRC: 'SRC WINDOW', SWATH: 'SWATH WINDOW',
 }
 /** Operator-style label for a matchClasses key such as `lineFamily:MSR` or `edaCfrMultiple:10.5`. */
