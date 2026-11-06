@@ -86,7 +86,8 @@ JSON-safe `v:1`, seed, environment, aircraft/contacts/buoys. Each contact has ac
 `params` ready for a later catalog adapter, initial position, and ordered `motion` legs
 `{at,course,speed,depth}` starting at 0. Initial leg sets motion; later changes apply at
 exact boundaries. ENU metres, depth down, m/s, course radians clockwise from north.
-Waypoint targets/nonempty transients are typed/reserved but reject until implemented.
+Waypoint targets are typed/reserved and reject. Transients accept only `kind:'hydp'` (m3-events,
+see below); other kinds stay reserved and reject.
 Catalog references are an additive v1 extension; legacy raw params still work. Validation caps 250 contacts, 128 buoys, depths 0..1e6 m (stress-test bound,
 not physically valid), bins 2..16384. Worker M1 is fixed to 1024 bins.
 
@@ -741,7 +742,8 @@ example: CFR 2.5 Hz * 27.75 = 69.375 Hz, strictly between cylinder harmonics H27
 `perCrankRev?` is retained only as a deprecated compatibility alias; CFR multiples govern.
 
 Optional class `hydp:{nominalHz:number,pairSpacingHz:number,durationS:number}` is data only,
-including the invented 367.77-Hz case; no pulse, pair, duty or transient is rendered.
+including the invented 367.77-Hz case. Since m3-events the pair is rendered only as a scheduled
+manoeuvre transient (below); aux duty cycles are still not rendered.
 `idKeys.hydp` has the same field names as ranged `[min,max]` values (Hz, Hz, seconds).
 Aux metadata uses `duty:'continuous'|'intermittent'`; intermittent entries require ordered
 `dutyOnS:[min,max]` and `dutyOffS:[min,max]` seconds. These validated tags do not toggle audio.
@@ -831,7 +833,7 @@ is advertised/emitted; ordinary motor rotation harmonics remain as AUX lines. Mo
 shaft rates and the existing truth shape are unchanged. No artificial 48-slot fallback.
 
 Every sub has distinct HYDP metadata, with Brindleflux retaining 367.77 Hz; ship hydraulic
-metadata likewise varies per fictional ship type. HYDP remains data-only, not rendered.
+metadata likewise varies per fictional ship type. HYDP renders only as the m3-events manoeuvre transient (see below).
 A seeded hash ordering of the fixed 22-class roster spaces HYDP design ranges and SWATH
 bands so every pair has two non-overlapping keys; SWATH bands all fit below 500 Hz. This
 assignment ignores input-list order and is configuration work only. All values are invented
@@ -1013,3 +1015,66 @@ base in 1..9999 with wraparound, independent of the scatter stream. Omitted seed
 when scatter is off. Hosts must resolve conflicts with already-deployed channels themselves.
 Invalid nonfinite inputs (except auto's absent axis), negative frequency, invalid count or
 unknown kind/spreading throw RangeError. Inputs are not mutated; each result owns its arrays.
+
+## m3-events behaviours v1 (dynamic SIM contacts)
+
+**Training patterns only.** Every behaviour here is an invented, generic geometry (straight
+legs, boxes, racetracks, reciprocals, zig-zags, sprint/drift) built to make traces move. None
+describes or cites any real navy, platform, class, doctrine or measured signature; all
+platforms and nations remain fictional.
+
+```ts
+type SurfaceBehaviour='shipping'|'fishing';
+type SubBehaviour='transit'|'patrol'|'avoidance'|'combat';
+planBehaviour({kind,seed,durationS,holdS?,start:{course,speed,depth,x?,y?},
+  limits:{maxSpeedKn,quietSpeedKn?,minSpeedKn?,depthM:[lo,hi]}}): MotionLeg[]
+maneuverTransients(legs,{courseDeg=10,depthM=5}?): {at,kind:'hydp',params:{}}[]
+pickSubBehaviour(rng,weights=subBehaviourWeights); pickSurfaceBehaviour(rng,typeId)
+checkBehaviourLegs(legs,limits,durationS?)   // throws on the first bad leg
+subBehaviourLimits(klass,classParams,opState,scenarioParams,quiet): BehaviourLimits
+refreshSurfaceSignature(params,typeId,speedKn)  // in-place ship signature for a new speed
+```
+
+Units match `MotionLeg`: course radians, `start.speed` m/s, depth m; limits are knots. Plans
+are deterministic per `(kind, seed)`; leg 0 is the start at `at:0`, later `at` are strictly
+increasing whole seconds `< durationS`, speeds in `[0,maxSpeedKn]`, depths in `depthM`
+(`[d,d]` pins depth). No manoeuvre before `holdS`. After the last leg the contact holds it.
+
+| kind | shape (invented) |
+| --- | --- |
+| shipping | 600–1500 s legs; 60 % alter 10–40°, else 1–4° trim; speed within ±0.5 kn |
+| fishing | box / racetrack / loiter; 90–720 s legs; tow 2.5–4.5 kn, haul/drift 0.5–1.5 kn |
+| transit | 900–2100 s legs; ≤25° alterations; 30 % depth change 10–40 m |
+| patrol | box (≈90° same-hand) or reciprocal (≈180°); moderate speed near quiet; 60 % depth change |
+| avoidance | steady run, then abrupt 70–150° turn + depth change (≥30 m where the band allows) at quiet speed (40 %: short sprint first), then quiet opening legs |
+| combat | sprint (75–95 % max, 180–420 s) / drift (≤ quiet, 120–300 s) alternation with alternating 30–70° swings |
+
+Generation: `BEHAVIOUR_HORIZON_S=3600` (60 min of legs).
+- `generateScenario`: each classification-target sub draws a kind from its own seeded stream
+  (`behaviour:i`, so traffic/class draws are unchanged) with `subBehaviourWeights`
+  `{transit:30,patrol:35,avoidance:15,combat:20}` or optional `ScenarioParams.behaviourWeights`.
+  `holdS:600` keeps the original CPA geometry exactly (CPA at 600 s), then legs diverge. Limits
+  respect the class/mode caps (SURF/SNORK and surfaced boats keep their depth, AIP speed cap),
+  the opState speed/depth bands, quiet draws and `cavitationAllowed:false`; every leg passes
+  `validateOperatingState`. Contacts carry `behaviour` and `transients` from `maneuverTransients`.
+- `createSurfacePool`: shipping vs fishing by seeded draw (`surface-behaviour:rank`) with
+  fishing probability per type (trawler .85, tug .4, coastal freighter .1, ferry .05, bulk /
+  tanker 0). Fishing ships start at tow speed. Ships keep their depth. The engine refreshes a
+  ship's fictional signature in place when a leg changes its speed.
+- Truth contacts expose optional `behaviour`.
+
+### HYDP manoeuvre transient
+
+A leg that turns ≥10° or changes depth ≥5 m schedules `{at,kind:'hydp',params:{}}` (optional
+`durationS` 0.01..3600, `startOffsetPct` 0..20). When a contact's plant has `hydp` metadata,
+the engine reserves two fixed tonal slots (`lineFamily:'HYDP'`, nominal and nominal +
+pairSpacingHz), so the line topology never changes. During a transient the pair is
+speed-independent and follows f = F·(1+δ·e^(−3τ/D)), with δ = 1.5 % by default and D = the
+class `durationS`. Gain ramps up over 0.5 s and down over the final 1 s; otherwise the slots
+carry zero power. The latest-started transient wins. `HYDP_POWER=.05` is an invented level,
+about 2× an aux line. Contacts without scheduled transients have no HYDP slots.
+
+Deferred: an event-scheme editor and Save-as-cut; waypoint legs; intermittent auxiliary
+duty rendering; mode transitions (SNORK↔BATT etc.) within a run; HYDP on surface ships;
+smooth turn and depth rates (legs still change instantly at `at`).
+

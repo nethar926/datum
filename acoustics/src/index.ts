@@ -36,3 +36,4 @@ export * from './catalog/idKeys.js';
 export * from './catalog/compendium.js';
 export * from './catalog/matchClasses.js';
 export * from './patterns.js';
+export * from './behaviours.js';

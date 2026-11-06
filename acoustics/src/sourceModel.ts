@@ -5,7 +5,7 @@ export type LineStability='stable'|'unstable';
 export type LineWidth='discrete'|'diffuse';
 export interface LineProfile {stability:LineStability;width:LineWidth;sigmaBins?:number}
 export type LineProfiles=Partial<Record<TonalFamily,LineProfile>>;
-export type LineFamily='CSR'|'CFR'|'EFR'|'EDA'|'PSR'|'MSR'|'COOLANT'|'TG'|'BR'|'GRID'|'SRC'|'MESH'|'AUX'|'TURBINE'|'VANE';
+export type LineFamily='CSR'|'CFR'|'EFR'|'EDA'|'PSR'|'MSR'|'COOLANT'|'TG'|'BR'|'GRID'|'SRC'|'MESH'|'AUX'|'TURBINE'|'VANE'|'HYDP';
 export type EngineLineFamily=LineFamily;
 export interface TonalLine {eda?:{name:string;cfrMultiple:number};reactorId?:string;lineFamily?:EngineLineFamily;fundamentalHz?:number;engineId?:string;family:TonalFamily;hz:number;power:number;id?:string;stability?:LineStability;width?:LineWidth;sigmaBins?:number;frequencyHz?:number;shaftIndex?:number;harmonic?:number;engineIndex?:number}
 const stable:LineProfile={stability:'stable',width:'discrete'},aux:LineProfile={stability:'unstable',width:'discrete'},diffuse:LineProfile={stability:'unstable',width:'diffuse',sigmaBins:2.5};
@@ -18,7 +18,10 @@ export function sourceLines(s:Signature):TonalLine[]{
  const lines=s.tonals??Array.from({length:6},(_,i)=>({family:i===0?'shaft':i===1?'blade':'motor',hz:i<2?(i===0?s.shaftHz:bladeRate(s)):s.tonalHz*(i-1),power:10**(-i*3/10)} as TonalLine));
  for(let i=0;i<lines.length;i++)tagLine(lines[i],i,s.lineProfiles?.[lines[i].family]);return lines;
 }
-export interface Signature {speedGated?:SpeedGated[];reactorOffline?:boolean; plantSpec?:VesselPlantSpec;propulsion?:PropulsionTruth; label: string; shafts?:number; electricalHz?:50|60; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; lineProfiles?:LineProfiles; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number }
+/** Engine-owned live HYDP transient state (m3-events). Present only on contacts with scheduled hydp
+ * transients; its presence reserves two fixed tonal slots (pair) so line topology never changes. */
+export interface HydpTransientState {offsetFrac:number;gain:number}
+export interface Signature {hydpTransient?:HydpTransientState;speedGated?:SpeedGated[];reactorOffline?:boolean; plantSpec?:VesselPlantSpec;propulsion?:PropulsionTruth; label: string; shafts?:number; electricalHz?:50|60; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; lineProfiles?:LineProfiles; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number }
 export const fictionalSignature: Signature = {label:'SSK A',shaftHz:2,blades:5,tonalHz:90,levelDb:125,modulation:.35};
 /** Fictional teaching curves only. Urick: machinery harmonics, propeller blade rate and cavitation.
  * Inception speed rises with hydrostatic pressure; this illustrative fit is NOT platform data. */

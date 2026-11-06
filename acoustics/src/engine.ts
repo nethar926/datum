@@ -1,6 +1,7 @@
-import {configurePropulsion,updatePropulsion,writePlantTonals} from './catalog/plantModel.js';
+import {configurePropulsion,updatePropulsion,writePlantTonals,writeHydpPair} from './catalog/plantModel.js';
+import type {HydpSpec} from './catalog/drivetrain.js';
 import {LineWander} from './lineModel.js';
-import {surfaceCount,createSurfacePool} from './catalog/surface.js';
+import {surfaceCount,createSurfacePool,refreshSurfaceSignature} from './catalog/surface.js';
 import {DemonStream} from './demonStream.js';
 import {resolveReference,updateDerivedSignature} from './catalog/derive.js';
 import type {ClassParams} from './catalog/schema.js';
@@ -14,6 +15,8 @@ import {ResLofarGenerator,normalizeResSettings} from './resGram.js';
 import {RES_BINS,RES_FRAME_S,type ResGramSettings} from './res.js';
 import type {GramFilter} from './protocol.js';
 import type {GramConfig,Tactical,DropBuoy,TruthContact} from './protocol.js';
+/** Default HYDP start offset above the class frequency, percent. */
+export const HYDP_START_OFFSET_PCT=1.5;
 export interface BuoyRow { id:string; rfChannel:number; depth:number; type:ReceiverType; alive:boolean; bearing:number|null; row:Float32Array }
 /** Deterministic mutable simulation; construction owns a JSON-safe copy. step has no allocations.
  * Callers may replace each result.row with an appropriately sized recycled buffer before step. */
@@ -25,6 +28,10 @@ export class AcousticEngine {
   private readonly baseContacts:Contact[];
   private readonly catalogStates:{contact:Contact;params:ClassParams;speed:number;depth:number}[]=[];
   private readonly streams=new Map<number,number>();
+  /** m3-events: contacts with scheduled HYDP transients (fixed pair slots at `index`). */
+  private readonly hydpStates:{contact:Contact;spec:HydpSpec;index:number;at:Float64Array;durationS:Float64Array;offset:Float64Array}[]=[];
+  /** m3-events: pool ships whose leg speed changes refresh their fictional signature in place. */
+  private readonly surfaceStates:{contact:Contact;type:string;speed:number}[]=[];
   private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator;res?:ResLofarGenerator}>();
   private readonly legacyIndices=new Map<number,number>();
   private nextStreamId=1;
@@ -35,8 +42,13 @@ export class AcousticEngine {
     if(s.surfacePool){const n=surfaceCount(s.surfaceTraffic??0,s.surfacePool.length);s.contacts.length=0;s.contacts.push(...this.baseContacts);for(let i=0;i<s.surfacePool.length;i++){s.surfacePool[i].active=i<n;if(i<n)s.contacts.push(s.surfacePool[i]);}}
     for(const c of this.allContacts){for(const leg of c.motion)if(leg.at<=s.time){c.course=leg.course;c.speed=leg.speed;c.depth=leg.depth;}}
     for(const c of this.allContacts)if(c.catalogRef)this.catalogStates.push({contact:c,params:resolveReference(c.catalogRef).params,speed:c.speed,depth:c.depth});
+    for(const c of this.allContacts)if(c.params.plantSpec?.hydp&&c.transients?.some(x=>x.kind==='hydp'))c.params.hydpTransient={offsetFrac:0,gain:0};
     for(const c of this.allContacts){configurePropulsion(c.params,s.seed,c.id,c.operatingMode??'normal');if(c.params.plantSpec){const state=this.catalogStates.find(s=>s.contact===c);if(state)updateDerivedSignature(c.params,state.params,mpsToKnots(c.speed),c.depth,c.operatingMode??'normal');else{updatePropulsion(c.params,c.params.shaftHz*60/c.params.plantSpec.maxPsrpm,c.operatingMode??'normal');writePlantTonals(c.params,c.operatingMode??'normal');}}const w=new LineWander(c.params,s.seed,c.id);c.lines=w.lines;this.lineWanders.push(w);}
-    this.truthState={contacts:this.allContacts.map((c,i)=>({speedGated:c.params.speedGated??[],id:i+1,sourceId:c.id,label:c.catalogRef?`${c.params.label} ${resolveReference(c.catalogRef).klass.hulls.find(h=>h.id===c.catalogRef!.hullId)?.number??c.id}`:`${c.params.label} ${c.id}`,propulsion:c.params.propulsion!,spdKts:mpsToKnots(c.speed),active:c.active!==false,category:c.category??'subsurface',classificationTarget:c.category!=='surface'&&c.classificationTarget!==false,x:c.x,y:c.y,depthM:c.depth,crsDeg:c.course*180/Math.PI,spdMps:c.speed,lines:c.lines!.map(l=>({eda:l.eda,reactorId:l.reactorId,lineFamily:l.lineFamily,fundamentalHz:l.fundamentalHz,harmonic:l.harmonic,engineId:l.engineId,shaftIndex:l.shaftIndex,id:l.id!,family:l.family,f0Hz:l.hz,freqHz:l.frequencyHz??l.hz,power:l.power,stability:l.stability!,width:l.width!,sigmaBins:l.sigmaBins??0}))}))};this.tacticalState.truth=this.truthState;
+    for(const c of this.allContacts){if(c.surface&&!c.catalogRef&&c.params.plantSpec&&c.motion.length>1){this.surfaceStates.push({contact:c,type:c.surface.type,speed:c.speed});}
+      const spec=c.params.plantSpec?.hydp;if(!c.params.hydpTransient||!spec)continue;const list=c.transients!.filter(x=>x.kind==='hydp').sort((a,b)=>a.at-b.at);
+      this.hydpStates.push({contact:c,spec,index:c.params.tonals!.findIndex(l=>l.lineFamily==='HYDP'),at:Float64Array.from(list,x=>x.at),durationS:Float64Array.from(list,x=>typeof x.params.durationS==='number'?x.params.durationS:spec.durationS),offset:Float64Array.from(list,x=>(typeof x.params.startOffsetPct==='number'?x.params.startOffsetPct:HYDP_START_OFFSET_PCT)/100)});}
+    this.updateHydp();
+    this.truthState={contacts:this.allContacts.map((c,i)=>({speedGated:c.params.speedGated??[],id:i+1,sourceId:c.id,label:c.catalogRef?`${c.params.label} ${resolveReference(c.catalogRef).klass.hulls.find(h=>h.id===c.catalogRef!.hullId)?.number??c.id}`:`${c.params.label} ${c.id}`,propulsion:c.params.propulsion!,spdKts:mpsToKnots(c.speed),active:c.active!==false,category:c.category??'subsurface',...(c.behaviour?{behaviour:c.behaviour}:{}),classificationTarget:c.category!=='surface'&&c.classificationTarget!==false,x:c.x,y:c.y,depthM:c.depth,crsDeg:c.course*180/Math.PI,spdMps:c.speed,lines:c.lines!.map(l=>({eda:l.eda,reactorId:l.reactorId,lineFamily:l.lineFamily,fundamentalHz:l.fundamentalHz,harmonic:l.harmonic,engineId:l.engineId,shaftIndex:l.shaftIndex,id:l.id!,family:l.family,f0Hz:l.hz,freqHz:l.frequencyHz??l.hz,power:l.power,stability:l.stability!,width:l.width!,sigmaBins:l.sigmaBins??0}))}))};this.tacticalState.truth=this.truthState;
     this.generators=s.buoys.map(b=>new LofarGenerator(b,this.allContacts,s.bins,s.band?.[1]??s.fMax??s.fmax,s.seed,s.environment,s.band?.[0]??0));
     s.buoys.forEach((_,i)=>{this.streams.set(i+1,i);this.legacyIndices.set(i+1,0);});
     this.rows=s.buoys.map((b,i)=>({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:this.generators[i].row}));
@@ -144,12 +156,20 @@ export class AcousticEngine {
     const s=this.scenario,from=s.time;s.time+=dt;advance(s.ownship,dt);
     for(const c of this.allContacts){let t=from;for(const leg of c.motion)if(leg.at>from&&leg.at<=s.time){advance(c,leg.at-t);c.course=leg.course;c.speed=leg.speed;c.depth=leg.depth;t=leg.at;}advance(c,s.time-t);}
     for(const state of this.catalogStates){const c=state.contact;if(c.speed!==state.speed||c.depth!==state.depth){updateDerivedSignature(c.params,state.params,mpsToKnots(c.speed),c.depth,c.operatingMode??'normal');state.speed=c.speed;state.depth=c.depth;}}
+    for(const state of this.surfaceStates){const c=state.contact;if(c.speed!==state.speed){refreshSurfaceSignature(c.params,state.type,mpsToKnots(c.speed));state.speed=c.speed;}}
+    this.updateHydp();
     for(const w of this.lineWanders)w.advance(dt);
     for(let i=0;i<s.buoys.length;i++){
       const b=s.buoys[i],r=this.rows[i];advance(b,dt);r.alive=isAlive(b,s.time);r.depth=b.depth;r.rfChannel=b.rfChannel;
       if(!r.alive){r.bearing=null;this.generators[i].lineCount=0;}
     }
   }
+  /** HYDP pair (Wilson): speed-independent, starts offsetFrac high and settles onto the class HYDP
+   * frequency, f=F·(1+δ·e^{-3τ/D}); gain ramps up over 0.5 s and down over the last 1 s of D.
+   * The latest-started transient wins; outside every window the slots carry zero power. */
+  private updateHydp():void{const t=this.scenario.time;for(const h of this.hydpStates){const st=h.contact.params.hydpTransient!;st.offsetFrac=0;st.gain=0;
+    for(let k=h.at.length-1;k>=0;k--){if(h.at[k]>t)continue;const tau=t-h.at[k],d=h.durationS[k];if(tau<d){st.offsetFrac=h.offset[k]*Math.exp(-3*tau/d);st.gain=Math.max(0,Math.min(1,tau/.5,(d-tau)/1));}break;}
+    if(h.index>=0)writeHydpPair(h.contact.params,h.index,h.spec,st);}}
   step(dt:number):readonly BuoyRow[]{
     for(const r of this.rows)if(r.row.length!==this.scenario.bins)throw new Error('Missing row buffer');
     this.advance(dt);for(let i=0;i<this.rows.length;i++){const r=this.rows[i];if(r.alive){this.generators[i].generate(r.row);r.bearing=r.type==='difar'?this.generators[i].bearing:null;}else r.row.fill(NaN);}return this.rows;
