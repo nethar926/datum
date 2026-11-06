@@ -60,6 +60,7 @@ export class CutSession {
  private readonly lofarBuf:Float32Array;
  private readonly rampBases=new Map<TonalLine,number>();
  private ended=false;
+ private disposed=false;
  constructor(cut:CutSeed){
   validateCutSeed(cut);
   this.cut=cut;
@@ -76,8 +77,23 @@ export class CutSession {
  }
  private get contact(){return this.engine.scenario.contacts.find(c=>c.category!=='surface')??this.engine.scenario.contacts[0];}
  get simT():number{return this.engine.time;}
- get done():boolean{return this.ended||(this.engine.time>=this.cut.durationS&&this.engine.rowsReady(this.lofar.streamId)===0);}
+ get done():boolean{return this.disposed||this.ended||(this.engine.time>=this.cut.durationS&&this.engine.rowsReady(this.lofar.streamId)===0);}
+ /** True after dispose(); FE should drop the session reference. */
+ get isDisposed():boolean{return this.disposed;}
+ /**
+  * Tear down a finished/abandoned cut: unsubscribe LOFAR+DEMON streams, clear local buffers.
+  * Idempotent. After dispose, writeLofarRow / writeDemonRow / drainLofar return -1 safely.
+  */
+ dispose():void{
+  if(this.disposed)return;
+  this.disposed=true;this.ended=true;
+  try{this.engine.unsubscribe(this.lofar.streamId);}catch{/* already gone */}
+  try{this.engine.unsubscribe(this.demonStreamId);}catch{/* already gone */}
+  this.rampBases.clear();
+  this.lofarBuf.fill(0);
+ }
  private ensureLofarRow():boolean{
+  if(this.disposed)return false;
   while(this.engine.rowsReady(this.lofar.streamId)===0){
    if(this.engine.time>=this.cut.durationS){this.ended=true;return false;}
    const dt=Math.min(ROW_DT,this.cut.durationS-this.engine.time);
@@ -88,11 +104,11 @@ export class CutSession {
   return true;
  }
  writeLofarRow(out:Float32Array,offset=0):number{
-  if(!this.ensureLofarRow())return -1;
+  if(this.disposed||!this.ensureLofarRow())return -1;
   return this.engine.writeRow(this.lofar.streamId,out,offset);
  }
  writeDemonRow(out:Float32Array,offset=0):number{
-  if(!this.ensureLofarRow())return -1;
+  if(this.disposed||!this.ensureLofarRow())return -1;
   if(this.engine.rowsReady(this.demonStreamId)===0){
    if(this.engine.time<this.cut.durationS){this.engine.advance(ROW_DT);applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases);}
    if(this.engine.rowsReady(this.demonStreamId)===0)return -1;
@@ -100,6 +116,7 @@ export class CutSession {
   return this.engine.writeRow(this.demonStreamId,out,offset);
  }
  drainLofar(out:Float32Array,maxRows=Infinity):number{
+  if(this.disposed)return -1;
   let n=0;while(n<maxRows){const i=this.writeLofarRow(out);if(i<0)break;n++;}return n;
  }
  checksumFirstRows(n:number):number{

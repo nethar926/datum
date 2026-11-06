@@ -121,3 +121,47 @@ describe('renderCut + gram fidelity',()=>{
   for(const c of listCutSeeds()){const s=renderCut(c);expect(s.cut.id).toBe(c.id);expect(catalog.classes.some(k=>k.id===c.classId)).toBe(true);}
  });
 });
+
+describe('starter pack deep freeze (scoring fairness)',()=>{
+ it('listCutSeeds / getCutSeed / getCutStarterPack return deeply frozen graphs',()=>{
+  const pack=getCutStarterPack(),cuts=listCutSeeds(),seed=getCutSeed(cuts[0].id)!;
+  expect(Object.isFrozen(pack)).toBe(true);
+  expect(Object.isFrozen(pack.cuts)).toBe(true);
+  expect(Object.isFrozen(pack.lookalikePairs)).toBe(true);
+  expect(Object.isFrozen(pack.lookalikePairs[0])).toBe(true);
+  expect(Object.isFrozen(pack.lookalikePairs[0].cutIds)).toBe(true);
+  expect(Object.isFrozen(seed)).toBe(true);
+  expect(Object.isFrozen(seed.classifyingLines)).toBe(true);
+  expect(Object.isFrozen(seed.classifyingLines[0])).toBe(true);
+  if(seed.gramLooks)expect(Object.isFrozen(seed.gramLooks)).toBe(true);
+ });
+ it('mutating a listed seed throws and does not change getCutSeed truth',()=>{
+  const id=listCutSeeds()[0].id;
+  const before=structuredClone(getCutSeed(id)!);
+  const live=getCutSeed(id)!;
+  expect(()=>{(live as {seed:number}).seed=0xDEADBEEF;}).toThrow();
+  expect(()=>{(live.classifyingLines as unknown as unknown[]).push({lineFamily:'CFR',label:'x'});}).toThrow();
+  expect(()=>{(live.classifyingLines[0] as {n?:number}).n=99;}).toThrow();
+  expect(getCutSeed(id)).toEqual(before);
+  expect(live.seed).toBe(before.seed);
+  expect(live.classifyingLines[0].n).toBe(before.classifyingLines[0].n);
+ });
+});
+
+describe('CutSession.dispose',()=>{
+ it('is idempotent and makes writers fail safely with -1',()=>{
+  const s=renderCut('cut-mistacorn-batt');
+  const row=new Float32Array(s.lofar.bins),demon=new Float32Array(512);
+  expect(s.writeLofarRow(row)).toBeGreaterThanOrEqual(0);
+  expect(s.isDisposed).toBe(false);
+  s.dispose();
+  expect(s.isDisposed).toBe(true);expect(s.done).toBe(true);
+  expect(s.writeLofarRow(row)).toBe(-1);
+  expect(s.writeDemonRow(demon)).toBe(-1);
+  expect(s.drainLofar(row,10)).toBe(-1);
+  s.dispose(); // idempotent
+  expect(s.isDisposed).toBe(true);
+  expect(s.writeLofarRow(row)).toBe(-1);
+  expect(s.engine.configs().length).toBe(0);
+ });
+});

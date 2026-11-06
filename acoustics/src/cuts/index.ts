@@ -12,6 +12,16 @@ export {STARTER_PACK,STARTER_CUTS} from './starterPack.js';
 
 validateStarterPack(STARTER_PACK);
 
+/** Deep-freeze starter-pack seeds so practice scoring cannot mutate truth keys. */
+function deepFreeze<T>(value:T):T{
+ if(value!==null&&(typeof value==='object'||typeof value==='function')&&!Object.isFrozen(value)){
+  Object.freeze(value);
+  for(const k of Reflect.ownKeys(value as object))deepFreeze((value as Record<PropertyKey,unknown>)[k as keyof typeof value]);
+ }
+ return value;
+}
+deepFreeze(STARTER_PACK);
+
 export function listCutSeeds():readonly CutSeed[]{return STARTER_CUTS;}
 
 export function getCutSeed(id:string):CutSeed|undefined{return STARTER_CUTS.find(c=>c.id===id);}
