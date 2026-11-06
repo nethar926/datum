@@ -901,6 +901,7 @@ export default function App() {
           simT={st.simT}
           band={st.band}
           configs={lofarCfgs}
+          demonConfigs={demonCfgs}
           view={view}
           onView={setView}
           palette={palette}

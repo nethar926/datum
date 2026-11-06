@@ -331,6 +331,21 @@ button.ios-row:active { background: var(--sys-fill); }
   background: var(--gram-bg, #000);
 }
 .cut-player .cut-gram .gram { background: var(--gram-bg, #000); }
+.cut-player:has([data-testid='demon-panel']) {
+  grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.5fr) auto;
+}
+.cut-player .demon-panel.gram-panel,
+.app.ios .cut-player .panel.gram-panel.demon-panel {
+  min-height: 0; height: 100%; border-radius: 22px; overflow: hidden; box-shadow: var(--shadow-panel);
+  display: grid; grid-template-rows: auto minmax(0, 1fr) !important;
+  background: var(--gram-bg, #000); color: var(--text-1, #d7e0d7);
+}
+.cut-player .demon-panel .panel-head { flex: 0 0 auto; }
+.cut-player .demon-panel .panel-body {
+  position: relative; min-height: 0; min-width: 0; height: 100%;
+  background: var(--gram-bg, #000);
+}
+.cut-player .demon-panel .gram { background: var(--gram-bg, #000); }
 .cut-player .cut-bar { margin: 0 0 4px; border-radius: 22px; }
 .cut-player .cut-deck-btn { padding: 0 14px; font: 600 13px/1 inherit; white-space: nowrap; }
 .cut-player .navbar .nav-trail { gap: 8px; }

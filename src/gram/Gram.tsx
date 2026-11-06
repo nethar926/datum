@@ -37,6 +37,13 @@ interface Props {
    */
   horz?: boolean; nowS?: number
   auto?: boolean; normalized?: boolean; palette?: PaletteId
+  /**
+   * When set, each incoming row is copied through this into scratch and pushed to the raw ring
+   * (DEMON clamp+whiten). Skips the default split-window copy into the normalized ring.
+   */
+  preprocessRow?: (src: Float32Array, srcOff: number, dst: Float32Array, dstOff: number) => void
+  /** Cache-bust key when preprocessRow identity changes (e.g. 'demon'). */
+  normKey?: string
   /** Colour-scale gain about the dB midpoint (1 = engine range). Applies to LOFAR and DIFAR. */
   contrast?: number
   /** DIFAR operator wheel (rotation, steps, look, null/isolate sectors). */
@@ -78,7 +85,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap, preprocessRow, normKey = '' }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -112,10 +119,12 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode, contrast })
   const tacRef = useRef(tactical)
   // Latest props for the RAF/handoff closures — layout effect so render stays ref-free (oxlint react/refs).
+  const preprocessRef = useRef(preprocessRow)
   useLayoutEffect(() => {
     viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode, contrast }
     tacRef.current = tactical
-  }, [view, streamIndex, cfg, auto, normalized, palette, mode, contrast, tactical])
+    preprocessRef.current = preprocessRow
+  }, [view, streamIndex, cfg, auto, normalized, palette, mode, contrast, tactical, preprocessRow])
   // Streams the renderer is drawing right now. A handoff promote swaps this synchronously (before React
   // re-renders with the new configs), so the frame loop never pairs new textures with the old grid.
   const liveRef = useRef(configs), promotedRef = useRef<GramConfig[] | null>(null), epochRef = useRef(0)
@@ -143,7 +152,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   else if (liveRef.current !== promotedRef.current) { liveRef.current = configs; epochRef.current++ } // a new stream set (restart), not a handoff
   // One renderer per stream set lifetime: handoffs (RES, filter, vernier, band) swap banks inside it, even when
   // the bin count changes (RES 1024 ↔ band 2048). A restart (new set, not a handoff) bumps the epoch → rebuild.
-  const rendererKey = `${epochRef.current}:${glGen}`
+  const rendererKey = `${epochRef.current}:${glGen}:${normKey}`
   /* oxlint-enable react/refs */
   const glError = glFail && glFail.key === rendererKey ? glFail.msg : null
 
@@ -235,10 +244,22 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       rt.dirty = true
     })
     const offSeek = client.onCutSeek((n) => {
-      // New CutSession stream id for the same single LOFAR pane; drop the painted window when replacing.
-      rt.live = new Map([[n.streamId, 0]])
-      if (n.replace) { rt.hist.clear(); rt.brgHist.clear(); r.clearHistory() }
-      rt.dirty = true
+      // Cut seek announces the LOFAR stream id. Remap only if this pane owns it (cut LOFAR gram).
+      // DEMON panes must keep their own stream map — a blind remap would swallow DEMON rows.
+      const owns = rt.live.has(n.streamId) || liveRef.current.some((c) => c.streamId === n.streamId)
+      if (owns) {
+        rt.live = new Map([[n.streamId, 0]])
+        if (n.replace) { rt.hist.clear(); rt.brgHist.clear(); r.clearHistory() }
+        rt.dirty = true
+        return
+      }
+      // Sibling DEMON pane on Cuts: seek does not bulk-post DEMON; clear so playback fills fresh.
+      if (n.replace && liveRef.current.some((c) => c.kind === 'demon')) {
+        rt.hist.clear(); rt.brgHist.clear(); r.clearHistory()
+        rt.live = new Map()
+        liveRef.current.forEach((c, i) => rt.live.set(c.streamId, i))
+        rt.dirty = true
+      }
     })
     const off = client.onRows((rows) => {
       if (viewRef.current.streamIndex !== rt.histStream) { rt.hist.clear(); rt.brgHist.clear(); rt.histStream = viewRef.current.streamIndex }
@@ -261,10 +282,18 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         }
         if (rows.data.length !== n * rt.g.bins) continue // another pane's streams (different bin count)
         const b = rt.g.bins, o = k * b
-        r.pushRow(s, rows.data, o); rt.level.update(s, rows.data, o, b)
-        if (s === rt.histStream) rt.hist.push(rows.data, o)
-        // RES grams arrive engine-filtered (NB = TPSW), so the display normalizer only runs on band/legacy grams.
-        if (!rt.g.filtered) { rt.g.norm.apply(rows.data, o, rt.g.scratch, 0); r.pushRow(rt.N + s, rt.g.scratch, 0) }
+        const prep = preprocessRef.current
+        if (prep) {
+          // DEMON (etc.): clamp+whiten into scratch, push as the raw ring that normalized={false} draws.
+          prep(rows.data, o, rt.g.scratch, 0)
+          r.pushRow(s, rt.g.scratch, 0); rt.level.update(s, rt.g.scratch, 0, b)
+          if (s === rt.histStream) rt.hist.push(rt.g.scratch, 0)
+        } else {
+          r.pushRow(s, rows.data, o); rt.level.update(s, rows.data, o, b)
+          if (s === rt.histStream) rt.hist.push(rows.data, o)
+          // RES grams arrive engine-filtered (NB = TPSW), so the display normalizer only runs on band/legacy grams.
+          if (!rt.g.filtered) { rt.g.norm.apply(rows.data, o, rt.g.scratch, 0); r.pushRow(rt.N + s, rt.g.scratch, 0) }
+        }
         // Bearing ring stays row-aligned with the power ring (NaN rows for omni buoys).
         // Engine per-bin bearings when streamed; else interim colouring from the tracked line bearings.
         if (bd && bd.length === rows.data.length) {

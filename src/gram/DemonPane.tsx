@@ -5,6 +5,7 @@ import type { PaletteId } from '../gl/colormap'
 import { Gram } from './Gram'
 import { clampView, freqToX, type FreqView } from './axis'
 import { bladeReadout, harmonicSeries } from './harmonics'
+import { DEMON_DISPLAY_CEIL_DB, DEMON_GRAM, DEMON_NORM, makeDemonRowNormalizer } from '../cuts/cutNorm'
 
 interface Props { client: SimClient; configs: GramConfig[]; streamIndex: number; palette: PaletteId }
 type Pick = 'shaft' | 'blade'
@@ -16,6 +17,18 @@ type Pick = 'shaft' | 'blade'
 export function DemonPane({ client, configs, streamIndex, palette }: Props) {
   const cfg = configs[streamIndex] ?? configs[0]
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 100
+  const bins = cfg?.bins ?? 512
+  // Preallocate once per bin count; seek/rebuild remounts Gram via normKey.
+  const demonNz = useMemo(() => makeDemonRowNormalizer(bins), [bins])
+  const preprocessRow = useMemo(
+    () => (src: Float32Array, srcOff: number, dst: Float32Array, dstOff: number) => demonNz.apply(src, srcOff, dst, dstOff),
+    [demonNz],
+  )
+  // Whitened peaks need a ceil above the stream's advertised 30 so blade lines stay thin, not solid blocks.
+  const displayConfigs = useMemo(
+    () => configs.map((c) => (c.dbCeil === DEMON_DISPLAY_CEIL_DB ? c : { ...c, dbFloor: DEMON_NORM.floorDb, dbCeil: DEMON_DISPLAY_CEIL_DB })),
+    [configs],
+  )
   const [view, setView] = useState<FreqView>({ lo: 0, hi: fMax })
   const [pick, setPick] = useState<Pick>('shaft')
   const [shaft, setShaft] = useState<number | null>(null)
@@ -44,8 +57,11 @@ export function DemonPane({ client, configs, streamIndex, palette }: Props) {
       </div>
       <div className="panel-body">
         {cfg ? (
-          <Gram client={client} configs={configs} streamIndex={streamIndex} view={view} palette={palette}
-            onView={(v) => setView(clampView(v, fMax, 2))} normalized historyRows={300}
+          <Gram client={client} configs={displayConfigs} streamIndex={streamIndex} view={view} palette={palette}
+            onView={(v) => setView(clampView(v, fMax, 2))}
+            normalized={DEMON_GRAM.normalized} auto={DEMON_GRAM.auto}
+            preprocessRow={preprocessRow} normKey={`demon-${bins}-${DEMON_NORM.window}`}
+            historyRows={500}
             label="DEMON waterfall" testId="demon" onSelectHz={onPick}
             overlay={({ view: v, width }) => (
               <>

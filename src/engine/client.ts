@@ -86,6 +86,7 @@ export class SimClient {
     if (this.status.handoff) this.setStatus({ handoff: undefined })
     const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
     this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic, lastDrop: undefined })
+    // DEMON is opt-in via ?demon=1 (live and cuts). CUTDEMON does not force it on for every cut.
     const demonOn = typeof location !== 'undefined' && new URLSearchParams(location.search).has('demon')
     this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: demonOn,
       // Band gram (RES off) or RES gram: the engine keeps the two families exclusive, so send exactly one.

@@ -18,13 +18,14 @@ import { IdDeck } from './IdDeck'
 import { CutReveal } from './CutReveal'
 import { listCutSeeds } from './api'
 import type { CutController } from './session'
-import type { Band } from '../engine/contract'
+import type { Band, GramConfig } from '../engine/contract'
+import { DemonPane } from '../gram/DemonPane'
 
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
 
 export function CutsTab({
   cuts, client, cutId, session, deckOpen, reveal, score, playing, simT, band,
-  configs, view, onView, palette, contrast, wheel, gramMode, gramDir, zuluOriginMs,
+  configs, demonConfigs = [], view, onView, palette, contrast, wheel, gramMode, gramDir, zuluOriginMs,
   harmF0, harmProbe, onPick, onPlay, onPause, onRestart, onSeek, onBackToList, onDeckOpen, onDeckClose,
   onGuess, onConfidence, onSubmit, onClearReveal, onNext,
 }: {
@@ -39,6 +40,8 @@ export function CutsTab({
   simT: number
   band: Band
   configs: Parameters<typeof Gram>[0]['configs']
+  /** Optional DEMON streams for this cut (?demon=1). */
+  demonConfigs?: GramConfig[]
   view: FreqView
   onView: (v: FreqView) => void
   palette: PaletteId
@@ -108,6 +111,9 @@ export function CutsTab({
           )}
         </div>
       </div>
+      {demonConfigs.length > 0 && (
+        <DemonPane client={client} configs={demonConfigs} palette={palette} streamIndex={0} />
+      )}
       <CutBar cut={cut} simT={simT} playing={playing}
         onPlay={onPlay} onPause={onPause} onRestart={onRestart} onSeek={onSeek} />
 
