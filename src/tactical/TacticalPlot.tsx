@@ -108,7 +108,9 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
       for (let r = 2000; r <= span; r += 2000) { ctx.beginPath(); ctx.arc(toScreenX(v, 0), toScreenY(v, 0), r / v.mPerPx, 0, Math.PI * 2); ctx.stroke() }
       ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke()
       ctx.font = `${10 * dpr}px ui-monospace, Menlo, monospace`; ctx.fillStyle = C.text
-      ctx.fillText('N', w / 2 + 4 * dpr, 12 * dpr); ctx.fillText('2 km rings', 8 * dpr, h - 8 * dpr)
+      ctx.fillText('N', w / 2 + 4 * dpr, 12 * dpr)
+      // Top-left under the layers float button (~8+44) — never under the drop chip / toolbar at the bottom.
+      ctx.fillText('2 km rings', 8 * dpr, 68 * dpr)
       if (!t) return
 
       // Bearing lines: by default only those for the selected tonal (picked on the LOFAR, or the

@@ -388,8 +388,16 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           const rect = e.currentTarget.getBoundingClientRect()
           onCenterFreq(xToFreq(e.clientX - rect.left, view, rect.width))
         }}>
-        {ticks.map((f, i) => { const x = freqToX(f, view, width); const last = i === ticks.length - 1; return (
-          <span key={f} style={{ left: x }}><i className="tick-x" style={{ left: '50%', top: -6 }} />{f}{last ? ` ${unit}` : ''}</span>) })}
+        {ticks.map((f, i) => {
+          const x = freqToX(f, view, width); const last = i === ticks.length - 1
+          // Clamp so edge labels (0 / hi) sit fully inside the axis — same idea as the Zulu Y labels.
+          const padL = 12, padR = last ? 32 : 12
+          return (
+            <span key={f} style={{ left: `clamp(${padL}px, ${x}px, calc(100% - ${padR}px))` }}>
+              <i className="tick-x" style={{ left: '50%', top: -6 }} />{f}{last ? ` ${unit}` : ''}
+            </span>
+          )
+        })}
         <span className="axis-x-unit" aria-hidden>{unit}</span>
       </div>
       <div />
