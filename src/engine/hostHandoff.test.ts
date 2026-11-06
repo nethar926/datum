@@ -48,7 +48,7 @@ describe('SimHost gram handoff (dual subscribe)', () => {
     step(8)
     host.handle({ type: 'promoteGram', gen: 1 })
     expect(host.liveStreamCount()).toBe(6)
-    expect(host.lofarStreamIds()).toEqual({ active: pids, pending: [], pendingGen: 0 })
+    expect(host.lofarStreamIds()).toMatchObject({ active: pids, pending: [], pendingGen: 0, mode: 'res', pools: [1024] })
     const s = streams(out).at(-1)!
     expect(s.configs.filter((c) => c.kind === 'lofar').map((c) => c.streamId)).toEqual(pids)
     expect(s.configs[0]).toMatchObject({ res: 3, filter: 'BB' }); expect(s.configs[0].fcHz).toBeCloseTo(120)

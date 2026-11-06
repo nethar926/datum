@@ -1,4 +1,4 @@
-import type { GramConfig, GramFilter } from '../engine/contract'
+import type { GramConfig, GramFilter, LofarBandPresetId } from '../engine/contract'
 import { fmtHz } from './res'
 
 /**
@@ -11,7 +11,8 @@ import { fmtHz } from './res'
  * The displayed set keeps scrolling while the pending set fills. `begin` returning to the displayed settings just
  * drops the pending set. Events are returned to the caller (SimClient), which turns them into worker messages.
  */
-export interface HandoffTarget { res: number; filter: GramFilter; vernierHz?: number }
+/** band set → analytic band-preset gram (RES off; filter is then display-only NB = normalized / BB = absolute). */
+export interface HandoffTarget { res: number; filter: GramFilter; vernierHz?: number; band?: LofarBandPresetId }
 export type HandoffEvent =
   | { type: 'subscribe'; gen: number; target: HandoffTarget }
   | { type: 'drop'; gen: number }
@@ -24,8 +25,10 @@ export const HANDOFF_TIMEOUT_MS = 3000
 /** No pendingStreams answer within this long (worker error): give up and drop the request. */
 export const HANDOFF_ANNOUNCE_MS = 5000
 
+/** Same engine streams? (Band grams ignore res/filter/vernier: the filter is a display choice there.) */
 export const sameTarget = (a: HandoffTarget, b: HandoffTarget): boolean =>
-  a.res === b.res && a.filter === b.filter && (a.vernierHz ?? null) === (b.vernierHz ?? null)
+  a.band || b.band ? a.band === b.band
+    : a.res === b.res && a.filter === b.filter && (a.vernierHz ?? null) === (b.vernierHz ?? null)
 
 export class HandoffMachine {
   phase: 'idle' | 'pending' = 'idle'
@@ -47,6 +50,8 @@ export class HandoffMachine {
   /** A settings change. `displayed` = settings of the set on screen now. */
   begin(displayed: HandoffTarget, target: HandoffTarget, now: number): HandoffEvent[] {
     const ev: HandoffEvent[] = []
+    // Same streams as already filling (e.g. NB/BB on a band gram): keep filling, just remember the new intent.
+    if (this.phase === 'pending' && this.to && sameTarget(this.to, target)) { this.to = { ...target }; return ev }
     if (this.phase === 'pending') { ev.push({ type: 'drop', gen: this.gen }); this.live.delete(this.gen); this.reset() }
     if (sameTarget(displayed, target)) return ev // back to what is on screen: nothing to fill
     this.gen++
@@ -107,6 +112,10 @@ export class HandoffMachine {
 /** Indicator text, e.g. "RES 2 → 1", "NB → BB", "VERNIER → 50.00 Hz", joined; then FILLING n%. */
 export function handoffLabel(from: HandoffTarget, to: HandoffTarget, progress: number): string {
   const parts: string[] = []
+  if (from.band || to.band) {
+    if (from.band !== to.band) parts.push(`${from.band ?? `RES ${from.res}`} → ${to.band ?? `RES ${to.res}`}`)
+    return `${parts.join('  ') || to.band}  FILLING ${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`
+  }
   if (from.res !== to.res) parts.push(`RES ${from.res} → ${to.res}`)
   if (from.filter !== to.filter) parts.push(`${from.filter} → ${to.filter}`)
   if ((from.vernierHz ?? null) !== (to.vernierHz ?? null)) parts.push(to.vernierHz === undefined ? 'VERNIER OFF' : `VERNIER → ${fmtHz(to.vernierHz)} Hz`)

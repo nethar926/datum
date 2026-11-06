@@ -80,3 +80,52 @@ describe('SimClient gram handoff', () => {
     c.dispose()
   })
 })
+
+describe('SimClient band presets', () => {
+  function setupBand(fill = 2) {
+    let t = 0
+    const hosts: SimHost[] = []
+    const c = new SimClient(() => fakeWorker(hosts) as unknown as Worker, new HandoffMachine(fill, 3000), () => t)
+    const notes: HandoffNotice[] = []
+    c.onHandoff((n) => notes.push(n))
+    c.setGram({ res: 5, filter: 'NB', band: 'LF' })
+    c.start()
+    const step = (k: number) => { for (let i = 0; i < k; i++) (c as unknown as { send: (m: ToWorker) => void }).send({ type: 'step' }) }
+    return { c, notes, step, host: () => hosts.at(-1)!, clock: (ms: number) => { t = ms } }
+  }
+  const lofarOf = (c: SimClient) => c.status.configs.filter((x) => x.kind === 'lofar')
+
+  it('starts on the saved band (RES off) and hands off between presets', () => {
+    const { c, notes, step, host } = setupBand()
+    expect(lofarOf(c)[0]).toMatchObject({ bandPreset: 'LF' })
+    c.setGram({ band: 'MF' })
+    expect(c.status.gram).toEqual({ res: 5, filter: 'NB', band: 'MF' })
+    expect(c.status.handoff?.label).toBe('LF → MF  FILLING 0%')
+    step(3); c.pollHandoff()
+    expect(notes.at(-1)!.type).toBe('promote')
+    expect(lofarOf(c)[0].bandPreset).toBe('MF')
+    expect(lofarOf(c)[0].fBin * 2047).toBeCloseTo(2000)
+    expect(host().liveStreamCount()).toBe(6)
+  })
+
+  it('NB/BB on a band gram is display-only (no new streams); RES −/+ hands back to RES', () => {
+    const { c, notes, step, host } = setupBand()
+    c.setGram({ filter: 'BB' })
+    expect(notes).toHaveLength(0)
+    expect(c.status.gram).toMatchObject({ filter: 'BB', band: 'LF' })
+    c.setGram({ res: 4, band: null })
+    expect(c.status.gram).toEqual({ res: 4, filter: 'BB' })
+    expect(c.status.handoff?.label).toBe('LF → RES 4  FILLING 0%')
+    step(12); c.pollHandoff()
+    expect(lofarOf(c)[0]).toMatchObject({ res: 4, filter: 'BB', bins: 1024 })
+    expect(lofarOf(c)[0].bandPreset).toBeUndefined()
+    expect(host().liveStreamCount()).toBe(6)
+  })
+
+  it('restart keeps the band family: init carries bandPreset, never res together with it', () => {
+    const { c, host } = setupBand()
+    c.setGram({ band: 'ELF' }); c.start()
+    expect(host().lofarStreamIds().mode).toBe('band')
+    expect(lofarOf(c)[0].bandPreset).toBe('ELF')
+  })
+})

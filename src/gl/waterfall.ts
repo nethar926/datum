@@ -41,7 +41,7 @@ void main(){
 const BAKE_FS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp sampler2D uSrc;
-uniform int uRows, uBins, uDstHead, uNew, uCover, uSrcHead, uSrcFilled, uBearing;
+uniform int uRows, uSrcBins, uDstHead, uNew, uCover, uSrcHead, uSrcFilled, uBearing;
 uniform float uA, uB, uScale, uGain, uOff;
 out vec4 o;
 void main(){
@@ -54,22 +54,23 @@ void main(){
   int srow = ((uSrcHead - sAge) % uRows + uRows) % uRows;
   float c = uA * float(x) + uB;                       // old-grid bin at this new bin's centre
   float nan = uintBitsToFloat(0x7fc00000u);
-  if (c < -0.5 || c > float(uBins) - 0.5) { o = vec4(uBearing == 1 ? nan : -60000., 0., 0., 1.); return; }
-  if (uBearing == 1) { o = vec4(texelFetch(uSrc, ivec2(clamp(int(floor(c + 0.5)), 0, uBins - 1), srow), 0).r, 0., 0., 1.); return; }
+  if (c < -0.5 || c > float(uSrcBins) - 0.5) { o = vec4(uBearing == 1 ? nan : -60000., 0., 0., 1.); return; }
+  if (uBearing == 1) { o = vec4(texelFetch(uSrc, ivec2(clamp(int(floor(c + 0.5)), 0, uSrcBins - 1), srow), 0).r, 0., 0., 1.); return; }
   // Power: max-pool the old bins under the new bin (coarser RES), level-mapped onto the new dB scale.
   int i0 = int(floor(c - uA * 0.5 + 0.5)), n = int(clamp(ceil(uA), 1., 8.));
   float v = -1e9; bool gap = false;
   for (int k = 0; k < 8; k++) {
     if (k >= n) break;
-    float s = texelFetch(uSrc, ivec2(clamp(i0 + k, 0, uBins - 1), srow), 0).r;
+    float s = texelFetch(uSrc, ivec2(clamp(i0 + k, 0, uSrcBins - 1), srow), 0).r;
     if (isnan(s) || s != s) { gap = true; continue; }
     v = max(v, s);
   }
   o = vec4(v < -1e8 ? (gap ? nan : -60000.) : v * uGain + uOff, 0., 0., 1.);
 }`
 
-/** Old → new grid for one stream at the handoff swap (bins and rows from the two gramConfigs). */
-export interface BakeMap { f0From: number; fBinFrom: number; f0To: number; fBinTo: number; rowRateFrom: number; rowRateTo: number
+/** Old → new grid for one destination stream at the handoff swap (bins and rows from the two gramConfigs).
+ * src = source texture index in the old bank (defaults to the same index), e.g. a normalized copy. */
+export interface BakeMap { src?: number; f0From: number; fBinFrom: number; f0To: number; fBinTo: number; rowRateFrom: number; rowRateTo: number
   dbFloorFrom: number; dbCeilFrom: number; dbFloorTo: number; dbCeilTo: number }
 
 export interface WaterfallView { binLo: number; binHi: number; dbFloor: number; dbCeil: number }
@@ -94,10 +95,12 @@ export class WaterfallRenderer {
   private lost = false
   private palette: PaletteId = 'green'
   private wheelSettings: DifarWheelSettings = DEFAULT_WHEEL
-  readonly bins: number
+  /** Displayed bank geometry: bins per row and ring textures. A handoff may change both (RES 1024 ↔ band 2048). */
+  bins: number
   readonly rows: number
-  readonly streams: number
-  /** Pending (handoff) bank: same sizes as the displayed bank, allocated on first use and then reused. */
+  streams: number
+  /** Pending (handoff) bank: allocated on first use, reused while its geometry matches, rebuilt when it does not. */
+  private pbins = 0
   private ptex: WebGLTexture[] = []
   private pbrg: WebGLTexture[] = []
   private phead: Int32Array
@@ -183,42 +186,58 @@ export class WaterfallRenderer {
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v)
   }
 
-  private ring(): WebGLTexture {
+  private ring(bins: number): WebGLTexture {
     const gl = this.gl, t = gl.createTexture()!
     gl.bindTexture(gl.TEXTURE_2D, t)
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16F, this.bins, this.rows)
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R16F, bins, this.rows)
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v)
     this.textureCount++
     return t
   }
 
-  /** Start (or restart) filling the pending bank. Allocates its textures once; later handoffs reuse them. */
-  beginPending(): void {
+  /**
+   * Start (or restart) filling the pending bank with `bins` × `streams` rings (default: the displayed geometry).
+   * Same geometry as last time → the textures are reused; otherwise the spare bank is rebuilt (only at a change).
+   */
+  beginPending(bins = this.bins, streams = this.streams): void {
     if (this.lost) return
-    if (!this.ptex.length) { this.ptex = Array.from({ length: this.streams }, () => this.ring()); this.pbrg = Array.from({ length: this.bearingStreams }, () => this.ring()) }
+    if (this.ptex.length && (this.pbins !== bins || this.ptex.length !== streams)) this.freePending()
+    if (!this.ptex.length) {
+      this.ptex = Array.from({ length: streams }, () => this.ring(bins)); this.pbrg = Array.from({ length: this.bearingStreams }, () => this.ring(bins))
+      this.pbins = bins
+      if (this.phead.length !== streams) { this.phead = new Int32Array(streams); this.pfilled = new Int32Array(streams) }
+    }
     this.phead.fill(-1); this.pfilled.fill(0); this.pheadB.fill(-1); this.pfilledB.fill(0); this.pendingOn = true
   }
+  private freePending(): void {
+    const gl = this.gl
+    if (!gl.isContextLost()) { for (const t of this.ptex) gl.deleteTexture(t); for (const t of this.pbrg) gl.deleteTexture(t) }
+    this.textureCount -= this.ptex.length + this.pbrg.length
+    this.ptex = []; this.pbrg = []; this.pbins = 0
+  }
+  /** Geometry of the pending bank (0 bins = none allocated). */
+  pendingGeometry(): { bins: number; streams: number } { return { bins: this.pbins, streams: this.ptex.length } }
   /** Superseded or abandoned handoff: forget the pending rows (textures stay for the next one). */
   dropPending(): void { this.pendingOn = false; this.phead.fill(-1); this.pfilled.fill(0); this.pheadB.fill(-1); this.pfilledB.fill(0) }
   hasPending(): boolean { return this.pendingOn }
   pendingFilled(s: number): number { return this.pfilled[s] ?? 0 }
 
   pushPendingRow(s: number, data: Float32Array, offset: number): void {
-    if (!this.pendingOn || this.lost || s < 0 || s >= this.streams) return
-    this.upload(this.ptex[s], this.phead, this.pfilled, s, data, offset)
+    if (!this.pendingOn || this.lost || s < 0 || s >= this.ptex.length) return
+    this.upload(this.ptex[s], this.phead, this.pfilled, s, data, offset, this.pbins)
   }
   pushPendingBearing(b: number, data: Float32Array, offset: number): void {
     if (!this.pendingOn || this.lost || b < 0 || b >= this.bearingStreams) return
-    this.upload(this.pbrg[b], this.pheadB, this.pfilledB, b, data, offset)
+    this.upload(this.pbrg[b], this.pheadB, this.pfilledB, b, data, offset, this.pbins)
   }
 
-  private upload(t: WebGLTexture, head: Int32Array, filled: Int32Array, s: number, data: Float32Array, offset: number): void {
+  private upload(t: WebGLTexture, head: Int32Array, filled: Int32Array, s: number, data: Float32Array, offset: number, bins = this.bins): void {
     const gl = this.gl
     head[s] = (head[s] + 1) % this.rows
     filled[s] = Math.min(this.rows, filled[s] + 1)
     gl.bindTexture(gl.TEXTURE_2D, t)
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, head[s], this.bins, 1, gl.RED, gl.FLOAT, data, offset)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, head[s], bins, 1, gl.RED, gl.FLOAT, data, offset)
   }
 
   /**
@@ -237,6 +256,8 @@ export class WaterfallRenderer {
     a = this.filled; this.filled = this.pfilled; this.pfilled = a
     a = this.headB; this.headB = this.pheadB; this.pheadB = a
     a = this.filledB; this.filledB = this.pfilledB; this.pfilledB = a
+    const b = this.bins; this.bins = this.pbins; this.pbins = b
+    this.streams = this.tex.length
     this.dropPending()
     return baked
   }
@@ -250,14 +271,14 @@ export class WaterfallRenderer {
       gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p); gl.deleteShader(vs); gl.deleteShader(fs)
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { gl.deleteProgram(p); return false }
       this.bakeProg = p; this.fbo = gl.createFramebuffer()
-      for (const n of ['uSrc', 'uRows', 'uBins', 'uDstHead', 'uNew', 'uCover', 'uSrcHead', 'uSrcFilled', 'uBearing', 'uA', 'uB', 'uScale', 'uGain', 'uOff']) this.bu[n] = gl.getUniformLocation(p, n)
+      for (const n of ['uSrc', 'uRows', 'uSrcBins', 'uDstHead', 'uNew', 'uCover', 'uSrcHead', 'uSrcFilled', 'uBearing', 'uA', 'uB', 'uScale', 'uGain', 'uOff']) this.bu[n] = gl.getUniformLocation(p, n)
     }
     const u = this.bu
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo)
-    gl.viewport(0, 0, this.bins, this.rows)
+    gl.viewport(0, 0, this.pbins, this.rows)
     gl.useProgram(this.bakeProg)
     gl.bindVertexArray(this.vao)
-    gl.uniform1i(u.uRows, this.rows); gl.uniform1i(u.uBins, this.bins); gl.uniform1i(u.uSrc, 0)
+    gl.uniform1i(u.uRows, this.rows); gl.uniform1i(u.uSrcBins, this.bins); gl.uniform1i(u.uSrc, 0)
     let ok = true
     const pass = (src: WebGLTexture, dst: WebGLTexture, srcHead: number, srcFilled: number, dstHead: number, dstFilled: number, m: BakeMap, bearing: boolean): number => {
       const scale = m.rowRateFrom / Math.max(1e-9, m.rowRateTo) // old rows per new row
@@ -274,10 +295,11 @@ export class WaterfallRenderer {
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
       return dstFilled + cover
     }
-    for (let s = 0; s < this.streams && s < maps.length && ok; s++) {
+    for (let s = 0; s < this.ptex.length && s < maps.length && ok; s++) {
+      const src = Math.min(this.tex.length - 1, maps[s].src ?? s)
       // Empty pending ring (head -1): park head on the last slot so the next live row lands on slot 0, just ahead of the baked rows.
       if (this.phead[s] < 0) { this.phead[s] = this.rows - 1 }
-      this.pfilled[s] = pass(this.tex[s], this.ptex[s], this.head[s], this.filled[s], this.phead[s], this.pfilled[s], maps[s], false)
+      this.pfilled[s] = pass(this.tex[src], this.ptex[s], this.head[src], this.filled[src], this.phead[s], this.pfilled[s], maps[s], false)
     }
     for (let b = 0; b < this.bearingStreams && b < maps.length && ok; b++) {
       if (this.pheadB[b] < 0) { this.pheadB[b] = this.rows - 1 }

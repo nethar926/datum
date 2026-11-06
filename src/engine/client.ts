@@ -1,4 +1,4 @@
-import type { Band, FromWorker, GramConfig, GramRows, GramSettings, Tactical, ToWorker } from './contract'
+import type { Band, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 import { HandoffMachine, handoffLabel, type HandoffEvent, type HandoffTarget } from '../gram/handoff'
 
@@ -63,11 +63,13 @@ export class SimClient {
     if (this.handoff.phase === 'pending') { const gen = this.handoff.gen; this.handoff.cancel(); this.notify({ type: 'drop', gen }) }
     this.handoff.cancel(); this.pendingTarget = undefined; this.lastPct = -1
     const g0 = this.status.gram
-    if (g0) { this.target = { res: g0.res, filter: g0.filter }; this.displayed = { ...this.target } }
+    if (g0) { this.target = { res: g0.res, filter: g0.filter, ...(g0.band ? { band: g0.band } : {}) }; this.displayed = { ...this.target } }
     if (this.status.handoff) this.setStatus({ handoff: undefined })
     const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
     this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic })
-    this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: false, gram: this.status.gram })
+    this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: false,
+      // Band gram (RES off) or RES gram: the engine keeps the two families exclusive, so send exactly one.
+      ...(g0?.band ? { bandPreset: g0.band } : { gram: g0 ? { res: g0.res, filter: g0.filter } : undefined }) })
     if (!this.status.receiver) this.send({ type: 'setReceiver', enabled: false })
     if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(this.tick) }
   }
@@ -87,18 +89,22 @@ export class SimClient {
    * a pending stream set fills alongside the displayed one and is swapped in by tick() (never a blank gram).
    * Before the first streams (or on a legacy gram) it applies directly.
    */
-  setGram(p: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number | null }): void {
+  setGram(p: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number | null; band?: LofarBandPresetId | null }): void {
     const g = this.status.gram
     if (!g) return
     const res = p.res === undefined ? this.target.res : Math.max(1, Math.min(9, Math.round(p.res)))
     const next: HandoffTarget = { res, filter: p.filter ?? this.target.filter }
     const v = p.vernierHz === undefined ? this.target.vernierHz : p.vernierHz === null ? undefined : p.vernierHz
     if (v !== undefined) next.vernierHz = v
+    // band: preset id = band gram (RES off); null = back to RES; undefined = keep the current family.
+    const band = p.band === undefined ? this.target.band : p.band ?? undefined
+    if (band) next.band = band
     this.target = next
-    this.setStatus({ gram: { res, filter: next.filter } })
-    const resGram = this.status.configs.some((c) => c.kind === 'lofar' && c.res !== undefined)
-    if (!this.worker || !resGram) {
-      if (this.worker) this.send({ type: 'setGram', ...p, ...(p.res !== undefined ? { res } : {}) })
+    this.setStatus({ gram: { res, filter: next.filter, ...(band ? { band } : {}) } })
+    // Handoff needs a running set the engine can replace with a fresh subscribe (RES or band-preset streams).
+    const live = this.status.configs.some((c) => c.kind === 'lofar' && (c.res !== undefined || c.bandPreset !== undefined))
+    if (!this.worker || !live) {
+      if (this.worker && !band && !p.band) this.send({ type: 'setGram', res: p.res === undefined ? undefined : res, filter: p.filter, vernierHz: p.vernierHz })
       this.displayed = { ...next }
       return
     }
@@ -129,14 +135,16 @@ export class SimClient {
   private apply(e: HandoffEvent): void {
     if (e.type === 'subscribe') {
       this.pendingTarget = e.target
-      this.send({ type: 'subscribeGram', gen: e.gen, res: e.target.res, filter: e.target.filter, ...(e.target.vernierHz !== undefined ? { vernierHz: e.target.vernierHz } : {}) })
+      const t = e.target
+      this.send(t.band ? { type: 'subscribeGram', gen: e.gen, bandPreset: t.band }
+        : { type: 'subscribeGram', gen: e.gen, res: t.res, filter: t.filter, ...(t.vernierHz !== undefined ? { vernierHz: t.vernierHz } : {}) })
     } else if (e.type === 'drop') {
       this.pendingTarget = undefined
       this.send({ type: 'dropGram', gen: e.gen }); this.notify({ type: 'drop', gen: e.gen })
     } else {
       // Atomic swap: the waterfall flips buffers inside notify(), before any later rows are delivered.
       const from = this.status.configs.filter((c) => c.kind === 'lofar'), rest = this.status.configs.filter((c) => c.kind !== 'lofar')
-      if (this.pendingTarget) this.displayed = this.pendingTarget
+      if (this.pendingTarget) this.displayed = { ...this.pendingTarget, filter: this.target.filter }
       this.pendingTarget = undefined
       this.notify({ type: 'promote', gen: e.gen, from, to: e.configs })
       this.setStatus({ configs: [...e.configs, ...rest] })

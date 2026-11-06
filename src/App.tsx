@@ -18,7 +18,8 @@ import { CpaOverlay, cpaReadout } from './gram/CpaOverlay'
 import { addSample, cpaFitterReady, MIN_CPA_SAMPLES, runCpaFit, type CpaSample } from './gram/cpa'
 import { clampView, type FreqView } from './gram/axis'
 import { RES_MAX, RES_MIN, clampRes, fullView, geometryKey, minSpanOf, resReadout, vernierLabel } from './gram/res'
-import type { GramFilter } from './engine/contract'
+import type { GramFilter, GramSettings, LofarBandPresetId } from './engine/contract'
+import { BAND_IDS, BAND_KEY, bandEdges, bandReadout, isBandId, parseBandChoice } from './gram/bands'
 import { TacticalPlot } from './tactical/TacticalPlot'
 import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
@@ -35,14 +36,24 @@ import { installAudioUnlock } from './touch/audioUnlock'
 const RATES = [1, 4, 16]
 const GRAM_MODE_KEY = 'datum.gramMode'
 const GRAM_KEY = 'datum.gram'
-/** Saved RES level and NB/BB filter (default RES 5, NB); ?res= and ?filter= override. */
-const loadGram = (): { res: number; filter: GramFilter } => {
+/** Saved band picker (datum.band: last preset, default LF, and whether the band gram is on); ?band=ELF|…|off overrides. */
+const loadBand = () => {
+  let b = parseBandChoice(null)
+  try { b = parseBandChoice(localStorage.getItem(BAND_KEY)) } catch { /* private mode */ }
+  const qb = new URLSearchParams(location.search).get('band')?.toUpperCase()
+  if (isBandId(qb)) b = { preset: qb, on: true }
+  else if (qb === 'OFF' || qb === 'RES') b = { ...b, on: false }
+  return b
+}
+/** Saved RES level and NB/BB filter (default RES 5, NB) plus the band gram when on; ?res= / ?filter= override (?res= means RES on). */
+const loadGram = (): GramSettings => {
   let res = 5, filter: GramFilter = 'NB'
   try { const v = JSON.parse(localStorage.getItem(GRAM_KEY) ?? 'null'); if (v && Number.isFinite(v.res)) res = clampRes(v.res); if (v?.filter === 'BB' || v?.filter === 'NB') filter = v.filter } catch { /* private mode */ }
   const q = new URLSearchParams(location.search), qr = Number(q.get('res')), qf = q.get('filter')?.toUpperCase()
   if (q.has('res') && Number.isFinite(qr)) res = clampRes(qr)
   if (qf === 'NB' || qf === 'BB') filter = qf
-  return { res, filter }
+  const b = loadBand()
+  return b.on && !(q.has('res') && !q.has('band')) ? { res, filter, band: b.preset } : { res, filter }
 }
 const loadGramMode = (): GramMode => { try { const v = localStorage.getItem(GRAM_MODE_KEY); return isGramMode(v) ? v : 'lofar' } catch { return 'lofar' } }
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
@@ -141,14 +152,29 @@ export default function App() {
   const cfg = lofarCfgs[stream]
   const gram = st.gram
   const filter: GramFilter = cfg?.filter ?? gram?.filter ?? 'NB'
-  useEffect(() => { if (gram) try { localStorage.setItem(GRAM_KEY, JSON.stringify(gram)) } catch { /* private mode */ } }, [gram])
+  // Last picked band preset (shown "armed" while RES is on, so the picker state is always visible).
+  const [lastBand, setLastBand] = useState<LofarBandPresetId>(() => loadBand().preset)
+  const bandOn = !!gram?.band, wantBand = gram?.band ?? lastBand
+  useEffect(() => { if (gram) try {
+    localStorage.setItem(GRAM_KEY, JSON.stringify({ res: gram.res, filter: gram.filter }))
+    localStorage.setItem(BAND_KEY, JSON.stringify({ preset: gram.band ?? lastBand, on: !!gram.band }))
+  } catch { /* private mode */ } }, [gram, lastBand])
   // New RES / vernier grid: show the whole new band (the old view is on a different frequency grid). Layout
   // effect, so the waterfall never draws a frame with the old view on the new grid after a handoff swap.
   const geo = geometryKey(lofarCfgs)
   useLayoutEffect(() => { if (cfg) setView(fullView(cfg)) }, [geo]) // eslint-disable-line react-hooks/exhaustive-deps
   // RES / filter controls act on the requested settings (st.gram), which lead the display during a handoff.
   const wantRes = gram?.res ?? cfg?.res ?? 5, wantFilter: GramFilter = gram?.filter ?? filter
-  const stepRes = (d: number) => { const r = clampRes(wantRes + d); if (r !== wantRes) client.setGram({ res: r }) }
+  // RES −/+ on a band gram leaves the band (RES on again), stepping from the saved RES level.
+  const stepRes = (d: number) => { const r = clampRes(wantRes + d); if (bandOn) client.setGram({ res: r, band: null }); else if (r !== wantRes) client.setGram({ res: r }) }
+  const pickBand = (id: LofarBandPresetId) => { setLastBand(id); if (!(bandOn && wantBand === id)) client.setGram({ band: id }) }
+  const bandSeg = (testId: string) => (
+    <div className="seg band-seg" role="group" aria-label="LOFAR band preset" data-testid={testId} data-mode={bandOn ? 'band' : 'res'}
+      title={bandOn ? 'Analytic band gram (RES off). RES −/+ returns to RES.' : 'RES is on. Tap a band for the analytic band gram (turns RES off): the engine runs RES and band presets as separate stream types.'}>
+      {BAND_IDS.map((id) => <button key={id} aria-pressed={bandOn && wantBand === id} className={!bandOn && lastBand === id ? 'armed' : undefined}
+        onClick={() => pickBand(id)} title={`${id} · 0–${bandEdges(id)[1]} Hz${bandOn ? '' : ' (turns RES off)'}`}>{id}</button>)}
+    </div>
+  )
   const setFilter = (f: GramFilter) => { if (f !== wantFilter) client.setGram({ filter: f }) }
   const centerVernier = (hz: number) => { setVernierPick(false); client.setGram({ vernierHz: Math.max(0, hz) }) }
   const vernierOff = () => { setVernierPick(false); client.setGram({ vernierHz: null }) }
@@ -265,6 +291,7 @@ export default function App() {
           <div className="sheet-row"><span className="seg-label">LOFAR</span><div className="seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
             {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)} title={gramMode === 'difar' ? 'LOFAR colour (DIFAR uses the bearing wheel)' : `LOFAR amplitude in ${PALETTE_LABEL[id].toLowerCase()}`}>{PALETTE_LABEL[id]}</button>)}
           </div></div>
+          <div className="sheet-row"><span className="seg-label">GRAM BAND</span>{bandSeg('band-seg-sheet')}</div>
           <div className="sheet-row"><span className="seg-label">BAND</span><div className="seg" role="group" aria-label="LOFAR band">
             <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
             <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
@@ -297,12 +324,14 @@ export default function App() {
             </div>
             {!phone && <span className="seg-label">RES</span>}
             <div className="seg res-step" role="group" aria-label="Resolution" data-testid="res-step">
-              <button className="icon" onClick={() => stepRes(-1)} disabled={!cfg || wantRes <= RES_MIN} aria-label="Finer resolution (RES down)" title="Finer bins, narrower band">−</button>
-              <span key={cfg?.res} className="res-read" data-testid="res-readout" aria-live="polite">{resReadout(cfg, layout === 'phonePortrait')}</span>
-              <button className="icon" onClick={() => stepRes(1)} disabled={!cfg || wantRes >= RES_MAX} aria-label="Coarser resolution (RES up)" title="Wider bins, wider band">+</button>
+              <button className="icon" onClick={() => stepRes(-1)} disabled={!cfg || (!bandOn && wantRes <= RES_MIN)} aria-label="Finer resolution (RES down)" title="Finer bins, narrower band">−</button>
+              <span key={cfg?.res ?? cfg?.bandPreset} className="res-read" data-testid="res-readout" aria-live="polite">{bandReadout(cfg) ?? resReadout(cfg, layout === 'phonePortrait')}</span>
+              <button className="icon" onClick={() => stepRes(1)} disabled={!cfg || (!bandOn && wantRes >= RES_MAX)} aria-label="Coarser resolution (RES up)" title="Wider bins, wider band">+</button>
             </div>
-            <button className={`btn vernier${vLabel ? ' on' : vernierPick ? ' pick' : ''}`} data-testid="vernier" aria-pressed={!!vLabel || vernierPick} onClick={onVernier}
-              title={vLabel ? 'Back to the full band' : 'Center the band on a line: uses the selected line, or tap one on the gram'}>
+            {!phone && <span className="seg-label">BAND</span>}
+            {bandSeg('band-seg')}
+            <button disabled={bandOn && !vLabel} className={`btn vernier${vLabel ? ' on' : vernierPick ? ' pick' : ''}`} data-testid="vernier" aria-pressed={!!vLabel || vernierPick} onClick={onVernier}
+              title={vLabel ? 'Back to the full band' : bandOn ? 'Vernier needs RES (band presets use the analytic band gram)' : 'Center the band on a line: uses the selected line, or tap one on the gram'}>
               {vLabel ? <>{vLabel} <span aria-hidden>✕</span></> : vernierPick ? 'VERNIER · tap a line' : layout === 'phonePortrait' ? 'VERNIER' : selHz !== null ? `VERNIER · ${selHz.toFixed(viewDigits + 1)} Hz` : 'VERNIER OFF · tap a line'}
             </button>
             {cfg?.bandLimited && <span className="band-limit-tag" data-testid="band-limit-tag" title="Part of this band is above the simulated top frequency">BAND LIMIT</span>}
@@ -335,7 +364,7 @@ export default function App() {
                   {cpaMarks.length > 0 && <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} />}
                 </>) : undefined} />
             )}
-            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
+            {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, cfg ? fullView(cfg).hi : BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
             {(cpaMode || cpaMarks.length > 0) && <div className="gram-note readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</div>}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">

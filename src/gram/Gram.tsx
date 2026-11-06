@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GramConfig, Tactical } from '../engine/contract'
 import { fillLineBearings, type GramMode } from './difarBearing'
 import type { SimClient } from '../engine/client'
-import { WaterfallRenderer, type BakeMap } from '../gl/waterfall'
+import { WaterfallRenderer } from '../gl/waterfall'
+import { NORM_CEIL_DB, NORM_FLOOR_DB, bakeMaps, texturesFor } from './bands'
 import type { DifarWheelSettings, PaletteId } from '../gl/colormap'
 import { contrastRange } from './contrast'
 import { AutoLevel } from './autoLevel'
 import { SplitWindowNormalizer } from './whiten'
 import { LevelHistory } from './levelHistory'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
-import { bandLimitHz, fullView, geometryKey, minSpanOf } from './res'
+import { bandLimitHz, fullView, minSpanOf } from './res'
 import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
 
 
@@ -40,8 +41,8 @@ interface Props {
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
-// Normalized view: background sits at ~0 dB, so a fixed range from just below it shows weak tonals.
-const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
+// Normalized view: background sits at ~0 dB, so a fixed range from just below it shows weak tonals
+// (NORM_FLOOR_DB / NORM_CEIL_DB live in ./bands so the handoff bake maps onto the same scale).
 
 /**
  * Gram waterfall (LOFAR, DEMON): WebGL2 ring textures, frequency axis below, time axis right, cursor readout.
@@ -65,7 +66,6 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
   const fMin = cfg?.f0 ?? 0, minSpan = minSpanOf(cfg)
   const full = (): FreqView => (cfg ? fullView(cfg) : { lo: 0, hi: fMax })
-  const geo = geometryKey(configs)
   const limitHz = bandLimitHz(cfg)
   const [wheelTick, setWheelTick] = useState(0)
   const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick })
@@ -74,79 +74,91 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   // Streams the renderer is drawing right now. A handoff promote swaps this synchronously (before React
   // re-renders with the new configs), so the frame loop never pairs new textures with the old grid.
   const liveRef = useRef(configs), promotedRef = useRef<GramConfig[] | null>(null), epochRef = useRef(0)
-  if (configs[0]?.streamId === liveRef.current[0]?.streamId) liveRef.current = configs
+  if (configs[0]?.streamId === liveRef.current[0]?.streamId) {
+    // Same ids but a different grid without a handoff (legacy hot-swap setGram): rebuild the renderer.
+    if (configs[0]?.bins !== liveRef.current[0]?.bins || configs.length !== liveRef.current.length) epochRef.current++
+    liveRef.current = configs
+  }
   else if (liveRef.current !== promotedRef.current) { liveRef.current = configs; epochRef.current++ } // a new stream set (restart), not a handoff
-  // RES grams keep one renderer across RES/filter/vernier changes (the handoff swaps banks); legacy grams rebuild.
-  const resGram = configs[0]?.res !== undefined
-  const rendererKey = resGram ? `res:${epochRef.current}` : geo
+  // One renderer per stream set lifetime: handoffs (RES, filter, vernier, band) swap banks inside it, even when
+  // the bin count changes (RES 1024 ↔ band 2048). A restart (new set, not a handoff) bumps the epoch → rebuild.
+  const rendererKey = `${epochRef.current}:${glGen}`
 
-  // (Re)create the renderer when the stream geometry changes.
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || !bins || !configs.length) return
+    const cs0 = liveRef.current
+    if (!canvas || !cs0.length || !cs0[0].bins) return
     let r: WaterfallRenderer
-    // Textures 0..N-1 hold raw rows, N..2N-1 the normalized rows, so toggling keeps full history.
-    const N = configs.length
-    const engineFiltered = configs[0]?.res !== undefined
+    // Textures 0..N-1 hold raw rows; band/legacy grams add N..2N-1 normalized rows, so NB/BB toggling keeps
+    // full history. RES grams arrive engine-filtered (N textures).
+    const N = cs0.length
+    // Geometry-dependent CPU state; rebuilt only when a handoff changes bins or family (never per frame).
+    const mk = (cs: GramConfig[]) => {
+      const b = cs[0].bins
+      return { bins: b, filtered: cs[0].res !== undefined, norm: new SplitWindowNormalizer(b), scratch: new Float32Array(b), brgRow: new Float32Array(b) }
+    }
+    let g = mk(cs0), pg = g
     let local = new Map<number, number>(), pendingLocal = new Map<number, number>()
-    liveRef.current.forEach((c, i) => local.set(c.streamId, i))
-    // RES grams arrive engine-filtered, so they need no normalized copies (N textures, not 2N).
-    try { r = new WaterfallRenderer(canvas, bins, HISTORY_ROWS, engineFiltered ? N : N * 2, N) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
+    cs0.forEach((c, i) => local.set(c.streamId, i))
+    try { r = new WaterfallRenderer(canvas, g.bins, HISTORY_ROWS, texturesFor(cs0), N) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
     setGlError(null)
     rendererRef.current = r
-    const level = new AutoLevel(N)
-    const norm = new SplitWindowNormalizer(bins), scratch = new Float32Array(bins), brgRow = new Float32Array(bins)
-    const hist = new LevelHistory(HISTORY_ROWS, bins); histRef.current = hist
+    let level = new AutoLevel(N)
+    let hist = new LevelHistory(HISTORY_ROWS, g.bins); histRef.current = hist
     let histStream = viewRef.current.streamIndex
     let dirty = true, raf = 0
     let pendingCfgs: GramConfig[] = []
     const startPending = (cs: GramConfig[]) => {
       pendingLocal = new Map(); cs.forEach((c, i) => pendingLocal.set(c.streamId, i)); pendingCfgs = cs
-      r.beginPending()
+      pg = cs[0].bins === g.bins && (cs[0].res !== undefined) === g.filtered ? g : mk(cs)
+      r.beginPending(cs[0].bins, texturesFor(cs))
     }
-    const pc = client.pendingConfigs()
-    if (pc && pc.length === N && pc[0].bins === bins) startPending(pc)
+    const pc0 = client.pendingConfigs()
+    if (pc0 && pc0.length === N) startPending(pc0)
     const offHandoff = client.onHandoff((h) => {
-      if (h.type === 'pending') { if (h.configs.length === N && h.configs[0]?.bins === bins) startPending(h.configs); return }
-      if (h.type === 'drop') { pendingLocal.clear(); pendingCfgs = []; r.dropPending(); return }
+      if (h.type === 'pending') { if (h.configs.length === N && h.configs[0]?.bins) startPending(h.configs); return }
+      if (h.type === 'drop') { pendingLocal.clear(); pendingCfgs = []; pg = g; r.dropPending(); return }
       if (h.to.length !== N) return
-      // No pending bank (context lost/restored mid-handoff): just route the new ids into the current bank.
-      const maps: BakeMap[] = h.to.map((t, i) => { const f = h.from[i] ?? t; return {
-        f0From: f.f0, fBinFrom: f.fBin, f0To: t.f0, fBinTo: t.fBin, rowRateFrom: f.rowRateHz, rowRateTo: t.rowRateHz,
-        dbFloorFrom: f.dbFloor, dbCeilFrom: f.dbCeil, dbFloorTo: t.dbFloor, dbCeilTo: t.dbCeil } })
-      if (r.hasPending()) r.promotePending(maps)
+      // No pending bank (context lost/restored mid-handoff): route the new ids into a fresh bank of the new size.
+      if (!r.hasPending()) { r.beginPending(h.to[0].bins, texturesFor(h.to)); pg = mk(h.to) }
+      r.promotePending(bakeMaps(h.from, h.to, texturesFor(h.from), texturesFor(h.to)))
+      if (pg !== g) { g = pg; hist = new LevelHistory(HISTORY_ROWS, g.bins); histRef.current = hist; level = new AutoLevel(N) } else hist.clear()
       local = pendingLocal; pendingLocal = new Map(); pendingCfgs = []
       liveRef.current = h.to; promotedRef.current = h.to
-      hist.clear(); dirty = true
+      dirty = true
     })
     const off = client.onRows((rows) => {
       if (viewRef.current.streamIndex !== histStream) { hist.clear(); histStream = viewRef.current.streamIndex }
       const n = rows.streamIds.length
-      if (!n || rows.data.length !== n * bins) return // another pane's streams (different bin count)
+      if (!n) return
+      const bd = (rows as { bearingDeg?: Float32Array }).bearingDeg
       for (let k = 0; k < n; k++) {
-        const s = local.get(rows.streamIds[k])
+        const id = rows.streamIds[k]
+        const s = local.get(id)
         if (s === undefined) {
           // Pending handoff set: fills the hidden bank while the displayed bank keeps scrolling.
-          const p = pendingLocal.get(rows.streamIds[k])
-          if (p === undefined) continue
-          r.pushPendingRow(p, rows.data, k * bins)
-          const pb = (rows as { bearingDeg?: Float32Array }).bearingDeg
-          if (pb && pb.length === rows.data.length) r.pushPendingBearing(p, pb, k * bins)
-          else { const tac = tacRef.current, c = pendingCfgs[p]; fillLineBearings(brgRow, c, tac?.buoys.find((b) => b.channel === c.channel), tac?.bearings); r.pushPendingBearing(p, brgRow, 0) }
+          const p = pendingLocal.get(id)
+          if (p === undefined || rows.data.length !== n * pg.bins) continue
+          const b = pg.bins, o = k * b
+          r.pushPendingRow(p, rows.data, o)
+          if (!pg.filtered) { pg.norm.apply(rows.data, o, pg.scratch, 0); r.pushPendingRow(N + p, pg.scratch, 0) }
+          if (bd && bd.length === rows.data.length) r.pushPendingBearing(p, bd, o)
+          else { const tac = tacRef.current, c = pendingCfgs[p]; fillLineBearings(pg.brgRow, c, tac?.buoys.find((x) => x.channel === c.channel), tac?.bearings); r.pushPendingBearing(p, pg.brgRow, 0) }
           continue
         }
-        r.pushRow(s, rows.data, k * bins); level.update(s, rows.data, k * bins, bins)
-        if (s === histStream) hist.push(rows.data, k * bins)
-        // RES grams arrive engine-filtered (NB = TPSW), so the display normalizer only runs on legacy grams.
-        if (!engineFiltered) { norm.apply(rows.data, k * bins, scratch, 0); r.pushRow(N + s, scratch, 0) }
+        if (rows.data.length !== n * g.bins) continue // another pane's streams (different bin count)
+        const b = g.bins, o = k * b
+        r.pushRow(s, rows.data, o); level.update(s, rows.data, o, b)
+        if (s === histStream) hist.push(rows.data, o)
+        // RES grams arrive engine-filtered (NB = TPSW), so the display normalizer only runs on band/legacy grams.
+        if (!g.filtered) { g.norm.apply(rows.data, o, g.scratch, 0); r.pushRow(N + s, g.scratch, 0) }
         // Bearing ring stays row-aligned with the power ring (NaN rows for omni buoys).
         // Engine per-bin bearings when streamed; else interim colouring from the tracked line bearings.
-        const bd = (rows as { bearingDeg?: Float32Array }).bearingDeg
-        if (bd && bd.length === rows.data.length) r.pushBearing(s, bd, k * bins)
+        if (bd && bd.length === rows.data.length) r.pushBearing(s, bd, o)
         else {
           const tac = tacRef.current, c = liveRef.current[s]
-          fillLineBearings(brgRow, c, tac?.buoys.find((b) => b.channel === c.channel), tac?.bearings)
-          r.pushBearing(s, brgRow, 0)
+          fillLineBearings(g.brgRow, c, tac?.buoys.find((x) => x.channel === c.channel), tac?.bearings)
+          r.pushBearing(s, g.brgRow, 0)
         }
       }
       dirty = true
@@ -190,11 +202,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
       r.dispose(); rendererRef.current = null; histRef.current = null
     }
-  }, [client, bins, configs.length, rendererKey, HISTORY_ROWS, glGen])
+  }, [client, configs.length > 0, rendererKey, HISTORY_ROWS])
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
-  useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, bins, configs.length, client, glGen])
-  useEffect(() => { if (wheel) { rendererRef.current?.setWheel(wheel); setWheelTick((t) => t + 1) } }, [wheel, bins, configs.length, client, glGen])
+  useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, rendererKey, client])
+  useEffect(() => { if (wheel) { rendererRef.current?.setWheel(wheel); setWheelTick((t) => t + 1) } }, [wheel, rendererKey, client])
 
   const ticks = useMemo(() => niceTicks(view.lo, view.hi, Math.max(3, Math.floor(width / 90))), [view, width])
   const historyS = HISTORY_ROWS / rowRate

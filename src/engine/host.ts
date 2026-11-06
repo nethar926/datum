@@ -1,7 +1,7 @@
 import * as Acoustics from '@acoustics'
 import { Receiver } from './receiver'
 import { AcousticEngine, isAlive } from '@acoustics'
-import type { Band, Bearing, FromWorker, GramConfig, GramRows, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
+import type { Band, Bearing, FromWorker, GramConfig, GramRows, LofarBandPresetId, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
 import { buildScenario } from '../scenarios/training'
 
 export const BANDS: Record<Band, { fmax: number; bins: number }> = {
@@ -14,41 +14,40 @@ const AIRCRAFT_ALT_M = 450 // display value for the fictional patrol aircraft
 
 type Post = (msg: FromWorker, transfer?: Transferable[]) => void
 interface Frame { streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array; bearingDeg?: Float32Array }
-type EngineSubscribe = (req: { channel: number; res: number; filter: 'NB' | 'BB'; vernierHz?: number }) => GramConfig & { simT?: number }
+type EngineSubscribe = (req: { channel: number; res?: number; filter?: 'NB' | 'BB'; vernierHz?: number; bandPreset?: LofarBandPresetId }) => GramConfig & { simT?: number }
 type EngineSetGram = (id: number, p: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number | null }) => GramConfig & { simT?: number }
 /** Engine gramConfig → display contract (drops simT; keeps the RES fields). */
 const toConfig = (c: GramConfig & { simT?: number }): GramConfig => { const { simT: _t, ...rest } = c; return { ...rest, type: 'gramConfig', v: 1 } }
 const rad2deg = (r: number) => ((((r * 180) / Math.PI) % 360) + 360) % 360
 
+/**
+ * One LOFAR stream per buoy, all alike. 'legacy' = the engine's registered pull streams (always a row);
+ * 'res' = m3-res zoom-FFT subscriptions (rows every P s, phase-staggered); 'band' = m3-bands analytic
+ * subscriptions with a named bandPreset (4 Hz in the engine, drained to the newest row once per host step).
+ */
+interface LofarSet { mode: 'legacy' | 'res' | 'band'; ids: Int32Array; configs: GramConfig[]; bins: number; filter: 'NB' | 'BB'; rx: Receiver[] }
+
 /** Worker-side host: owns an AcousticEngine and speaks the data contract. Pure enough to unit test without a Worker. */
 export class SimHost {
   private engine?: AcousticEngine
-  private pool: Frame[] = []
+  /** LOFAR frame pools keyed by bins (RES 1024, band/legacy = scenario bins): only the live sets' sizes are kept. */
+  private pools = new Map<number, Frame[]>()
   /** DEMON streams (v1.1 engines): own pool and own gramRows message, since bins differ from LOFAR. */
   private demonPool: Frame[] = []
   private demonIds: number[] = []
   private demonBins = 0
-  private bins = 0
   private n = 0
   private dt = 0.5
+  private rowRateHz = 2
   private rowCount = 0
   private tactical?: Tactical
-  /** One receiver front end per LOFAR stream; rxEnabled=false gives an ideal (infinite-range) receiver. */
-  private rx: Receiver[] = []
   private rxEnabled = true
-  /** RES mode (m3-res engines): rows only when the engine has one ready (every P = 2/4/8 s). */
-  private resMode = false
-  private filter: 'NB' | 'BB' = 'NB'
   private demonConfigs: GramConfig[] = []
-  private lofarConfigs: GramConfig[] = []
-  /** Displayed LOFAR stream id per buoy (1..n at init; the promoted pending ids after a handoff). */
-  private activeIds = new Int32Array(0)
-  /** m3-fe-gram-handoff: pending LOFAR set (gen > 0 while one exists), one stream per buoy, own receivers. */
+  /** Displayed LOFAR set (one receiver front end per stream; rxEnabled=false gives an ideal receiver). */
+  private active: LofarSet = { mode: 'legacy', ids: new Int32Array(0), configs: [], bins: 0, filter: 'NB', rx: [] }
+  /** m3-fe-gram-handoff: pending set (pendingGen > 0 while one exists), filling alongside the displayed one. */
+  private pending?: LofarSet
   private pendingGen = 0
-  private pendingIds = new Int32Array(0)
-  private pendingConfigs: GramConfig[] = []
-  private pendingRx: Receiver[] = []
-  private pendingFilter: 'NB' | 'BB' = 'NB'
   constructor(private readonly post: Post) {}
 
   handle(msg: ToWorker): void {
@@ -62,7 +61,7 @@ export class SimHost {
       if (msg.type === 'subscribeGram') return this.subscribeGram(msg)
       if (msg.type === 'promoteGram') return this.promoteGram(msg.gen)
       if (msg.type === 'dropGram') { if (msg.gen === this.pendingGen) this.dropPending(); return }
-      if (msg.type === 'setReceiver') { this.rxEnabled = !!msg.enabled; for (const r of this.rx) r.reset(); for (const r of this.pendingRx) r.reset(); return }
+      if (msg.type === 'setReceiver') { this.rxEnabled = !!msg.enabled; for (const r of this.active.rx) r.reset(); for (const r of this.pending?.rx ?? []) r.reset(); return }
       throw new Error('Unknown message')
     } catch (e) {
       this.post({ v: 1, type: 'error', message: e instanceof Error ? e.message : String(e) })
@@ -77,28 +76,27 @@ export class SimHost {
     const engine = new AcousticEngine(msg.params && gen ? gen(msg.params) : buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins))
     this.engine = engine
     this.n = engine.scenario.buoys.length
-    this.activeIds = new Int32Array(this.n); for (let i = 0; i < this.n; i++) this.activeIds[i] = i + 1
-    this.pendingGen = 0; this.pendingIds = new Int32Array(0); this.pendingConfigs = []; this.pendingRx = []
-    const setGram = (engine as unknown as { setGram?: EngineSetGram }).setGram
-    this.resMode = !!msg.gram && typeof setGram === 'function'
-    let resConfigs: GramConfig[] | undefined
-    if (this.resMode) {
-      resConfigs = engine.scenario.buoys.map((_, i) => toConfig(setGram!.call(engine, i + 1, { res: msg.gram!.res, filter: msg.gram!.filter })))
-      this.filter = resConfigs[0]?.filter ?? 'NB'
-    }
-    this.bins = resConfigs?.[0]?.bins ?? band.bins
-    this.dt = 1 / msg.rowRateHz
+    this.dt = 1 / msg.rowRateHz; this.rowRateHz = msg.rowRateHz
     this.rowCount = 0
-    this.pool = []
-    for (let i = 0; i < POOL_FRAMES; i++) this.pool.push(this.newFrame())
-    this.rx = Array.from({ length: this.n }, () => new Receiver())
+    this.pending = undefined; this.pendingGen = 0
+    this.pools = new Map()
+    const setGram = (engine as unknown as { setGram?: EngineSetGram }).setGram
+    const ids = new Int32Array(this.n); for (let i = 0; i < this.n; i++) ids[i] = i + 1
+    if (msg.gram && typeof setGram === 'function') {
+      const configs = engine.scenario.buoys.map((_, i) => toConfig(setGram.call(engine, i + 1, { res: msg.gram!.res, filter: msg.gram!.filter })))
+      this.active = this.makeSet('res', ids, configs)
+    } else if (msg.bandPreset && this.canSubscribe()) {
+      this.active = this.subscribeSet({ bandPreset: msg.bandPreset })
+    } else {
+      const fBin = band.fmax / (band.bins - 1)
+      this.active = this.makeSet('legacy', ids, engine.scenario.buoys.map((b, i) => ({
+        v: 1, type: 'gramConfig', streamId: i + 1, kind: 'lofar', channel: b.rfChannel,
+        bins: band.bins, f0: 0, fBin, rowRateHz: msg.rowRateHz, dbFloor: 40, dbCeil: 110,
+      })))
+    }
+    this.ensurePool(this.active.bins)
     this.tactical = this.makeTactical()
-    const fBin = band.fmax / (band.bins - 1)
-    const configs: GramConfig[] = resConfigs ?? engine.scenario.buoys.map((b, i) => ({
-      v: 1, type: 'gramConfig', streamId: i + 1, kind: 'lofar', channel: b.rfChannel,
-      bins: band.bins, f0: 0, fBin, rowRateHz: msg.rowRateHz, dbFloor: 40, dbCeil: 110,
-    }))
-    this.lofarConfigs = configs.slice()
+    const configs: GramConfig[] = this.active.configs.slice()
     this.demonIds = []; this.demonPool = []; this.demonBins = 0
     const sub = (engine as unknown as { subscribe?: (r: { kind: 'demon'; buoyId: number }) => number }).subscribe
     const all = (engine as unknown as { configs?: () => GramConfig[] }).configs
@@ -123,66 +121,94 @@ export class SimHost {
     if (msg.surfaceTraffic !== undefined) this.setSurfaceTraffic(msg.surfaceTraffic)
   }
 
+  private makeSet(mode: LofarSet['mode'], ids: Int32Array, configs: GramConfig[]): LofarSet {
+    return { mode, ids, configs, bins: configs[0]?.bins ?? 0, filter: configs[0]?.filter ?? 'NB', rx: Array.from({ length: this.n }, () => new Receiver()) }
+  }
+  private canSubscribe(): boolean { return typeof (this.engine as unknown as { subscribe?: unknown }).subscribe === 'function' }
+
+  /** Subscribe one LOFAR stream per buoy: RES (res/filter/vernierHz) or a named analytic band preset. */
+  private subscribeSet(p: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number; bandPreset?: LofarBandPresetId }): LofarSet {
+    const engine = this.engine!, sub = (engine as unknown as { subscribe: EngineSubscribe }).subscribe
+    const ids = new Int32Array(this.n), configs: GramConfig[] = []
+    try {
+      for (let i = 0; i < this.n; i++) {
+        const channel = engine.scenario.buoys[i].rfChannel
+        // The engine keeps band/bandPreset and res/filter/vernierHz exclusive: send one family only.
+        const req: Parameters<EngineSubscribe>[0] = p.bandPreset ? { channel, bandPreset: p.bandPreset } : { channel, res: p.res ?? 5, filter: p.filter ?? 'NB' }
+        if (!p.bandPreset && p.vernierHz !== undefined && p.vernierHz !== null) req.vernierHz = p.vernierHz
+        const c = toConfig(sub.call(engine, req))
+        // Band streams are drained once per host step, so the display's time axis uses the host row rate.
+        if (p.bandPreset) c.rowRateHz = this.rowRateHz
+        ids[i] = c.streamId; configs.push(c)
+      }
+    } catch (e) { for (const c of configs) engine.unsubscribe(c.streamId); throw e }
+    return this.makeSet(p.bandPreset ? 'band' : 'res', ids, configs)
+  }
+
   /** RES/filter/vernier change for every LOFAR stream; re-announces the streams (same ids, same frame size). */
   private setGram(msg: Extract<ToWorker, { type: 'setGram' }>): void {
-    if (!this.resMode) throw new Error('setGram needs a RES-mode init')
+    if (this.active.mode !== 'res') throw new Error('setGram needs a RES-mode init')
     const engine = this.engine!, set = (engine as unknown as { setGram: EngineSetGram }).setGram
     const patch: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number | null } = {}
     if (msg.res !== undefined) patch.res = msg.res
     if (msg.filter !== undefined) patch.filter = msg.filter
     if (msg.vernierHz !== undefined) patch.vernierHz = msg.vernierHz
     if (this.pendingGen) this.dropPending()
-    this.lofarConfigs = this.lofarConfigs.map((c) => toConfig(set.call(engine, c.streamId, patch)))
-    this.filter = this.lofarConfigs[0]?.filter ?? 'NB'
-    for (const r of this.rx) r.reset()
-    this.post({ v: 1, type: 'streams', configs: [...this.lofarConfigs, ...this.demonConfigs] })
+    const a = this.active
+    a.configs = a.configs.map((c) => toConfig(set.call(engine, c.streamId, patch)))
+    a.filter = a.configs[0]?.filter ?? 'NB'
+    for (const r of a.rx) r.reset()
+    this.post({ v: 1, type: 'streams', configs: [...a.configs, ...this.demonConfigs] })
   }
 
   /**
-   * Gram handoff, step 1: subscribe a fresh RES stream per buoy with the new settings, alongside the displayed set.
-   * A newer request supersedes (unsubscribes) any older pending set, so rapid changes never leak engine streams.
+   * Gram handoff, step 1: subscribe a fresh stream per buoy with the new settings (RES, or a band preset),
+   * alongside the displayed set. A newer request supersedes (unsubscribes) any older pending set, so rapid
+   * changes never leak engine streams.
    */
   private subscribeGram(msg: Extract<ToWorker, { type: 'subscribeGram' }>): void {
-    if (!this.resMode) throw new Error('subscribeGram needs a RES-mode init')
-    const engine = this.engine!, sub = (engine as unknown as { subscribe: EngineSubscribe }).subscribe
+    if (!this.canSubscribe() || (!msg.bandPreset && typeof (this.engine as unknown as { setGram?: unknown }).setGram !== 'function')) throw new Error('subscribeGram needs an m3-res engine')
     if (this.pendingGen) this.dropPending()
-    const ids = new Int32Array(this.n), configs: GramConfig[] = []
-    try {
-      for (let i = 0; i < this.n; i++) {
-        const req: Parameters<EngineSubscribe>[0] = { channel: engine.scenario.buoys[i].rfChannel, res: msg.res, filter: msg.filter }
-        if (msg.vernierHz !== undefined && msg.vernierHz !== null) req.vernierHz = msg.vernierHz
-        const c = toConfig(sub.call(engine, req)); ids[i] = c.streamId; configs.push(c)
-      }
-    } catch (e) { for (const c of configs) engine.unsubscribe(c.streamId); throw e }
-    this.pendingGen = msg.gen; this.pendingIds = ids; this.pendingConfigs = configs
-    this.pendingFilter = configs[0]?.filter ?? 'NB'
-    if (this.pendingRx.length !== this.n) this.pendingRx = Array.from({ length: this.n }, () => new Receiver())
-    for (const r of this.pendingRx) r.reset()
-    this.post({ v: 1, type: 'pendingStreams', gen: msg.gen, configs })
+    const set = this.subscribeSet(msg.bandPreset ? { bandPreset: msg.bandPreset } : { res: msg.res, filter: msg.filter, vernierHz: msg.vernierHz })
+    this.pending = set; this.pendingGen = msg.gen
+    this.ensurePool(set.bins)
+    this.post({ v: 1, type: 'pendingStreams', gen: msg.gen, configs: set.configs })
   }
 
   /** Gram handoff, step 2: the pending set becomes the displayed set; the old displayed streams stop. */
   private promoteGram(gen: number): void {
-    if (!this.pendingGen || gen !== this.pendingGen) return // stale (superseded) promote: ignore
-    const engine = this.engine!
-    for (let i = 0; i < this.activeIds.length; i++) engine.unsubscribe(this.activeIds[i])
-    this.activeIds = this.pendingIds; this.lofarConfigs = this.pendingConfigs; this.filter = this.pendingFilter
-    const rx = this.rx; this.rx = this.pendingRx; this.pendingRx = rx
-    this.pendingGen = 0; this.pendingIds = new Int32Array(0); this.pendingConfigs = []
-    this.post({ v: 1, type: 'streams', configs: [...this.lofarConfigs, ...this.demonConfigs] })
+    if (!this.pending || gen !== this.pendingGen) return // stale (superseded) promote: ignore
+    const engine = this.engine!, old = this.active
+    // Legacy registered streams are pull-only (no work unless read); unsubscribe drops them too.
+    for (let i = 0; i < old.ids.length; i++) engine.unsubscribe(old.ids[i])
+    this.active = this.pending; this.pending = undefined; this.pendingGen = 0
+    this.trimPools()
+    this.post({ v: 1, type: 'streams', configs: [...this.active.configs, ...this.demonConfigs] })
   }
 
   private dropPending(): void {
-    const engine = this.engine!
-    for (let i = 0; i < this.pendingIds.length; i++) engine.unsubscribe(this.pendingIds[i])
-    this.pendingGen = 0; this.pendingIds = new Int32Array(0); this.pendingConfigs = []
+    const engine = this.engine!, p = this.pending
+    if (p) for (let i = 0; i < p.ids.length; i++) engine.unsubscribe(p.ids[i])
+    this.pending = undefined; this.pendingGen = 0
+    this.trimPools()
+  }
+
+  private ensurePool(bins: number): void {
+    if (!bins || this.pools.has(bins)) return
+    const pool: Frame[] = []
+    for (let i = 0; i < POOL_FRAMES; i++) pool.push(this.newFrame(bins))
+    this.pools.set(bins, pool)
+  }
+  /** Free frame pools no live set uses (frames of that size still in flight are dropped on release). */
+  private trimPools(): void {
+    for (const b of [...this.pools.keys()]) if (b !== this.active.bins && b !== this.pending?.bins) this.pools.delete(b)
   }
 
   /** Live engine subscriptions (test introspection: proves unsubscribe really stops streams). */
   liveStreamCount(): number { return (this.engine as unknown as { configs?: () => unknown[] })?.configs?.().length ?? 0 }
   /** Stream ids the host is generating LOFAR rows for: displayed set, then pending set. */
-  lofarStreamIds(): { active: number[]; pending: number[]; pendingGen: number } {
-    return { active: Array.from(this.activeIds), pending: Array.from(this.pendingIds), pendingGen: this.pendingGen }
+  lofarStreamIds(): { active: number[]; pending: number[]; pendingGen: number; mode: LofarSet['mode']; pools: number[] } {
+    return { active: Array.from(this.active.ids), pending: Array.from(this.pending?.ids ?? []), pendingGen: this.pendingGen, mode: this.active.mode, pools: [...this.pools.keys()] }
   }
 
   /** Forwards to the engine's v1.1 setSurfaceTraffic when present; a no-op on v1 engines. */
@@ -192,10 +218,10 @@ export class SimHost {
     e?.setSurfaceTraffic?.(Math.max(0, Math.min(1, value)))
   }
 
-  private newFrame(): Frame {
+  private newFrame(bins: number): Frame {
     const streamIds = new Int32Array(this.n)
     for (let i = 0; i < this.n; i++) streamIds[i] = i + 1
-    return { streamIds, rowIndex: new Uint32Array(this.n), data: new Float32Array(this.n * this.bins), bearingDeg: new Float32Array(this.n * this.bins) }
+    return { streamIds, rowIndex: new Uint32Array(this.n), data: new Float32Array(this.n * bins), bearingDeg: new Float32Array(this.n * bins) }
   }
 
   private newDemonFrame(): Frame {
@@ -205,49 +231,52 @@ export class SimHost {
 
   private release(buffers: ArrayBuffer[]): void {
     // Frames come back as [ids, rowIndex, data] plus, for LOFAR frames, an optional bearingDeg buffer of data's size.
-    const lofarBytes = this.n * this.bins * 4
     for (let k = 0; k < buffers.length; k += 3) {
       if (k + 3 > buffers.length) throw new Error('Release must return whole frames')
       const [s, r, d] = [buffers[k], buffers[k + 1], buffers[k + 2]]
       const next = buffers[k + 3]
-      const brg = d.byteLength === lofarBytes && next && next.byteLength === lofarBytes ? next : undefined
+      const lofarShaped = s.byteLength === this.n * 4 && r.byteLength === this.n * 4 && d.byteLength > this.n * 4
+      const pool = lofarShaped ? this.pools.get(d.byteLength / (this.n * 4)) : undefined
+      // The bearing buffer is consumed even when its pool was retired (RES ↔ band), so the triples stay aligned.
+      const brg = lofarShaped && next && next.byteLength === d.byteLength ? next : undefined
       if (brg) k++
       const dn = this.demonIds.length
-      if (dn && s.byteLength === dn * 4 && r.byteLength === dn * 4 && d.byteLength === dn * this.demonBins * 4 && d.byteLength !== this.n * this.bins * 4) {
+      if (!pool && !brg && dn && s.byteLength === dn * 4 && r.byteLength === dn * 4 && d.byteLength === dn * this.demonBins * 4) {
         if (this.demonPool.length >= POOL_FRAMES) throw new Error('Pool capacity exceeded')
         this.demonPool.push({ streamIds: new Int32Array(s), rowIndex: new Uint32Array(r), data: new Float32Array(d) })
         continue
       }
-      if (this.pool.length >= POOL_FRAMES) throw new Error('Pool capacity exceeded')
-      // Stale buffers from a previous init (different size) are silently dropped.
-      if (s.byteLength !== this.n * 4 || r.byteLength !== this.n * 4 || d.byteLength !== lofarBytes) continue
-      this.pool.push({ streamIds: new Int32Array(s), rowIndex: new Uint32Array(r), data: new Float32Array(d), bearingDeg: brg ? new Float32Array(brg) : new Float32Array(lofarBytes / 4) })
+      // Stale buffers from a previous init or a retired set (different size) are silently dropped.
+      if (!pool) continue
+      if (pool.length >= POOL_FRAMES) throw new Error('Pool capacity exceeded')
+      pool.push({ streamIds: new Int32Array(s), rowIndex: new Uint32Array(r), data: new Float32Array(d), bearingDeg: brg ? new Float32Array(brg) : new Float32Array(d.byteLength / 4) })
     }
   }
 
   /** Advance one row period. With no free frame the sim waits (backpressure never drops sim time). */
   private step(): void {
-    const engine = this.engine!
-    const frame = this.pool.pop()
+    const engine = this.engine!, a = this.active, pool = this.pools.get(a.bins)!
+    const frame = pool.pop()
     if (!frame) return
     this.steerOrbit()
     engine.advance(this.dt)
     // RES streams are phase-staggered (rowPhaseS), so only some fall due each step. Streams without a row
     // this step get streamId -1 (the display skips them); skip the post when none is due.
-    const active = !this.resMode || this.anyReady(this.activeIds)
-    if (!active) this.pool.push(frame)
+    const due = a.mode === 'legacy' || this.anyReady(a.ids)
+    if (!due) pool.push(frame)
     else {
-      this.writeLofar(frame, this.activeIds, this.rx, this.filter, this.lofarConfigs)
+      this.writeLofar(frame, a)
       this.rowCount++
       this.postFrame(frame)
     }
-    // Pending handoff set: same frame layout (n × 1024), its own gramRows message. No free frame → its rows
+    // Pending handoff set: its own frame pool (bins may differ) and gramRows message. No free frame → its rows
     // stay ready in the engine and drain on a later step.
-    if (this.pendingGen && this.anyReady(this.pendingIds)) {
-      const pf = this.pool.pop()
-      if (pf) { this.writeLofar(pf, this.pendingIds, this.pendingRx, this.pendingFilter, this.pendingConfigs); this.postFrame(pf) }
+    const p = this.pending
+    if (p && this.anyReady(p.ids)) {
+      const pf = this.pools.get(p.bins)?.pop()
+      if (pf) { this.writeLofar(pf, p); this.postFrame(pf) }
     }
-    if (active) this.stepDemon() // DEMON drains alongside displayed LOFAR rows, as before
+    if (due) this.stepDemon() // DEMON drains alongside displayed LOFAR rows, as before
     this.updateTactical()
     this.post(this.tactical!)
   }
@@ -258,22 +287,25 @@ export class SimHost {
     return false
   }
 
-  private writeLofar(frame: Frame, ids: Int32Array, rx: Receiver[], filter: 'NB' | 'BB', configs: GramConfig[]): void {
-    const engine = this.engine!
-    const wb = (engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void }).writeBearingRow
-    // NB rows are already TPSW-normalised; the AGC model only applies to absolute (BB / legacy) levels.
-    const rxOn = this.rxEnabled && (!this.resMode || filter === 'BB')
+  private writeLofar(frame: Frame, set: LofarSet): void {
+    const engine = this.engine!, bins = set.bins
+    const e = engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void; rowsReady: (id: number) => number }
+    const wb = e.writeBearingRow
+    // NB rows are already TPSW-normalised; the AGC model only applies to absolute (BB / legacy / band) levels.
+    const rxOn = this.rxEnabled && (set.mode !== 'res' || set.filter === 'BB')
     for (let i = 0; i < this.n; i++) {
-      const id = ids[i]
+      const id = set.ids[i], off = i * bins
       frame.streamIds[i] = id
-      const idx = engine.writeRow(id, frame.data, i * this.bins)
-      if (this.resMode && idx < 0) { frame.streamIds[i] = -1; frame.rowIndex[i] = 0; continue }
-      frame.rowIndex[i] = this.resMode ? Math.max(0, idx) : this.rowCount
+      let idx = engine.writeRow(id, frame.data, off)
+      // Band subscriptions are ready at 4 Hz; drain to the newest so the display stays current (engine has no skip).
+      if (set.mode === 'band') while (idx >= 0 && e.rowsReady(id) > 0) idx = engine.writeRow(id, frame.data, off)
+      if (set.mode !== 'legacy' && idx < 0) { frame.streamIds[i] = -1; frame.rowIndex[i] = 0; continue }
+      frame.rowIndex[i] = set.mode === 'legacy' ? this.rowCount : Math.max(0, idx)
       if (frame.bearingDeg) {
-        if (wb) wb.call(engine, id, frame.bearingDeg, i * this.bins)
-        else frame.bearingDeg.fill(NaN, i * this.bins, (i + 1) * this.bins)
+        if (wb) wb.call(engine, id, frame.bearingDeg, off)
+        else frame.bearingDeg.fill(NaN, off, off + bins)
       }
-      if (rxOn) rx[i].process(frame.data, i * this.bins, this.bins, this.resMode ? 1 / (configs[0]?.rowRateHz || 0.5) : this.dt)
+      if (rxOn) set.rx[i].process(frame.data, off, bins, set.mode === 'res' ? 1 / (set.configs[0]?.rowRateHz || 0.5) : this.dt)
     }
   }
 
@@ -342,8 +374,8 @@ export class SimHost {
       const alive = isAlive(b, s.time)
       const remaining = Math.max(0, b.deployedAt + b.life - s.time)
       tb.x = b.x; tb.y = b.y; tb.hydrophoneDepthM = b.depth
-      const r = this.rx[i]
-      if (r && this.rxEnabled && (!this.resMode || this.filter === 'BB')) { if (tb.rx) { tb.rx.gainDb = r.gainDb; tb.rx.overload = r.overload } else tb.rx = { gainDb: r.gainDb, overload: r.overload } } else tb.rx = undefined
+      const r = this.active.rx[i]
+      if (r && this.rxEnabled && (this.active.mode !== 'res' || this.active.filter === 'BB')) { if (tb.rx) { tb.rx.gainDb = r.gainDb; tb.rx.overload = r.overload } else tb.rx = { gainDb: r.gainDb, overload: r.overload } } else tb.rx = undefined
       tb.state = s.time < b.deployedAt ? 'falling' : alive ? 'live' : 'dead'
       tb.lifeRemainingS = s.time < b.deployedAt ? b.life : remaining
       tb.batteryFrac = Math.min(1, tb.lifeRemainingS / b.life)

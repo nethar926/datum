@@ -68,3 +68,37 @@ describe('WaterfallRenderer handoff banks', () => {
     expect(r.promotePending([map])).toBe(false)
   })
 })
+
+describe('WaterfallRenderer geometry change (RES ↔ band)', () => {
+  const resMap = { ...map, fBinTo: 0.5, rowRateTo: 0.5 }
+  it('RES 1024×6 → band 2048×12 → RES: pending bank is rebuilt for the new geometry, nothing leaks', () => {
+    const { n, canvas } = fakeGl()
+    const r = new WaterfallRenderer(canvas, 1024, 600, 6, 6)
+    const row = new Float32Array(2048)
+    for (let i = 0; i < 40; i++) { r.pushRow(i % 6, row, 0); r.pushBearing(i % 6, row, 0) }
+    r.beginPending(2048, 12)
+    expect(r.pendingGeometry()).toEqual({ bins: 2048, streams: 12 })
+    for (let k = 0; k < 12; k++) r.pushPendingRow(k, row, 0)
+    for (let k = 0; k < 6; k++) r.pushPendingBearing(k, row, 0)
+    const bandMaps = Array.from({ length: 12 }, (_, s) => ({ ...map, fBinTo: 500 / 2047, rowRateTo: 2, src: s % 6 }))
+    expect(r.promotePending(bandMaps)).toBe(true)
+    expect(r.bins).toBe(2048); expect(r.streams).toBe(12)
+    expect(r.rowsFilled(11)).toBeGreaterThan(1) // stream 11 baked from old stream 5
+    expect(r.textureCount).toBe(n.created - n.deleted)
+    // band → band (same geometry): the bank is reused.
+    // band → band: the spare bank (old RES 1024×6) is rebuilt once to 2048×12, then reused.
+    const c0 = n.created
+    r.beginPending(2048, 12); expect(n.created - c0).toBe(18)
+    r.dropPending(); r.beginPending(2048, 12); expect(n.created - c0).toBe(18)
+    r.dropPending()
+    // band → RES: rebuilt down to 1024×6.
+    r.beginPending(1024, 6)
+    expect(r.pendingGeometry()).toEqual({ bins: 1024, streams: 6 })
+    for (let k = 0; k < 6; k++) { r.pushPendingRow(k, row, 0); r.pushPendingBearing(k, row, 0) }
+    expect(r.promotePending(Array.from({ length: 6 }, (_, s) => ({ ...resMap, src: s + 6 })))).toBe(true)
+    expect(r.bins).toBe(1024); expect(r.streams).toBe(6)
+    expect(r.textureCount).toBe(n.created - n.deleted)
+    r.dispose()
+    expect(n.deleted).toBe(n.created)
+  })
+})

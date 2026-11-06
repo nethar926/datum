@@ -368,3 +368,6 @@ button, select { font: inherit; color: inherit; }
   border: 1px solid rgba(120, 200, 150, .35); opacity: 0; transition: opacity 180ms ease-out; white-space: nowrap; }
 .gram .handoff-badge.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .gram .handoff-badge { transition: none; } }
+/* m3-bands: band picker. 'armed' = last preset while RES is on (picker state stays visible, not pressed). */
+.seg.band-seg button.armed { box-shadow: inset 0 0 0 1px rgba(120, 200, 150, .35); color: var(--text-1); }
+.seg.band-seg[data-mode='res'] button { opacity: .78; }

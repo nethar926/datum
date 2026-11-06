@@ -9,9 +9,14 @@ export interface GramConfig {
   res?: number; filter?: GramFilter; bandHz?: number; fcHz?: number; enbwHz?: number; bandLimited?: boolean; liveBins?: number
   /** m3-res row phase: this stream's rows fall at k·P + rowPhaseS. */
   rowPhaseS?: number
+  /** m3-bands: named analytic LOFAR band, stamped only when the preset alone set the band edges. */
+  bandPreset?: LofarBandPresetId
 }
+/** m3-bands analytic LOFAR band presets (engine: ELF 0–50, VLF 0–200, LF 0–500, MF 0–2000 Hz). */
+export type LofarBandPresetId = 'ELF' | 'VLF' | 'LF' | 'MF'
 export type GramFilter = 'NB' | 'BB'
-export interface GramSettings { res: number; filter: GramFilter }
+/** band set = analytic band-preset gram (RES off); res/filter are kept for the way back to RES. */
+export interface GramSettings { res: number; filter: GramFilter; band?: LofarBandPresetId }
 export interface GramRows {
   v: 1; type: 'gramRows'; simT: number
   streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array
@@ -49,12 +54,16 @@ export type Band = 'lofar1k' | 'lofar2k'
 export type ToWorker =
   | { type: 'init'; seed: number; scenarioId: string; band: Band; rowRateHz: number; params?: ScenarioParams; surfaceTraffic?: number; demon?: boolean
       /** RES mode for every LOFAR stream (1024 bins, rows every P s). Omit for the legacy 4 Hz gram. */
-      gram?: GramSettings }
+      gram?: GramSettings
+      /** m3-bands: with no gram, subscribe this analytic band preset per buoy (RES off). */
+      bandPreset?: LofarBandPresetId }
   | { type: 'setReceiver'; enabled: boolean }
   | { type: 'setSurfaceTraffic'; value: number }      // 0 none … 1 heavy
   | { type: 'setGram'; res?: number; filter?: GramFilter; vernierHz?: number | null } // all LOFAR streams
   /** Gram handoff: subscribe a pending LOFAR stream per buoy with these settings (drops any older pending set). */
-  | { type: 'subscribeGram'; gen: number; res: number; filter: GramFilter; vernierHz?: number }
+  | { type: 'subscribeGram'; gen: number; res?: number; filter?: GramFilter; vernierHz?: number
+      /** m3-bands: subscribe the analytic band preset instead (exclusive with res/filter/vernierHz in the engine). */
+      bandPreset?: LofarBandPresetId }
   /** Pending set `gen` becomes the displayed set; the old displayed streams are unsubscribed. */
   | { type: 'promoteGram'; gen: number }
   /** Unsubscribe pending set `gen` (superseded or abandoned). */
