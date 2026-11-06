@@ -41,7 +41,7 @@ buoys yield **NaN** per contract (the only intentional no-data exception to fini
 `loadScenario(unknown)` validates and throws `ScenarioError` with a JSONPath-style `path`.
 `exampleScenarios` exposes `m1-cpa-pass` and separate `benchmark-busy-field` fixtures.
 `new AcousticEngine(scenario, seed?)` optionally overrides the seed; `simT` aliases `time`.
-`subscribe({channel,kind:'lofar',bins?,band?})`, `unsubscribe`, `configs`, `rowsReady`,
+`subscribe({channel,kind:'lofar',bins?,band?,bandPreset?})`, `unsubscribe`, `configs`, `rowsReady`,
 `writeRow`, `tactical` and `dropBuoy` form the display facade. Subscriptions become ready
 at 4 Hz; `writeRow` returns the zero-based row index or -1 without writing when none is due.
 Drain after each 0.25-second advance for time-correct rows: accumulated pending rows use
@@ -1078,3 +1078,30 @@ Deferred: an event-scheme editor and Save-as-cut; waypoint legs; intermittent au
 duty rendering; mode transitions (SNORK↔BATT etc.) within a run; HYDP on surface ships;
 smooth turn and depth rates (legs still change instantly at `at`).
 
+## Named LOFAR band presets (m3-bands)
+
+Frozen training-band presets for the legacy 4 Hz analytic LOFAR path (fictional product labels;
+not classified sonar band tables). Nested 0–fMax views keep bin 0 at DC:
+
+| id | label | [f0, fMax] Hz | why |
+| --- | --- | --- | --- |
+| ELF | ELF | [0, 50] | very-low machinery / shaft training window |
+| VLF | VLF | [0, 200] | shaft/blade + low plant region |
+| LF | LF | [0, 500] | classic LOFAR; matches M1 scenario default |
+| MF | MF | [0, 2000] | wider machinery/electrical training view |
+
+```ts
+import {LOFAR_BAND_PRESETS, resolveLofarBand, AcousticEngine} from '@sonar-sim/acoustics';
+resolveLofarBand('ELF');                 // [0, 50]
+resolveLofarBand([100, 300]);            // explicit edges
+engine.subscribe({channel:1, bandPreset:'VLF'});
+// Precedence: explicit `band` wins over `bandPreset` when both are given; bandPreset is
+// stamped on gramConfig only when it alone supplied the edges.
+engine.subscribe({channel:1, bandPreset:'ELF', band:[100,300]}); // f0=100, no bandPreset on config
+```
+
+Non-default buoy×band pairs share a refcounted `LofarGenerator` cache; unused combinations are
+never constructed or rendered. `writeRow` still generates a row only for the drained stream.
+`lofarBandPairs()` / `lofarBandCacheSize()` expose the active set for FE/tests. RES/NB/BB
+(m3-res) is unchanged: `band`/`bandPreset` remain exclusive with `res`/`filter`/`vernierHz`.
+Baseline (busy 60×32 legacy LOFAR, pre-change): ~33 ms mean/step; hot path not regressed.

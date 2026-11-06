@@ -13,8 +13,9 @@ import { isAlive, type ReceiverType, type Buoy } from './buoys.js';
 import { LofarGenerator } from './lofar.js';
 import {ResLofarGenerator,normalizeResSettings} from './resGram.js';
 import {RES_BINS,RES_FRAME_S,type ResGramSettings} from './res.js';
-import type {GramFilter} from './protocol.js';
+import type {GramFilter,LofarBandPresetId} from './protocol.js';
 import type {GramConfig,Tactical,DropBuoy,TruthContact} from './protocol.js';
+import {isLofarBandPresetId,resolveLofarBand} from './bands.js';
 /** Default HYDP start offset above the class frequency, percent. */
 export const HYDP_START_OFFSET_PCT=1.5;
 export interface BuoyRow { id:string; rfChannel:number; depth:number; type:ReceiverType; alive:boolean; bearing:number|null; row:Float32Array }
@@ -32,7 +33,10 @@ export class AcousticEngine {
   private readonly hydpStates:{contact:Contact;spec:HydpSpec;index:number;at:Float64Array;durationS:Float64Array;offset:Float64Array}[]=[];
   /** m3-events: pool ships whose leg speed changes refresh their fictional signature in place. */
   private readonly surfaceStates:{contact:Contact;type:string;speed:number}[]=[];
-  private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator;res?:ResLofarGenerator}>();
+  private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator;res?:ResLofarGenerator;bandKey?:string}>();
+  /** Shared analytic LOFAR renderers keyed by buoyIndex:f0:fMax. Only subscribed buoy×band pairs
+   * exist here; writeRow renders a pair only when that stream is drained. Refcounted on (un)subscribe. */
+  private readonly lofarBandCache=new Map<string,{gen:LofarGenerator;refs:number}>();
   private readonly legacyIndices=new Map<number,number>();
   private nextStreamId=1;
   private readonly bearingStorage=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
@@ -67,9 +71,11 @@ export class AcousticEngine {
    * If multiple rows accumulate, each is rendered using current geometry (no historical snapshot queue). */
   subscribe(req:{kind:'demon';buoyId:number;band?:[number,number]}):number;
   /** RES mode: any of res/filter/vernierHz selects the RES 1–9 zoom-FFT gram (1024 bins, defaults
-   * res 5, NB, full band). Without them the legacy 4 Hz analytic gram is kept for compatibility. */
-  subscribe(req:{channel:number;kind?:'lofar';bins?:number;band?:[number,number];res?:number;filter?:GramFilter;vernierHz?:number}):GramConfig;
-  subscribe(req:{channel?:number;buoyId?:number;kind?:'lofar'|'demon';bins?:number;band?:[number,number];res?:number;filter?:GramFilter;vernierHz?:number}):GramConfig|number {
+   * res 5, NB, full band). Without them the legacy 4 Hz analytic gram is kept for compatibility.
+   * Named LOFAR band presets (ELF/VLF/LF/MF) apply only to the legacy 4 Hz path; explicit `band`
+   * wins over `bandPreset` when both are given. */
+  subscribe(req:{channel:number;kind?:'lofar';bins?:number;band?:[number,number];bandPreset?:LofarBandPresetId;res?:number;filter?:GramFilter;vernierHz?:number}):GramConfig;
+  subscribe(req:{channel?:number;buoyId?:number;kind?:'lofar'|'demon';bins?:number;band?:[number,number];bandPreset?:LofarBandPresetId;res?:number;filter?:GramFilter;vernierHz?:number}):GramConfig|number {
     if(req.kind==='demon'){
       const i=this.scenario.buoys.findIndex((b,i)=>(Number(b.id.replace(/\D/g,''))||i+1)===req.buoyId);if(i<0)throw new Error('Unknown buoyId');
       const band=req.band??[1000,4000];if(band.length!==2||!band.every(Number.isFinite)||band[0]<20||band[1]>6000||band[1]-band[0]<1e-6)throw new Error('Invalid DEMON carrier band (20..6000 Hz)');
@@ -80,20 +86,32 @@ export class AcousticEngine {
 
     const s=this.scenario;
     if(req.kind!==undefined&&req.kind!=='lofar')throw new Error('Unsupported gram kind: M1 supports lofar only');
+    if(req.bandPreset!==undefined&&!isLofarBandPresetId(req.bandPreset))throw new Error('Unknown LOFAR band preset');
     if(req.res!==undefined||req.filter!==undefined||req.vernierHz!==undefined){
       if(req.bins!==undefined&&req.bins!==RES_BINS)throw new Error(`Unsupported bins: RES grams use ${RES_BINS}`);
-      if(req.band!==undefined)throw new Error('band and res/filter/vernierHz are exclusive; use vernierHz');
+      if(req.band!==undefined||req.bandPreset!==undefined)throw new Error('band/bandPreset and res/filter/vernierHz are exclusive; use vernierHz');
       if(req.channel===undefined)throw new Error('LOFAR channel required');
       const settings=normalizeResSettings(req);while(this.streams.has(this.nextStreamId))this.nextStreamId++;
       const id=this.nextStreamId;this.registerStream(id,req.channel);this.nextStreamId++;return this.applyRes(id,settings);
     }
     if(req.bins!==undefined&&req.bins!==s.bins)throw new Error(`Unsupported bins: scenario requires ${s.bins}`);
-    const band=req.band??s.band??[0,s.fMax??s.fmax];if(band.length!==2||!band.every(Number.isFinite)||band[0]<0||band[1]>1e6||band[1]-band[0]<1e-6)throw new Error('Invalid LOFAR band');
+    // Precedence: explicit band > bandPreset > scenario default. bandPreset is stamped on
+    // gramConfig only when it alone supplied the edges (no overriding explicit band).
+    const fromPreset=req.band===undefined&&req.bandPreset!==undefined;
+    const band=req.band!==undefined?resolveLofarBand(req.band):req.bandPreset!==undefined?resolveLofarBand(req.bandPreset):resolveLofarBand(s.band??[0,s.fMax??s.fmax]);
     while(this.streams.has(this.nextStreamId))this.nextStreamId++;
     const streamId=this.nextStreamId;if(req.channel===undefined)throw new Error('LOFAR channel required');this.registerStream(streamId,req.channel);this.nextStreamId++;
-    const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:req.channel,bins:s.bins,f0:band[0],fBin:(band[1]-band[0])/(s.bins-1),rowRateHz:4,dbFloor:40,dbCeil:110};
-    const index=this.streams.get(streamId)!,base=this.generators[index],lofar=base.f0===band[0]&&base.fmax===band[1]?undefined:new LofarGenerator(s.buoys[index],this.allContacts,s.bins,band[1],s.seed,s.environment,band[0]);
-    this.subscriptions.set(streamId,{config,start:Math.floor(this.time*4)/4,read:0,lofar});return config;
+    const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:req.channel,bins:s.bins,f0:band[0],fBin:(band[1]-band[0])/(s.bins-1),rowRateHz:4,dbFloor:40,dbCeil:110,...(fromPreset?{bandPreset:req.bandPreset}:{})};
+    const index=this.streams.get(streamId)!,base=this.generators[index];
+    let lofar:LofarGenerator|undefined,bandKey:string|undefined;
+    if(base.f0===band[0]&&base.fmax===band[1])lofar=undefined;
+    else{
+      bandKey=`${index}:${band[0]}:${band[1]}`;
+      let entry=this.lofarBandCache.get(bandKey);
+      if(!entry){entry={gen:new LofarGenerator(s.buoys[index],this.allContacts,s.bins,band[1],s.seed,s.environment,band[0]),refs:0};this.lofarBandCache.set(bandKey,entry);}
+      entry.refs++;lofar=entry.gen;
+    }
+    this.subscriptions.set(streamId,{config,start:Math.floor(this.time*4)/4,read:0,lofar,bandKey});return config;
   }
   /** Change RES/filter/vernier on an existing LOFAR stream (legacy registered, legacy subscribed or
    * RES). Omitted fields keep the stream's current RES settings (legacy streams start from res 5,
@@ -116,7 +134,20 @@ export class AcousticEngine {
     const band=gen.band,config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:b.rfChannel,bins:RES_BINS,f0:band.f0,fBin:p.fBin,rowRateHz:p.rowRateHz,dbFloor:settings.filter==='NB'?0:40,dbCeil:settings.filter==='NB'?30:110,res:settings.res,filter:settings.filter,bandHz:p.bandHz,...(settings.vernierHz!==undefined?{fcHz:band.fcHz}:{}),enbwHz:p.enbwHz,bandLimited:band.bandLimited,liveBins:band.liveBins,rowPhaseS:phase};
     this.subscriptions.set(streamId,{config,start:Math.floor((this.time-phase)/p.rowPeriodS+1e-9)*p.rowPeriodS+phase,read:0,res:gen});if(!this.legacyIndices.has(streamId))this.legacyIndices.set(streamId,0);return config;
   }
-  unsubscribe(streamId:number):void{this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);}
+  unsubscribe(streamId:number):void{
+    const sub=this.subscriptions.get(streamId);if(sub?.bandKey){const entry=this.lofarBandCache.get(sub.bandKey);if(entry&&--entry.refs<=0)this.lofarBandCache.delete(sub.bandKey);}
+    this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);
+  }
+  /** Active subscribed legacy-LOFAR buoy×band pairs (one entry per stream). Unused combinations
+   * are not rendered: only these pairs have a cached renderer, and writeRow generates a row only
+   * when that stream is drained. RES/DEMON streams are omitted. */
+  lofarBandPairs():{streamId:number;channel:number;f0:number;fMax:number;bandPreset?:LofarBandPresetId}[]{
+    const out:{streamId:number;channel:number;f0:number;fMax:number;bandPreset?:LofarBandPresetId}[]=[];
+    for(const [streamId,sub] of this.subscriptions){const c=sub.config;if(c.kind!=='lofar'||c.res!==undefined)continue;out.push({streamId,channel:c.channel,f0:c.f0,fMax:c.f0+c.fBin*(c.bins-1),...(c.bandPreset?{bandPreset:c.bandPreset}:{})});}
+    return out;
+  }
+  /** Number of distinct cached non-default buoy×band LOFAR renderers (test/FE introspection). */
+  lofarBandCacheSize():number{return this.lofarBandCache.size;}
   configs():GramConfig[]{return Array.from(this.subscriptions.values(),s=>s.config);}
   rowsReady(streamId:number):number{const s=this.subscriptions.get(streamId);return s?Math.max(0,Math.floor((this.time-s.start)*s.config.rowRateHz+1e-9)-s.read):(this.streams.has(streamId)?1:0);}
   writeRow(streamId:number,out:Float32Array,offset=0):number {

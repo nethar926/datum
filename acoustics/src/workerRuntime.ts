@@ -55,12 +55,13 @@ export class WorkerRuntime {
         if(m.kind!==undefined&&m.kind!=='lofar')throw new Error('Unsupported gram kind');
         if(m.channel===undefined)throw new Error('LOFAR requires channel');
         if(m.res!==undefined||m.filter!==undefined||m.vernierHz!==undefined){
-          const config=e.subscribe({channel:m.channel,kind:'lofar',bins:m.bins,band:m.band,res:m.res,filter:m.filter,vernierHz:m.vernierHz});
+          const config=e.subscribe({channel:m.channel,kind:'lofar',bins:m.bins,band:m.band,bandPreset:m.bandPreset,res:m.res,filter:m.filter,vernierHz:m.vernierHz});
           const existing=this.configs.find(c=>c.channel===config.channel&&c.res===config.res&&c.filter===config.filter&&c.f0===config.f0&&c.fcHz===config.fcHz);
           if(existing){e.unsubscribe(config.streamId);this.emit({...existing,simT:e.time});}else{this.configs.push(config);this.indices.set(config.streamId,0);this.emit(config);this.rebuildPool();}break;
         }
-        const band=m.band??e.scenario.band??[0,e.scenario.fMax??e.scenario.fmax],existing=this.configs.find(c=>c.res===undefined&&c.channel===m.channel&&c.kind==='lofar'&&c.f0===band[0]&&Math.abs(c.f0+c.fBin*(c.bins-1)-band[1])<1e-8);
-        if(existing)this.emit({...existing,simT:e.time});else{const config=e.subscribe({channel:m.channel,kind:'lofar',bins:m.bins,band});this.configs.push(config);this.indices.set(config.streamId,0);this.emit(config);this.rebuildPool();}break;
+        const config=e.subscribe({channel:m.channel,kind:'lofar',bins:m.bins,band:m.band,bandPreset:m.bandPreset});
+        const existing=this.configs.find(c=>c.res===undefined&&c.channel===config.channel&&c.kind==='lofar'&&c.f0===config.f0&&Math.abs(c.f0+c.fBin*(c.bins-1)-(config.f0+config.fBin*(config.bins-1)))<1e-8&&c.bandPreset===config.bandPreset);
+        if(existing){e.unsubscribe(config.streamId);this.emit({...existing,simT:e.time});}else{this.configs.push(config);this.indices.set(config.streamId,0);this.emit(config);this.rebuildPool();}break;
       }
       case 'setGram':{
         const i=this.configs.findIndex(c=>c.streamId===m.streamId);if(i<0)throw new Error('Unknown streamId');if(this.configs[i].kind!=='lofar')throw new Error('setGram applies to LOFAR streams only');
