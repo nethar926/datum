@@ -1214,8 +1214,15 @@ two HYDP lookalike pairs (`lookalike-dorhan-coastal`, `lookalike-kaelun-ssn`).
 Cut LOFAR rows stay raw dB; display whitening is FE-owned but **params live here** so Cuts
 and Demon panes share one contract. Dense low-band plant on CUT Δf≈0.977 Hz makes the live
 band default (`window=24`) absorb CFR/GRID into the background (~3 dB whitened SNR). Cut-tuned
-`CUT_LOFAR_NORM.window=192` reaches quieter mid-band and restores ≳8–10 dB on classifying
-lines while keeping the 1–22 dB NORM LUT (do **not** switch cuts to absolute BB).
+`CUT_LOFAR_NORM.window=192` (pass1) reaches quieter mid-band and restores ≳8–10 dB vs the
+full-band median, but lifts 0–80 Hz as a ~5–8 dB pedestal so local prominence inside the
+plant forest is only ~2–3.5 dB (mid-green carpet on 1–22).
+
+**Official cut LOFAR display NORM** (Lead-locked): **192/3 → 16/3 → gain ≈5**, then the same
+1–22 LUT on the gained values. Pass2 (`CUT_LOFAR_NORM_PASS2.window=16`) flattens the LF
+pedestal; `CUT_LOFAR_NORM_GAIN=5` restores LUT contrast (~0.55–0.60 on classifying lines).
+Use `CUT_LOFAR_NORM_RECIPE` + `normalizeCutLofarRow` (or FE-side equivalent). Do **not**
+switch cuts to absolute BB. Legacy `CUT_LOFAR_NORM` / `normalizeCutRow` remain pass1-only.
 
 DEMON rows are median-relative (`dbFloor:0`,`dbCeil:30`). Engine now clamps empty bins at
 `DEMON_NORM.clampFloorDb` (−5) so `powerToDb(1e-30)≈−300` cannot collapse a split-window mean
@@ -1224,18 +1231,20 @@ DemonPane must **not** reuse live NB 1–22.
 
 ```ts
 import {
-  CUT_LOFAR_NORM, DEMON_NORM, SplitWindowNormalizer, normalizeCutRow, normalizeDemonRow,
+  CUT_LOFAR_NORM_RECIPE, CUT_LOFAR_NORM, DEMON_NORM,
+  SplitWindowNormalizer, normalizeCutLofarRow, normalizeCutRow, normalizeDemonRow,
 } from '@sonar-sim/acoustics';
 
-// CutsTab / Gram (cut LOFAR): keep normalized + 1–22 LUT, pass cut window/guard
-new SplitWindowNormalizer(bins, CUT_LOFAR_NORM.window, CUT_LOFAR_NORM.guard);
-// or normalizeCutRow(src, 0, dst, 0, bins);
+// CutsTab / Gram (cut LOFAR): official recipe → 1–22 LUT on gained values
+normalizeCutLofarRow(src, 0, dst, 0, bins); // or wire CUT_LOFAR_NORM_RECIPE yourself
+// pass1-only (legacy): normalizeCutRow / CUT_LOFAR_NORM.window/guard
 
 // DemonPane: prefer absolute map with config dbFloor/dbCeil (0/30). If whitening stays on,
 // clamp+whiten via normalizeDemonRow and colour with DEMON_NORM.floorDb..ceilDb — never 1–22.
 ```
 
-FE wiring checklist: (1) cut Gram `SplitWindowNormalizer` ← `CUT_LOFAR_NORM.window/guard`;
-(2) DemonPane drop live NB 1–22 — use `normalized={false}` with stream `dbFloor`/`dbCeil`, or
-`DEMON_NORM` + `normalizeDemonRow`; (3) raw `CutSession.writeLofarRow` / seek checksums unchanged.
+FE wiring checklist: (1) cut Gram ← `CUT_LOFAR_NORM_RECIPE` / `normalizeCutLofarRow`
+(pass1 192/3 → pass2 16/3 → gain 5) then 1–22 LUT; (2) DemonPane drop live NB 1–22 — use
+`normalized={false}` with stream `dbFloor`/`dbCeil`, or `DEMON_NORM` + `normalizeDemonRow`;
+(3) raw `CutSession.writeLofarRow` / seek checksums unchanged.
 

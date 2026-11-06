@@ -8,6 +8,12 @@
  * background (~3 dB whitened SNR). A longer window reaches quieter mid-band and
  * restores classifying-line contrast on the same 1–22 dB NORM LUT.
  *
+ * Dense LF plant still leaves a ~5–8 dB pedestal after pass1 (192/3): global SNR
+ * vs quiet mid-band looks fine, but local prominence inside 0–80 Hz is only
+ * ~2–3.5 dB → mid-green carpet on the 1–22 LUT. Official cut LOFAR display NORM
+ * is therefore two-pass: 192/3 → 16/3 (pedestal kill) → gain ≈5, then the same
+ * 1–22 LUT on the gained values.
+ *
  * DEMON rows are already median-relative dB (engine dbFloor/dbCeil = 0/30). Empty
  * bins used to hit powerToDb(1e-30) ≈ −300; a single outlier in a 24-bin window
  * collapses the local mean and paints saturated full-height low-band bars after
@@ -31,12 +37,44 @@ export interface DemonNormParams extends NormParams {
 }
 
 /**
- * Cut LOFAR NORM: long split-window matched to the ~50 Hz dense plant cluster on
+ * Official cut LOFAR display NORM recipe (Lead-locked):
+ * pass1 192/3 → pass2 16/3 → gain ≈5, then LUT floorDb..ceilDb (1–22).
+ */
+export interface CutLofarNormRecipe {
+  readonly pass1: NormParams;
+  readonly pass2: NormParams;
+  /** Multiplier applied in dB space after pass2 (`out *= gain`). */
+  readonly gain: number;
+  readonly floorDb: number;
+  readonly ceilDb: number;
+}
+
+/**
+ * Cut LOFAR NORM pass1: long split-window matched to the ~50 Hz dense plant cluster on
  * CUT Δf ≈ 0.977 Hz (window·Δf ≈ 188 Hz). Keep live NB 1–22 dB colour scale.
  * Measured on cut-brindleflux-snork @ ~176 s: w=24 → ~2–3.5 dB whitened CFR SNR;
- * w=192 → ≳ 9 dB (target 8–10).
+ * w=192 → ≳ 9 dB (target 8–10) vs full-band median — but leaves a LF pedestal.
  */
 export const CUT_LOFAR_NORM: NormParams = {window: 192, guard: 3, floorDb: 1, ceilDb: 22};
+
+/**
+ * Cut LOFAR NORM pass2 / stage2: short split-window (~16 Hz) that flattens the
+ * dense 0–80 Hz plant pedestal left by pass1 without absorbing classifying lines
+ * (guard=3). Same 1–22 LUT bounds (applied after gain).
+ */
+export const CUT_LOFAR_NORM_PASS2: NormParams = {window: 16, guard: 3, floorDb: 1, ceilDb: 22};
+
+/** Display gain after pass2 so ~2–3.5 dB local prom lands near LUT ~0.55–0.60 on 1–22. */
+export const CUT_LOFAR_NORM_GAIN = 5;
+
+/** One-object recipe for FE: pass1 → pass2 → gain, then floorDb..ceilDb LUT. */
+export const CUT_LOFAR_NORM_RECIPE: CutLofarNormRecipe = {
+  pass1: CUT_LOFAR_NORM,
+  pass2: CUT_LOFAR_NORM_PASS2,
+  gain: CUT_LOFAR_NORM_GAIN,
+  floorDb: CUT_LOFAR_NORM.floorDb,
+  ceilDb: CUT_LOFAR_NORM.ceilDb,
+};
 
 /**
  * DEMON NORM: rows are median-relative; prefer absolute map with floor/ceil 0/30
@@ -82,17 +120,50 @@ export class SplitWindowNormalizer {
   }
 }
 
-/** Whiten one CUT LOFAR row with cut-tuned window/guard. Allocates nothing beyond the normalizer. */
+function matchNz(
+  bins: number, params: NormParams, normalizer?: SplitWindowNormalizer,
+): SplitWindowNormalizer {
+  return normalizer && normalizer.bins === bins && normalizer.window === params.window && normalizer.guard === params.guard
+    ? normalizer
+    : new SplitWindowNormalizer(bins, params.window, params.guard);
+}
+
+/**
+ * Pass1 only: whiten one CUT LOFAR row with `CUT_LOFAR_NORM` (192/3).
+ * Prefer {@link normalizeCutLofarRow} for the official display recipe (pass1→pass2→gain).
+ */
 export function normalizeCutRow(
   src: Float32Array, srcOff: number, dst: Float32Array, dstOff: number,
   bins = src.length - srcOff,
   params: NormParams = CUT_LOFAR_NORM,
   normalizer?: SplitWindowNormalizer,
 ): void {
-  const nz = normalizer && normalizer.bins === bins && normalizer.window === params.window && normalizer.guard === params.guard
-    ? normalizer
-    : new SplitWindowNormalizer(bins, params.window, params.guard);
-  nz.apply(src, srcOff, dst, dstOff);
+  matchNz(bins, params, normalizer).apply(src, srcOff, dst, dstOff);
+}
+
+/**
+ * Official cut LOFAR display NORM: pass1 (192/3) → pass2 (16/3) → `out *= gain`.
+ * LUT stays `recipe.floorDb`..`recipe.ceilDb` (1–22) on the **gained** values.
+ * NaN-safe; allocation-light — reuse `pass1Nz`/`pass2Nz` across rows (prefix buffers
+ * live on the normalizers). Pass1 writes into `dst`; pass2 + gain run in place
+ * (SplitWindowNormalizer builds its prefix before writing, so in-place is safe).
+ */
+export function normalizeCutLofarRow(
+  src: Float32Array, srcOff: number, dst: Float32Array, dstOff: number,
+  bins = src.length - srcOff,
+  recipe: CutLofarNormRecipe = CUT_LOFAR_NORM_RECIPE,
+  pass1Nz?: SplitWindowNormalizer,
+  pass2Nz?: SplitWindowNormalizer,
+): void {
+  const p1 = matchNz(bins, recipe.pass1, pass1Nz);
+  const p2 = matchNz(bins, recipe.pass2, pass2Nz);
+  p1.apply(src, srcOff, dst, dstOff);
+  p2.apply(dst, dstOff, dst, dstOff);
+  const g = recipe.gain;
+  for (let i = 0; i < bins; i++) {
+    const v = dst[dstOff + i];
+    if (v === v) dst[dstOff + i] = v * g;
+  }
 }
 
 /**
@@ -112,9 +183,6 @@ export function normalizeDemonRow(
     dst[dstOff + i] = v === v ? Math.max(floor, v) : NaN;
   }
   if (!whiten) return;
-  const nz = normalizer && normalizer.bins === bins && normalizer.window === params.window && normalizer.guard === params.guard
-    ? normalizer
-    : new SplitWindowNormalizer(bins, params.window, params.guard);
   // Whiten in place into dst (src copy already clamped into dst).
-  nz.apply(dst, dstOff, dst, dstOff);
+  matchNz(bins, params, normalizer).apply(dst, dstOff, dst, dstOff);
 }
