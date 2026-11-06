@@ -964,6 +964,50 @@ RES5 NB mean 5.8–5.9 ms, worst 6.3–12.5 ms; RES5 BB mean 5.8–6.2 ms, worst
 2.1–2.2 ms, worst 3.0–7.7 ms (ranges over two runs; worst-frame outliers are GC/JIT, p95 ≤ 8.7 ms).
 Before phasing (b4dee75) the frame on which all 32 rows fell due cost ≈46 ms (RES5) / ≈72 ms (RES1).
 
+
+## FULLBAND — RES-resolution tiled full-axis (m3-acoustics-fullband)
+
+Additive. Wilson’s “whole spectrum at each RES” means **RES-resolution full-axis rows**, not a
+coarse MF underlay under a zoom stream. Dual-stream coarse+zoom is out. The existing vernier
+1024-bin RES path (`res` / `filter` / `vernierHz`, `RES_BINS=1024`) is unchanged.
+
+**Tiles.** At RES n, Δf = 0.03125·2^(n−1). The axis [0, fmax] is chunked into fixed-width frequency
+tiles of `TILE_BINS = 4096` bins (iOS WebGL texture-width 4096–16384). Tile i has
+`f0 = i·tileBins·Δf`, `liveBins = min(tileBins, axisBins − i·tileBins)` (last tile may truncate).
+Each emitted tile row carries `tileIndex`, `tileBins`, `f0`, `fBin` (plus existing
+`streamId` / `rowIndex` / `simT`). Same NB (TPSW) / BB filters as vernier — **no second whitener**.
+
+**CPU strategy (Lead-locked): visible tile + neighbours, rest backfilled.** Emitting every tile
+every row at fine RES (RES1–3 across ~2 kHz → tens of k bins/row) melts at 16×. When a row period
+is due the engine enqueues `priorityTileOrder(visible)` (visible, then ±1, then remaining) and the
+worker drains ≤3 tiles on that tick (hot path) and ≤2 tiles on intervening 0.25 s ticks (backfill).
+New-period hot tiles jump ahead of prior backfill so live cadence never stalls. Playback of
+buffered history stays FE; world-time rewind keeps `play` / `pause` / `setRate` / `seek`.
+
+### Contract (additive)
+
+```ts
+// subscribe / setGram — fullAxis selects tiled full-axis; vernierHz (optional) maps to visibleTileIndex
+{type:'subscribe'; channel; res?; filter?; fullAxis:true; visibleTileIndex?; vernierHz?}
+{type:'setGram'; streamId; res?; filter?; fullAxis?:boolean|null; visibleTileIndex?; vernierHz?:number|null}
+// pan/zoom (~10 Hz): drives visibleTileIndex from window centre; does NOT restart the row clock
+{type:'setViewWindow'; streamId; fLo:number; fHi:number}
+// gramConfig (FULLBAND fields present only when fullAxis):
+{…res; filter; fBin; bins:4096; f0 /* axis origin 0, last tile’s f0 mirrored after write */;
+  fullAxis:true; tileBins:4096; tileCount; visibleTileIndex; viewFLo?; viewFHi?;
+  liveBins /* of last written tile */; rowRateHz; rowPhaseS; …}
+// gramRows — optional parallel arrays when the batch carries FULLBAND tiles:
+{…streamIds; rowIndex; data /* n·4096 */; bearingDeg?;
+  tileIndex?; tileBins?; tileF0? /* fBin on config */;
+  filled? /* Uint8Array: 1 = real render (signal+noise); 0 = unfilled dark stub (no noise).
+             Missing tiles are unfilled — FE paints dark, does not invent noise. */}
+```
+
+Helpers: `TILE_BINS`, `axisBinCount`, `tileCountFor`, `tileBand`, `tileIndexForHz`,
+`priorityTileOrder` in `src/res.ts`. Renderer: `ResLofarGenerator` capacity `TILE_BINS` with
+`selectTile` / `renderTile` / `prepareFullAxis` (same line physics as vernier). Engine:
+`setViewWindow(streamId,{fLo,fHi})`, `lastFullAxisTile(streamId)`.
+
 ## Seeded buoy-pattern planner (M3)
 
 `planPattern(opts: PatternOptions): PatternPlan`, `PatternOptions`, `PatternPlan` and

@@ -8,7 +8,7 @@ import {spreadingLoss,thorp} from './transmissionLoss.js';
 import {ambientLevel} from './ambientNoise.js';
 import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
 import {BEARING_NOISE_K,BEARING_SNR_FLOOR} from './lofar.js';
-import {RES_BINS,RES_DEFAULT,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand} from './res.js';
+import {RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand,type TileBand} from './res.js';
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import type {SpeedGated} from './catalog/drivetrain.js';
@@ -24,30 +24,44 @@ export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:
  * v·|W(x)|² on the current Δf grid. Noise: χ²_ν (Welch EDOF) gamma draw, or the exact AR(1)
  * complex-Gaussian blend when K=1 (RES1–3, correlated rows). NB = signal/TPSW background dB;
  * BB = 1/24-octave smoothed absolute level dB re 1 µPa²/Hz. Bins at/after liveBins are NaN.
- * Hot path (generate) allocates nothing; configure/setEnvironment are config-time. */
+ * Hot path (generate / renderTile) allocates nothing; configure/setEnvironment/selectTile are config-time.
+ *
+ * Capacity defaults to RES_BINS=1024 (vernier path). FULLBAND passes capacity=TILE_BINS and uses
+ * selectTile + renderTile so the same line physics covers an arbitrary f0 tile window. */
 export class ResLofarGenerator {
- readonly bins=RES_BINS;
- readonly row=new Float32Array(RES_BINS);
+ /** Current output width (RES_BINS vernier, or TILE_BINS for a full-axis tile). */
+ bins:number;
+ readonly capacity:number;
+ readonly row:Float32Array;
  /** Per-bin DIFAR bearing degrees true; NaN for omni and dead bins. */
- readonly bearingRow=new Float32Array(RES_BINS);
+ readonly bearingRow:Float32Array;
  /** Noise-free expected bin power (µPa² per ENBW), ambient included. */
- readonly expected=new Float64Array(RES_BINS);
+ readonly expected:Float64Array;
  /** Ambient-only expected bin power. */
- readonly ambientBin=new Float64Array(RES_BINS);
+ readonly ambientBin:Float64Array;
  /** Noisy bin power after the χ²/AR(1) draw (linear, before NB/BB filtering). */
- readonly power=new Float64Array(RES_BINS);
+ readonly power:Float64Array;
  /** NB TPSW background (bias corrected) of the last NB row. */
- readonly background=new Float64Array(RES_BINS);
- private readonly signalEast=new Float64Array(RES_BINS);private readonly signalNorth=new Float64Array(RES_BINS);private readonly signalPower=new Float64Array(RES_BINS);
- private readonly shape=new Float64Array(RES_BINS);private readonly absorptionExponent=new Float64Array(RES_BINS);private readonly coherenceExponent=new Float64Array(RES_BINS);
- private readonly zr=new Float64Array(RES_BINS);private readonly zi=new Float64Array(RES_BINS);
- private readonly halfWidth=new Int32Array(RES_BINS);private readonly clipped=new Float64Array(RES_BINS);
- private readonly p0=new Float64Array(RES_BINS+1);private readonly p1=new Float64Array(RES_BINS+1);private readonly p2=new Float64Array(RES_BINS+1);private readonly p3=new Float64Array(RES_BINS+1);
+ readonly background:Float64Array;
+ private readonly signalEast:Float64Array;private readonly signalNorth:Float64Array;private readonly signalPower:Float64Array;
+ private readonly shape:Float64Array;private readonly absorptionExponent:Float64Array;private readonly coherenceExponent:Float64Array;
+ private readonly zr:Float64Array;private readonly zi:Float64Array;
+ private readonly halfWidth:Int32Array;private readonly clipped:Float64Array;
+ private readonly p0:Float64Array;private readonly p1:Float64Array;private readonly p2:Float64Array;private readonly p3:Float64Array;
  private readonly contacts:ResContact[];private readonly rng:Random;private readonly bearingRng:Random;private readonly baseSeed:number;private readonly bearingSeed:number;
  private readonly g=createGeometry();private readonly difar:boolean;private environment:Environment;private sigma=0;private bias=1;
- rowIndex=0;settings:ResGramSettings={res:RES_DEFAULT,filter:'NB'};params:ResParams=resParams(RES_DEFAULT);band:ResBand;
- constructor(readonly buoy:Buoy,contacts:Contact[],readonly fmax:number,seed:number,environment:Environment,settings:Partial<ResGramSettings>={}){
+ /** Per-tile AR(1) state for FULLBAND (K=1); vernier uses zr/zi directly. */
+ private readonly tileAr=new Map<number,{zr:Float64Array;zi:Float64Array;lastRow:number}>();
+ rowIndex=0;tileIndex=0;settings:ResGramSettings={res:RES_DEFAULT,filter:'NB'};params:ResParams=resParams(RES_DEFAULT);band:ResBand;
+ constructor(readonly buoy:Buoy,contacts:Contact[],readonly fmax:number,seed:number,environment:Environment,settings:Partial<ResGramSettings>={},capacity:number=RES_BINS){
   if(!Number.isFinite(fmax)||fmax<=0)throw new Error('Invalid fmax');
+  if(!Number.isInteger(capacity)||capacity<RES_BINS||capacity>TILE_BINS)throw new Error(`Invalid capacity (RES_BINS..TILE_BINS)`);
+  this.capacity=capacity;this.bins=capacity===TILE_BINS?TILE_BINS:RES_BINS;
+  this.row=new Float32Array(capacity);this.bearingRow=new Float32Array(capacity);this.expected=new Float64Array(capacity);this.ambientBin=new Float64Array(capacity);this.power=new Float64Array(capacity);this.background=new Float64Array(capacity);
+  this.signalEast=new Float64Array(capacity);this.signalNorth=new Float64Array(capacity);this.signalPower=new Float64Array(capacity);
+  this.shape=new Float64Array(capacity);this.absorptionExponent=new Float64Array(capacity);this.coherenceExponent=new Float64Array(capacity);
+  this.zr=new Float64Array(capacity);this.zi=new Float64Array(capacity);this.halfWidth=new Int32Array(capacity);this.clipped=new Float64Array(capacity);
+  this.p0=new Float64Array(capacity+1);this.p1=new Float64Array(capacity+1);this.p2=new Float64Array(capacity+1);this.p3=new Float64Array(capacity+1);
   this.difar=buoy.type==='difar';this.baseSeed=deriveSeed(seed,`res:${buoy.id}`);this.bearingSeed=deriveSeed(seed,`resBearing:${buoy.id}`);this.rng=mulberry32(this.baseSeed);this.bearingRng=mulberry32(this.bearingSeed);this.environment={...environment};
   this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const n=contact.lines.length,frequencies=new Float64Array(n),powers=new Float64Array(n),sigmaHz=new Float64Array(n);fillTonals(contact.params,frequencies,powers,contact.lines);for(let k=0;k<n;k++){const l=contact.lines[k];sigmaHz[k]=l.width==='diffuse'?(l.sigmaBins??2.5)*DIFFUSE_REFERENCE_BIN_HZ:0;}
    const swaths=(contact.params.speedGated??[]).filter(w=>w.kind==='SWATH').map(w=>({source:w,loHz:(w as {loHz:number}).loHz,hiHz:(w as {hiHz:number}).hiHz,lo:0,hi:-1}));
@@ -57,21 +71,46 @@ export class ResLofarGenerator {
  get liveBins():number{return this.band.liveBins;}
  get f0():number{return this.band.f0;}
  get fBin():number{return this.params.fBin;}
- /** Config-time: change RES/filter/vernier. Resets the row counter and AR(1) state. */
+ /** Config-time: change RES/filter/vernier. Resets the row counter and AR(1) state. Vernier window is always RES_BINS. */
  configure(settings:ResGramSettings):void{
-  const s=normalizeResSettings(settings);this.settings=s;this.params=resParams(s.res);this.band=resBand(s.res,s.vernierHz,this.fmax);this.rowIndex=0;this.bias=tpswBias(this.params.edof);
-  const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins,k=(2**(BB_SMOOTH_OCTAVE/2)-2**(-BB_SMOOTH_OCTAVE/2))/2;
-  for(let i=0;i<RES_BINS;i++)this.halfWidth[i]=Math.round((f0+i*df)*k/df);
+  const s=normalizeResSettings(settings);this.settings=s;this.params=resParams(s.res);this.band=resBand(s.res,s.vernierHz,this.fmax);this.bins=RES_BINS;this.tileIndex=0;this.rowIndex=0;this.tileAr.clear();this.bias=tpswBias(this.params.edof);
+  this.applyWindow();
+ }
+ /** Preallocate per-tile AR(1) buffers so renderTile stays allocation-free after setup. */
+ prepareFullAxis(tileCount:number):void{
+  for(let i=0;i<tileCount;i++)if(!this.tileAr.has(i))this.tileAr.set(i,{zr:new Float64Array(this.capacity),zi:new Float64Array(this.capacity),lastRow:-1});
+ }
+ /** FULLBAND: point the live window at tile `tileIndex` without resetting the row counter. */
+ selectTile(tileIndex:number,tileBins:number=TILE_BINS):TileBand{
+  if(this.capacity<tileBins)throw new Error('Generator capacity too small for tileBins');
+  const t=tileBand(this.settings.res,tileIndex,this.fmax,tileBins);
+  this.tileIndex=t.tileIndex;this.bins=t.tileBins;
+  this.band={f0:t.f0,fcHz:t.f0+(t.tileBins/2)*t.fBin,bandLimited:t.bandLimited,liveBins:t.liveBins,slid:false};
+  this.applyWindow();return t;
+ }
+ private applyWindow():void{
+  const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins,W=this.bins,k=(2**(BB_SMOOTH_OCTAVE/2)-2**(-BB_SMOOTH_OCTAVE/2))/2;
+  for(let i=0;i<W;i++)this.halfWidth[i]=Math.round((f0+i*df)*k/df);
   for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}
   this.setEnvironment(this.environment);
  }
  setEnvironment(e:Environment):void{
-  this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);const df=this.params.fBin,f0=this.band.f0,enbw=this.params.enbwHz;
-  for(let i=0;i<RES_BINS;i++){const f=Math.max(df/2,f0+i*df),k=2*Math.PI*f/e.soundSpeed;this.coherenceExponent[i]=-2*k*k*this.sigma*this.sigma;this.absorptionExponent[i]=-thorp(f)*(Math.LN10/10);this.ambientBin[i]=i<this.band.liveBins?dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity))*enbw:NaN;this.shape[i]=1/(1+(f/400)**2);}
+  this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);const df=this.params.fBin,f0=this.band.f0,enbw=this.params.enbwHz,W=this.bins;
+  for(let i=0;i<W;i++){const f=Math.max(df/2,f0+i*df),k=2*Math.PI*f/e.soundSpeed;this.coherenceExponent[i]=-2*k*k*this.sigma*this.sigma;this.absorptionExponent[i]=-thorp(f)*(Math.LN10/10);this.ambientBin[i]=i<this.band.liveBins?dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity))*enbw:NaN;this.shape[i]=1/(1+(f/400)**2);}
  }
  generate(out:Float32Array=this.row,offset=0):Float32Array{
-  if(!Number.isInteger(offset)||offset<0||out.length<offset+RES_BINS)throw new Error('Row size mismatch');
-  const rowKey=this.rowIndex++;this.rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
+  const rowKey=this.rowIndex++;
+  return this.render(rowKey,out,offset,false);
+ }
+ /** FULLBAND: render one tile at an explicit rowKey (shared across tiles of the same row time). Does not bump rowIndex. */
+ renderTile(tileIndex:number,rowKey:number,out:Float32Array=this.row,offset=0,tileBins:number=TILE_BINS):Float32Array{
+  this.selectTile(tileIndex,tileBins);
+  return this.render(rowKey,out,offset,true);
+ }
+ private render(rowKey:number,out:Float32Array,offset:number,perTileAr:boolean):Float32Array{
+  const W=this.bins;
+  if(!Number.isInteger(offset)||offset<0||out.length<offset+W)throw new Error('Row size mismatch');
+  this.rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
   const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
   for(let i=0;i<L;i++)P[i]=this.ambientBin[i];if(difar){sE.fill(0);sN.fill(0);sP.fill(0);}
   for(let j=0;j<this.contacts.length;j++){
@@ -93,14 +132,18 @@ export class ResLofarGenerator {
   }
   // Noise: K=1 → exact AR(1) on complex amplitudes (correlated rows); K>1 → unit-mean χ²_ν gamma.
   const pw=this.power,rng=this.rng;
-  if(this.params.averages===1){const a=HANN_75_AMPLITUDE_CORRELATION,b=Math.sqrt(1-a*a),zr=this.zr,zi=this.zi,h=Math.SQRT1_2;
-   if(rowKey===0)for(let i=0;i<L;i++){zr[i]=h*gaussian(rng);zi[i]=h*gaussian(rng);}else for(let i=0;i<L;i++){zr[i]=a*zr[i]+b*h*gaussian(rng);zi[i]=a*zi[i]+b*h*gaussian(rng);}
+  if(this.params.averages===1){const a=HANN_75_AMPLITUDE_CORRELATION,b=Math.sqrt(1-a*a),h=Math.SQRT1_2;
+   let zr=this.zr,zi=this.zi,cold=rowKey===0;
+   if(perTileAr){let st=this.tileAr.get(this.tileIndex);if(!st){st={zr:new Float64Array(this.capacity),zi:new Float64Array(this.capacity),lastRow:-1};this.tileAr.set(this.tileIndex,st);}cold=st.lastRow!==rowKey-1;zr=st.zr;zi=st.zi;st.lastRow=rowKey;}
+   if(cold)for(let i=0;i<L;i++){zr[i]=h*gaussian(rng);zi[i]=h*gaussian(rng);}else for(let i=0;i<L;i++){zr[i]=a*zr[i]+b*h*gaussian(rng);zi[i]=a*zi[i]+b*h*gaussian(rng);}
+   // Vernier path keeps zr/zi on the instance fields when not per-tile.
+   if(!perTileAr){/* already wrote this.zr/zi */}else{/* tile map holds state */}
    for(let i=0;i<L;i++)pw[i]=P[i]*(zr[i]*zr[i]+zi[i]*zi[i]);}
   else{const shape=this.params.edof/2;for(let i=0;i<L;i++)pw[i]=P[i]*gammaUnit(rng,shape);}
   const bb=this.settings.filter==='BB';
   if(bb){const p0=this.p0;p0[0]=0;for(let i=0;i<L;i++)p0[i+1]=p0[i]+pw[i];for(let i=0;i<L;i++){const h=this.halfWidth[i],lo=Math.max(0,i-h),hi=Math.min(L-1,i+h);out[offset+i]=powerToDb((p0[hi+1]-p0[lo])/(hi-lo+1)/enbw);}}
   else{this.tpsw(L);for(let i=0;i<L;i++)out[offset+i]=powerToDb(pw[i]/this.background[i]);}
-  out.fill(NaN,offset+L,offset+RES_BINS);
+  out.fill(NaN,offset+L,offset+W);
   this.bearingRow.fill(NaN);
   if(difar){const br=this.bearingRng,ob=this.bearingRow,amb=this.ambientBin;
    if(bb){const a0=this.p0,a1=this.p1,a2=this.p2,a3=this.p3;a0[0]=a1[0]=a2[0]=a3[0]=0;for(let i=0;i<L;i++){a0[i+1]=a0[i]+sE[i];a1[i+1]=a1[i]+sN[i];a2[i+1]=a2[i]+sP[i];a3[i+1]=a3[i]+amb[i];}

@@ -12,7 +12,7 @@ import { advance } from './kinematics.js';
 import { isAlive, isFeeding, isTuned, type ReceiverType, type Buoy } from './buoys.js';
 import { LofarGenerator } from './lofar.js';
 import {ResLofarGenerator,normalizeResSettings} from './resGram.js';
-import {RES_BINS,RES_FRAME_S,type ResGramSettings} from './res.js';
+import {RES_BINS,RES_FRAME_S,TILE_BINS,tileCountFor,tileIndexForHz,priorityTileOrder,tileBand,type ResGramSettings} from './res.js';
 import type {GramFilter,LofarBandPresetId} from './protocol.js';
 import type {GramConfig,Tactical,DropBuoy,TruthContact} from './protocol.js';
 import {isLofarBandPresetId,resolveLofarBand} from './bands.js';
@@ -35,7 +35,7 @@ export class AcousticEngine {
   private readonly hydpStates:{contact:Contact;spec:HydpSpec;index:number;at:Float64Array;durationS:Float64Array;offset:Float64Array}[]=[];
   /** m3-events: pool ships whose leg speed changes refresh their fictional signature in place. */
   private readonly surfaceStates:{contact:Contact;type:string;speed:number}[]=[];
-  private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator;res?:ResLofarGenerator;bandKey?:string}>();
+  private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator;res?:ResLofarGenerator;bandKey?:string;fullAxis?:{tileBins:number;tileCount:number;visibleTileIndex:number;viewFLo?:number;viewFHi?:number;scheduled:number;queue:{tileIndex:number;rowKey:number;hot:boolean;filled:boolean}[];lastTile:{tileIndex:number;tileBins:number;f0:number;fBin:number;liveBins:number;filled:boolean}}}>();
   /** Shared analytic LOFAR renderers keyed by buoyIndex:f0:fMax. Only subscribed buoy×band pairs
    * exist here; writeRow renders a pair only when that stream is drained. Refcounted on (un)subscribe. */
   private readonly lofarBandCache=new Map<string,{gen:LofarGenerator;refs:number}>();
@@ -76,8 +76,8 @@ export class AcousticEngine {
    * res 5, NB, full band). Without them the legacy 4 Hz analytic gram is kept for compatibility.
    * Named LOFAR band presets (ELF/VLF/LF/MF) apply only to the legacy 4 Hz path; explicit `band`
    * wins over `bandPreset` when both are given. */
-  subscribe(req:{channel:number;kind?:'lofar';bins?:number;band?:[number,number];bandPreset?:LofarBandPresetId;res?:number;filter?:GramFilter;vernierHz?:number}):GramConfig;
-  subscribe(req:{channel?:number;buoyId?:number;kind?:'lofar'|'demon';bins?:number;band?:[number,number];bandPreset?:LofarBandPresetId;res?:number;filter?:GramFilter;vernierHz?:number}):GramConfig|number {
+  subscribe(req:{channel:number;kind?:'lofar';bins?:number;band?:[number,number];bandPreset?:LofarBandPresetId;res?:number;filter?:GramFilter;vernierHz?:number;fullAxis?:boolean;visibleTileIndex?:number}):GramConfig;
+  subscribe(req:{channel?:number;buoyId?:number;kind?:'lofar'|'demon';bins?:number;band?:[number,number];bandPreset?:LofarBandPresetId;res?:number;filter?:GramFilter;vernierHz?:number;fullAxis?:boolean;visibleTileIndex?:number}):GramConfig|number {
     if(req.kind==='demon'){
       const i=this.scenario.buoys.findIndex((b,i)=>(Number(b.id.replace(/\D/g,''))||i+1)===req.buoyId);if(i<0)throw new Error('Unknown buoyId');
       const band=req.band??[1000,4000];if(band.length!==2||!band.every(Number.isFinite)||band[0]<20||band[1]>6000||band[1]-band[0]<1e-6)throw new Error('Invalid DEMON carrier band (20..6000 Hz)');
@@ -89,12 +89,14 @@ export class AcousticEngine {
     const s=this.scenario;
     if(req.kind!==undefined&&req.kind!=='lofar')throw new Error('Unsupported gram kind: M1 supports lofar only');
     if(req.bandPreset!==undefined&&!isLofarBandPresetId(req.bandPreset))throw new Error('Unknown LOFAR band preset');
-    if(req.res!==undefined||req.filter!==undefined||req.vernierHz!==undefined){
-      if(req.bins!==undefined&&req.bins!==RES_BINS)throw new Error(`Unsupported bins: RES grams use ${RES_BINS}`);
+    if(req.res!==undefined||req.filter!==undefined||req.vernierHz!==undefined||req.fullAxis){
+      if(req.fullAxis&&req.bins!==undefined&&req.bins!==TILE_BINS)throw new Error(`Unsupported bins: FULLBAND tiles use ${TILE_BINS}`);
+      if(!req.fullAxis&&req.bins!==undefined&&req.bins!==RES_BINS)throw new Error(`Unsupported bins: RES grams use ${RES_BINS}`);
       if(req.band!==undefined||req.bandPreset!==undefined)throw new Error('band/bandPreset and res/filter/vernierHz are exclusive; use vernierHz');
       if(req.channel===undefined)throw new Error('LOFAR channel required');
       const settings=normalizeResSettings(req);while(this.streams.has(this.nextStreamId))this.nextStreamId++;
-      const id=this.nextStreamId;this.registerStream(id,req.channel);this.nextStreamId++;return this.applyRes(id,settings);
+      const id=this.nextStreamId;this.registerStream(id,req.channel);this.nextStreamId++;
+      return this.applyRes(id,settings,{fullAxis:!!req.fullAxis,visibleTileIndex:req.visibleTileIndex});
     }
     if(req.bins!==undefined&&req.bins!==s.bins)throw new Error(`Unsupported bins: scenario requires ${s.bins}`);
     // Precedence: explicit band > bandPreset > scenario default. bandPreset is stamped on
@@ -119,22 +121,72 @@ export class AcousticEngine {
    * RES). Omitted fields keep the stream's current RES settings (legacy streams start from res 5,
    * NB, full band); vernierHz:null returns to full band. Restarts the row clock on the new period
    * grid (rows at multiples of P) and the row counter; returns the new gramConfig. */
-  setGram(streamId:number,patch:{res?:number;filter?:GramFilter;vernierHz?:number|null}):GramConfig{
+  setGram(streamId:number,patch:{res?:number;filter?:GramFilter;vernierHz?:number|null;fullAxis?:boolean|null;visibleTileIndex?:number}):GramConfig{
     if(!this.streams.has(streamId))throw new Error('Unknown streamId');const sub=this.subscriptions.get(streamId);
     if(sub?.renderer||(sub&&sub.config.kind!=='lofar'))throw new Error('setGram applies to LOFAR streams only');
     const base:ResGramSettings=sub?.res?.settings??{res:5,filter:'NB'};
-    return this.applyRes(streamId,normalizeResSettings({res:patch.res??base.res,filter:patch.filter??base.filter,vernierHz:patch.vernierHz===null?undefined:patch.vernierHz??base.vernierHz}));
+    const fullAxis=patch.fullAxis===null?false:patch.fullAxis??!!sub?.fullAxis;
+    const visibleTileIndex=patch.visibleTileIndex??sub?.fullAxis?.visibleTileIndex;
+    return this.applyRes(streamId,normalizeResSettings({res:patch.res??base.res,filter:patch.filter??base.filter,vernierHz:patch.vernierHz===null?undefined:patch.vernierHz??base.vernierHz}),{fullAxis,visibleTileIndex});
+  }
+  /** FULLBAND: set the visible frequency window (Hz). Drives visibleTileIndex from the window
+   * centre and re-prioritises the pending tile queue (visible±1 hot). Does not restart the row
+   * clock — safe for ~10 Hz pan/zoom. Re-emits gramConfig with viewFLo/viewFHi. */
+  setViewWindow(streamId:number,win:{fLo:number;fHi:number}):GramConfig{
+    const sub=this.subscriptions.get(streamId);if(!sub?.fullAxis||!sub.config.fullAxis)throw new Error('setViewWindow requires a FULLBAND stream');
+    const {fLo,fHi}=win;if(!Number.isFinite(fLo)||!Number.isFinite(fHi)||!(fLo<fHi)||fLo<0||fHi>1e6)throw new Error('Invalid view window');
+    const fa=sub.fullAxis,fBin=sub.config.fBin,centre=.5*(fLo+fHi);
+    const visible=tileIndexForHz(centre,fBin,fa.tileBins,fa.tileCount);
+    fa.visibleTileIndex=visible;fa.viewFLo=fLo;fa.viewFHi=fHi;
+    // Reprioritise pending work: jobs for visible±1 become hot and jump ahead of backfill.
+    if(fa.queue.length){
+      const hotSet=new Set(priorityTileOrder(visible,fa.tileCount).slice(0,Math.min(3,fa.tileCount)));
+      const hot:typeof fa.queue=[],bf:typeof fa.queue=[];
+      for(const j of fa.queue){(hotSet.has(j.tileIndex)?hot:bf).push({...j,hot:hotSet.has(j.tileIndex)});}
+      fa.queue=hot.concat(bf);
+    }
+    const t0=tileBand(sub.config.res!,visible,this.scenario.fMax??this.scenario.fmax,fa.tileBins);
+    const config:GramConfig={...sub.config,simT:this.time,visibleTileIndex:visible,viewFLo:fLo,viewFHi:fHi,f0:t0.f0,liveBins:t0.liveBins,bandLimited:t0.bandLimited};
+    sub.config=config;return config;
   }
   /** Current RES settings of a stream, or undefined for legacy/DEMON streams. */
   gramSettings(streamId:number):ResGramSettings|undefined{const r=this.subscriptions.get(streamId)?.res;return r?{...r.settings}:undefined;}
-  private applyRes(streamId:number,settings:ResGramSettings):GramConfig{
-    const i=this.streams.get(streamId)!,s=this.scenario,b=s.buoys[i],old=this.subscriptions.get(streamId);
-    const gen=old?.res??new ResLofarGenerator(b,this.allContacts,s.fMax??s.fmax,s.seed,s.environment);gen.configure(settings);
-    // Row phase: buoy index i of N buoys (scenario order, stable across subscribe order) shifts the
-    // P grid by (i/N)·P, quantized down to the 0.25 s frame: φ = floor(i·F/N)·0.25 s, F = P/0.25.
+  private applyRes(streamId:number,settings:ResGramSettings,opts:{fullAxis?:boolean;visibleTileIndex?:number}={}):GramConfig{
+    const i=this.streams.get(streamId)!,s=this.scenario,b=s.buoys[i],old=this.subscriptions.get(streamId),fmax=s.fMax??s.fmax,fullAxis=!!opts.fullAxis;
+    // Recreate generator when capacity must change (vernier 1024 ↔ FULLBAND 4096).
+    const needCap=fullAxis?TILE_BINS:RES_BINS;
+    let gen=old?.res;
+    if(!gen||gen.capacity!==needCap)gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);
+    else gen.configure(settings);
     const p=gen.params,frames=Math.round(p.rowPeriodS/RES_FRAME_S),phase=Math.floor(i*frames/s.buoys.length)*RES_FRAME_S;
+    if(fullAxis){
+      const tileBins=TILE_BINS,tileCount=tileCountFor(fmax,p.fBin,tileBins);
+      let visible=opts.visibleTileIndex;
+      if(visible===undefined&&settings.vernierHz!==undefined)visible=tileIndexForHz(settings.vernierHz,p.fBin,tileBins,tileCount);
+      if(visible===undefined)visible=old?.fullAxis?.visibleTileIndex??0;
+      visible=Math.max(0,Math.min(tileCount-1,visible|0));
+      const t0=tileBand(settings.res,visible,fmax,tileBins);
+      gen.prepareFullAxis(tileCount);gen.selectTile(visible,tileBins);
+      const viewFLo=old?.fullAxis?.viewFLo,viewFHi=old?.fullAxis?.viewFHi;
+      const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:b.rfChannel,bins:tileBins,f0:0,fBin:p.fBin,rowRateHz:p.rowRateHz,dbFloor:settings.filter==='NB'?0:40,dbCeil:settings.filter==='NB'?30:110,res:settings.res,filter:settings.filter,bandHz:fmax,enbwHz:p.enbwHz,bandLimited:t0.bandLimited,liveBins:t0.liveBins,rowPhaseS:phase,fullAxis:true,tileBins,tileCount,visibleTileIndex:visible,...(viewFLo!==undefined&&viewFHi!==undefined?{viewFLo,viewFHi}:{})};
+      const start=Math.floor((this.time-phase)/p.rowPeriodS+1e-9)*p.rowPeriodS+phase;
+      this.subscriptions.set(streamId,{config,start,read:0,res:gen,fullAxis:{tileBins,tileCount,visibleTileIndex:visible,viewFLo,viewFHi,scheduled:0,queue:[],lastTile:{tileIndex:t0.tileIndex,tileBins,f0:t0.f0,fBin:t0.fBin,liveBins:t0.liveBins,filled:true}}});
+      if(!this.legacyIndices.has(streamId))this.legacyIndices.set(streamId,0);return config;
+    }
     const band=gen.band,config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:b.rfChannel,bins:RES_BINS,f0:band.f0,fBin:p.fBin,rowRateHz:p.rowRateHz,dbFloor:settings.filter==='NB'?0:40,dbCeil:settings.filter==='NB'?30:110,res:settings.res,filter:settings.filter,bandHz:p.bandHz,...(settings.vernierHz!==undefined?{fcHz:band.fcHz}:{}),enbwHz:p.enbwHz,bandLimited:band.bandLimited,liveBins:band.liveBins,rowPhaseS:phase};
     this.subscriptions.set(streamId,{config,start:Math.floor((this.time-phase)/p.rowPeriodS+1e-9)*p.rowPeriodS+phase,read:0,res:gen});if(!this.legacyIndices.has(streamId))this.legacyIndices.set(streamId,0);return config;
+  }
+  /** Last FULLBAND tile metadata written by writeRow (test/FE introspection). */
+  lastFullAxisTile(streamId:number):{tileIndex:number;tileBins:number;f0:number;fBin:number;liveBins:number;filled:boolean}|undefined{return this.subscriptions.get(streamId)?.fullAxis?.lastTile;}
+  private enqueueFullAxis(sub:{fullAxis:{tileCount:number;visibleTileIndex:number;scheduled:number;queue:{tileIndex:number;rowKey:number;hot:boolean;filled:boolean}[]};start:number;config:GramConfig}):void{
+    const fa=sub.fullAxis!;const due=Math.max(0,Math.floor((this.time-sub.start)*sub.config.rowRateHz+1e-9));
+    while(fa.scheduled<due){
+      const rowKey=fa.scheduled++,order=priorityTileOrder(fa.visibleTileIndex,fa.tileCount),hotN=Math.min(3,order.length);
+      // Real renders only (filled:true). FE paints missing tiles dark/unfilled — no noise invented.
+      const hot=order.slice(0,hotN).map(tileIndex=>({tileIndex,rowKey,hot:true,filled:true})),rest=order.slice(hotN).map(tileIndex=>({tileIndex,rowKey,hot:false,filled:true}));
+      const prevHot=fa.queue.filter(j=>j.hot),prevBf=fa.queue.filter(j=>!j.hot);
+      fa.queue=prevHot.concat(hot,prevBf,rest);
+    }
   }
   unsubscribe(streamId:number):void{
     const sub=this.subscriptions.get(streamId);if(sub?.bandKey){const entry=this.lofarBandCache.get(sub.bandKey);if(entry&&--entry.refs<=0)this.lofarBandCache.delete(sub.bandKey);}
@@ -151,7 +203,7 @@ export class AcousticEngine {
   /** Number of distinct cached non-default buoy×band LOFAR renderers (test/FE introspection). */
   lofarBandCacheSize():number{return this.lofarBandCache.size;}
   configs():GramConfig[]{return Array.from(this.subscriptions.values(),s=>s.config);}
-  rowsReady(streamId:number):number{const s=this.subscriptions.get(streamId);return s?Math.max(0,Math.floor((this.time-s.start)*s.config.rowRateHz+1e-9)-s.read):(this.streams.has(streamId)?1:0);}
+  rowsReady(streamId:number):number{const s=this.subscriptions.get(streamId);if(!s)return this.streams.has(streamId)?1:0;if(s.fullAxis){this.enqueueFullAxis(s as {fullAxis:NonNullable<typeof s.fullAxis>;start:number;config:GramConfig});return s.fullAxis.queue.length;}return Math.max(0,Math.floor((this.time-s.start)*s.config.rowRateHz+1e-9)-s.read);}
   /** Advance one subscription's read cursor to the latest due row without generating the
    * intermediate frames. With `out`, skips ready−1 then writeRow once (current geometry) and
    * returns that row index; without `out`, discards the whole backlog and returns the last
@@ -160,6 +212,12 @@ export class AcousticEngine {
   skipToLatest(streamId:number,out?:Float32Array,offset=0):number{
     const sub=this.subscriptions.get(streamId);
     if(!sub){if(!this.streams.has(streamId))throw new Error('Unknown streamId');return out?this.writeRow(streamId,out,offset):-1;}
+    if(sub.fullAxis){
+      const fa=sub.fullAxis,due=Math.max(0,Math.floor((this.time-sub.start)*sub.config.rowRateHz+1e-9));
+      fa.scheduled=due;fa.queue.length=0;
+      if(due>0){const rowKey=due-1;for(const tileIndex of priorityTileOrder(fa.visibleTileIndex,fa.tileCount).slice(0,Math.min(3,fa.tileCount)))fa.queue.push({tileIndex,rowKey,hot:true,filled:true});}
+      sub.read=due*fa.tileCount-fa.queue.length;if(!out||!fa.queue.length)return fa.queue.length?sub.read:-1;return this.writeRow(streamId,out,offset);
+    }
     const ready=this.rowsReady(streamId);if(ready<=0)return -1;
     if(out){if(ready>1)sub.read+=ready-1;return this.writeRow(streamId,out,offset);}
     sub.read+=ready;return sub.read-1;
@@ -170,7 +228,18 @@ export class AcousticEngine {
     if(!Number.isInteger(offset)||offset<0||out.length<offset+bins)throw new Error('Row size mismatch');
     if(sub&&this.rowsReady(streamId)===0)return -1;
     const rowIndex=sub?sub.read++:this.legacyIndices.get(streamId)??0;if(!sub)this.legacyIndices.set(streamId,rowIndex+1);
-    const b=this.scenario.buoys[i];if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);sub?.res?.bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else if(sub?.res)sub.res.generate(out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
+    const b=this.scenario.buoys[i];
+    if(sub?.fullAxis&&sub.res){
+      const fa=sub.fullAxis,job=fa.queue.shift()!;
+      if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);sub.res.bearingRow.fill(NaN);fa.lastTile={tileIndex:job.tileIndex,tileBins:fa.tileBins,f0:job.tileIndex*fa.tileBins*sub.config.fBin,fBin:sub.config.fBin,liveBins:0,filled:false};return rowIndex;}
+      const t=tileBand(sub.config.res!,job.tileIndex,this.scenario.fMax??this.scenario.fmax,fa.tileBins);
+      sub.res.renderTile(job.tileIndex,job.rowKey,out,offset,fa.tileBins);
+      fa.lastTile={tileIndex:t.tileIndex,tileBins:t.tileBins,f0:t.f0,fBin:t.fBin,liveBins:t.liveBins,filled:true};
+      // Mirror current tile on gramConfig so FE peeking config sees the last emitted slice.
+      sub.config={...sub.config,f0:t.f0,liveBins:t.liveBins,bandLimited:t.bandLimited,simT:this.time};
+      return rowIndex;
+    }
+    if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);sub?.res?.bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else if(sub?.res)sub.res.generate(out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
   }
   /** Copy the last generated per-bin DIFAR bearings (call after writeRow). NaN for omni/DEMON/dead. */
   writeBearingRow(streamId:number,out:Float32Array,offset=0):void {

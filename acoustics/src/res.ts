@@ -80,3 +80,42 @@ export function gammaP(a:number,x:number):number{
 /** Mean of a unit-mean χ²_ν cell after TPSW clipping at α (replace by mean): E[X;X≤α]+P(X>α)
  * = P(ν/2+1, να/2) + 1 − P(ν/2, να/2). ν=2, α=2.5 → 1−α·e^−α = 0.795 (−1.0 dB). */
 export function tpswBias(edof:number,clip:number=TPSW.clipFactor):number{const a=edof/2;return gammaP(a+1,a*clip)+1-gammaP(a,a*clip);}
+
+/** FULLBAND tiled full-axis (m3-acoustics-fullband). RES-resolution bins across [0,fmax],
+ * chunked into fixed-width frequency tiles for iOS WebGL texture-width limits (4096–16384).
+ * Display vernier path (RES_BINS=1024) is unchanged; FULLBAND is additive. */
+export const TILE_BINS=4096;
+export interface TileBand {tileIndex:number;tileBins:number;f0:number;fBin:number;liveBins:number;tileCount:number;bandLimited:boolean}
+/** Axis bin count covering [0, fmax] at Δf (bin k at k·Δf; last live bin ≤ fmax). */
+export function axisBinCount(fmaxHz:number,fBin:number):number{
+ if(!(fmaxHz>0)||!(fBin>0))throw new Error('Invalid fmax/fBin');
+ return Math.max(1,Math.floor(fmaxHz/fBin+1e-9)+1);
+}
+export function tileCountFor(fmaxHz:number,fBin:number,tileBins:number=TILE_BINS):number{
+ if(!Number.isInteger(tileBins)||tileBins<1)throw new Error('Invalid tileBins');
+ return Math.max(1,Math.ceil(axisBinCount(fmaxHz,fBin)/tileBins));
+}
+/** Tile i: f0 = i·tileBins·Δf, liveBins = min(tileBins, axisBins − i·tileBins); last tile may truncate. */
+export function tileBand(res:ResLevel,tileIndex:number,fmaxHz:number,tileBins:number=TILE_BINS):TileBand{
+ if(!isResLevel(res))throw new Error('Invalid res (integer 1..9)');
+ if(!Number.isInteger(tileBins)||tileBins<1||tileBins>16384)throw new Error('Invalid tileBins');
+ const {fBin}=resParams(res),axis=axisBinCount(fmaxHz,fBin),tileCount=Math.max(1,Math.ceil(axis/tileBins));
+ if(!Number.isInteger(tileIndex)||tileIndex<0||tileIndex>=tileCount)throw new Error('Invalid tileIndex');
+ const start=tileIndex*tileBins,liveBins=Math.min(tileBins,axis-start);
+ return {tileIndex,tileBins,f0:start*fBin,fBin,liveBins,tileCount,bandLimited:liveBins<tileBins};
+}
+/** Map a frequency (e.g. vernier centre) to the tile that contains it. */
+export function tileIndexForHz(hz:number,fBin:number,tileBins:number=TILE_BINS,tileCount?:number):number{
+ if(!(fBin>0)||!Number.isInteger(tileBins)||tileBins<1)throw new Error('Invalid fBin/tileBins');
+ if(!Number.isFinite(hz)||hz<0)throw new Error('Invalid hz');
+ const i=Math.min(Math.floor(hz/(tileBins*fBin)+1e-12),tileCount===undefined?1e9:tileCount-1);
+ return Math.max(0,i);
+}
+/** Visible tile first, then ±1 neighbours, then remaining indices ascending (stable, deduped). */
+export function priorityTileOrder(visibleTileIndex:number,tileCount:number):number[]{
+ if(!Number.isInteger(tileCount)||tileCount<1)throw new Error('Invalid tileCount');
+ const v=Math.max(0,Math.min(tileCount-1,visibleTileIndex|0)),hot=[v,v-1,v+1],out:number[]=[],seen=new Set<number>();
+ for(const i of hot){if(i<0||i>=tileCount||seen.has(i))continue;seen.add(i);out.push(i);}
+ for(let i=0;i<tileCount;i++)if(!seen.has(i))out.push(i);
+ return out;
+}
