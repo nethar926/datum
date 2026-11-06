@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
 
-const port = 4187
+const port = Number(process.env.PORT) || 4187
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 const LIT = 6
@@ -177,7 +177,7 @@ try {
     ok(phase === 'pick-freq' || phase === 'pick-buoy' || phase === 'aim', F(`phone unexpected arm ${phase}`))
     if (phase === 'pick-freq' || phase === 'pick-buoy') {
       let picked = false
-      for (const [fx, fy] of [[0.5, 0.55], [0.45, 0.5], [0.55, 0.5], [0.4, 0.6], [0.6, 0.45], [0.35, 0.45]]) {
+      for (const [fx, fy] of [[0.5, 0.35], [0.4, 0.25], [0.6, 0.3], [0.3, 0.25], [0.7, 0.25], [0.5, 0.2], [0.45, 0.4], [0.55, 0.4]]) {
         await page.touchscreen.tap(tb.x + tb.width * fx, tb.y + tb.height * fy)
         await page.waitForTimeout(150)
         if (await tac.getAttribute('data-arm') === 'aim') { picked = true; break }

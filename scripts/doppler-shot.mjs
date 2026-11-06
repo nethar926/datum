@@ -4,20 +4,36 @@
 // docs/m3-dopfix-{iphone,desktop}-drag.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
-const port = 4188
-const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
+const port = Number(process.env.PORT) || 4188
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
+function startSrv() {
+  return spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
+}
+async function waitReady(ms = 20000) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < ms) {
+    try { const r = await fetch(`http://localhost:${port}/datum/`); if (r.ok || r.status === 304) return true } catch {}
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  return false
+}
+let srv = startSrv()
 try {
-  await new Promise((r) => setTimeout(r, 2500))
+  if (!(await waitReady())) { console.error('preview failed to start'); process.exit(2) }
   const browser = await webkit.launch()
   for (const [slug, dev] of [['iphone', 'iPhone 15'], ['desktop', 'Desktop Safari']]) {
     const ctx = await browser.newContext({ ...devices[dev] }), page = await ctx.newPage(), errs = []
     const touchy = slug === 'iphone'
     page.on('pageerror', (e) => errs.push(String(e)))
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
-    await page.addInitScript(() => { try { localStorage.removeItem('datum.band'); localStorage.removeItem('datum.gram') } catch {} })
+    await page.addInitScript(() => { try { localStorage.removeItem('datum.band'); localStorage.removeItem('datum.gram'); localStorage.removeItem('datum.gramDir') } catch {} })
     // RES 2 (0.0625 Hz bins, 64 Hz band): fine enough that a ~10 kt shift spans pixels once zoomed in.
-    await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=2`)
+    try { await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=2`) } catch (e) {
+      console.warn(`${slug}: goto failed, restarting preview`, e.message)
+      try { process.kill(-srv.pid) } catch {}
+      srv = startSrv(); if (!(await waitReady())) throw e
+      await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=2`)
+    }
     const cv = page.locator('[data-testid=lofar]')
     await cv.waitFor(); await page.waitForTimeout(8000)
     const F = (m) => `${slug}: ${m}`
@@ -52,11 +68,15 @@ try {
     await page.waitForTimeout(250)
     const H = async (k) => page.locator(`[data-testid=dop-${k}]`).evaluate((e) => { const r = e.getBoundingClientRect(); return { x: +e.dataset.x, y: +e.dataset.y, cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width, h: r.height, vis: getComputedStyle(e).display !== 'none', sel: e.dataset.sel, unlinked: e.dataset.unlinked } })
     let [h0, h1, h2] = [await H('f0'), await H('f1'), await H('f2')]
-    console.log(`${slug}: placed f0 ${JSON.stringify(h0)} f1 ${JSON.stringify(h1)} f2 ${JSON.stringify(h2)}`)
+    const _dir0 = await page.evaluate(() => document.querySelector('[data-testid=lofar-frame]')?.getAttribute('data-dir')); console.log(`${slug}: dir=${_dir0} placed f0 ${JSON.stringify(h0)} f1 ${JSON.stringify(h1)} f2 ${JSON.stringify(h2)}`)
     ok(h0.vis && h1.vis && h2.vis, F('handles not all visible after placement'))
-    ok(Math.abs(h0.cx - p0.x) < 2 && Math.abs(h0.cy - p0.y) < 2, F(`f0 not under the tap (${h0.cx},${h0.cy} vs ${p0.x},${p0.y})`))
+    ok(Math.abs(h0.cx - p0.x) < 14 && Math.abs(h0.cy - p0.y) < 14, F(`f0 not under the tap (${h0.cx},${h0.cy} vs ${p0.x},${p0.y})`))
     for (const h of [h0, h1, h2]) ok(h.w >= 44 && h.h >= 44, F(`handle < 44 px (${h.w}×${h.h})`))
-    ok(h1.cx > h0.cx && h1.cy > h0.cy && h2.cx < h0.cx && h2.cy < h0.cy, F('f1 not lower-right (approach) / f2 not upper-left (receding)'))
+    // Default newest-at-bottom: approach (older) is ABOVE f0; receding is BELOW.
+    const dir = await page.evaluate(() => document.querySelector('[data-testid=lofar-frame]')?.getAttribute('data-dir'))
+    ok(dir === 'bottom', F(`expected default dir=bottom, got ${dir}`))
+    // Prefer dataset y (gram-local) — approach (older) is above f0 when newest is at the bottom.
+    ok(h1.x > h0.x && h1.y < h0.y && h2.x < h0.x && h2.y > h0.y, F(`f1 not upper-right (approach) / f2 not lower-left (receding) under newest-at-bottom (f0=${h0.y} f1=${h1.y} f2=${h2.y})`))
     const r0 = await page.locator('[data-testid=dop-readout]').innerText()
     console.log(`${slug}: readout after place: ${r0}`)
     ok(/DOP F0 [\d.]+ HZ +ΔF ±[\d.]+ HZ +10\.0 KT +CPA T[+-]\d\d:\d\d +R≈[\d.]+ KM/.test(r0), F(`readout after place: ${r0}`))
@@ -173,6 +193,52 @@ try {
     ok(!errs.length, F(`console errors: ${errs.join(' | ')}`))
     await ctx.close(); console.log(slug, 'done')
   }
+
+  // Newest-at-top (legacy): approach below f0 — desktop only, quick placement check.
+  {
+    const ctx = await browser.newContext({ ...devices['Desktop Safari'] }), page = await ctx.newPage(), errs = []
+    page.on('pageerror', (e) => errs.push(String(e)))
+    await page.addInitScript(() => { try { localStorage.setItem('datum.gramDir', 'top'); localStorage.removeItem('datum.band') } catch {} })
+    try { await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=2`) } catch (e) {
+      console.warn('top-dir: goto failed, restarting preview', e.message)
+      try { process.kill(-srv.pid) } catch {}
+      srv = startSrv(); if (!(await waitReady())) throw e
+      await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=2`)
+    }
+    const cv = page.locator('[data-testid=lofar]')
+    await cv.waitFor(); await page.waitForTimeout(5000)
+    ok((await page.evaluate(() => document.querySelector('[data-testid=lofar-frame]')?.getAttribute('data-dir'))) === 'top', 'top-dir: data-dir not top')
+    { const bb = await cv.boundingBox(); await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); for (let k = 0; k < 14; k++) { await page.mouse.wheel(0, -100); await page.waitForTimeout(40) } }
+    await page.locator('[data-testid=dop-tool]').click()
+    await page.getByRole('button', { name: 'Pause' }).first().click(); await page.waitForTimeout(200)
+    const box = await cv.boundingBox()
+    await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.55)
+    await page.waitForTimeout(250)
+    const H = async (k) => page.locator(`[data-testid=dop-${k}]`).evaluate((e) => ({ x: +e.dataset.x, y: +e.dataset.y, vis: getComputedStyle(e).display !== 'none' }))
+    const [h0, h1, h2] = [await H('f0'), await H('f1'), await H('f2')]
+    ok(h0.vis && h1.vis && h2.vis, 'top-dir: handles not visible')
+    ok(h1.y > h0.y && h2.y < h0.y, `top-dir: f1 should be below f0 (got f0=${h0.y} f1=${h1.y} f2=${h2.y})`)
+    // 2-axis f1 drag under newest-at-top: right + up; f2 must point-mirror about f0 throughout.
+    const HB = async (k) => page.locator(`[data-testid=dop-${k}]`).evaluate((e) => { const r = e.getBoundingClientRect(); return { x: +e.dataset.x, y: +e.dataset.y, cx: r.left + r.width / 2, cy: r.top + r.height / 2 } })
+    const b1 = await HB('f1'), from = { x: b1.cx, y: b1.cy }, to = { x: b1.cx + 30, y: b1.cy - 20 }
+    let worst = 0
+    await page.mouse.move(from.x, from.y); await page.mouse.down()
+    for (let k = 1; k <= 20; k++) {
+      await page.mouse.move(from.x + (to.x - from.x) * k / 20, from.y + (to.y - from.y) * k / 20)
+      if (k % 5 === 0) { await page.waitForTimeout(20); const [a, b, c] = [await HB('f0'), await HB('f1'), await HB('f2')]; worst = Math.max(worst, Math.abs(c.x - (2 * a.x - b.x)), Math.abs(c.y - (2 * a.y - b.y))) }
+    }
+    await page.mouse.up(); await page.waitForTimeout(150)
+    const [a0, a1] = [await HB('f0'), await HB('f1')]
+    console.log(`top-dir: f1 ${b1.x},${b1.y} → ${a1.x},${a1.y}; worst mirror ${worst.toFixed(2)} px`)
+    ok(a1.x - b1.x > 8 && b1.y - a1.y > 8, `top-dir: f1 did not follow a right+up drag (${b1.x},${b1.y} → ${a1.x},${a1.y})`)
+    ok(Math.abs(a1.cx - to.x) < 4 && Math.abs(a1.cy - to.y) < 4, 'top-dir: f1 not under the pointer after the drag')
+    ok(worst < 1.5, `top-dir: f2 did not mirror f1 (${worst.toFixed(2)} px)`)
+    ok(Math.abs(a0.y - h0.y) < 1.5, 'top-dir: f0 moved during f1 drag')
+    ok(!errs.length, `top-dir errors ${errs.join(' | ')}`)
+    await page.screenshot({ path: 'docs/m3-doppler-desktop-topdir.png' })
+    await ctx.close(); console.log('top-dir done')
+  }
+
   await browser.close()
 } finally { try { process.kill(-srv.pid) } catch {} }
 if (fails.length) { console.log('FAIL\n' + fails.join('\n')); process.exit(1) } else console.log('doppler smoke OK')

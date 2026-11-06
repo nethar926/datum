@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { freqToX } from './axis'
+import { pctFromAgo } from './timeAxis'
 import type { OverlayCtx } from './Gram'
 import { BASIS_LABEL, kThrough, lloydReadout, nearestNull, overlaySpacingSamples, striationHz, type LloydBasis, type Striation } from './lloyds'
 import { acousticsV11 } from '../scenarios/acousticsApi'
@@ -67,7 +68,7 @@ export function lloydText(st: LloydState, cpa: CpaGeom | null, zrM: number | nul
 
 /** Striation hyperbolas (n = 1..) drawn over the scrolling waterfall. */
 export function LloydsOverlay({ ctx, st, cpa, nowS }: { ctx: OverlayCtx; st: LloydState; cpa: CpaGeom | null; nowS: number }) {
-  const { view, width, historyS } = ctx
+  const { view, width, historyS, dir } = ctx
   const { s } = effective(st, cpa)
   const lines: string[] = []
   const spacingPx = (s.k / (view.hi - view.lo)) * width
@@ -77,7 +78,7 @@ export function LloydsOverlay({ ctx, st, cpa, nowS }: { ctx: OverlayCtx; st: Llo
     for (let j = 0; j <= 48; j++) {
       const ago = (historyS * j) / 48, f = striationHz(s, n, nowS - ago)
       if (f > view.hi * 1.5) { if (pts.length) { lines.push(pts.join(' ')); pts.length = 0 } continue }
-      pts.push(`${freqToX(f, view, width).toFixed(1)},${((ago / historyS) * 100).toFixed(2)}`)
+      pts.push(`${freqToX(f, view, width).toFixed(1)},${pctFromAgo(ago, historyS, dir).toFixed(2)}`)
     }
     if (pts.length > 1) lines.push(pts.join(' '))
   }

@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { webkit, devices } from 'playwright'
-const port = 4185
+const port = Number(process.env.PORT) || 4185
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 const FMAX = { ELF: 50, VLF: 200, LF: 500, MF: 2000 }

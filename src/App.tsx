@@ -37,6 +37,7 @@ import { ARM_IDLE, armLabel, cancelArm, isArmed, isPickFreq, pickBuoy, toggleArm
 import { OMNI_BRG_MSG, NO_BRG_MSG, formatBrgHud, bearingFromTracked } from './gram/brgFreq'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
+import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
 import { installAudioUnlock } from './touch/audioUnlock'
 
@@ -76,6 +77,10 @@ export default function App() {
   const [stream, setStream] = useState(0)
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
   const [truth, setTruth] = useState(false)
+  const [gramDir, setGramDir] = useState<GramDir>(loadGramDir)
+  const [zuluOriginMs, setZuluOriginMs] = useState(() => Date.now())
+  useEffect(() => { saveGramDir(gramDir) }, [gramDir])
+  useEffect(() => { setZuluOriginMs(Date.now()) }, [st.scenarioId, st.seed])
   const [vernierPick, setVernierPick] = useState(false)
   // LOFAR phosphor: green (default), amber or red. Amplitude only, no hue coding. DIFAR ignores it (bearing wheel).
   const [palette, setPalette] = useState<PaletteId>(loadPalette)
@@ -370,7 +375,7 @@ export default function App() {
   )
 
   return (
-    <div className={`app layout-${layout}`} data-layout={layout}>
+    <div className={`app layout-${layout}`} data-layout={layout} data-gram-dir={gramDir}>
       {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       {phone ? (
         <header className="toolbar compact">
@@ -382,6 +387,7 @@ export default function App() {
             {RATES.map((r) => <button key={r} aria-pressed={st.rate === r} onClick={() => client.setRate(r)}>{r}×</button>)}
           </div>
           <span className="readout">T+{fmtT(st.simT)}</span>
+          {layout === 'phoneLandscape' && <button className="btn icon tac-toggle" data-testid="tac-open" aria-expanded={tacOpen} onClick={() => setTacOpen(!tacOpen)} title="Tactical plot">TAC</button>}
           <button className="btn icon" data-testid="menu-open" aria-label="More controls" aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>☰</button>
         </header>
       ) : (
@@ -429,6 +435,11 @@ export default function App() {
             <label className="check" title="Off = ideal receiver with unlimited dynamic range (for comparison)">
               <input type="checkbox" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /> Realistic receiver (AGC, limited range)
             </label>
+            <fieldset className="seg" data-testid="gram-dir" style={{ border: 0, padding: 0, margin: 0, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+              <legend className="seg-label" style={{ padding: 0, marginRight: 6 }}>GRAM</legend>
+              <button type="button" aria-pressed={gramDir === 'bottom'} data-testid="gram-dir-bottom" onClick={() => { setGramDir('bottom'); saveGramDir('bottom') }} title="Newest data enters at the bottom">Newest bottom</button>
+              <button type="button" aria-pressed={gramDir === 'top'} data-testid="gram-dir-top" onClick={() => { setGramDir('top'); saveGramDir('top') }} title="Newest data enters at the top">Newest top</button>
+            </fieldset>
           </div>
         )}
       </header>
@@ -457,6 +468,10 @@ export default function App() {
             <label className="check" title="Off = ideal receiver with unlimited dynamic range (for comparison)">
               <input type="checkbox" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /> Realistic receiver (AGC, limited range)
             </label>
+            <div className="sheet-row"><span className="seg-label">GRAM</span><div className="seg" role="group" aria-label="Gram scroll direction" data-testid="gram-dir">
+              <button type="button" aria-pressed={gramDir === 'bottom'} data-testid="gram-dir-bottom" onClick={() => { setGramDir('bottom'); saveGramDir('bottom') }}>Newest bottom</button>
+              <button type="button" aria-pressed={gramDir === 'top'} data-testid="gram-dir-top" onClick={() => { setGramDir('top'); saveGramDir('top') }}>Newest top</button>
+            </div></div>
           </div>
         </Sheet>
       )}
@@ -501,15 +516,14 @@ export default function App() {
             {brgFlash !== null && <span className="ctr-readout brg-readout" data-testid="brg-readout" aria-live="polite">{brgFlash}</span>}
             {cfg?.bandLimited && <span className="band-limit-tag" data-testid="band-limit-tag" title="Part of this band is above the simulated top frequency">BAND LIMIT</span>}
             {!phone && <span className="seg-label">BUOY</span>}
-            <div className="seg" role="group" aria-label="Buoy channel">
+            <div className="seg buoy-seg" role="group" aria-label="Buoy channel" data-testid="buoy-seg">
               {lofarCfgs.map((c, i) => (
                 <button key={c.streamId} aria-pressed={i === stream} onClick={() => setStream(i)}>
                   {c.channel}{st.tactical?.buoys[i]?.kind === 'difar' ? 'D' : 'O'}
                 </button>
               ))}
             </div>
-            {layout === 'phoneLandscape' && <button className="btn icon tac-toggle" data-testid="tac-open" aria-expanded={tacOpen} onClick={() => setTacOpen(!tacOpen)} title="Tactical plot">TAC</button>}
-          </div>
+                      </div>
           {layout !== 'phonePortrait' && toolsRow}
           <div className="panel-body">
             {lofarCfgs.length > 0 && (
@@ -523,7 +537,7 @@ export default function App() {
                   : dopMode ? (hz, ago) => ruler.tap(hz, st.simT - ago)
                   : harmProbeOn && harmF0 !== null ? (hz) => { setHarmProbe(hz); setHarmProbeOn(false) } : undefined}
                 onDragPoint={isPickFreq(brgArm) || vernierPick || (harmProbeOn && harmF0 !== null) ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
-                crosshair={crossOn} nowS={st.simT}
+                crosshair={crossOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
                 overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
                     <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}

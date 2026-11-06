@@ -1,7 +1,7 @@
 // DIFAR wheel applet: open from the legend, exercise rotate / null / isolate / steps / look, screenshot. docs/m3-applet-*.png
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
-const port = 4182
+const port = Number(process.env.PORT) || 4182
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 try {

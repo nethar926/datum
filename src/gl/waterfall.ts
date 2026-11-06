@@ -9,16 +9,18 @@ void main(){ vUv = vec2(aPos.x*0.5+0.5, 0.5-aPos.y*0.5); gl_Position = vec4(aPos
 // WebKit's WebGL really returns garbage there (rows baked into the wrong slots, a full-width seam after a swap).
 export const RING_GLSL = `int ringIdx(int a, int n){ return a >= 0 ? a % n : (n - 1) - ((-a - 1) % n); }`
 
-// Ring-texture waterfall. Newest row at top. Max-pools the bins under each pixel so narrow tonals never alias away.
+// Ring-texture waterfall. uFlip=1 → newest at bottom (default); uFlip=0 → newest at top (legacy).
+// Max-pools the bins under each pixel so narrow tonals never alias away.
 export const FS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp sampler2D uTex; uniform sampler2D uLut; uniform highp sampler2D uBrg; uniform sampler2D uWheel;
-uniform int uHead, uRows, uFilled, uBins, uDifar, uHeadB, uFilledB;
+uniform int uHead, uRows, uFilled, uBins, uDifar, uHeadB, uFilledB, uFlip;
 uniform float uB0, uB1, uFloor, uCeil, uPxW;
 in vec2 vUv; out vec4 o;
 ${RING_GLSL}
 void main(){
-  int age = int(floor(vUv.y * float(uRows)));
+  float vy = uFlip == 1 ? (1.0 - vUv.y) : vUv.y;
+  int age = int(floor(vy * float(uRows)));
   if (age >= uFilled) { o = vec4(0.,0.,0.,1.); return; }
   int row = ringIdx(uHead - age, uRows);
   float b = mix(uB0, uB1, vUv.x);
@@ -100,6 +102,8 @@ export class WaterfallRenderer {
   private filled: Int32Array
   private lost = false
   private palette: PaletteId = 'green'
+  /** 1 = newest at bottom (default), 0 = newest at top. */
+  private flip = 1
   private wheelSettings: DifarWheelSettings = DEFAULT_WHEEL
   /** Displayed bank geometry: bins per row and ring textures. A handoff may change both (RES 1024 ↔ band 2048). */
   bins: number
@@ -158,7 +162,7 @@ export class WaterfallRenderer {
     gl.deleteShader(vs); gl.deleteShader(fs)
     if (!gl.getProgramParameter(p, gl.LINK_STATUS) && !gl.isContextLost()) throw new Error(gl.getProgramInfoLog(p) ?? 'link')
     this.prog = p
-    for (const n of ['uTex', 'uLut', 'uHead', 'uRows', 'uFilled', 'uBins', 'uB0', 'uB1', 'uFloor', 'uCeil', 'uPxW', 'uBrg', 'uWheel', 'uDifar', 'uHeadB', 'uFilledB']) this.u[n] = gl.getUniformLocation(p, n)
+    for (const n of ['uTex', 'uLut', 'uHead', 'uRows', 'uFilled', 'uBins', 'uB0', 'uB1', 'uFloor', 'uCeil', 'uPxW', 'uBrg', 'uWheel', 'uDifar', 'uHeadB', 'uFilledB', 'uFlip']) this.u[n] = gl.getUniformLocation(p, n)
 
     this.vao = gl.createVertexArray()!
     gl.bindVertexArray(this.vao)
@@ -325,6 +329,9 @@ export class WaterfallRenderer {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 360, 1, gl.RGBA, gl.UNSIGNED_BYTE, difarWheelLut(360, w))
   }
 
+  /** Newest-at-bottom (1) or newest-at-top (0). Takes effect on the next draw. */
+  setFlip(newestAtBottom: boolean): void { this.flip = newestAtBottom ? 1 : 0 }
+
   /** Swap the colour palette (one 1 KB texture upload); survives context restore. */
   setPalette(id: PaletteId): void {
     this.palette = id
@@ -402,6 +409,7 @@ export class WaterfallRenderer {
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, d >= 0 ? this.brg[d] : this.tex[s]); gl.uniform1i(this.u.uBrg, 2)
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.wheel); gl.uniform1i(this.u.uWheel, 3)
     gl.uniform1i(this.u.uHeadB, d >= 0 ? Math.max(0, this.headB[d]) : 0); gl.uniform1i(this.u.uFilledB, d >= 0 ? this.filledB[d] : 0)
+    gl.uniform1i(this.u.uFlip, this.flip)
     gl.bindVertexArray(this.vao)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     gl.bindVertexArray(null)

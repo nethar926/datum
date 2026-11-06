@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
 
-const port = 4189
+const port = Number(process.env.PORT) || 4189
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 try {

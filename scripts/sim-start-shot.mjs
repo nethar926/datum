@@ -1,7 +1,7 @@
 // SIM start: Random (difficulty + Diesel/Nuke/Any) by default, Advanced collapsed; start runs; prefs persist. docs/m3-simstart-*.png
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
-const port = 4183
+const port = Number(process.env.PORT) || 4183
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 const openNew = async (page) => {

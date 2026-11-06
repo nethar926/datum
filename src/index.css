@@ -465,3 +465,198 @@ button, select { font: inherit; color: inherit; }
 .dop-note .dop-hint { color: var(--text-2); }
 .dop-note { right: 52px; white-space: normal; overflow-wrap: anywhere; }
 .layout-phonePortrait .dop-note, .layout-phoneLandscape .dop-note { font-size: 10px; bottom: 30px; }
+
+/* ——— m3-fe-layout: chrome overflow, taller phone grams, 44 px desktop, drop hint off PPI ——— */
+
+/* HIG 44 px targets — toolbar + panel heads (desktop smokes assert these) */
+.toolbar .btn,
+.toolbar .seg button,
+.toolbar.compact .btn,
+.toolbar.compact .seg button,
+.panel-head .btn,
+.panel-head .seg button,
+.panel-head.gram-tools .btn,
+.panel-head.gram-tools .seg button {
+  min-height: 44px;
+  min-width: 44px;
+  padding-inline: 10px;
+}
+.toolbar { row-gap: 6px; }
+.panel-head .seg button.icon { min-width: 44px; }
+
+/* Gram / tactical heads: wrap instead of spilling into the neighbour column */
+.panel.gram-panel > .panel-head,
+.panel.tac-panel > .panel-head {
+  flex-wrap: wrap;
+  row-gap: 6px;
+  align-content: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+.panel.gram-panel > .panel-head .buoy-seg,
+.panel.tac-panel > .panel-head .seg {
+  max-width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+}
+.panel.gram-panel > .panel-head .buoy-seg::-webkit-scrollbar,
+.panel.tac-panel > .panel-head .seg::-webkit-scrollbar { display: none; }
+
+/* Phone portrait: taller gram (>=150 canvas) without crushing the tactical plot.
+   Both tracks must be able to shrink (minmax(0,…)) so 100dvh actually constrains them. */
+.layout-phonePortrait .workspace {
+  grid-template-rows: minmax(0, 1.7fr) minmax(160px, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+.layout-phonePortrait .workspace-left,
+.layout-phonePortrait .panel.tac-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+.layout-phonePortrait .panel.tac-panel {
+  min-height: 160px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.layout-phonePortrait .panel.tac-panel .panel-body,
+.layout-phonePortrait .panel.tac-panel .plot {
+  min-height: 120px;
+}
+.layout-phonePortrait .panel.gram-panel {
+  /* Reserve the waterfall first; chrome is single-line auto strips. */
+  grid-template-rows: auto minmax(160px, 1fr) auto;
+  min-height: 0;
+}
+.layout-phonePortrait .panel.gram-panel .panel-body { min-height: 0; }
+.layout-phonePortrait .gram { min-height: 160px; }
+.layout-phonePortrait .panel-head.gram-tools {
+  padding-block: 2px;
+  min-height: 44px;
+  max-height: 52px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.layout-phonePortrait .panel.gram-panel > .panel-head {
+  /* Single compact strip — wrapping here stole the gram body (auto/0/auto). */
+  gap: 6px;
+  padding-block: 4px;
+  flex-wrap: nowrap !important;
+  max-height: 52px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  align-items: center;
+}
+.layout-phonePortrait .panel.gram-panel > .panel-head .vernier,
+.layout-phonePortrait .panel.gram-panel > .panel-head .buoy-seg,
+.layout-phonePortrait .panel.gram-panel > .panel-head [data-testid=band-seg] {
+  flex: 0 0 auto;
+}
+.layout-phonePortrait .panel.tac-panel > .panel-head {
+  flex-wrap: nowrap !important;
+  max-height: 52px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Phone landscape: taller gram; TAC lives in the toolbar (always on-screen) */
+.layout-phoneLandscape .workspace {
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+.layout-phoneLandscape .panel.gram-panel {
+  min-height: 0;
+  grid-template-rows: auto auto minmax(160px, 1fr);
+}
+.layout-phoneLandscape .panel.gram-panel .panel-body {
+  min-height: 120px;
+}
+.layout-phoneLandscape .gram { min-height: 120px; }
+.layout-phoneLandscape .toolbar.compact .tac-toggle {
+  flex-shrink: 0;
+  order: 2;
+}
+.layout-phoneLandscape .toolbar.compact [data-testid=menu-open] { order: 3; }
+
+/* Drop hint: sit with the tools at the bottom of the plot, not over the PPI centre */
+.drop-bar {
+  top: auto !important;
+  bottom: 8px;
+  flex-direction: column;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+.drop-bar > * { pointer-events: auto; }
+.layout-phonePortrait .drop-bar,
+.layout-phoneLandscape .drop-bar {
+  top: auto !important;
+  bottom: 6px;
+  justify-content: flex-end;
+  /* One compact row so BRG/buoy taps still hit the canvas above. */
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  max-height: 52px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.layout-phonePortrait .drop-bar .drop-hint,
+.layout-phoneLandscape .drop-bar .drop-hint {
+  margin: 0;
+  flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.layout-phonePortrait .drop-bar .drop-tools,
+.layout-phoneLandscape .drop-bar .drop-tools {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+.layout-phonePortrait .drop-bar[data-phase='preview'],
+.layout-phoneLandscape .drop-bar[data-phase='preview'] {
+  flex-direction: column;
+  max-height: none;
+  align-items: stretch;
+}
+.drop-hint {
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+
+/* Freq axis unit corner label (ticks also stamp Hz on the last number) */
+.axis-x-unit {
+  position: absolute;
+  right: 4px;
+  top: 14px;
+  font: 600 10px/1 var(--font-mono);
+  color: var(--phosphor-dim);
+  pointer-events: none;
+  opacity: .85;
+}
+.layout-phonePortrait .axis-x-unit,
+.layout-phoneLandscape .axis-x-unit { display: none; } /* last tick already carries Hz */
+
+/* Zulu Y labels: tabular, no wrap */
+.axis-y span {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+/* Vernier: short label already on phone; prevent flex blowout */
+.btn.vernier { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+/* Smooth layout transitions (150–200 ms) */
+.panel-head, .drop-bar, .tac-panel, .workspace, .gram {
+  transition: grid-template-rows var(--motion) var(--ease), transform var(--motion) var(--ease), opacity var(--motion) var(--ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-head, .drop-bar, .tac-panel, .workspace, .gram { transition: none; }
+}

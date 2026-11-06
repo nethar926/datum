@@ -4,7 +4,7 @@
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
 
-const port = 4181
+const port = Number(process.env.PORT) || 4181
 const PROFILES = [
   ['ipad-landscape', 'iPad Pro 11 landscape', 'wide'],
   ['iphone-portrait', 'iPhone 15', 'phonePortrait'],

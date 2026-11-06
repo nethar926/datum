@@ -3,6 +3,7 @@ import { freqToX, xToFreq } from './axis'
 import type { OverlayCtx } from './Gram'
 import { capDpr, exceedsSlop } from '../touch/gestures'
 import { rulerHz, rulerText, type Handle, type RulerStore } from './dopplerRuler'
+import { newestAtBottom, timeFromY, yFromTime } from './timeAxis'
 
 const gramCanvas = (el: HTMLElement): HTMLCanvasElement | null => el.closest('.gram')?.querySelector<HTMLCanvasElement>(':scope > canvas') ?? null
 /** Curve samples per redraw (preallocated; the frame loop never allocates arrays). */
@@ -44,12 +45,12 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
       m0 = gh
       dirty = false; lastV = store.version; last[0] = o.view.lo; last[1] = o.view.hi; last[2] = now; last[3] = o.historyS; last[4] = w; last[5] = o.cfg.fBin
       const m = store.m; m.heightPx = gh; m.historyS = o.historyS; m.hzPerPx = (o.view.hi - o.view.lo) / Math.max(1, w); m.fBin = o.cfg.fBin
-      const s = store.s, yOf = (t: number) => ((now - t) / o.historyS) * gh
+      const s = store.s, yOf = (t: number) => yFromTime(t, now, gh, o.historyS, o.dir)
       if (!g) return
       g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h)
       for (const k of HANDLES) { const e = hEls.current[k]; if (e) e.style.display = store.placed ? '' : 'none' }
       if (!store.placed) return
-      // Curve over the visible time window (now at the top, history below).
+      // Curve over the visible time window (direction from ctx.dir).
       const t0 = now - o.historyS
       for (let k = 0; k < N; k++) { const t = t0 + (o.historyS * k) / (N - 1); xs[k] = freqToX(rulerHz(s, t), o.view, w); ys[k] = yOf(t) }
       const geo = store.geom
@@ -91,8 +92,17 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
       if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (e.key === 'Escape') { if (store.placed) { store.clear(); e.preventDefault() } return }
       const k = e.shiftKey ? 10 : 1
-      const d = e.key === 'ArrowLeft' ? [-k, 0] : e.key === 'ArrowRight' ? [k, 0] : e.key === 'ArrowUp' ? [0, k] : e.key === 'ArrowDown' ? [0, -k] : null
-      if (d && store.nudge(d[0], d[1])) e.preventDefault()
+      // Arrows move the handle on screen. Horizontal = Hz; vertical = time, signed so "up" is toward the top of the gram.
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (store.nudge(e.key === 'ArrowLeft' ? -k : k, 0)) e.preventDefault()
+        return
+      }
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+      const { ctx: o } = live.current
+      const towardTop = e.key === 'ArrowUp'
+      // Newest at bottom: top of screen is older (−dt). Newest at top: top of screen is newer (+dt).
+      const dt = (newestAtBottom(o.dir) ? (towardTop ? -k : k) : (towardTop ? k : -k))
+      if (store.nudge(0, dt)) e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -100,7 +110,7 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
 
   const pointAt = (e: React.PointerEvent, dx: number, dy: number) => {
     const el = layer.current!, r = (gramCanvas(el) ?? el).getBoundingClientRect(), { ctx: o, nowS: now } = live.current
-    return { hz: xToFreq(e.clientX - r.left - dx, o.view, r.width), t: now - ((e.clientY - r.top - dy) / Math.max(1, r.height)) * o.historyS }
+    return { hz: xToFreq(e.clientX - r.left - dx, o.view, r.width), t: timeFromY(e.clientY - r.top - dy, now, r.height, o.historyS, o.dir) }
   }
   const down = (h: Handle) => (e: React.PointerEvent<HTMLDivElement>) => {
     if (!active || (e.pointerType === 'mouse' && e.button !== 0)) return

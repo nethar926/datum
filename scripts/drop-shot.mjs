@@ -6,7 +6,7 @@
 // Run after `npm run build`. Saves docs/m3-drop-*.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
-const port = 4186
+const port = Number(process.env.PORT) || 4186
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 const SPAN_M = 18000, MAX = 32

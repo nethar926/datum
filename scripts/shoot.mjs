@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
 
-const port = 4179
+const port = Number(process.env.PORT) || 4179
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const errors = []
 try {

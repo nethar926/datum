@@ -4,7 +4,7 @@
 // Run after `npm run build`. Saves docs/m3-handoff-*.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
-const port = 4184
+const port = Number(process.env.PORT) || 4184
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 const SAMPLES_MS = [0, 60, 120, 250, 500, 900, 1500, 2200, 3000, 3600, 4500]

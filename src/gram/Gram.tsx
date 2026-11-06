@@ -13,9 +13,10 @@ import { LevelHistory } from './levelHistory'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 import { bandLimitHz, fullView, minSpanOf } from './res'
 import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
+import { agoFromY, formatZulu, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
 
 
-export interface OverlayCtx { view: FreqView; width: number; cfg: GramConfig; historyS: number }
+export interface OverlayCtx { view: FreqView; width: number; cfg: GramConfig; historyS: number; dir: GramDir }
 interface Props {
   /** Streams of one kind (all with equal bins), in display order; streamIndex selects among them. */
   client: SimClient; configs: GramConfig[]; streamIndex: number; view: FreqView; onView: (v: FreqView) => void
@@ -45,6 +46,10 @@ interface Props {
   onCursorHz?: (hz: number | null) => void
   /** Filled each frame with a sampler: Hz → DIFAR bearing deg (circular mean over recent rows), or null. */
   bearingAtRef?: React.MutableRefObject<((hz: number) => number | null) | null>
+  /** Newest-at-bottom (default) or newest-at-top. */
+  dir?: GramDir
+  /** Wall-clock ms (UTC) corresponding to sim t=0; used for Zulu Y labels. */
+  zuluOriginMs?: number
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
@@ -56,7 +61,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0, handoff, onCenterFreq, onCursorHz, bearingAtRef }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0, handoff, onCenterFreq, onCursorHz, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -69,6 +74,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const histRef = useRef<LevelHistory | null>(null)
   const brgHistRef = useRef<BearingHistory | null>(null)
   const [width, setWidth] = useState(800)
+  const [height, setHeight] = useState(400)
   const cfg = configs[streamIndex] ?? configs[0]
   const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
@@ -206,7 +212,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     }
     if (growTo.current && growTo.current.length > N) growRef.current(growTo.current)
     growTo.current = null
-    const ro = new ResizeObserver(() => { dirty = true; setWidth(canvas.clientWidth) })
+    const ro = new ResizeObserver(() => { dirty = true; setWidth(canvas.clientWidth); setHeight(canvas.clientHeight) })
     ro.observe(canvas)
     let lastKey = ''
     const frame = () => {
@@ -252,11 +258,13 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
   useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, rendererKey, client])
+  useEffect(() => { rendererRef.current?.setFlip(newestAtBottom(dir)) }, [dir, rendererKey, client])
   useEffect(() => { if (wheel) { rendererRef.current?.setWheel(wheel); setWheelTick((t) => t + 1) } }, [wheel, rendererKey, client])
 
   const ticks = useMemo(() => niceTicks(view.lo, view.hi, Math.max(3, Math.floor(width / 90))), [view, width])
   const historyS = HISTORY_ROWS / rowRate
-  const timeTicks = useMemo(() => niceTicks(0, historyS, 6), [historyS])
+  const timeTicks = useMemo(() => timeTickAges(historyS, height), [historyS, height])
+  const zuluOrigin = zuluOriginMs ?? (typeof performance !== 'undefined' ? Date.now() - nowS * 1000 : Date.now())
 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
@@ -269,7 +277,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const ptr = useRef(new Map<number, P>())
   const g = useRef({ pinch: null as null | { v: FreqView; a0: number; b0: number }, dragging: false, moved: false, longFired: false, longTimer: 0, lastTap: { t: 0, x: 0, y: 0 } })
   const local = (e: React.PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height } }
-  const ago = (y: number, h: number) => Math.max(0, (y / Math.max(1, h)) * historyS)
+  const ago = (y: number, h: number) => agoFromY(y, h, historyS, dir)
   const showAt = (x: number, y: number, w: number, h: number, withCross: boolean) => {
     const hz = xToFreq(x, view, w); setCursor(hz); onCursorHz?.(hz)
     if (withCross) setCross({ hz, agoS: ago(y, h), x })
@@ -336,7 +344,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   })()
 
   return (
-    <div className="gram">
+    <div className="gram" data-testid={`${testId}-frame`} data-dir={dir}>
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas key={glGen} ref={canvasRef} data-testid={testId} onWheel={onWheel}
           onPointerDown={onPDown} onPointerMove={onPMove} onPointerUp={(e) => onPUp(e)} onPointerCancel={(e) => onPUp(e, true)}
@@ -352,8 +360,12 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         <div className="band-limit" data-testid={`${testId}-band-limit`} style={{ left: Math.max(0, freqToX(limitHz, view, width)), width: width - Math.max(0, freqToX(limitHz, view, width)) }}
           title={`Above ${limitHz.toFixed(0)} Hz is past the simulated band`}><span>BAND LIMIT</span></div>
       )}
-      <div className="axis axis-y" aria-hidden>
-        {timeTicks.map((t) => <span key={t} style={{ top: `${(t / historyS) * 100}%` }}>{t === 0 ? 'now' : `-${t}s`}</span>)}
+      <div className="axis axis-y" data-testid={`${testId}-time-axis`} data-dir={dir} aria-hidden>
+        {timeTicks.map((t) => {
+          const top = pctFromAgo(t, historyS, dir)
+          const label = t < 1e-6 ? 'now' : formatZulu(nowS - t, zuluOrigin)
+          return <span key={t} style={{ top: `${top}%` }}>{label}</span>
+        })}
       </div>
       <div className="axis axis-x" data-testid={`${testId}-freq-axis`} role="slider" aria-label="Frequency axis · tap to center"
         aria-valuemin={fMin} aria-valuemax={fMax} aria-valuenow={selectedHz ?? (view.lo + view.hi) / 2}
@@ -370,17 +382,18 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           const rect = e.currentTarget.getBoundingClientRect()
           onCenterFreq(xToFreq(e.clientX - rect.left, view, rect.width))
         }}>
-        {ticks.map((f) => { const x = freqToX(f, view, width); return (
-          <span key={f} style={{ left: x }}><i className="tick-x" style={{ left: '50%', top: -6 }} />{f}</span>) })}
+        {ticks.map((f, i) => { const x = freqToX(f, view, width); const last = i === ticks.length - 1; return (
+          <span key={f} style={{ left: x }}><i className="tick-x" style={{ left: '50%', top: -6 }} />{f}{last ? ` ${unit}` : ''}</span>) })}
+        <span className="axis-x-unit" aria-hidden>{unit}</span>
       </div>
       <div />
       {selectedHz !== null && selectedHz >= view.lo && selectedHz <= view.hi && (
         <div className="sel-marker" style={{ left: freqToX(selectedHz, view, width) }} aria-hidden><span>{selectedHz.toFixed(fBin < 0.1 ? 2 : 1)}</span></div>
       )}
-      {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS })}</div>}
+      {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS, dir })}</div>}
       {cross && (
         <div className="gram-layer cross-layer" style={{ width }} aria-hidden>
-          <div className="cross-h" style={{ top: `${(cross.agoS / historyS) * 100}%` }} />
+          <div className="cross-h" style={{ top: `${pctFromAgo(cross.agoS, historyS, dir)}%` }} />
           <div className="cross-v" style={{ left: cross.x }} />
         </div>
       )}
