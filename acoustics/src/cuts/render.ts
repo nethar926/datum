@@ -1,7 +1,8 @@
 import {displayName,getClass,resolveReference,deriveSignature} from '../catalog/derive.js';
 import {AcousticEngine} from '../engine.js';
 import {knotsToMps} from '../units.js';
-import {loadScenario,type ScenarioInput} from '../scenario.js';
+import {deriveSeed,mulberry32} from '../prng.js';
+import {loadScenario,type ScenarioInput,type ContactTransient} from '../scenario.js';
 import type {GramConfig} from '../protocol.js';
 import type {TonalLine} from '../sourceModel.js';
 import {validateCutSeed} from './validate.js';
@@ -28,10 +29,22 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
  const x=-tCpa*v*Math.sin(course)+cpa*Math.cos(course);
  const y=-tCpa*v*Math.cos(course)-cpa*Math.sin(course);
  const wantsHydp=cut.classifyingLines.some(l=>l.lineFamily==='HYDP')&&!!klass.hydp;
+ const wantsKnee=looksOf(cut).has('engine-knee');
  const hydpAt=Math.min(45,Math.max(15,Math.floor(cut.durationS*.08)));
+ // Knee start/duration vary by cut seed (Lead: not locked to last 20%; sketches are examples).
+ const kneeRng=mulberry32(deriveSeed(cut.seed,'cut-knee'));
+ const kneeAt=Math.floor(cut.durationS*(.35+.4*kneeRng()));
+ const kneeDur=Math.max(20,Math.floor(cut.durationS*(.06+.12*kneeRng())));
+ const kneeTo=Number((.78+.14*kneeRng()).toFixed(3));
+ // HYDP: short squally bursts (Wilson ~1–3 s), seeded 1/2/3 count — not class durationS.
+ const hydpRng=mulberry32(deriveSeed(cut.seed,'cut-hydp'));
+ const hydpU=hydpRng(),hydpN=hydpU<.7?1:hydpU<.95?2:3,hydpDur=Number((1.2+hydpRng()*2.5).toFixed(2));
  const traffic=cut.richness==='sparse'?0:cut.richness==='moderate'?.15:.35;
  const sea=cut.richness==='sparse'?0:cut.richness==='moderate'?2:3;
- const motion=[{at:0,course,speed:v,depth:cut.depthM},...(wantsHydp?[{at:hydpAt,course:course+28*DEG,speed:v,depth:cut.depthM}]:[])];
+ const motion=[{at:0,course,speed:v,depth:cut.depthM},...(wantsHydp?[{at:hydpAt,course:course+28*DEG,speed:v,depth:cut.depthM}]:[]),...(wantsKnee?[{at:kneeAt+kneeDur+10,course,speed:v*.85,depth:cut.depthM}]:[])];
+ const transients:ContactTransient[]=[];
+ if(wantsHydp){for(let k=0;k<hydpN;k++)transients.push({at:hydpAt+k*.4,kind:'hydp',params:{durationS:hydpDur}});}
+ if(wantsKnee)transients.push({at:kneeAt,kind:'engine-ramp',params:{durationS:kneeDur,fromScale:1,toScale:kneeTo}});
  return {
   v:1,seed:cut.seed,mode:'aviation',bins:CUT_BINS,fmax:CUT_FMAX,fMax:CUT_FMAX,fBin:CUT_FMAX/(CUT_BINS-1),band:[0,CUT_FMAX],time:0,
   surfaceTraffic:traffic,
@@ -42,7 +55,7 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
    // Bake classId into params only — catalogRef would re-derive and drop SSMA overlays.
    params:sig,operatingMode:cut.mode,...(reactorOffline?{reactorOffline:true}:{}),
    x,y,depth:cut.depthM,course,speed:v,motion,
-   ...(wantsHydp?{transients:[{at:hydpAt,kind:'hydp',params:{}}]}:{}),
+   ...(transients.length?{transients}:{}),
   }],
   buoys:[{id:'buoy-1',type:'difar',x:0,y:0,depth:60,course:0,speed:0,rfChannel:1,deployedAt:0,life:Math.max(7200,cut.durationS+600)}],
  };
@@ -59,6 +72,7 @@ export class CutSession {
  readonly demonStreamId:number;
  private readonly lofarBuf:Float32Array;
  private readonly rampBases=new Map<TonalLine,number>();
+ private readonly engineHarmonicBases=new Map<TonalLine,number>();
  private ended=false;
  private disposed=false;
  constructor(cut:CutSeed){
@@ -69,7 +83,7 @@ export class CutSession {
   // Snapshot EDA powers at full output; propulsion-ramp uses catalog EDA riseS only (no mode switch).
   if(looksOf(cut).has('propulsion-ramp')){
    for(const l of this.contact.params.tonals??[])if(l.lineFamily==='EDA')this.rampBases.set(l,l.power);
-   applyRuntimeFidelity(this.contact.params,cut,0,this.rampBases);
+   applyRuntimeFidelity(this.contact.params,cut,0,this.rampBases,this.engineHarmonicBases);
   }
   this.lofar=this.engine.subscribe({channel:1,kind:'lofar',bins:CUT_BINS,band:[0,CUT_FMAX]});
   this.demonStreamId=this.engine.subscribe({kind:'demon',buoyId:1,band:[1000,Math.min(4000,CUT_FMAX)]});
@@ -89,7 +103,7 @@ export class CutSession {
   this.disposed=true;this.ended=true;
   try{this.engine.unsubscribe(this.lofar.streamId);}catch{/* already gone */}
   try{this.engine.unsubscribe(this.demonStreamId);}catch{/* already gone */}
-  this.rampBases.clear();
+  this.rampBases.clear();this.engineHarmonicBases.clear();
   this.lofarBuf.fill(0);
  }
  private ensureLofarRow():boolean{
@@ -99,7 +113,7 @@ export class CutSession {
    const dt=Math.min(ROW_DT,this.cut.durationS-this.engine.time);
    if(dt<=0){this.ended=true;return false;}
    this.engine.advance(dt);
-   applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases);
+   applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases,this.engineHarmonicBases);
   }
   return true;
  }
@@ -110,7 +124,7 @@ export class CutSession {
  writeDemonRow(out:Float32Array,offset=0):number{
   if(this.disposed||!this.ensureLofarRow())return -1;
   if(this.engine.rowsReady(this.demonStreamId)===0){
-   if(this.engine.time<this.cut.durationS){this.engine.advance(ROW_DT);applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases);}
+   if(this.engine.time<this.cut.durationS){this.engine.advance(ROW_DT);applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases,this.engineHarmonicBases);}
    if(this.engine.rowsReady(this.demonStreamId)===0)return -1;
   }
   return this.engine.writeRow(this.demonStreamId,out,offset);

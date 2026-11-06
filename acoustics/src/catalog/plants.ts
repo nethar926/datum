@@ -2,7 +2,7 @@ import {varyPlantIdentity} from './plantIdentity.js';
 import {makeDrivetrain,type VesselPlantSpec,type EngineSpec,type DieselPlant,type AuxSpec} from './drivetrain.js';
 import type {ClassParams} from './schema.js';
 /** Invented static machinery sheets. Hunting-tooth ratios are computed, never rounded internally. */
-export function legacyAux(p:ClassParams):AuxSpec[]{return p.aux.map(a=>({id:a.id,duty:'continuous',kind:a.kind==='pump'?'acPump':'dcvr',fHz:a.rate*(a.basis==='electrical'?p.electricalHz:1),harmonics:a.harmonics,stability:a.stability??(p.propulsion.startsWith('nuclear')?'stable':'unstable'),width:a.width??'discrete',...(a.sigmaBins===undefined?{}:{sigmaBins:a.sigmaBins})}));}
+export function legacyAux(p:ClassParams):AuxSpec[]{return p.aux.map(a=>{const kind:AuxSpec['kind']=a.kind==='pump'?'acPump':a.basis==='electrical'?'electrical':'dcvr';const ac=kind==='acPump'||kind==='electrical';return {id:a.id,duty:'continuous',kind,fHz:a.rate*(a.basis==='electrical'?p.electricalHz:1),harmonics:a.harmonics,stability:a.stability??(ac?'stable':'unstable'),width:a.width??'discrete',...(!ac&&a.sigmaBins!==undefined?{sigmaBins:a.sigmaBins}:{})};});}
 /** Invented, deterministic per-class turbine vane count in 20..80 (from catalog index only; no real platform data). */
 export function fictionalVaneCount(index:number):number{return 20+(index*37+11)%61;}
 export function defaultVesselPlant(p:ClassParams,index:number):VesselPlantSpec {

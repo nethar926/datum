@@ -43,6 +43,7 @@ describe('behaviour planner',()=>{
  it('manoeuvre transients trigger on turns ≥10° or depth changes ≥5 m only',()=>{
   const legs:MotionLeg[]=[{at:0,course:0,speed:4,depth:100},{at:60,course:5*DEG,speed:4,depth:100},{at:120,course:20*DEG,speed:4,depth:100},{at:200,course:20*DEG,speed:2,depth:130},{at:300,course:2*Math.PI-1*DEG,speed:2,depth:130}];
   expect(maneuverTransients(legs).map(t=>t.at)).toEqual([120,200,300]);expect(maneuverTransients(legs,{courseDeg:3,depthM:50}).map(t=>t.at)).toEqual([60,120,300]);
+  const seeded=maneuverTransients(legs,{},mulberry32(9));expect(seeded.length).toBeGreaterThanOrEqual(3);expect(seeded.every(t=>t.kind==='hydp')).toBe(true);
  });
 });
 describe('generation wiring',()=>{
@@ -51,13 +52,14 @@ describe('generation wiring',()=>{
   for(let seed=0;seed<60;seed++)for(const d of ['easy','regular','difficult'] as const){const p=presetToParams(d,seed),s=generateScenario(p);expect(generateScenario(p)).toEqual(s);
    for(const c of s.contacts.filter(c=>c.category!=='surface')){seen.add(c.behaviour!);expect(SUB_BEHAVIOURS).toContain(c.behaviour);expect(c.motion.length).toBeGreaterThanOrEqual(2);expect(c.motion[0]).toEqual({at:0,course:c.course,speed:c.speed,depth:c.depth});expect(c.motion[1].at).toBeGreaterThanOrEqual(600);expect(c.motion.at(-1)!.at).toBeLessThan(H);
     if(d==='difficult')for(const l of c.motion)expect(l.depth).toBeGreaterThanOrEqual(Math.min(c.depth,120));
-    if(c.transients?.length){withHydp++;expect(c.transients.every(t=>t.kind==='hydp'&&c.motion.some(l=>l.at===t.at))).toBe(true);}}
+    if(c.transients?.some(t=>t.kind==='hydp')){withHydp++;expect(c.transients.filter(t=>t.kind==='hydp').every(t=>c.motion.some(l=>t.at>=l.at&&t.at<=l.at+3))).toBe(true);}
+    expect((c.transients??[]).every(t=>t.kind==='hydp'||t.kind==='engine-ramp')).toBe(true);}
    expect(()=>loadScenario(JSON.parse(JSON.stringify(s)))).not.toThrow();}
   expect([...seen].sort()).toEqual([...SUB_BEHAVIOURS].sort());expect(withHydp).toBeGreaterThan(100);
  });
  it('HYDP fires in a generated scenario when a sub manoeuvres',()=>{
-  const s=Array.from({length:40},(_,seed)=>generateScenario(presetToParams('regular',seed))).find(s=>s.contacts.some(c=>c.transients?.length))!,e=new AcousticEngine(s),c=e.scenario.contacts.find(c=>c.transients?.length)!,at=c.transients![0].at,lines=c.params.tonals!.filter(l=>l.lineFamily==='HYDP');
-  expect(lines).toHaveLength(2);e.advance(at-1);expect(lines[0].power).toBe(0);e.advance(3);expect(lines[0].power).toBeGreaterThan(0);expect(lines[0].hz).toBeGreaterThan(c.params.plantSpec!.hydp!.nominalHz);
+  const s=Array.from({length:40},(_,seed)=>generateScenario(presetToParams('regular',seed))).find(s=>s.contacts.some(c=>c.transients?.some(t=>t.kind==='hydp')))!,e=new AcousticEngine(s),c=e.scenario.contacts.find(c=>c.transients?.some(t=>t.kind==='hydp'))!,lines=c.params.tonals!.filter(l=>l.lineFamily==='HYDP');
+  expect(lines.length).toBe(4);const hydpOnly=c.transients!.filter(t=>t.kind==='hydp');expect(hydpOnly.length).toBeGreaterThan(0);const hat=hydpOnly[0].at,hdur=typeof hydpOnly[0].params.durationS==='number'?hydpOnly[0].params.durationS:c.params.plantSpec!.hydp!.durationS;e.advance(Math.max(0,hat-.5));expect(lines.every(l=>l.power===0)).toBe(true);e.advance(Math.min(hdur,.75)+.5);expect(lines.some(l=>l.power>0)).toBe(true);expect(lines[0].hz).toBe(c.params.plantSpec!.hydp!.nominalHz);
  });
  it('behaviour weights are editable params and a single-kind weight forces that kind',()=>{
   const p=presetToParams('regular',9);p.subCount=3;p.behaviourWeights={transit:0,patrol:0,avoidance:0,combat:1};const s=generateScenario(p);expect(s.contacts.filter(c=>c.category!=='surface').every(c=>c.behaviour==='combat')).toBe(true);
@@ -78,16 +80,16 @@ describe('HYDP manoeuvre transient',()=>{
  const scenario=(transients:ScenarioInput['contacts'][number]['transients'])=>{const s:ScenarioInput=cpaScenario();const v=knotsToMps(4);s.buoys[0].depth=100;
   s.contacts=[{id:'hydp-demo',category:'subsurface',catalogRef:{classId:klass.id},operatingMode:'BATT',x:0,y:150,depth:100,course:0,speed:v,motion:[{at:0,course:0,speed:v,depth:100},{at:5,course:40*DEG,speed:v,depth:100}],...(transients?{transients}:{})}];return s;};
  const hydp=(e:AcousticEngine)=>e.scenario.contacts[0].params.tonals!.filter(l=>l.lineFamily==='HYDP');
- it('paired blip starts slightly high, curves down onto the class HYDP Hz, then goes silent',()=>{
-  const e=new AcousticEngine(scenario(maneuverTransients(scenario(undefined).contacts[0].motion)));const [a,b]=hydp(e);expect(a&&b).toBeTruthy();expect(a.power).toBe(0);expect(b.power).toBe(0);
-  e.advance(5.75);expect(a.power).toBeGreaterThan(0);expect(b.power).toBeGreaterThan(0);expect(a.hz).toBeGreaterThan(h.nominalHz*1.01);expect(a.hz).toBeLessThan(h.nominalHz*(1+HYDP_START_OFFSET_PCT/100));expect(b.hz/a.hz).toBeCloseTo((h.nominalHz+h.pairSpacingHz)/h.nominalHz,9);
-  let last=a.hz;for(let t=0;t<h.durationS-1.25;t+=.25){e.advance(.25);expect(a.hz).toBeLessThan(last);last=a.hz;}expect(a.hz-h.nominalHz).toBeLessThan(.1*(h.nominalHz*HYDP_START_OFFSET_PCT/100));
-  e.advance(2);expect(a.power).toBe(0);expect(a.hz).toBe(h.nominalHz);const truth=e.tactical().truth!.contacts[0].lines.filter(l=>l.lineFamily==='HYDP');expect(truth.map(l=>l.f0Hz)).toEqual([h.nominalHz,h.nominalHz+h.pairSpacingHz]);
+ it('squally HYDP burst is abrupt on/off at fixed class Hz with harmonic slots',()=>{
+  const e=new AcousticEngine(scenario([{at:5,kind:'hydp',params:{durationS:3}}]));const lines=hydp(e);expect(lines.length).toBe(4);expect(lines.every(l=>l.power===0)).toBe(true);
+  expect(lines.map(l=>l.hz)).toEqual([1,2,3,4].map(n=>h.nominalHz*n));
+  e.advance(5.2);expect(lines.some(l=>l.power>0)).toBe(true);expect(lines.every(l=>Math.abs(l.hz-h.nominalHz*l.harmonic!)<1e-9)).toBe(true); // fixed Hz, no curve
+  e.advance(4);expect(lines.every(l=>l.power===0)).toBe(true);
  });
- it('shows on a RES gram during the blip only; untriggered contacts carry no HYDP slots',()=>{
+ it('shows on a RES gram during the burst only; untriggered contacts carry no HYDP slots',()=>{
   const run=(trans:boolean)=>{const e=new AcousticEngine(scenario(trans?[{at:5,kind:'hydp',params:{durationS:12}}]:undefined)),c=e.subscribe({channel:1,res:5,filter:'NB',vernierHz:370}),row=new Float32Array(c.bins),bin=Math.round((h.nominalHz-c.f0)/c.fBin);let peak=-Infinity,quiet=-Infinity;
    for(let k=0;k<200&&e.time<30;k++){e.advance(.25);while(e.writeRow(c.streamId,row)>=0){const v=Math.max(...row.subarray(bin-3,bin+12));if(e.time>7&&e.time<16)peak=Math.max(peak,v);if(e.time>20)quiet=Math.max(quiet,v);}}return {peak,quiet,lines:hydp(e).length};};
-  const on=run(true),off=run(false);expect(on.lines).toBe(2);expect(off.lines).toBe(0);expect(on.peak).toBeGreaterThan(on.quiet+3);expect(on.peak).toBeGreaterThan(off.peak+3);
+  const on=run(true),off=run(false);expect(on.lines).toBe(4);expect(off.lines).toBe(0);expect(on.peak).toBeGreaterThan(on.quiet+3);expect(on.peak).toBeGreaterThan(off.peak+3);
  });
  it('validation accepts hydp transients and keeps other kinds reserved',()=>{
   expect(()=>validateScenario(scenario([{at:5,kind:'hydp',params:{durationS:8,startOffsetPct:2}}]))).not.toThrow();

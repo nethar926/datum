@@ -32,7 +32,7 @@ export function bakeFidelityParams(sig:Signature,cut:CutSeed):Signature {
  * Propulsion "ramp" here is catalog EDA riseS only (Lead: no full mode-switch this tip).
  * Slip rate is deferred.
  */
-export function applyRuntimeFidelity(sig:Signature,cut:CutSeed,simT:number,bases:Map<TonalLine,number>):void {
+export function applyRuntimeFidelity(sig:Signature,cut:CutSeed,simT:number,bases:Map<TonalLine,number>,engineBases:Map<TonalLine,number>=bases):void {
  const looks=looksOf(cut),tonals=sig.tonals;if(!tonals)return;
  if(looks.has('propulsion-ramp')){
   // Use the first EDA's catalog ramp.riseS (default 3 s from plantIdentity).
@@ -58,6 +58,19 @@ export function applyRuntimeFidelity(sig:Signature,cut:CutSeed,simT:number,bases
   for(const l of tonals){
    if(l.lineFamily==='MSR'){const h=l.harmonic??1;l.power=l.hz>0?.08/(h*h):0;}
    else if(l.lineFamily==='BR'){const h=l.harmonic??1,shaft=sig.propulsion?.shafts[l.shaftIndex??0]?.hz??sig.shaftHz;l.power=shaft>0?.25/(h*h)*.35:0;}
+  }
+ }
+ if(looks.has('engine-harmonics')){
+  // Idempotent teaching lift: remember plant-written power; re-capture when writePlantTonals rewrites.
+  for(const l of tonals){
+   if(!(l.lineFamily==='CSR'||l.lineFamily==='CFR'||l.lineFamily==='EFR'||l.lineFamily==='EDA'))continue;
+   if(l.power<=0){engineBases.delete(l);continue;}
+   const h=l.harmonic??1,lift=1.35*(h>=4?1.15:1);
+   const prev=engineBases.get(l);
+   if(prev===undefined){engineBases.set(l,l.power);l.power*=lift;continue;}
+   const expected=prev*lift;
+   if(Math.abs(l.power-expected)>1e-9*Math.max(1,expected)){engineBases.set(l,l.power);l.power*=lift;}
+   // else already lifted from this plant base — leave alone
   }
  }
 }

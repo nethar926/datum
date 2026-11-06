@@ -9,7 +9,7 @@ export type {OperatingMode};
 /**
  * Optional gram-fidelity looks (Wilson CUT notes). Additive; FE may ignore unknown ids.
  * Render applies the ones that need a small acoustics hook; the rest are seed/config only.
- * Slip rate and full mode-switch propulsion ramps are deferred (follow-on tip).
+ * Slip rate and full SNORK↔BATT mode-switch remain deferred; engine-knee is RPM scale only.
  */
 export const GRAM_LOOK_IDS=[
  'engine-harmonics',
@@ -22,6 +22,7 @@ export const GRAM_LOOK_IDS=[
  'electrical-ac-dc',
  'eda-locked',
  'propulsion-ramp', // catalog EDA ramp riseS/fallS only — not a mode switch
+ 'engine-knee',     // ratio-locked CSR/CFR/EFR/EDA slowdown via engine-ramp transient
  'msr-dominant',
 ] as const;
 export type GramLookId=typeof GRAM_LOOK_IDS[number];
@@ -33,6 +34,7 @@ export const CUT_LINE_BEHAVIOURS=[
  'skipped',         // intermediate harmonic drowned / not visible
  'harmonics-only',  // SSMA-style: harmonics present, no fundamental
  'ramping',         // uses catalog EDA ramp riseS/fallS
+ 'kneeing',         // ratio-locked engine family slowdown (engine-ramp)
  'broadband',       // cavitation / flow broadband (no single tone)
 ] as const;
 export type CutLineBehaviour=typeof CUT_LINE_BEHAVIOURS[number];

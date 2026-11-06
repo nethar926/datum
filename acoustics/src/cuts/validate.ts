@@ -78,7 +78,7 @@ export function validateStarterPack(pack:CutStarterPack):void {
  // Wilson fidelity coverage: each of the 10 note-looks (excl. pure documentation) appears ≥1×
  const covered=new Set<GramLookId>();
  for(const c of pack.cuts)for(const g of c.gramLooks??[])covered.add(g);
- for(const need of ['cavitation','slow-demon-blade','harmonic-skip','ssma-harmonics-only','msr-dominant','propulsion-ramp','eda-locked','blade-harmonics-reinforced','engine-harmonics','compendium-truth'] as GramLookId[]){
+ for(const need of ['cavitation','slow-demon-blade','harmonic-skip','ssma-harmonics-only','msr-dominant','propulsion-ramp','engine-knee','eda-locked','blade-harmonics-reinforced','engine-harmonics','compendium-truth'] as GramLookId[]){
   if(!covered.has(need))throw new Error(`starter pack missing gramLook ${need}`);
  }
 }
