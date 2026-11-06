@@ -9,6 +9,7 @@ export type {OperatingMode};
 /**
  * Optional gram-fidelity looks (Wilson CUT notes). Additive; FE may ignore unknown ids.
  * Render applies the ones that need a small acoustics hook; the rest are seed/config only.
+ * Slip rate and full mode-switch propulsion ramps are deferred (follow-on tip).
  */
 export const GRAM_LOOK_IDS=[
  'engine-harmonics',
@@ -20,10 +21,21 @@ export const GRAM_LOOK_IDS=[
  'compendium-truth',
  'electrical-ac-dc',
  'eda-locked',
- 'propulsion-ramp',
+ 'propulsion-ramp', // catalog EDA ramp riseS/fallS only — not a mode switch
  'msr-dominant',
 ] as const;
 export type GramLookId=typeof GRAM_LOOK_IDS[number];
+
+/** Teaching behaviour tag on a classifying line (FE HUD / scoring hints). */
+export const CUT_LINE_BEHAVIOURS=[
+ 'stable',          // AC-like: discrete, narrow, little wander
+ 'unstable',        // DC-like: wanders a few Hz
+ 'skipped',         // intermediate harmonic drowned / not visible
+ 'harmonics-only',  // SSMA-style: harmonics present, no fundamental
+ 'ramping',         // uses catalog EDA ramp riseS/fallS
+ 'broadband',       // cavitation / flow broadband (no single tone)
+] as const;
+export type CutLineBehaviour=typeof CUT_LINE_BEHAVIOURS[number];
 
 export interface CutClassifyingLine {
   lineFamily:string;
@@ -31,6 +43,15 @@ export interface CutClassifyingLine {
   nominalHz?:number;
   /** True when this line alone separates a lookalike pair (or is the intended teach tip). */
   giveaway:boolean;
+  /**
+   * Family this tone is an integer harmonic of (e.g. EDA→CFR, BR h2→BR, BR→PSR).
+   * Omit when the line is the family's own fundamental (n===1) with no parent family.
+   */
+  harmonicOf?:string;
+  /** Harmonic order; 1 = fundamental of `lineFamily` (or of `harmonicOf` when set). */
+  n?:number;
+  /** Teaching behaviour for FE reveal / scoring. */
+  behaviour?:CutLineBehaviour;
 }
 
 /** Fixed seed for a short classification practice gram (CUT mode). Public physics only. */

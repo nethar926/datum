@@ -92,17 +92,28 @@ describe('renderCut + gram fidelity',()=>{
   expect(ssmaTonals.length).toBeGreaterThanOrEqual(2);
   expect(ssma.engine.scenario.contacts[0].params.tonals!.some(l=>Math.abs(l.hz-CUT_SSMA_AUX.fHz)<1e-6&&l.power>0)).toBe(false);
  });
- it('propulsion-ramp zeros engine lines at t0 then restores after ramp',()=>{
+ it('classifyingLines carry harmonicOf / n / behaviour tags',()=>{
+  for(const c of listCutSeeds())for(const line of c.classifyingLines){
+   expect(line.n===undefined||(Number.isInteger(line.n)&&line.n>=1&&line.n<=20)).toBe(true);
+   if(line.behaviour)expect(['stable','unstable','skipped','harmonics-only','ramping','broadband']).toContain(line.behaviour);
+  }
+  const b=getCutSeed('cut-brindleflux-snork')!;
+  expect(b.classifyingLines.some(l=>l.n===2&&l.behaviour==='skipped')).toBe(true);
+  expect(b.classifyingLines.some(l=>l.lineFamily==='EDA'&&l.harmonicOf==='CFR'&&l.behaviour==='ramping')).toBe(true);
+  const s=getCutSeed('cut-emberbraid-ssma')!;
+  expect(s.classifyingLines.some(l=>l.behaviour==='harmonics-only'&&l.n===2)).toBe(true);
+ });
+ it('propulsion-ramp uses catalog EDA riseS only (no mode-switch)',()=>{
   const s=renderCut('cut-brindleflux-snork');
   const contact=s.engine.scenario.contacts[0];
-  const cfr=()=>contact.params.tonals!.filter(l=>l.lineFamily==='CFR');
-  expect(cfr().every(l=>l.power===0)).toBe(true);
-  // Drain past ramp window (starts 20 s, 10 s rise)
+  const rise=contact.params.plantSpec!.edas[0].ramp!.riseS;
+  expect(rise).toBe(3);
+  const eda=()=>contact.params.tonals!.filter(l=>l.lineFamily==='EDA');
+  expect(eda().every(l=>l.power===0)).toBe(true); // t=0
+  expect(contact.params.tonals!.filter(l=>l.lineFamily==='CFR'&&l.harmonic===1).some(l=>l.power>0)).toBe(true); // engines stay up
   const row=new Float32Array(s.lofar.bins);
-  while(s.simT<32&&!s.done)s.writeLofarRow(row);
-  expect(s.simT).toBeGreaterThanOrEqual(30);
-  expect(cfr().some(l=>l.power>0)).toBe(true);
-  // harmonic-skip: order-2 CFR/BR stay at 0
+  while(s.simT<rise+0.5&&!s.done)s.writeLofarRow(row);
+  expect(eda().some(l=>l.power>0)).toBe(true);
   expect(contact.params.tonals!.filter(l=>l.lineFamily==='CFR'&&l.harmonic===2).every(l=>l.power===0)).toBe(true);
  });
  it('renderCut(string) unknown id throws',()=>{expect(()=>renderCut('missing-cut')).toThrow(/Unknown cut/);});

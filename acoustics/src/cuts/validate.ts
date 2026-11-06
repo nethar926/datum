@@ -1,6 +1,6 @@
 import {getClass,resolveReference,validateOperatingState} from '../catalog/derive.js';
 import {OPERATING_MODES,type OperatingMode} from '../catalog/schema.js';
-import {CUT_MODEL_VERSION,GRAM_LOOK_IDS,type CutClassifyingLine,type CutLookalikePair,type CutRichness,type CutSeed,type CutStarterPack,type GramLookId} from './types.js';
+import {CUT_MODEL_VERSION,CUT_LINE_BEHAVIOURS,GRAM_LOOK_IDS,type CutClassifyingLine,type CutLookalikePair,type CutRichness,type CutSeed,type CutStarterPack,type GramLookId} from './types.js';
 
 const RICHNESS:readonly CutRichness[]=['sparse','moderate','rich'];
 const finite=(x:unknown,lo:number,hi:number):x is number=>typeof x==='number'&&Number.isFinite(x)&&x>=lo&&x<=hi;
@@ -12,6 +12,9 @@ function validateLine(line:unknown,path:string):asserts line is CutClassifyingLi
  if(typeof l.label!=='string'||!l.label)throw new Error(`${path}.label required`);
  if(l.nominalHz!==undefined&&!finite(l.nominalHz,0,1e6))throw new Error(`${path}.nominalHz out of range`);
  if(typeof l.giveaway!=='boolean')throw new Error(`${path}.giveaway required`);
+ if(l.harmonicOf!==undefined&&(typeof l.harmonicOf!=='string'||!l.harmonicOf))throw new Error(`${path}.harmonicOf invalid`);
+ if(l.n!==undefined&&(!Number.isInteger(l.n)||l.n<1||l.n>20))throw new Error(`${path}.n must be integer 1..20`);
+ if(l.behaviour!==undefined&&!(CUT_LINE_BEHAVIOURS as readonly string[]).includes(l.behaviour))throw new Error(`${path}.behaviour invalid`);
 }
 
 /** Structural + catalog envelope check. Throws on the first failure. */

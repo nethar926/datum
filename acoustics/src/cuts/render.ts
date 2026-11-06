@@ -65,10 +65,9 @@ export class CutSession {
   this.cut=cut;
   const loaded=loadScenario(scenarioFromCut(cut));
   this.engine=new AcousticEngine(loaded,cut.seed);
-  // Snapshot engine-line powers at full plant output before the ramp look zeros them.
+  // Snapshot EDA powers at full output; propulsion-ramp uses catalog EDA riseS only (no mode switch).
   if(looksOf(cut).has('propulsion-ramp')){
-   const tonals=this.contact.params.tonals??[];
-   for(const l of tonals)if(l.lineFamily&&['CSR','CFR','EFR','EDA','MESH'].includes(l.lineFamily))this.rampBases.set(l,l.power);
+   for(const l of this.contact.params.tonals??[])if(l.lineFamily==='EDA')this.rampBases.set(l,l.power);
    applyRuntimeFidelity(this.contact.params,cut,0,this.rampBases);
   }
   this.lofar=this.engine.subscribe({channel:1,kind:'lofar',bins:CUT_BINS,band:[0,CUT_FMAX]});

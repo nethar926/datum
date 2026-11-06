@@ -3,7 +3,6 @@ import type {AuxSpec} from '../catalog/drivetrain.js';
 import type {CutSeed,GramLookId} from './types.js';
 import {GRAM_LOOK_IDS} from './types.js';
 
-const ENGINE_FAMILIES=new Set(['CSR','CFR','EFR','EDA','MESH']);
 /** Fictional SSMA teaching tone (~shaft-aux); harmonics [2,3] only — no fundamental (Wilson note 5). */
 export const CUT_SSMA_AUX:AuxSpec={
  id:'cut-ssma-teach',kind:'ssma',fHz:58,harmonics:[2,3],stability:'unstable',width:'discrete',duty:'continuous',
@@ -29,27 +28,26 @@ export function bakeFidelityParams(sig:Signature,cut:CutSeed):Signature {
 /**
  * Runtime, idempotent fidelity on live tonals after each sim advance.
  * Does not allocate; only mutates power fields on existing tonal records.
+ *
+ * Propulsion "ramp" here is catalog EDA riseS only (Lead: no full mode-switch this tip).
+ * Slip rate is deferred.
  */
 export function applyRuntimeFidelity(sig:Signature,cut:CutSeed,simT:number,bases:Map<TonalLine,number>):void {
  const looks=looksOf(cut),tonals=sig.tonals;if(!tonals)return;
  if(looks.has('propulsion-ramp')){
-  // Engines come online over ~10 s starting at t=20 (snort start teaching).
-  const gain=simT<20?0:Math.max(0,Math.min(1,(simT-20)/10));
+  // Use the first EDA's catalog ramp.riseS (default 3 s from plantIdentity).
+  const rise=Math.max(.01,sig.plantSpec?.edas[0]?.ramp?.riseS??3);
+  const gain=Math.max(0,Math.min(1,simT/rise));
   for(const l of tonals){
-   if(!l.lineFamily||!ENGINE_FAMILIES.has(l.lineFamily))continue;
+   if(l.lineFamily!=='EDA')continue;
    if(!bases.has(l))bases.set(l,l.power);
    l.power=bases.get(l)!*gain;
   }
- }else if(bases.size){
-  // No ramp look: keep bases cleared so a later topology rewrite can resnapshot.
-  bases.clear();
- }
+ }else if(bases.size)bases.clear();
  if(looks.has('harmonic-skip')){
-  // Intermediate harmonic drowned (Wilson note 4): drop order-2 on CFR and BR.
   for(const l of tonals)if(l.harmonic===2&&(l.lineFamily==='CFR'||l.lineFamily==='BR'))l.power=0;
  }
  if(looks.has('blade-harmonics-reinforced')){
-  // Reinforce off-fundamental blade orders (h≥2).
   for(const l of tonals){
    if(l.lineFamily!=='BR'||!l.harmonic||l.harmonic<2)continue;
    const h=l.harmonic,shaft=sig.propulsion?.shafts[l.shaftIndex??0]?.hz??sig.shaftHz;
@@ -60,7 +58,6 @@ export function applyRuntimeFidelity(sig:Signature,cut:CutSeed,simT:number,bases
   for(const l of tonals){
    if(l.lineFamily==='MSR'){const h=l.harmonic??1;l.power=l.hz>0?.08/(h*h):0;}
    else if(l.lineFamily==='BR'){const h=l.harmonic??1,shaft=sig.propulsion?.shafts[l.shaftIndex??0]?.hz??sig.shaftHz;l.power=shaft>0?.25/(h*h)*.35:0;}
-   else if(l.lineFamily==='AUX'&&!String(l.id??'').includes('ssma')){/* leave plant AUX; SSMA keep */}
   }
  }
 }

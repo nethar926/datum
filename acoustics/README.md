@@ -1133,7 +1133,7 @@ session.drainLofar(row, 120);
 `CutSeed` fields: `v:1`, `modelVersion`, `id`, `seed`, `durationS` (≈300–600),
 `richness` (`sparse`|`moderate`|`rich`), `classId` (+ optional `variantId`/`hullId`),
 `mode` (`SURF`|`SNORK`|`D/E`|`BATT`|`AIP`|`NUC`), `speedKn`, `depthM`, optional
-`lookalikeGroupId`, `classifyingLines` (1–3), and optional `gramLooks` (Wilson fidelity notes).
+`lookalikeGroupId`, `classifyingLines` (1–3 with optional `harmonicOf` / `n` / `behaviour` tags), and optional `gramLooks` (Wilson fidelity notes). Line tags: `n` (harmonic order), `harmonicOf` (parent family), `behaviour` (`stable`|`unstable`|`skipped`|`harmonics-only`|`ramping`|`broadband`). Slip rate and full mode-switch propulsion ramps are deferred; `propulsion-ramp` uses catalog EDA `riseS`/`fallS` only.
 
 `renderCut` builds a one-contact DIFAR scenario (MF LOFAR 0–2000 Hz / 2048 bins), reuses
 `AcousticEngine`, and streams LOFAR + DEMON as fast as the host drains. Contacts are baked
@@ -1153,7 +1153,7 @@ HYDP classifying line schedule a mid-cut `hydp` transient.
 | `compendium-truth` | classifyingLines ⊆ idKeys.linesVisiblePerMode[mode] |
 | `electrical-ac-dc` | GRID stable/discrete vs dcvr AUX unstable wander |
 | `eda-locked` | EDA tonals track engine running/CFR |
-| `propulsion-ramp` | engine/EDA/MESH powers ramp 0→1 over 10 s from t=20 |
+| `propulsion-ramp` | EDA powers ramp 0→1 over catalog `eda.ramp.riseS` (no mode switch) |
 | `msr-dominant` | MSR floored up; BR attenuated (orbelune 124-slot BATT) |
 
 Starter pack: diesel+nuclear, one AIP (`cut-gloamspiral-aip`), snort/battery/speed variation,
