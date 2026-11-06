@@ -69,7 +69,7 @@ export class CutController {
   setConfidence(c: Confidence): void { this._confidence = c; this.emit() }
   clearReveal(): void { this._reveal = null; this.emit() }
 
-  /** Request a scrub to simT (seconds). App fast-forwards then clears. */
+  /** Request a scrub to simT (seconds). App seeks via client.seekCut then clears. */
   seek(toS: number | null): void { this._seekToS = toS; this.emit() }
   clearSeek(): void { if (this._seekToS != null) { this._seekToS = null; this.emit() } }
 

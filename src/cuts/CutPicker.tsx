@@ -34,7 +34,7 @@ export function CutPicker({ activeId, onPick }: { activeId: string | null; onPic
       </div>
       <p className="ios-foot">
         Short recorded grams of fictional classes. Pick a cut, call the lines, then open the ID deck to score.
-        Scrubber restarts and fast-forwards (no engine seek). No DEMON pane in CUT.
+        Scrubber seeks directly to the target time. No DEMON pane in CUT.
       </p>
     </div>
   )

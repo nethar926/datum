@@ -4,6 +4,14 @@ import { AcousticEngine, isAlive, renderCut, type CutSession } from '@acoustics'
 import type { Band, Bearing, DropSpec, FromWorker, GramConfig, GramRows, LofarBandPresetId, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
 import { buildScenario } from '../scenarios/training'
 import { parseCutScenarioId } from '../cuts/api'
+import {
+  CUT_SEEK_CHUNK_ROWS,
+  CUT_SEEK_FIRST_ROWS,
+  CUT_SEEK_FULL_ROWS,
+  CutSeekPlayback,
+  fillCutSeekFast,
+  type CutSeekBuffers,
+} from '../cuts/seek'
 
 export const BANDS: Record<Band, { fmax: number; bins: number }> = {
   lofar1k: { fmax: 1000, bins: 2048 },
@@ -41,6 +49,16 @@ export class SimHost {
   private engine?: AcousticEngine
   /** When set, LOFAR/DEMON rows drain through Acoustics renderCut (CUT mode). */
   private cutSession: CutSession | null = null
+  /** Reused across CUT seeks — no per-seek capacity growth after warm-up. */
+  private cutSeekBuf: CutSeekBuffers = { data: new Float32Array(0), rowIndex: new Uint32Array(0) }
+  private cutBackfillBuf: CutSeekBuffers = { data: new Float32Array(0), rowIndex: new Uint32Array(0) }
+  private cutSeekGen = 0
+  private cutBackfill: CutSeekPlayback | null = null
+  private cutBackfillTimer = 0
+  private cutFirstRows = CUT_SEEK_FIRST_ROWS
+  private cutFullRows = CUT_SEEK_FULL_ROWS
+  private cutDemonOn = false
+  private cutRowRate = 2
   /** LOFAR frame pools keyed by bins (RES 1024, band/legacy = scenario bins): only the live sets' sizes are kept. */
   private pools = new Map<number, Frame[]>()
   /** DEMON streams (v1.1 engines): own pool and own gramRows message, since bins differ from LOFAR. */
@@ -61,7 +79,12 @@ export class SimHost {
   private pendingGen = 0
   /** Frame widths (buoy counts) from before a drop: their in-flight buffers are recognised and dropped on release. */
   private retiredN = new Set<number>()
-  constructor(private readonly post: Post) {}
+  constructor(
+    private readonly post: Post,
+    /** Schedule a later callback (worker: setTimeout; tests: sync or queueMicrotask). */
+    private readonly schedule: (fn: () => void, ms?: number) => number | void = (fn, ms = 0) => setTimeout(fn, ms),
+    private readonly cancelSchedule: (id: number) => void = (id) => clearTimeout(id),
+  ) {}
 
   handle(msg: ToWorker): void {
     try {
@@ -69,6 +92,7 @@ export class SimHost {
       if (!this.engine) throw new Error('Initialize first')
       if (msg.type === 'release') return this.release(msg.buffers)
       if (msg.type === 'step') return this.step()
+      if (msg.type === 'seekCut') return this.seekCut(msg.simT, msg.windowRows)
       if (msg.type === 'setSurfaceTraffic') return this.setSurfaceTraffic(msg.value)
       if (msg.type === 'setGram') return this.setGram(msg)
       if (msg.type === 'subscribeGram') return this.subscribeGram(msg)
@@ -82,7 +106,15 @@ export class SimHost {
     }
   }
 
+  private cancelCutBackfill(): void {
+    this.cutSeekGen += 1
+    this.cutBackfill = null
+    if (this.cutBackfillTimer) { this.cancelSchedule(this.cutBackfillTimer as number); this.cutBackfillTimer = 0 }
+  }
+
   private init(msg: Extract<ToWorker, { type: 'init' }>): void {
+    this.cancelCutBackfill()
+
     const band = BANDS[msg.band]
     if (!band) throw new Error('Unknown band')
     if (!Number.isFinite(msg.rowRateHz) || msg.rowRateHz < 0.25 || msg.rowRateHz > 8) throw new Error('rowRateHz out of range')
@@ -425,6 +457,135 @@ export class SimHost {
     const e = this.engine as unknown as { rowsReady: (id: number) => number }
     for (let i = 0; i < ids.length; i++) if (e.rowsReady(ids[i]) > 0) return true
     return false
+  }
+
+  /**
+   * CUT scrubber seek: first-paint the newest FIRST_ROWS, then progressively backfill up to
+   * FULL_ROWS in idle chunks (generation token cancels stale work). Play/pause preserved.
+   */
+  private seekCut(targetS: number, windowRows?: number): void {
+    if (!this.cutSession) throw new Error('seekCut requires CUT mode')
+    const cutId = this.cutSession.cut.id
+    const firstRows = windowRows ?? CUT_SEEK_FIRST_ROWS
+    const fullRows = Math.max(firstRows, CUT_SEEK_FULL_ROWS)
+    this.cutFirstRows = firstRows
+    this.cutFullRows = fullRows
+    this.cutDemonOn = this.demonIds.length > 0
+    this.cutRowRate = this.rowRateHz
+
+    // Cancel any in-flight backfill; this seek owns the new generation.
+    if (this.cutBackfillTimer) { this.cancelSchedule(this.cutBackfillTimer as number); this.cutBackfillTimer = 0 }
+    this.cutBackfill = null
+    const gen = ++this.cutSeekGen
+
+    const filled = fillCutSeekFast(cutId, targetS, this.cutSeekBuf, firstRows)
+    this.installCutSession(filled.session, this.cutDemonOn, this.cutRowRate)
+    this.postCutSeeked(gen, 'first', filled.simT, filled.streamId, filled.bins, filled.rowCount, this.cutSeekBuf, filled.elapsedMs, fullRows)
+    this.updateTactical()
+    this.post(this.tactical!)
+
+    // Progressive backfill: a fresh fill of the full window, posted in idle chunks.
+    if (fullRows > firstRows && targetS > 0) {
+      this.cutBackfill = new CutSeekPlayback(cutId, targetS, this.cutBackfillBuf, fullRows)
+      this.armCutBackfill(gen)
+    }
+  }
+
+  private installCutSession(session: CutSession, demonOn: boolean, rowRate: number): void {
+    this.cutSession = session
+    this.engine = session.engine
+    this.n = 1
+    this.pending = undefined
+    this.pendingGen = 0
+    this.retiredN.clear()
+    const lc = session.lofar
+    const cfg: GramConfig = {
+      v: 1, type: 'gramConfig', streamId: lc.streamId, kind: 'lofar', channel: lc.channel,
+      bins: lc.bins, f0: lc.f0, fBin: lc.fBin, rowRateHz: rowRate,
+      dbFloor: lc.dbFloor, dbCeil: lc.dbCeil,
+    }
+    this.active = this.makeSet('legacy', new Int32Array([lc.streamId]), [cfg], {})
+    this.ensurePool(lc.bins)
+    this.tactical = this.makeTactical()
+    const configs: GramConfig[] = this.active.configs.slice()
+    this.demonIds = []
+    this.demonPool = []
+    this.demonBins = 0
+    this.demonConfigs = []
+    if (demonOn) {
+      try {
+        const all = (session.engine as unknown as { configs: () => GramConfig[] }).configs()
+        const dc = all.find((c) => c.streamId === session.demonStreamId && c.kind === 'demon')
+        if (dc) {
+          this.demonIds = [session.demonStreamId]
+          this.demonBins = dc.bins
+          configs.push({
+            v: 1, type: 'gramConfig', streamId: dc.streamId, kind: 'demon', channel: dc.channel,
+            bins: dc.bins, f0: dc.f0, fBin: dc.fBin, rowRateHz: rowRate,
+            dbFloor: dc.dbFloor, dbCeil: dc.dbCeil,
+          })
+          for (let k = 0; k < POOL_FRAMES; k++) this.demonPool.push(this.newDemonFrame())
+        }
+      } catch { this.demonIds = []; this.demonBins = 0 }
+    }
+    this.demonConfigs = configs.filter((c) => c.kind === 'demon')
+    this.rowCount = 0
+    this.post({ v: 1, type: 'streams', configs })
+  }
+
+  private postCutSeeked(
+    gen: number,
+    phase: 'first' | 'backfill' | 'done',
+    simT: number,
+    streamId: number,
+    bins: number,
+    rowCount: number,
+    buf: CutSeekBuffers,
+    elapsedMs: number,
+    fullRows: number,
+  ): void {
+    const data = new Float32Array(rowCount * bins)
+    if (rowCount) data.set(buf.data.subarray(0, rowCount * bins))
+    const rowIndex = new Uint32Array(rowCount)
+    if (rowCount) rowIndex.set(buf.rowIndex.subarray(0, rowCount))
+    this.post({
+      v: 1, type: 'cutSeeked', simT, streamId, bins, rowCount, rowIndex, data,
+      elapsedMs, gen, phase, fullRows,
+    }, [rowIndex.buffer, data.buffer])
+  }
+
+  private armCutBackfill(gen: number): void {
+    if (gen !== this.cutSeekGen) return
+    const id = this.schedule(() => this.continueCutBackfill(gen), 0)
+    this.cutBackfillTimer = (id as number) || 0
+  }
+
+  /** Idle slice: write CHUNK rows of the full window; on done, swap the live session to the backfill engine. */
+  private continueCutBackfill(gen: number): void {
+    this.cutBackfillTimer = 0
+    if (gen !== this.cutSeekGen) return
+    const fill = this.cutBackfill
+    if (!fill) return
+    const t0 = performance.now()
+    fill.writeMore(CUT_SEEK_CHUNK_ROWS)
+    // Keep writing while we still have budget in this slice (~6 ms) so desktop finishes under ~400 ms.
+    while (!fill.done && performance.now() - t0 < 8) fill.writeMore(CUT_SEEK_CHUNK_ROWS)
+
+    if (!fill.done) {
+      // Silent progress — final window is only correct once every row from t=0 has been written
+      // (LOFAR rowIndex seeds noise). First paint stays on screen until phase=done replaces it.
+      this.armCutBackfill(gen)
+      return
+    }
+
+    // Done: compact ring, install the playback session at target, post the full window.
+    fill.compact()
+    this.installCutSession(fill.session, this.cutDemonOn, this.cutRowRate)
+    this.rowCount = fill.rowCount > 0 ? fill.out.rowIndex[fill.rowCount - 1]! + 1 : 0
+    this.postCutSeeked(gen, 'done', fill.session.simT, fill.streamId, fill.bins, fill.rowCount, fill.out, fill.elapsedMs, this.cutFullRows)
+    this.updateTactical()
+    this.post(this.tactical!)
+    this.cutBackfill = null
   }
 
   /** Drain one LOFAR (+ DEMON) row from the Acoustics CutSession. */

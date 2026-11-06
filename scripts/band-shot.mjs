@@ -7,6 +7,7 @@
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 const port = Number(process.env.PORT) || 4185
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
@@ -50,6 +51,7 @@ try {
     await page.addInitScript(() => { try { if (!sessionStorage.getItem('bandSmoke')) { sessionStorage.setItem('bandSmoke', '1'); localStorage.removeItem('datum.band'); localStorage.setItem('datum.gram', JSON.stringify({ res: 5, filter: 'NB' })) } } catch {} })
     const url = `http://localhost:${port}/datum/?autoplay&rate=16`
     await page.goto(url)
+    await dismissSplash(page)
     const cv = page.locator('[data-testid=lofar]')
     await cv.waitFor(); await page.waitForTimeout(9000)
     console.log(slug, 'layout', await page.evaluate(() => {
@@ -152,7 +154,7 @@ try {
       ok((await segMode()) === 'band' && (await pressed()).join() === id, `${slug}/${id}: seg state ${await segMode()} pressed ${await pressed()}`)
     }
     // Initial: RES 5, LF armed (default), nothing pressed.
-    ok(/^RES 5 /.test(await read()), `${slug}: initial readout ${await read()}`)
+    ok(/^RES 5\b/.test(await read()), `${slug}: initial readout ${await read()}`)
     ok((await segMode()) === 'res' && (await armed()).join() === 'LF' && !(await pressed()).length, `${slug}: initial seg ${await segMode()} armed ${await armed()} pressed ${await pressed()}`)
     const resAxis = await axisMax()
     await page.screenshot({ path: `docs/m3-bands-${slug}-res5.png` })
@@ -209,17 +211,17 @@ try {
     // Persistence: reload lands on ELF (RES off).
     const saved = await page.evaluate(() => localStorage.getItem('datum.band'))
     ok(saved === JSON.stringify({ preset: 'ELF', on: true }), `${slug}: saved ${saved}`)
-    await page.reload(); await cv.waitFor(); await page.waitForTimeout(4000)
+    await page.reload(); await dismissSplash(page); await cv.waitFor(); await page.waitForTimeout(4000)
     ok(await isBand('ELF')(), `${slug}: after reload readout ${await read()}`)
     await checkBand('ELF')
     await page.screenshot({ path: `docs/m3-bands-${slug}-reload-ELF.png` })
     // RES + leaves the band: RES 6 (saved RES 5 + 1), ELF stays armed; persists too.
     await page.waitForTimeout(3000)
-    await run('ELF-to-RES6', () => page.locator('[data-testid=res-step] button[aria-label^="Coarser"]').tap(), async () => /^RES 6 /.test(await read()), 0.25)
+    await run('ELF-to-RES6', () => page.locator('[data-testid=res-step] button[aria-label^="Coarser"]').tap(), async () => /^RES 6\b/.test(await read()), 0.25)
     ok((await segMode()) === 'res' && (await armed()).join() === 'ELF' && !(await pressed()).length, `${slug}: after RES+ seg ${await segMode()} armed ${await armed()} pressed ${await pressed()}`)
     await page.screenshot({ path: `docs/m3-bands-${slug}-res6-armed.png` })
-    await page.reload(); await cv.waitFor(); await page.waitForTimeout(3000)
-    ok(/^RES 6 /.test(await read()) && (await armed()).join() === 'ELF', `${slug}: after 2nd reload ${await read()} armed ${await armed()}`)
+    await page.reload(); await dismissSplash(page); await cv.waitFor(); await page.waitForTimeout(3000)
+    ok(/^RES 6\b/.test(await read()) && (await armed()).join() === 'ELF', `${slug}: after 2nd reload ${await read()} armed ${await armed()}`)
     ok(!errs.length, `${slug}: page errors ${errs.join(' | ')}`)
     await ctx.close(); console.log(slug, 'done')
   }

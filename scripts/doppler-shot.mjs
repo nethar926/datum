@@ -4,6 +4,7 @@
 // docs/m3-dopfix-{iphone,desktop}-drag.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 const port = Number(process.env.PORT) || 4188
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
 function startSrv() {
@@ -34,6 +35,7 @@ try {
       srv = startSrv(); if (!(await waitReady())) throw e
       await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=2`)
     }
+    await dismissSplash(page)
     const cv = page.locator('[data-testid=lofar]')
     await cv.waitFor(); await page.waitForTimeout(8000)
     const F = (m) => `${slug}: ${m}`
@@ -205,6 +207,7 @@ try {
       srv = startSrv(); if (!(await waitReady())) throw e
       await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=2`)
     }
+    await dismissSplash(page)
     const cv = page.locator('[data-testid=lofar]')
     await cv.waitFor(); await page.waitForTimeout(5000)
     ok((await page.evaluate(() => document.querySelector('[data-testid=lofar-frame]')?.getAttribute('data-dir'))) === 'top', 'top-dir: data-dir not top')

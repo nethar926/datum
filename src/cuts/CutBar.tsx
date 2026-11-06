@@ -30,7 +30,7 @@ export function CutBar({
         title="Restart cut from T+00:00" onClick={onRestart}>
         <IcRestart />
       </button>
-      <label className="cut-scrub" title="Scrub cut time (restarts + fast-forwards)">
+      <label className="cut-scrub" title="Scrub cut time (seeks to target)">
         <span className="readout" data-testid="cut-time">{fmt(t)} / {fmt(dur)}</span>
         <input
           type="range" min={0} max={dur} step={1} value={Math.floor(t)}

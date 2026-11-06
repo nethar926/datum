@@ -371,6 +371,11 @@ export class WaterfallRenderer {
     this.pendingOn = false
   }
 
+  /** Drop every painted row (CUT seek): next pushRow starts a fresh window. */
+  clearHistory(): void {
+    this.head.fill(-1); this.filled.fill(0); this.headB.fill(-1); this.filledB.fill(0)
+  }
+
   /** Upload one row for stream index s (bins floats starting at offset). */
   pushRow(s: number, data: Float32Array, offset: number): void {
     if (this.lost || s < 0 || s >= this.streams) return

@@ -9,6 +9,12 @@ export type HandoffNotice =
   | { type: 'drop'; gen: number }
   | { type: 'promote'; gen: number; from: GramConfig[]; to: GramConfig[] }
 type HandoffListener = (n: HandoffNotice) => void
+/** Fired just before a CUT seek bulk is delivered so the gram can clear its ring. */
+export type CutSeekNotice = {
+  simT: number; rowCount: number; elapsedMs: number; streamId: number; bins: number
+  gen: number; phase: 'first' | 'backfill' | 'done'; fullRows: number; replace: boolean
+}
+type CutSeekListener = (n: CutSeekNotice) => void
 export interface SimStatus { receiver: boolean; scenarioId: string; seed: number; surfaceTraffic: number; params?: ScenarioParams; simT: number; playing: boolean; rate: number; band: Band; configs: GramConfig[]; error?: string; tactical?: Tactical
   /** RES/filter applied at init and by setGram; undefined = legacy 4 Hz gram. */
   gram?: GramSettings
@@ -42,6 +48,17 @@ export class SimClient {
   private rowRateHz = 2
   private releaseBufs: ArrayBuffer[] = []
   private handoffListeners = new Set<HandoffListener>()
+  private cutSeekListeners = new Set<CutSeekListener>()
+  /** True while a seekCut is in flight (Gram uses this to avoid epoch rebuild through backfill). */
+  private seekingCut = false
+  private cutSeekGen = -1
+  private cutSeekAwaitingDone = false
+  /** Cached first-paint rows (owned copy) until backfill replaces them. */
+  private cutFirstData: Float32Array | null = null
+  private cutFirstRowIndex: Uint32Array | null = null
+  private cutFirstCount = 0
+  private cutFirstBins = 0
+  private cutFirstStreamId = 0
   /** Gram handoff state machine; `displayed` = settings of the stream set on screen, `target` = latest request. */
   readonly handoff: HandoffMachine
   private displayed: HandoffTarget = { res: 5, filter: 'NB' }
@@ -77,6 +94,26 @@ export class SimClient {
   }
 
   setPlaying(playing: boolean): void { this.setStatus({ playing }) }
+  /**
+   * CUT scrubber: ask the worker to jump to simT and paint the visible window. Preserves
+   * play/pause and rate. No restart + fast-forward animation.
+   */
+  seekCut(simT: number, windowRows?: number): void {
+    if (!this.worker) return
+    this.seekingCut = true
+    this.cutSeekAwaitingDone = true
+    this.inFlight = true // block tick steps until the first-paint round-trip lands
+    this.cutFirstData = null
+    this.cutFirstRowIndex = null
+    this.cutFirstCount = 0
+    this.send({ type: 'seekCut', simT, ...(windowRows !== undefined ? { windowRows } : {}) })
+  }
+  /** Subscribe to CUT seek notices (clear gram history / remap stream ids before the bulk rows arrive). */
+  onCutSeek(cb: CutSeekListener): () => void { this.cutSeekListeners.add(cb); return () => this.cutSeekListeners.delete(cb) }
+  /** True from seekCut() until the matching tactical lands — Gram uses this to avoid an epoch rebuild. */
+  isSeekingCut(): boolean { return this.seekingCut }
+  private seekStreamIds = new Int32Array(1)
+  private seekRowIndex = new Uint32Array(1)
   setRate(rate: number): void { this.setStatus({ rate: Math.max(0.25, Math.min(32, rate)) }) }
   /** Live surface-traffic (shipping noise) level, 0 none … 1 heavy. */
   setSurfaceTraffic(value: number): void {
@@ -134,7 +171,7 @@ export class SimClient {
     cancelAnimationFrame(this.raf); this.raf = 0
     this.stopWorker()
     this.handoff.cancel()
-    this.rowsListeners.clear(); this.statusListeners.clear(); this.handoffListeners.clear()
+    this.rowsListeners.clear(); this.statusListeners.clear(); this.handoffListeners.clear(); this.cutSeekListeners.clear()
   }
 
   private stopWorker(): void { this.worker?.terminate(); this.worker = undefined }
@@ -179,7 +216,7 @@ export class SimClient {
   private tick = (now: number): void => {
     const dt = Math.min(0.25, (now - this.last) / 1000)
     this.last = now
-    if (this.status.playing && this.status.configs.length && !this.status.error) {
+    if (this.status.playing && this.status.configs.length && !this.status.error && !this.seekingCut) {
       this.acc = Math.min(this.acc + dt * this.status.rate, 4 / this.rowRateHz)
       if (!this.inFlight && this.acc >= 1 / this.rowRateHz) { this.acc -= 1 / this.rowRateHz; this.inFlight = true; this.send({ type: 'step' }) }
     }
@@ -201,6 +238,71 @@ export class SimClient {
         if (this.handoff.announce(m.gen, m.configs)) { this.notify({ type: 'pending', gen: m.gen, configs: m.configs }); this.updateIndicator(true) }
         else this.send({ type: 'dropGram', gen: m.gen }) // superseded: make sure the worker lets it go
         break
+      case 'cutSeeked': {
+        // Stale backfill from a superseded scrub — ignore.
+        if (m.phase !== 'first' && m.gen !== this.cutSeekGen && this.cutSeekGen >= 0 && m.gen < this.cutSeekGen) break
+        if (m.phase === 'first') this.cutSeekGen = m.gen
+
+        const bins = m.bins, n = m.rowCount
+        // First paint: keep an owned copy so later backfill messages can prepend older history.
+        if (m.phase === 'first') {
+          this.cutFirstData = new Float32Array(n * bins)
+          if (n) this.cutFirstData.set(m.data.subarray(0, n * bins))
+          this.cutFirstRowIndex = new Uint32Array(n)
+          if (n) this.cutFirstRowIndex.set(m.rowIndex.subarray(0, n))
+          this.cutFirstCount = n
+          this.cutFirstBins = bins
+          this.cutFirstStreamId = m.streamId
+          this.cutSeekAwaitingDone = m.fullRows > n
+        }
+
+        const connected = m.phase !== 'first' && n >= Math.max(0, m.fullRows - this.cutFirstCount)
+        const replace = m.phase === 'first' || m.phase === 'done' || m.phase === 'backfill'
+        const notice = {
+          simT: m.simT, rowCount: n, elapsedMs: m.elapsedMs, streamId: m.streamId, bins,
+          gen: m.gen, phase: m.phase, fullRows: m.fullRows, replace,
+        }
+        for (const l of this.cutSeekListeners) l(notice)
+
+        const push = (streamId: number, rowIndex: number, data: Float32Array, simT: number) => {
+          this.seekStreamIds[0] = streamId
+          this.seekRowIndex[0] = rowIndex
+          const rows: GramRows = {
+            v: 1, type: 'gramRows', simT,
+            streamIds: this.seekStreamIds, rowIndex: this.seekRowIndex, data,
+          }
+          for (const l of this.rowsListeners) l(rows)
+        }
+
+        if (m.phase === 'first' || m.phase === 'done' || connected) {
+          // Paint the message rows alone (first = newest window; done/connected = full chronological).
+          for (let i = 0; i < n; i++) push(m.streamId, m.rowIndex[i]!, m.data.subarray(i * bins, (i + 1) * bins), m.simT)
+        } else if (m.phase === 'backfill') {
+          // Older prefix + cached first-paint newest (gap closes as backfill catches up).
+          for (let i = 0; i < n; i++) push(m.streamId, m.rowIndex[i]!, m.data.subarray(i * bins, (i + 1) * bins), m.simT)
+          const fd = this.cutFirstData, fi = this.cutFirstRowIndex
+          if (fd && fi) {
+            const fb = this.cutFirstBins
+            for (let i = 0; i < this.cutFirstCount; i++) {
+              push(m.streamId, fi[i]!, fd.subarray(i * fb, (i + 1) * fb), m.simT)
+            }
+          }
+        }
+
+        this.setStatus({ simT: m.simT })
+        if (m.phase === 'done' || (m.phase === 'first' && !this.cutSeekAwaitingDone)) {
+          this.cutSeekAwaitingDone = false
+          // seekingCut clears on the trailing tactical (or here if none follows a lone first).
+        }
+        if (m.phase === 'done') {
+          this.cutFirstData = null
+          this.cutFirstRowIndex = null
+          this.cutFirstCount = 0
+          this.seekingCut = false
+          this.inFlight = false
+        }
+        break
+      }
       case 'gramRows': {
         if (this.handoff.phase === 'pending') for (let k = 0; k < m.streamIds.length; k++) { const id = m.streamIds[k]; if (id > 0) this.handoff.row(id) }
         for (const l of this.rowsListeners) l(m)
@@ -211,13 +313,14 @@ export class SimClient {
         this.send({ type: 'release', buffers: bufs }, bufs)
         break
       }
-      case 'tactical': // last message of a step (after every gramRows), so it ends the in-flight step
+      case 'tactical': // last message of a step / seek (after every gramRows), so it ends the in-flight step
         this.inFlight = false
+        if (!this.cutSeekAwaitingDone) this.seekingCut = false
         this.track.push(m.aircraft.x, m.aircraft.y)
         this.setStatus({ simT: m.simT, tactical: m })
         break
       case 'dropped': this.setStatus({ lastDrop: m }); break
-      case 'error': this.inFlight = false; this.setStatus({ error: m.message, playing: false }); break
+      case 'error': this.inFlight = false; this.seekingCut = false; this.setStatus({ error: m.message, playing: false }); break
     }
   }
 }

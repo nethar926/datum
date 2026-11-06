@@ -108,6 +108,13 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     // Same ids but a different grid without a handoff (legacy hot-swap setGram): rebuild the renderer.
     else if (configs[0]?.bins !== prev[0]?.bins || configs.length !== prev.length) epochRef.current++
     liveRef.current = configs
+  } else if (
+    // CUT scrubber seek: new CutSession → new stream ids, same bins/count. Remap in place; onCutSeek clears the ring.
+    client.isSeekingCut() &&
+    configs.length === liveRef.current.length &&
+    configs[0]?.bins === liveRef.current[0]?.bins
+  ) {
+    liveRef.current = configs
   }
   else if (liveRef.current !== promotedRef.current) { liveRef.current = configs; epochRef.current++ } // a new stream set (restart), not a handoff
   // One renderer per stream set lifetime: handoffs (RES, filter, vernier, band) swap banks inside it, even when
@@ -164,6 +171,12 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       } else { hist.clear(); brgHist.clear() }
       local = pendingLocal; pendingLocal = new Map(); pendingCfgs = []
       liveRef.current = h.to; promotedRef.current = h.to
+      dirty = true
+    })
+    const offSeek = client.onCutSeek((n) => {
+      // New CutSession stream id for the same single LOFAR pane; drop the painted window when replacing.
+      local = new Map([[n.streamId, 0]])
+      if (n.replace) { hist.clear(); brgHist.clear(); r.clearHistory() }
       dirty = true
     })
     const off = client.onRows((rows) => {
@@ -258,7 +271,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     const onShow = () => { dirty = true }
     window.addEventListener('pageshow', onShow)
     return () => {
-      cancelAnimationFrame(raf); clearTimeout(lostTimer); off(); offHandoff(); ro.disconnect()
+      cancelAnimationFrame(raf); clearTimeout(lostTimer); off(); offSeek(); offHandoff(); ro.disconnect()
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
       r.dispose(); rendererRef.current = null; histRef.current = null; brgHistRef.current = null
       if (bearingAtRef) bearingAtRef.current = null; growRef.current = null

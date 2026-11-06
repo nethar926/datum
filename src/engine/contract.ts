@@ -52,7 +52,20 @@ export interface DropSpec { kind: 'omni' | 'difar'; x: number; y: number; channe
 export type DropSource = 'manual' | 'auto'
 /** m3-fe-drop: reply to dropBuoys (after the new streams + tactical): the RF channels laid, or why it stopped short. */
 export interface BuoysDropped { v: 1; type: 'dropped'; seq: number; source: DropSource; channels: number[]; error?: string }
-export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped
+/** CUT seek: bulk LOFAR window ending at simT (FE-side silent drain; no visible fast-forward). */
+export type CutSeekPhase = 'first' | 'backfill' | 'done'
+export interface CutSeeked {
+  v: 1; type: 'cutSeeked'; simT: number; streamId: number; bins: number; rowCount: number
+  rowIndex: Uint32Array; data: Float32Array; bearingDeg?: Float32Array
+  /** Host-measured fill latency (ms) for this message's rows. */
+  elapsedMs: number
+  /** Monotonic seek generation — a newer scrub cancels stale backfills. */
+  gen: number
+  phase: CutSeekPhase
+  /** Total rows the backfill is aiming for (FULL). */
+  fullRows: number
+}
+export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped | CutSeeked
 
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'
@@ -76,4 +89,6 @@ export type ToWorker =
   /** m3-fe-drop: lay buoys now; each gets a LOFAR stream like the field's (and a pending one during a handoff). */
   | { type: 'dropBuoys'; seq: number; source: DropSource; buoys: DropSpec[] }
   | { type: 'step' }                                    // advance one row period of sim time
+  /** CUT mode: silent seek to simT; host posts cutSeeked + tactical (preserves play/pause on the client). */
+  | { type: 'seekCut'; simT: number; windowRows?: number }
   | { type: 'release'; buffers: ArrayBuffer[] }

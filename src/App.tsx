@@ -101,6 +101,7 @@ export default function App() {
   const st = useSyncExternalStore(client.subscribe, client.getStatus)
   const [stream, setStream] = useState(0)
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
+
   const [reveal, setReveal] = useState(false)
   const [gramDir, setGramDir] = useState<GramDir>(loadGramDir)
   const [zuluOriginMs, setZuluOriginMs] = useState(() => Date.now())
@@ -273,7 +274,7 @@ export default function App() {
     return () => client.dispose()
   }, [client])
 
-  const startCut = (cutId: string, seekToS: number | null = null) => {
+  const startCut = (cutId: string) => {
     ruler.clear()
     setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false)
     setTool('select'); setBrgArm(ARM_IDLE)
@@ -281,11 +282,13 @@ export default function App() {
     const sess = cuts.open(cutId)
     client.start(sess.cut.seed, sess.scenarioId, st.band, undefined)
     setZuluOriginMs(Date.now())
-    if (seekToS != null && seekToS > 0) {
-      client.setRate(16); client.setPlaying(true); cuts.seek(seekToS)
-    } else {
-      client.setPlaying(true)
-    }
+    client.setPlaying(true)
+  }
+  /** Scrubber seek: jump the worker to tS and paint the visible window. Preserves play/pause; no restart. */
+  const seekCut = (tS: number) => {
+    if (!cuts.session) return
+    cuts.seek(tS) // UI latch (cleared when simT lands)
+    client.seekCut(tS)
   }
   const disposeCutOnly = () => {
     cuts.disposeSession()
@@ -306,16 +309,11 @@ export default function App() {
     prevTab.current = tab
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
-  // Scrubber: restart + fast-forward until simT reaches the seek target, then pause.
+  // Scrubber seek latch: clear once the worker reports simT at/past the target (play/pause unchanged).
   useEffect(() => {
     if (tab !== 'cuts' || !cuts.session || cuts.seekToS == null) return
-    if (st.simT >= cuts.seekToS) {
-      client.setPlaying(false)
-      cuts.clearSeek()
-    } else if (!st.playing) {
-      client.setRate(16); client.setPlaying(true)
-    }
-  }, [tab, cuts.seekToS, cuts.session, st.simT, st.playing, client, cuts])
+    if (st.simT + 0.05 >= cuts.seekToS) cuts.clearSeek()
+  }, [tab, cuts.seekToS, cuts.session, st.simT, cuts])
 
   const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
   const lofarCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'lofar'), [st.configs])
@@ -820,7 +818,7 @@ export default function App() {
           onPlay={() => client.setPlaying(true)}
           onPause={() => client.setPlaying(false)}
           onRestart={() => cuts.session && startCut(cuts.session.cut.id)}
-          onSeek={(tS) => cuts.session && startCut(cuts.session.cut.id, tS)}
+          onSeek={seekCut}
           onBackToList={() => { disposeCutOnly(); client.setPlaying(false) }}
           onDeckOpen={() => cuts.setDeckOpen(true)}
           onDeckClose={() => cuts.setDeckOpen(false)}
