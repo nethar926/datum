@@ -15,6 +15,8 @@ export class AcousticClient {
   subscribe(channel:number,opts:{res?:ResLevel;filter?:GramFilter;vernierHz?:number;band?:[number,number];bandPreset?:LofarBandPresetId}={}):void{this.command({type:'subscribe',kind:'lofar',channel,...opts});}
   /** Change RES/filter/vernier on an existing LOFAR stream; the worker re-emits gramConfig. vernierHz:null → full band. */
   setGram(streamId:number,opts:{res?:ResLevel;filter?:GramFilter;vernierHz?:number|null}):void{this.command({type:'setGram',streamId,...opts});}
+  /** Per-stream catch-up: advance one LOFAR/DEMON subscription's row cursor to now (no intermediate rows). */
+  skipToLatest(streamId:number):void{this.command({type:'skipToLatest',streamId});}
   release(batch:GramRows):void{const buffers=[batch.streamIds.buffer,batch.rowIndex.buffer,batch.data.buffer] as ArrayBuffer[];if(batch.bearingDeg)buffers.push(batch.bearingDeg.buffer as ArrayBuffer);this.command({type:'release',buffers},buffers);}
   dispose():void{this.worker.terminate();}
 }

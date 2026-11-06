@@ -42,10 +42,12 @@ buoys yield **NaN** per contract (the only intentional no-data exception to fini
 `exampleScenarios` exposes `m1-cpa-pass` and separate `benchmark-busy-field` fixtures.
 `new AcousticEngine(scenario, seed?)` optionally overrides the seed; `simT` aliases `time`.
 `subscribe({channel,kind:'lofar',bins?,band?,bandPreset?})`, `unsubscribe`, `configs`, `rowsReady`,
-`writeRow`, `tactical` and `dropBuoy` form the display facade. Subscriptions become ready
+`skipToLatest`, `writeRow`, `tactical` and `dropBuoy` form the display facade. Subscriptions become ready
 at 4 Hz; `writeRow` returns the zero-based row index or -1 without writing when none is due.
-Drain after each 0.25-second advance for time-correct rows: accumulated pending rows use
-current geometry, not historical snapshots. Legacy `registerStream` IDs remain immediate
+`skipToLatest(streamId, out?, offset?)` advances one subscription's read cursor to the latest
+due row without generating intermediates (band-handoff catch-up): with `out` it emits only that
+newest row; without `out` it discards the backlog. Drain after each 0.25-second advance for
+time-correct rows: accumulated pending rows use current geometry, not historical snapshots. Legacy `registerStream` IDs remain immediate
 pull streams. `tactical()` reuses its object/records; `dropBuoy(spec)` returns a numeric ID.
 `contract.ts` re-exports v1 types and additive v1.1 `LogEvent`/confidence/event-kind types
 only, without logging behavior. Broadband attenuation uses cached natural-log coefficients
@@ -60,7 +62,9 @@ The default client worker URL targets built ESM `dist/worker.js`.
 
 - `init {seed,scenarioId:'cpa-pass'}` emits `gramConfig` and `tactical`, initially paused.
   Defaults: LOFAR 1024 bins, 0..500 Hz inclusive, fBin=500/1023, 4 rows/s, 40..110 dB.
-- `play`, `pause`, `setRate {x}` (0.1..64), `seek {simT}`. Clock ticks every 250 ms wall
+- `play`, `pause`, `setRate {x}` (0.1..64), `seek {simT}`, `skipToLatest {streamId}` (per-stream
+  catch-up: discard that subscription's pending backlog without emitting intermediate gramRows;
+  host loops that need the newest sample call `engine.skipToLatest(id, out)` directly). Clock ticks every 250 ms wall
   time; rows stay spaced at 0.25 sim seconds. Seek pauses/replays the seed, 0..3600 s;
   after buoy drops seek explicitly errors pending a future scenario event log.
 - `dropBuoy {id?,channel,kind:'omni'|'difar',x,y,hydrophoneDepthM,lifeS?}` (life default
@@ -402,6 +406,7 @@ advance(dt: number): void;
 subscribe(req: { kind: 'demon'; buoyId: number; band?: [number, number] }): number;
 configs(): GramConfig[];
 rowsReady(streamId: number): number;
+skipToLatest(streamId: number, out?: Float32Array, offset?: number): number;
 writeRow(streamId: number, out: Float32Array, offset?: number): number;
 interface GramConfig {
   v: 1; type: 'gramConfig'; simT: number; streamId: number;

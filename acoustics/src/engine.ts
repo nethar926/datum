@@ -150,6 +150,18 @@ export class AcousticEngine {
   lofarBandCacheSize():number{return this.lofarBandCache.size;}
   configs():GramConfig[]{return Array.from(this.subscriptions.values(),s=>s.config);}
   rowsReady(streamId:number):number{const s=this.subscriptions.get(streamId);return s?Math.max(0,Math.floor((this.time-s.start)*s.config.rowRateHz+1e-9)-s.read):(this.streams.has(streamId)?1:0);}
+  /** Advance one subscription's read cursor to the latest due row without generating the
+   * intermediate frames. With `out`, skips ready−1 then writeRow once (current geometry) and
+   * returns that row index; without `out`, discards the whole backlog and returns the last
+   * skipped index. Returns -1 when nothing is due. Legacy pull streams (no subscription) write
+   * once when `out` is given. Typed-array `out` is caller-owned — no per-call allocation. */
+  skipToLatest(streamId:number,out?:Float32Array,offset=0):number{
+    const sub=this.subscriptions.get(streamId);
+    if(!sub){if(!this.streams.has(streamId))throw new Error('Unknown streamId');return out?this.writeRow(streamId,out,offset):-1;}
+    const ready=this.rowsReady(streamId);if(ready<=0)return -1;
+    if(out){if(ready>1)sub.read+=ready-1;return this.writeRow(streamId,out,offset);}
+    sub.read+=ready;return sub.read-1;
+  }
   writeRow(streamId:number,out:Float32Array,offset=0):number {
     const i=this.streams.get(streamId);if(i===undefined)throw new Error('Unknown streamId');
     const sub=this.subscriptions.get(streamId),bins=sub?.config.bins??this.scenario.bins;

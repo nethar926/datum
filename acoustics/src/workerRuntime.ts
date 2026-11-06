@@ -68,6 +68,12 @@ export class WorkerRuntime {
         const config=e.setGram(m.streamId,{res:m.res,filter:m.filter,vernierHz:m.vernierHz});this.configs[i]=config;this.emit(config);this.rebuildPool();break;
       }
       case 'unsubscribe':{const i=this.configs.findIndex(c=>c.streamId===m.streamId);if(i>=0){this.configs.splice(i,1);this.indices.delete(m.streamId);e.unsubscribe(m.streamId);this.rebuildPool();}break;}
+      case 'skipToLatest':{
+        if(!this.configs.some(c=>c.streamId===m.streamId))throw new Error('Unknown streamId');
+        // Cursor-only: discard the stream's pending backlog without emitting intermediate gramRows.
+        // FE host that wants the newest sample calls engine.skipToLatest(id, out) directly.
+        const idx=e.skipToLatest(m.streamId);if(idx>=0)this.indices.set(m.streamId,idx+1);break;
+      }
       case 'release':this.release(m.buffers);break;
       default:throw new Error('Unknown command');
     }
