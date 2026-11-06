@@ -26,6 +26,11 @@
   --plot-aircraft: #7fd3ff;
   --plot-buoy: #ffd35c;
   --plot-buoy-dead: #5a5a5a;
+  /* FE detune status (HIG system tints on the dark plot) */
+  --plot-buoy-working: #f5f5f7;
+  --plot-buoy-detuned: #30d158;
+  --plot-buoy-dead-hi: #ff453a;
+  --plot-buoy-error: #ffd60a;
   --plot-bearing: rgba(255, 211, 92, 0.55);
   --plot-fix: #ff6b6b;
   --plot-truth: rgba(255, 255, 255, 0.55);

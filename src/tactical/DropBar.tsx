@@ -5,19 +5,24 @@ import type { OperatorLog } from '../log/operatorLog'
 import { crossFixes } from './fix'
 import { DEFAULT_COUNT, DROP_PATTERNS, PATTERN_LABEL, autoPlacement, planDrop, planReadout, type DropPattern, type DropPlan, type Pt } from './drop'
 import type { DropController } from './dropController'
+import type { DetuneStore } from './detune'
 import { FIELD_MODES, FIELD_MODE_LABEL, MAX_BUOYS, autoShouldLay, dropHint, dropHintShort, type AutoMemo } from './fieldMode'
 
 interface Props {
   client: SimClient; drop: DropController; tactical?: Tactical; log: OperatorLog
   /** Buoy life for new drops (s); undefined = the host default. */
   buoyLifeS?: number
+  /** FE-local detune / channel pool. */
+  detune: DetuneStore
 }
 
 const TOAST_MS = 2600
 const FIELD_MODE_SHORT = { preplan: 'PRE', auto: 'AUTO', manual: 'MAN' } as const
-const specs = (p: DropPlan, n: number, lifeS?: number): DropSpec[] => {
+const specs = (p: DropPlan, n: number, channels: number[], lifeS?: number): DropSpec[] => {
   const out: DropSpec[] = []
-  for (let i = 0; i < Math.min(n, p.n); i++) out.push({ kind: p.kinds[i], x: p.xy[2 * i], y: p.xy[2 * i + 1], channel: p.channels[i], ...(lifeS ? { lifeS } : {}) })
+  for (let i = 0; i < Math.min(n, p.n, channels.length); i++) {
+    out.push({ kind: p.kinds[i], x: p.xy[2 * i], y: p.xy[2 * i + 1], channel: channels[i], ...(lifeS ? { lifeS } : {}) })
+  }
   return out
 }
 /** Strongest current cross-fix (most buoys, then smallest residual), or null. */
@@ -30,9 +35,12 @@ function bestFix(t: Tactical): Pt | null {
 /**
  * Drop bar on the tactical plot: field mode (PREPLAN / AUTO / MANUAL), the pattern palette, the live hint and,
  * once a ghost is placed, the confirm bar (readout, buoy count, Cancel, Drop). Also runs the AUTO lay.
+ * Channel picks go through DetuneStore (lowest free); NO CH blocks the drop.
  */
-export function DropBar({ client, drop, tactical, log, buoyLifeS }: Props) {
+export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Props) {
   const s = useSyncExternalStore(drop.subscribe, drop.getState)
+  const detuneSnap = useSyncExternalStore(detune.subscribe, detune.getSnapshot)
+  void detuneSnap
   const ghost = drop.ghost
   const count = tactical?.buoys.length ?? 0, free = Math.max(0, MAX_BUOYS - count), full = !!tactical && free === 0
   const ready = !!tactical
@@ -48,21 +56,35 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS }: Props) {
     seen.current = d
     const what = sent.current.get(d.seq) ?? 'DROP'; sent.current.delete(d.seq)
     for (const ch of d.channels) log.add({ simT: client.status.simT, kind: 'buoyDrop', buoyId: ch, data: { source: d.source, pattern: what.toLowerCase() } })
+    if (d.channels.length) detune.noteDropped(d.channels)
     const chs = d.channels.length > 4 ? `${d.channels.slice(0, 3).join(', ')} … ${d.channels.at(-1)}` : d.channels.join(', ')
     setToast(d.channels.length ? `${d.source === 'auto' ? 'AUTO ' : ''}${what} laid · ${d.channels.length} · CH ${chs}${d.error ? ` · ${d.error}` : ''}` : `Not laid · ${d.error ?? 'no buoys'}`)
     const id = window.setTimeout(() => setToast(null), TOAST_MS)
     return () => clearTimeout(id)
-  }, [lastDrop, client, log])
+  }, [lastDrop, client, log, detune])
 
-  const send = (p: DropPlan, source: 'manual' | 'auto') => {
-    const seq = client.dropBuoys(specs(p, free, buoyLifeS), source)
+  // NO CH chip from the detune store (drop or tune refused).
+  useEffect(() => {
+    if (!detune.noCh) return
+    setToast('NO CH')
+    const id = window.setTimeout(() => { setToast(null); detune.clearNoCh() }, TOAST_MS)
+    return () => clearTimeout(id)
+  }, [detune.noCh, detune, detuneSnap])
+
+  const send = (p: DropPlan, source: 'manual' | 'auto'): boolean => {
+    const n = Math.min(p.n, free)
+    if (n <= 0) { detune.allocateForDrop(1); return false }
+    const chs = detune.allocateForDrop(n)
+    if (!chs) return false
+    const seq = client.dropBuoys(specs(p, n, chs, buoyLifeS), source)
     sent.current.set(seq, PATTERN_LABEL[p.pattern].toUpperCase())
     drop.committed()
+    return true
   }
   const confirm = () => {
     const g = drop.ghost
     if (drop.state.phase !== 'preview' || !g || g.n > free) return
-    send(g, 'manual'); drop.dispatch({ type: 'confirm' })
+    if (send(g, 'manual')) drop.dispatch({ type: 'confirm' })
   }
 
   // AUTO: lay the planner's AUTO pattern on entry, then on a fix outside the field (cooldown).
@@ -115,7 +137,7 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS }: Props) {
           </div>
         </div>
       ) : (
-        <div key={hint} className={`drop-hint${toast ? ' toast' : ''}`} data-testid="drop-hint" aria-live="polite"><span className="drop-hint-count">{count}/{MAX_BUOYS}<span className="drop-hint-sep"> · </span></span><span className="lbl-full">{hint}</span><span className="lbl-short">{hintShort}</span></div>
+        <div key={hint} className={`drop-hint${toast ? ' toast' : ''}${toast === 'NO CH' ? ' noch' : ''}`} data-testid="drop-hint" aria-live="polite"><span className="drop-hint-count">{count}/{MAX_BUOYS}<span className="drop-hint-sep"> · </span></span><span className="lbl-full">{hint}</span><span className="lbl-short">{hintShort}</span></div>
       )}
       <div className="drop-tools">
         <div className="seg field-mode" role="group" aria-label="Field mode" data-testid="field-mode">

@@ -11,6 +11,7 @@ import { planReadout, type DropPlan } from './drop'
 import { canAim, isArmed, type BearingArm } from './bearingArm'
 import { placeRevealTagsInPlace, revealRangeBrg, revealShapeForCategory } from './reveal'
 import type { TruthContact } from '../engine/contract'
+import { BUOY_STATUS_COLOR, paintHealth, type DetuneStore } from './detune'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -29,6 +30,8 @@ interface Props {
   arm?: BearingArm
   onArmPick?: (buoyId: number) => void
   onArmAim?: (buoyId: number, wx: number, wy: number) => void
+  /** FE-local buoy status (detune colours, integrating ring). */
+  detune?: DetuneStore
 }
 const noSub = () => () => {}
 /** New-buoy splash: an expanding ring for this long after a buoy appears on the plot. */
@@ -39,12 +42,12 @@ const HIT_PX = 14
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional Reveal positions. Canvas 2D. */
-export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim }: Props) {
+export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm })
-  props.current = { showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm }
+  const props = useRef({ showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune })
+  props.current = { showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune }
   const viewRef = useRef<PlotView | null>(null)
   const dragRef = useRef<number | null>(null)
   /** When set, the current pointer is an armed aim-tap (plot placement), not a buoy drag. */
@@ -60,7 +63,7 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
     if (!ctx) return
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim() || '#888'
-    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), reveal: col('--plot-reveal') || col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim') }
+    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), reveal: col('--plot-reveal') || col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim'), stWork: col('--plot-buoy-working') || BUOY_STATUS_COLOR.working, stDet: col('--plot-buoy-detuned') || BUOY_STATUS_COLOR.detuned, stDead: col('--plot-buoy-dead-hi') || BUOY_STATUS_COLOR.dead, stErr: col('--plot-buoy-error') || BUOY_STATUS_COLOR.error }
     const p = { x: 0, y: 0 }
     let raf = 0, lastT = -1, lastKey = '', lastGhost = -1
     // Splash start times per buoy index (typed, preallocated); known = buoys already on the plot.
@@ -84,6 +87,22 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
         octx.beginPath(); octx.arc(toScreenX(v, b.x), toScreenY(v, b.y), (6 + 22 * k) * dpr, 0, Math.PI * 2); octx.stroke()
       }
       octx.globalAlpha = 1
+      // Integrating progress rings (FE detune store) — keep animating on the overlay.
+      const dt = props.current.detune
+      if (t && dt) {
+        let integrating = false
+        for (const b of t.buoys) {
+          const prog = dt.progress(b.id, now)
+          if (prog == null) continue
+          integrating = true
+          const sx = toScreenX(v, b.x), sy = toScreenY(v, b.y), rr = 10 * dpr
+          octx.strokeStyle = C.stDet; octx.globalAlpha = 0.25; octx.lineWidth = 2 * dpr
+          octx.beginPath(); octx.arc(sx, sy, rr, 0, Math.PI * 2); octx.stroke()
+          octx.globalAlpha = 1; octx.beginPath()
+          octx.arc(sx, sy, rr, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2); octx.stroke()
+        }
+        if (integrating) { splashing = true; dt.tick(now) }
+      }
       const gh = drop?.ghost
       if (gh) drawGhost(octx, v, gh, dpr, C.man)
     }
@@ -100,7 +119,8 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
       const dpr = capDpr(devicePixelRatio)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
       const armKey = armSt?.phase === 'aim' ? `aim${armSt.buoyId}` : armSt?.phase ?? 'idle'
-      const key = `${w}x${h}:${reveal}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${JSON.stringify(man)}`
+      const dtSnap = props.current.detune?.getSnapshot() ?? 0
+      const key = `${w}x${h}:${reveal}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${JSON.stringify(man)}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
       const v = fitView(w, h, span)
@@ -166,15 +186,21 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
       ctx.save(); ctx.translate(ax, ay); ctx.rotate(hd); ctx.fillStyle = C.ac
       ctx.beginPath(); ctx.moveTo(0, -8 * dpr); ctx.lineTo(6 * dpr, 6 * dpr); ctx.lineTo(0, 3 * dpr); ctx.lineTo(-6 * dpr, 6 * dpr); ctx.closePath(); ctx.fill(); ctx.restore()
 
-      // Buoys.
+      // Buoys (status colours: white working, green detuned/integrating, red dead, yellow error).
+      const dt = props.current.detune
       for (const b of t.buoys) {
         const sx = toScreenX(v, b.x), sy = toScreenY(v, b.y), r = 5 * dpr
-        ctx.strokeStyle = b.state === 'live' ? C.buoy : C.dead; ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = (b.channel === sel ? 2.5 : 1.5) * dpr
+        const fe = dt?.get(b.id)
+        const health = paintHealth(fe, b.state)
+        const colS = health === 'working' ? C.stWork : health === 'dead' ? C.stDead : health === 'error' ? C.stErr : C.stDet
+        const feCh = fe?.channel
+        const label = health === 'detuned' ? 'DT' : feCh != null ? String(feCh) : String(b.channel)
+        ctx.strokeStyle = colS; ctx.fillStyle = colS; ctx.lineWidth = (b.channel === sel || feCh === sel ? 2.5 : 1.5) * dpr
         ctx.beginPath()
         if (b.kind === 'difar') { ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy + r); ctx.lineTo(sx - r, sy + r); ctx.closePath() } else ctx.arc(sx, sy, r, 0, Math.PI * 2)
-        if (b.state === 'falling') ctx.setLineDash([2 * dpr, 2 * dpr])
+        if (b.state === 'falling' || health === 'integrating') ctx.setLineDash([2 * dpr, 2 * dpr])
         ctx.stroke(); ctx.setLineDash([])
-        ctx.fillText(String(b.channel), sx + 8 * dpr, sy + 4 * dpr)
+        ctx.fillText(label, sx + 8 * dpr, sy + 4 * dpr)
         // Armed aim: ring the chosen DIFAR buoy.
         if (armSt?.phase === 'aim' && armSt.buoyId === b.id) {
           ctx.strokeStyle = C.man; ctx.lineWidth = 2 * dpr; ctx.setLineDash([3 * dpr, 3 * dpr])

@@ -533,3 +533,38 @@ button, select { font: inherit; color: inherit; }
 /* Vernier: short label already on phone; prevent flex blowout */
 .btn.vernier { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
+/* Buoy detune / status */
+.noch-chip, .drop-hint.noch {
+  font: 700 11px/1 var(--font-mono);
+  color: #ffd60a;
+  border: 1px solid rgba(255, 214, 10, .55);
+  background: rgba(255, 214, 10, .12);
+  padding: 4px 8px;
+  border-radius: 999px;
+  letter-spacing: .04em;
+}
+.noch-chip { margin-left: 6px; }
+.detuned-badge {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 4; pointer-events: none;
+  font: 700 18px/1.2 var(--font-mono); letter-spacing: .12em;
+  color: var(--plot-buoy-detuned, #30d158);
+  text-shadow: 0 0 12px rgba(0,0,0,.85), 0 1px 0 #000;
+  border: 1px solid rgba(48, 209, 88, .45);
+  background: rgba(0, 0, 0, .55);
+  padding: 10px 16px; border-radius: 10px;
+}
+.detuned-badge.integrating { color: var(--plot-buoy-detuned, #30d158); opacity: .9; }
+.buoy-actions { display: flex; gap: 10px; padding-top: 4px; padding-bottom: 4px; }
+.buoy-actions .btn { flex: 1; min-height: 44px; }
+.buoy-status { font-weight: 600; font-variant-numeric: tabular-nums; }
+.status-swatch {
+  width: 12px; height: 12px; border-radius: 50%; flex: none;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.18);
+}
+.legend-row .row-label { color: var(--sys-label-2); }
+.buoy-seg button[data-health='detuned'],
+.buoy-seg button[data-health='integrating'] { color: var(--plot-buoy-detuned, #30d158); }
+.buoy-seg button[data-health='dead'] { color: var(--plot-buoy-dead-hi, #ff453a); }
+.buoy-seg button[data-health='error'] { color: var(--plot-buoy-error, #ffd60a); }
+.buoy-seg button[data-health='working'] { color: var(--plot-buoy-working, #f5f5f7); }

@@ -24,6 +24,7 @@ import { TacticalPlot } from './tactical/TacticalPlot'
 import { DropBar } from './tactical/DropBar'
 import { DropController } from './tactical/dropController'
 import { dropCapturesPlot } from './tactical/fieldMode'
+import { BUOY_STATUS_COLOR, BUOY_STATUS_LABEL, DetuneStore, paintHealth, type BuoyHealth } from './tactical/detune'
 import { bearingTo, type FixSource, type ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
@@ -116,6 +117,24 @@ export default function App() {
   const [manual, setManual] = useState<ManualBearings>({})
   const log = useMemo(() => new OperatorLog(), [])
   const drop = useMemo(() => new DropController(), [])
+  const detune = useMemo(() => new DetuneStore(), [])
+  const detuneSnap = useSyncExternalStore(detune.subscribe, detune.getSnapshot)
+  void detuneSnap
+
+  // FE buoy status: seed from tactical, tick integrating→working, reset on new scenario.
+  useEffect(() => {
+    detune.reset()
+  }, [st.scenarioId, st.seed, detune])
+  useEffect(() => {
+    if (!st.tactical) return
+    detune.syncTactical(st.tactical.buoys)
+  }, [st.tactical, detune])
+  useEffect(() => {
+    const w = window as Window & { __datumDetune?: DetuneStore }
+    w.__datumDetune = detune
+    return () => { if (w.__datumDetune === detune) delete w.__datumDetune }
+  }, [detune])
+
   const logCount = useSyncExternalStore(log.subscribe, log.size)
   const onManual = (buoyId: number, deg: number | null, final: boolean) => {
     setManual((m) => { const n = { ...m }; if (deg === null) delete n[buoyId]; else n[buoyId] = deg; return n })
@@ -525,12 +544,22 @@ export default function App() {
             {brgFlash !== null && <span className="ctr-readout brg-readout" data-testid="brg-readout" aria-live="polite">{brgFlash}</span>}
             {cfg?.bandLimited && <span className="band-limit-tag" data-testid="band-limit-tag" title="Part of this band is above the simulated top frequency">BAND LIMIT</span>}
             <div className="seg buoy-seg" role="group" aria-label="Buoy channel" data-testid="buoy-seg">
-              {lofarCfgs.map((c, i) => (
-                <button key={c.streamId} aria-pressed={i === stream} onClick={() => setStream(i)}>
-                  {c.channel}{st.tactical?.buoys[i]?.kind === 'difar' ? 'D' : 'O'}
-                </button>
-              ))}
+              {lofarCfgs.map((c, i) => {
+                const tb = st.tactical?.buoys[i]
+                const fe = tb ? detune.get(tb.id) : undefined
+                const health = paintHealth(fe, tb?.state)
+                const kind = tb?.kind === 'difar' ? 'D' : 'O'
+                const label = health === 'detuned' ? 'DT' : `${fe?.channel ?? c.channel}${kind}`
+                return (
+                  <button key={c.streamId} aria-pressed={i === stream} data-health={health} data-testid={`buoy-ch-${c.channel}`}
+                    style={{ color: BUOY_STATUS_COLOR[health] }}
+                    onClick={() => setStream(i)}>
+                    {label}
+                  </button>
+                )
+              })}
             </div>
+            {detune.noCh && <span className="noch-chip" data-testid="noch-chip" role="status">NO CH</span>}
             <button className="btn icon info-btn" data-testid="buoy-info" aria-label="Buoy info" onClick={() => setBuoySheet(true)} disabled={!buoy}><IcInfo /></button>
             <span className="readout" data-testid="view-readout">{viewReadout}</span>
             {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
@@ -583,6 +612,12 @@ export default function App() {
             )}
             {gramMode === 'difar' && <DifarLegend omni={!!buoy && buoy.kind !== 'difar'} wheel={wheel} onOpen={() => setWheelOpen(true)} />}
             {gramMode === 'difar' && wheelOpen && <DifarApplet wheel={wheel} onChange={setWheel} onClose={() => setWheelOpen(false)} />}
+            {buoy && paintHealth(detune.get(buoy.id), buoy.state) === 'detuned' && (
+              <div className="detuned-badge" data-testid="detuned-badge" role="status">DETUNED</div>
+            )}
+            {buoy && paintHealth(detune.get(buoy.id), buoy.state) === 'integrating' && (
+              <div className="detuned-badge integrating" data-testid="integrating-badge" role="status">INTEGRATING</div>
+            )}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
         </section>
@@ -601,6 +636,7 @@ export default function App() {
                 if (final && deg !== null && isArmed(brgArm)) setBrgArm(ARM_IDLE)
               }}
               drop={drop}
+              detune={detune}
               arm={brgArm}
               onArmPick={(id) => setBrgArm(pickBuoy(brgArm, id))}
               onArmAim={(id, wx, wy) => {
@@ -611,7 +647,7 @@ export default function App() {
             <div className="plot-float">
               <button className="glass glass-btn float-btn" data-testid="layers-open" aria-label="Plot layers" onClick={() => setLayersSheet(true)}><IcLayers /></button>
             </div>
-            <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} />
+            <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} detune={detune} />
           </div>
         </section>
       </main>
@@ -740,16 +776,31 @@ export default function App() {
       </div>
 
       <Sheet open={buoySheet} onClose={() => setBuoySheet(false)} title={buoy ? `Buoy ${buoy.channel}` : 'Buoy'} testId="buoy-sheet">
-        {buoy ? (
+        {buoy ? (() => {
+          const fe = detune.get(buoy.id)
+          const health = paintHealth(fe, buoy.state)
+          const canDetune = health === 'working' || health === 'integrating'
+          const canTune = health === 'detuned'
+          return (
           <div className="ios-group">
             <div className="ios-row"><span className="row-label">Type</span><span className="row-value">{buoy.kind === 'difar' ? 'DIFAR (directional)' : 'Omni (passive)'}</span></div>
-            <div className="ios-row"><span className="row-label">State</span><span className="row-value">{buoy.state.toUpperCase()}</span></div>
+            <div className="ios-row"><span className="row-label">Status</span>
+              <span className="row-value buoy-status" data-testid="buoy-status" data-health={health} style={{ color: BUOY_STATUS_COLOR[health] }}>{BUOY_STATUS_LABEL[health].toUpperCase()}</span></div>
+            <div className="ios-row"><span className="row-label">Channel</span><span className="row-value" data-testid="buoy-fe-channel">{health === 'detuned' ? '—' : (fe?.channel ?? buoy.channel)}</span></div>
+            <div className="ios-row buoy-actions" role="group" aria-label="Channel tune">
+              <button type="button" className="btn" data-testid="buoy-detune" disabled={!canDetune}
+                onClick={() => detune.detune(buoy.id)} title="Detune: stop feeding and free the RX channel">DETUNE</button>
+              <button type="button" className="btn primary" data-testid="buoy-tune" disabled={!canTune}
+                onClick={() => detune.tune(buoy.id)} title="Tune: re-acquire the lowest free RX channel">TUNE</button>
+            </div>
+            <div className="ios-row"><span className="row-label">Engine state</span><span className="row-value">{buoy.state.toUpperCase()}</span></div>
             <div className="ios-row"><span className="row-label">Hydrophone depth</span><span className="row-value">{buoy.hydrophoneDepthM} m</span></div>
             <div className="ios-row"><span className="row-label">Battery</span><span className="row-value">{(buoy.batteryFrac * 100).toFixed(0)}%</span></div>
             {buoy.rx && <div className="ios-row"><span className="row-label">AGC gain</span><span className="row-value">{buoy.rx.gainDb >= 0 ? '+' : ''}{buoy.rx.gainDb.toFixed(0)} dB{buoy.rx.overload ? ' · OVLD' : ''}</span></div>}
             <div className="ios-row"><span className="row-label">Gram</span><span className="row-value readout">{viewReadout}</span></div>
           </div>
-        ) : <p className="ios-foot">No buoy on this channel yet.</p>}
+          )
+        })() : <p className="ios-foot">No buoy on this channel yet.</p>}
       </Sheet>
       <Sheet open={layersSheet} onClose={() => setLayersSheet(false)} title="Plot layers" testId="layers-sheet" detents={['medium', 'large']}>
         <div className="ios-group">
@@ -767,6 +818,23 @@ export default function App() {
               {(['auto', 'manual', 'both'] as const).map((f) => <button key={f} aria-pressed={fixSource === f} onClick={() => setFixSource(f)}
                 title={f === 'auto' ? 'Fix from auto bearings' : f === 'manual' ? 'Fix from manual bearings' : 'Fix from both (manual overrides auto per buoy)'}>{f === 'auto' ? 'Auto' : f === 'manual' ? 'Manual' : 'Both'}</button>)}
             </div></div>
+        </div>
+        <div className="ios-section" style={{ marginTop: 12 }}>
+          <h3>Buoy status</h3>
+          <div className="ios-group" data-testid="buoy-status-legend">
+            {([
+              ['working', 'Working — feeding'],
+              ['detuned', 'Detuned / integrating'],
+              ['dead', 'Dead'],
+              ['error', 'Error'],
+            ] as const).map(([h, label]) => (
+              <div key={h} className="ios-row legend-row" data-health={h}>
+                <span className="status-swatch" style={{ background: BUOY_STATUS_COLOR[h as BuoyHealth] }} aria-hidden />
+                <span className="row-label">{label}</span>
+              </div>
+            ))}
+          </div>
+          <p className="ios-foot">DETUNE frees the RX channel; TUNE re-acquires the lowest free. Red follows engine life; yellow is an FE/test hook until the engine exposes faults.</p>
         </div>
       </Sheet>
       <Sheet open={trafficSheet} onClose={() => setTrafficSheet(false)} title="Surface traffic" testId="traffic-sheet" detents={['medium']}>
