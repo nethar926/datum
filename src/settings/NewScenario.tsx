@@ -67,7 +67,7 @@ export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams)
             <div className="ns-seed">
               <input id="ns-seed" data-testid="ns-seed" className={seedBad ? 'bad' : ''} inputMode="numeric" autoComplete="off" spellCheck={false} value={seedText}
                 aria-invalid={seedBad} aria-describedby="ns-seed-note" onChange={(e) => typeSeed(e.target.value)} onFocus={(e) => e.target.select()} />
-              <button className="btn" data-testid="ns-seed-new" aria-label="New random seed" onClick={() => setSeed(randomSeed())}>New</button>
+              <button className="btn ns-randomize" data-testid="ns-seed-new" aria-label={`Randomize within ${plantNow === 'any' ? 'any plant' : plantNow === 'diesel' ? 'diesel' : 'nuclear'}`} title="New random scenario, same plant filter" onClick={() => setSeed(randomSeed())}>⚄ Randomize</button>
               {prefs.lastSeed !== undefined && prefs.lastSeed !== seed && <button className="btn" data-testid="ns-seed-last" onClick={() => setSeed(prefs.lastSeed!)}>Last {prefs.lastSeed}</button>}
             </div>
             <p id="ns-seed-note" className={`ns-seed-note${seedBad ? ' bad' : ''}`}>{seedBad ? 'Seed is a whole number, 0 to 4294967295' : 'Same seed and settings replay the same scenario'}</p>

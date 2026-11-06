@@ -361,3 +361,4 @@ button, select { font: inherit; color: inherit; }
 .seed-chip b { font-weight: 600; }
 .seed-chip.copied { border-color: var(--accent, #3a9d5d); }
 .seed-ok { color: var(--accent, #3a9d5d); font-size: 11px; }
+.ns-randomize { font-weight: 600; }

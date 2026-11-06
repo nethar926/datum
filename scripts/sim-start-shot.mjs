@@ -29,6 +29,12 @@ try {
     await page.locator('[data-testid=ns-advanced]').tap(); await page.waitForTimeout(250)
     ok(await page.locator('[data-testid=ns-adv]').count() === 1, `${slug}: advanced did not open`)
     await page.screenshot({ path: `docs/m3-simstart-${slug}-advanced.png` })
+    for (let i = 0; i < 5; i++) {
+      const before = await page.locator('[data-testid=ns-seed]').inputValue()
+      await page.locator('[data-testid=ns-seed-new]').tap(); await page.waitForTimeout(80)
+      ok(await page.locator('[data-testid=ns-seed]').inputValue() !== before, `${slug}: Randomize kept the seed`)
+      ok(/NUKE/.test(await page.locator('[data-testid=ns-summary]').innerText()), `${slug}: Randomize left the NUKE filter`)
+    }
     await page.locator('[data-testid=ns-seed]').fill('12x'); await page.waitForTimeout(100)
     ok(await page.locator('[data-testid=ns-start]').isDisabled(), `${slug}: bad seed did not disable Start`)
     await page.locator('[data-testid=ns-seed]').fill('#12,345'); await page.waitForTimeout(100)
