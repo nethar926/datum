@@ -72,6 +72,7 @@ button, select { font: inherit; color: inherit; }
 /* Compact DIFAR wheel opener in the gram header (44 pt glass). Icon must be optically centered — beat panel-head .btn padding. */
 .wheel-btn,
 .app.ios .panel-head .btn.wheel-btn,
+.app.ios .chrome-bar .btn.wheel-btn,
 .btn.icon.wheel-btn {
   position: relative;
   box-sizing: border-box;

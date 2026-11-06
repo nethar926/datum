@@ -8,7 +8,7 @@
 body { background: var(--sys-grouped); color: var(--sys-label); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif; }
 
 /* ---------- App frame: nav / workspace / dock ---------- */
-.app.ios { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); gap: 8px;
+.app.ios { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); gap: 8px;
   height: 100%; height: 100dvh; overflow: hidden; position: relative; background: var(--sys-grouped);
   padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left)); }
 
@@ -35,7 +35,7 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
    rows), so a backdrop blur there samples a flat colour and costs a full re-filter on every repaint for no
    visible change. Same material without the backdrop pass; real backdrop stays on scrolling navs, sheets and
    the floating plot buttons. */
-.app.ios > .navbar::before, .app.ios > .dock .glass::before { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.app.ios > .navbar::before, .app.ios > .chrome-bar::before, .app.ios > .dock .glass::before { -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* Reduced transparency / low power: more opaque, no blur. */
 :root[data-glass='reduced'] .glass::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
 @media (prefers-reduced-transparency: reduce) { :root:not([data-glass='full']) .glass::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; } }
@@ -82,7 +82,8 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 :root:is([data-drop='armed'], [data-drop='placing'], [data-drop='preview']) .app.ios.layout-phonePortrait[data-split='y'] .workspace { grid-template-rows: minmax(0, .38fr) var(--split-handle) minmax(0, .62fr); }
 .app.ios .workspace-left { display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; min-width: 0; }
 .app.ios[data-tab='plot'] .workspace { grid-template-rows: minmax(0, 1fr) !important; grid-template-columns: minmax(0, 1fr) !important; }
-.app.ios[data-tab='plot'] .workspace-left, .app.ios[data-tab='plot'] .split-handle { display: none; }
+.app.ios[data-tab='plot'] .workspace-left, .app.ios[data-tab='plot'] .split-handle, .app.ios[data-tab='plot'] .plot-grabber, .app.ios[data-tab='plot'] .hinge-fold { display: none; }
+.app.ios[data-tab='plot'] .stack-plot { transform: none !important; }
 .app.ios:is([data-tab='cuts'], [data-tab='settings']) .workspace { visibility: hidden; }
 
 .split-handle { position: relative; display: grid; place-items: center; touch-action: none; cursor: row-resize; z-index: 4; -webkit-user-select: none; user-select: none; }
@@ -97,7 +98,8 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 
 /* Instrument cards: opaque, dark, continuous-corner. */
 .app.ios .panel { background: var(--sys-cell); border: 0; border-radius: 22px; box-shadow: var(--shadow-panel); overflow: hidden; min-height: 0; min-width: 0; }
-.app.ios .panel.gram-panel { grid-template-rows: auto minmax(0, 1fr); }
+.app.ios .panel.gram-panel { grid-template-rows: minmax(0, 1fr); }
+.app.ios .panel.gram-panel.gram-box { /* display box only — chrome lives in .chrome-bar */ }
 .app.ios .panel.tac-panel { grid-template-rows: minmax(0, 1fr); }
 .app.ios .panel-body { background: var(--gram-bg); }
 .app.ios .tac-panel .panel-body { background: var(--plot-bg); }
@@ -302,12 +304,15 @@ button.ios-row:active { background: var(--sys-fill); }
   .tabbar, .tabbar button, .tool, .glass-btn, .split-handle i, .app.ios .workspace.settling, .sheet, .sheet-scrim, .ios-switch::after, .nav-title, .splash-root, .splash-card { transition: none !important; }
 }
 
-/* Grid areas so screens that hide the nav bar never shift the dock. */
-.app.ios { grid-template-areas: 'nav' 'main' 'dock'; }
+/* Grid areas so screens that hide the nav bar never shift the dock. Chrome bar is a sibling of the boxes. */
+.app.ios { grid-template-areas: 'nav' 'chrome' 'main' 'dock'; }
 .app.ios > .navbar { grid-area: nav; }
+.app.ios > .chrome-bar { grid-area: chrome; }
 .app.ios > .workspace { grid-area: main; }
 .app.ios > .dock { grid-area: dock; }
 .app.ios > .cmp-wrap { display: contents; }
+.app.ios:is([data-tab='cuts'], [data-tab='settings'], [data-tab='plot']) { grid-template-rows: auto 0 minmax(0, 1fr) auto; }
+.app.ios:is([data-tab='cuts'], [data-tab='settings'], [data-tab='plot']) > .chrome-bar { display: none; }
 
 /* ---------- Cuts tab: picker + player ---------- */
 .cut-player { position: absolute; inset: 0; z-index: 5; display: grid;
@@ -526,4 +531,135 @@ button.ios-row:active { background: var(--sys-fill); }
 }
 .app.ios.layout-phonePortrait[data-demon='1'] .workspace-left {
   grid-template-rows: minmax(0, 1fr) minmax(120px, 0.7fr);
+}
+
+
+/* ---------- LAY1: detached chrome bar (sibling of display boxes) ---------- */
+.chrome-bar {
+  display: flex; align-items: center; min-height: 52px; max-height: 52px; padding: 0;
+  border-radius: 18px; overflow: hidden; z-index: 6; position: relative;
+  /* Stable row: never reflows when the workspace split changes. */
+  flex: 0 0 auto;
+}
+.chrome-bar .chrome-scroll {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 52px; max-height: 52px;
+  padding: 4px 6px 4px 14px; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; touch-action: pan-x; background: transparent; border-bottom: 0;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+.chrome-bar .chrome-scroll::-webkit-scrollbar { display: none; }
+.chrome-bar .chrome-scroll > * { flex: 0 0 auto; }
+.app.ios.layout-wide .chrome-bar { max-height: none; }
+.app.ios.layout-wide .chrome-bar .chrome-scroll {
+  flex-wrap: wrap; max-height: none; row-gap: 6px; padding-block: 6px;
+  -webkit-mask-image: none; mask-image: none;
+}
+/* Wheel slot: reserved centered cell so the control is never flush left/right. */
+.wheel-slot {
+  display: grid; place-items: center; place-content: center;
+  width: 48px; min-width: 48px; height: 44px; flex: 0 0 48px;
+}
+.wheel-slot:empty { display: none; width: 0; min-width: 0; flex-basis: 0; }
+.chrome-bar .panel-head h2 { font: 600 13px/1 var(--font-mono); letter-spacing: .04em; color: var(--sys-label); }
+.chrome-bar .panel-head .readout { color: var(--sys-label-2); margin-left: auto; padding-right: 10px; }
+.chrome-bar .panel-head .btn { min-height: 44px; border-radius: 999px; border: 0; background: var(--sys-fill); color: var(--sys-label); padding: 0 14px; }
+.chrome-bar .panel-head .btn.vernier { color: var(--sys-label); background: var(--sys-fill); border: 1px dashed var(--sys-label-3); font: 600 11px/1 var(--font-mono); }
+.chrome-bar .panel-head .btn.vernier.on { background: var(--tint-fill); border: 1px solid var(--tint); }
+.chrome-bar .panel-head .btn.vernier.pick { background: var(--tint-fill); border-style: solid; border-color: var(--tint); }
+.chrome-bar .panel-head .btn.center-btn { background: var(--tint); color: #fff; border: 0; }
+.chrome-bar .info-btn { width: 44px; padding: 0; display: inline-grid; place-items: center; color: var(--tint); background: transparent !important; }
+.chrome-bar .hz-field input { background: var(--sys-fill); color: var(--sys-label); border: 0; border-radius: 999px; padding: 0 14px; }
+.app.ios.layout-phonePortrait .chrome-bar .panel-head h2,
+.app.ios.layout-phoneLandscape .chrome-bar .panel-head h2,
+.app.ios.layout-phonePortrait .chrome-bar .panel-head .readout,
+.app.ios.layout-phoneLandscape .chrome-bar .panel-head .readout { display: none; }
+.app.ios.layout-phoneLandscape .chrome-bar { min-height: 44px; max-height: 44px; }
+.app.ios.layout-phoneLandscape .chrome-bar .chrome-scroll { min-height: 44px; max-height: 44px; padding-block: 0; }
+
+/* Full-width tools (Duo / wide): no overflow chevron. */
+.toolbar-glass.full { overflow: visible; }
+.toolbar-glass.full .tool-scroll-full {
+  display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0;
+  height: 100%; flex-wrap: wrap; overflow: visible;
+}
+
+/* ---------- LAY1: phone-portrait plot detents (translate push) ---------- */
+.app.ios .workspace.detent-stack {
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+  overflow: hidden; position: relative;
+}
+.app.ios .workspace.detent-stack > .workspace-left,
+.app.ios .workspace.detent-stack > .stack-gram {
+  grid-area: 1 / 1; min-height: 0; min-width: 0;
+  transform: translate3d(0, calc(var(--plot-lift, 0) * -100%), 0);
+  transition: transform var(--detent-ms, 180ms) var(--spring);
+  will-change: transform; z-index: 1;
+}
+.app.ios .workspace.detent-stack > .stack-plot {
+  grid-area: 1 / 1; min-height: 0; min-width: 0; height: 100%;
+  transform: translate3d(0, calc((1 - var(--plot-lift, 0)) * 100%), 0);
+  transition: transform var(--detent-ms, 180ms) var(--spring);
+  will-change: transform; z-index: 2;
+}
+.app.ios .workspace.detent-stack.dragging-detent > .stack-gram,
+.app.ios .workspace.detent-stack.dragging-detent > .stack-plot,
+.app.ios .workspace.detent-stack:has(.plot-grabber:active) > .stack-gram,
+.app.ios .workspace.detent-stack:has(.plot-grabber:active) > .stack-plot { transition: none; }
+.app.ios .workspace.detent-stack > .plot-grabber {
+  position: absolute; left: 0; right: 0; z-index: 5;
+  /* Sit on the top edge of the sliding plot. */
+  top: calc((1 - var(--plot-lift, 0)) * 100%);
+  transform: translateY(-50%);
+  height: var(--split-handle); cursor: row-resize;
+  transition: top var(--detent-ms, 180ms) var(--spring);
+}
+.app.ios .workspace.detent-stack:has(.plot-grabber:active) > .plot-grabber { transition: none; }
+/* Hide the normal split handle styles' row contribution — grabber is absolute. */
+.app.ios .workspace.detent-stack > .split-handle:not(.plot-grabber) { display: none; }
+
+/* ---------- LAY1: Duo / foldable hinge via viewport segments ---------- */
+/* Full-bleed horizontally so segment pixel widths (which span the visual viewport) fit without
+   overflowing past the padded content box. Clamp in layoutMath already rejects span > innerWidth. */
+.app.ios[data-segments='hinge'] {
+  padding-left: 0; padding-right: 0;
+}
+.app.ios .workspace.hinge-split {
+  display: grid; gap: 0; overflow: hidden; width: 100%; max-width: 100%;
+  grid-template-columns: minmax(0, var(--seg-a-w, 1fr)) var(--seg-fold-w, 0px) minmax(0, var(--seg-b-w, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+}
+@supports (width: env(viewport-segment-width 0 0)) {
+  @media (horizontal-viewport-segments: 2) {
+    .app.ios .workspace.hinge-split {
+      grid-template-columns:
+        minmax(0, env(viewport-segment-width 0 0))
+        calc(env(viewport-segment-left 1 0) - env(viewport-segment-right 0 0))
+        minmax(0, env(viewport-segment-width 1 0));
+    }
+  }
+}
+.app.ios .workspace.hinge-split > .workspace-left {
+  grid-column: 1; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden;
+  /* Margin (not padding) so the opaque panel border sits inside the segment, not flush to the bezel. */
+  margin-left: max(8px, env(safe-area-inset-left, 0px));
+}
+.app.ios .workspace.hinge-split > .hinge-fold {
+  grid-column: 2; min-width: 0; pointer-events: none; background: transparent;
+}
+.app.ios .workspace.hinge-split > .stack-plot {
+  grid-column: 3; min-width: 0; min-height: 0; max-width: 100%; overflow: hidden;
+  margin-right: max(8px, env(safe-area-inset-right, 0px));
+}
+.app.ios .workspace.hinge-split > .split-handle { display: none; }
+.app.ios[data-segments='hinge'] > .navbar,
+.app.ios[data-segments='hinge'] > .chrome-bar,
+.app.ios[data-segments='hinge'] > .dock {
+  margin-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app.ios .workspace.detent-stack > .stack-gram,
+  .app.ios .workspace.detent-stack > .stack-plot,
+  .app.ios .workspace.detent-stack > .plot-grabber { transition: none !important; }
 }

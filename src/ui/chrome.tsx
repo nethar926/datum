@@ -80,10 +80,13 @@ const TAB_ICON: Record<Tab, (p: { size?: number }) => ReactNode> = { live: IcLiv
  * Floating glass tab bar capsule. `minimized` (compact widths, while the user works the gram) collapses it to the
  * active tab only, iOS 26 style; tapping the mini capsule expands it again.
  */
-export function TabBar({ tab, onTab, minimized, onExpand }: { tab: Tab; onTab: (t: Tab) => void; minimized: boolean; onExpand: () => void }) {
+export function TabBar({ tab, onTab, minimized, onExpand, hide = [] }: {
+  tab: Tab; onTab: (t: Tab) => void; minimized: boolean; onExpand: () => void; /** Tabs omitted from the bar (e.g. Plot on phone portrait). */ hide?: readonly Tab[]
+}) {
+  const tabs = TABS.filter((t) => !hide.includes(t))
   return (
     <nav className={`tabbar glass${minimized ? ' min' : ''}`} role="tablist" aria-label="DATUM" data-testid="tabbar" data-min={minimized ? '1' : '0'}>
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const I = TAB_ICON[t], on = t === tab
         return (
           <button key={t} role="tab" aria-selected={on} aria-label={TAB_LABEL[t]} data-testid={`tab-${t}`} className={on ? 'on' : undefined}

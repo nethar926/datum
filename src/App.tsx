@@ -42,7 +42,11 @@ import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
-import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, useAppearance, useGlass } from './ui/chrome'
+import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, useAppearance, useGlass } from './ui/chrome'
+import { ToolsToolbar } from './ui/ToolsToolbar'
+import { PlotGrabber } from './touch/PlotGrabber'
+import { useViewportSegments } from './touch/useViewportSegments'
+import { DETENT_SPRING_MS, detentProgress, segmentCssVars, type PlotDetent } from './touch/layoutMath'
 import { CutController } from './cuts/session'
 import { CutsTab } from './cuts/CutsTab'
 import { listCutSeeds } from './cuts/api'
@@ -50,7 +54,7 @@ import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcL
 import { Splash } from './ui/Splash'
 import { hardReloadApp } from './ui/appReload'
 import { useStandalone, useUpdateAvailable } from './ui/useAppUpdate'
-import { SPLIT_DEFAULT_H, SPLIT_DEFAULT_V, SPLIT_KEY_H, SPLIT_KEY_V, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
+import { SPLIT_DEFAULT_H, SPLIT_KEY_H, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
 import { useListen } from './audio/useListen'
 import { FOCUS_HALF_WIDTHS } from './audio/focus'
@@ -199,11 +203,31 @@ export default function App() {
   const standalone = useStandalone()
   const updateAvailable = useUpdateAvailable()
   const glass = useGlass()
-  const portrait = usePortrait(), splitAxis: 'x' | 'y' = portrait ? 'y' : 'x'
-  const splitKey = splitAxis === 'y' ? SPLIT_KEY_V : SPLIT_KEY_H, splitDefault = splitAxis === 'y' ? SPLIT_DEFAULT_V : SPLIT_DEFAULT_H
+  const portrait = usePortrait()
+  // SplitHandle is always side-by-side (landscape / Duo / iPad). Phone portrait uses plot detents instead.
+  const splitAxis: 'x' | 'y' = 'x'
+  const splitKey = SPLIT_KEY_H, splitDefault = SPLIT_DEFAULT_H
   const [split, setSplit] = useState(() => loadSplit(splitKey, splitDefault))
   useEffect(() => { setSplit(loadSplit(splitKey, splitDefault)) }, [splitKey, splitDefault])
   const wsRef = useRef<HTMLElement>(null)
+  // Phone-portrait plot sheet (gram / half / plot). Landscape and iPad keep the resizable SplitHandle.
+  const [plotDetent, setPlotDetent] = useState<PlotDetent>('gram')
+  const [plotProgress, setPlotProgress] = useState<number | null>(null)
+  const liveProgress = plotProgress ?? detentProgress(plotDetent)
+  const commitDetent = (d: PlotDetent) => { setPlotDetent(d); setPlotProgress(null) }
+  const { split: segSplit } = useViewportSegments()
+  const hinge = segSplit.mode === 'hinge'
+  const segVars = hinge ? segmentCssVars(segSplit) : null
+  const useDetents = layout === 'phonePortrait' && !hinge
+  const fullTools = hinge || layout === 'wide'
+  // Phone portrait: no Plot tab — open the plot via the grabber instead.
+  useEffect(() => {
+    if (layout === 'phonePortrait' && tab === 'plot') { setTab('live'); setPlotDetent('plot'); setPlotProgress(null) }
+  }, [layout, tab])
+  // Leaving portrait resets the sheet so landscape/iPad start from the saved split.
+  useEffect(() => {
+    if (layout !== 'phonePortrait') { setPlotDetent('gram'); setPlotProgress(null) }
+  }, [layout])
   const compact = layout !== 'wide'
   const [tabMin, setTabMin] = useState(false)
   const tabMinTimer = useRef(0)
@@ -551,40 +575,40 @@ export default function App() {
     if (freshCount >= 2) onLayFix()
     else fixStore.setArmed(false)
   }
+  const fixToolBtn = (
+    <button className={`tool fix-pin${fixStore.armed ? ' armed' : ''}`} aria-pressed={fixStore.armed} aria-label="FIX" data-testid="fix-tool"
+      onClick={onFixTool}
+      title="FIX: with ≥2 fresh DIFAR bearings, tap to lay a cross-fix (error ellipse + CSE/SPD legs)"><IcFix /><span>FIX</span></button>
+  )
   const toolsRow = (
-    <div className="toolbar-glass glass" role="toolbar" aria-label="Gram tools" data-testid="gram-tools">
-      <button className={`tool fix-pin${fixStore.armed ? ' armed' : ''}`} aria-pressed={fixStore.armed} aria-label="FIX" data-testid="fix-tool"
-        onClick={onFixTool}
-        title="FIX: with ≥2 fresh DIFAR bearings, tap to lay a cross-fix (error ellipse + CSE/SPD legs)"><IcFix /><span>FIX</span></button>
-      <ToolScroll testId="gram-tools-scroll">
-        <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)} onClick={onBrgButton}
-          title="Hover a DIFAR gram line and press B to send that bearing. On touch: BRG then tap the gram (or a buoy on the plot to aim). Esc cancels.">
-          <IcBrg /><span>{armLabel(brgArm)}</span></button>
-        <button className="tool" aria-pressed={dopMode} onClick={() => armDop(!dopMode)} data-testid="dop-tool" aria-label="DOP"
-          title="Doppler ruler: tap a line at CPA to place f0, drag f1 in both axes (f2 mirrors through f0/CPA), or drag f2 (f1 mirrors). Keys: arrows nudge, Shift ×10, Esc clears.">
-          <IcDop /><span>DOP</span></button>
-        {ruler.placed && <button className="tool sub" onClick={() => applyCenter(ruler.s.f0Hz)} data-testid="dop-center" title="Center the gram on f0 (C while DOP is armed)."><IcTarget /><span>CTR f0</span></button>}
-        {ruler.placed && !ruler.s.linked && <button className="tool sub" onClick={() => ruler.relink()} data-testid="dop-link" title="Re-link f2 to the mirror of f1"><IcLink /><span>Link</span></button>}
-        {ruler.placed && <button className="tool sub" onClick={() => ruler.clear()} data-testid="dop-clear" aria-label="Clear Doppler ruler"><IcTrash /><span>Clear</span></button>}
-        <button className="tool" aria-pressed={tool === 'harm'} aria-label="HARM" onClick={() => {
-          if (tool === 'harm') { setTool('select'); return }
-          setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('harm')
-        }} title="Harmonic cursor: tap a line to set the fundamental, drag any marker to adjust, PROBE (or shift-click) another line for its ratio"><IcHarm /><span>HARM</span></button>
-        {harmF0 !== null && <button className="tool sub" aria-pressed={harmProbeOn} onClick={() => {
-          if (!harmProbeOn) { setBrgArm(ARM_IDLE); if (dopMode) setTool('harm') }
-          setHarmProbeOn((v) => !v)
-        }} title="Next tap sets a ratio probe" data-testid="harm-probe-btn" aria-label="PROBE"><IcProbe /><span>PROBE</span></button>}
-        {harmF0 !== null && <button className="tool sub" onClick={clearHarm} aria-label="Clear harmonics" data-testid="harm-clear"><IcTrash /><span>Clear</span></button>}
-        <button className="tool" aria-pressed={tool === 'lm'} aria-label="LM" onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)"><IcLm /><span>LM</span></button>
-        <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
-          title="HORZ: horizontal hairline on the cursor with the Zulu time of the hover row"><IcHorz /><span>HORZ</span></button>
-        <div className="contrast tool-contrast" data-testid="contrast">
-          <button className="tool contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label="Reset contrast to 1.0" title="Gram contrast (tap to reset to 1.0×)" data-testid="contrast-reset"><IcContrast /><span>CON {contrast.toFixed(2)}×</span></button>
-          <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="contrast-slider"
-            onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
-        </div>
-      </ToolScroll>
-    </div>
+    <ToolsToolbar testId="gram-tools" full={fullTools} leading={fixToolBtn}>
+      <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)} onClick={onBrgButton}
+        title="Hover a DIFAR gram line and press B to send that bearing. On touch: BRG then tap the gram (or a buoy on the plot to aim). Esc cancels.">
+        <IcBrg /><span>{armLabel(brgArm)}</span></button>
+      <button className="tool" aria-pressed={dopMode} onClick={() => armDop(!dopMode)} data-testid="dop-tool" aria-label="DOP"
+        title="Doppler ruler: tap a line at CPA to place f0, drag f1 in both axes (f2 mirrors through f0/CPA), or drag f2 (f1 mirrors). Keys: arrows nudge, Shift ×10, Esc clears.">
+        <IcDop /><span>DOP</span></button>
+      {ruler.placed && <button className="tool sub" onClick={() => applyCenter(ruler.s.f0Hz)} data-testid="dop-center" title="Center the gram on f0 (C while DOP is armed)."><IcTarget /><span>CTR f0</span></button>}
+      {ruler.placed && !ruler.s.linked && <button className="tool sub" onClick={() => ruler.relink()} data-testid="dop-link" title="Re-link f2 to the mirror of f1"><IcLink /><span>Link</span></button>}
+      {ruler.placed && <button className="tool sub" onClick={() => ruler.clear()} data-testid="dop-clear" aria-label="Clear Doppler ruler"><IcTrash /><span>Clear</span></button>}
+      <button className="tool" aria-pressed={tool === 'harm'} aria-label="HARM" onClick={() => {
+        if (tool === 'harm') { setTool('select'); return }
+        setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('harm')
+      }} title="Harmonic cursor: tap a line to set the fundamental, drag any marker to adjust, PROBE (or shift-click) another line for its ratio"><IcHarm /><span>HARM</span></button>
+      {harmF0 !== null && <button className="tool sub" aria-pressed={harmProbeOn} onClick={() => {
+        if (!harmProbeOn) { setBrgArm(ARM_IDLE); if (dopMode) setTool('harm') }
+        setHarmProbeOn((v) => !v)
+      }} title="Next tap sets a ratio probe" data-testid="harm-probe-btn" aria-label="PROBE"><IcProbe /><span>PROBE</span></button>}
+      {harmF0 !== null && <button className="tool sub" onClick={clearHarm} aria-label="Clear harmonics" data-testid="harm-clear"><IcTrash /><span>Clear</span></button>}
+      <button className="tool" aria-pressed={tool === 'lm'} aria-label="LM" onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)"><IcLm /><span>LM</span></button>
+      <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
+        title="HORZ: horizontal hairline on the cursor with the Zulu time of the hover row"><IcHorz /><span>HORZ</span></button>
+      <div className="contrast tool-contrast" data-testid="contrast">
+        <button className="tool contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label="Reset contrast to 1.0" title="Gram contrast (tap to reset to 1.0×)" data-testid="contrast-reset"><IcContrast /><span>CON {contrast.toFixed(2)}×</span></button>
+        <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="contrast-slider"
+          onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
+      </div>
+    </ToolsToolbar>
   )
   const viewReadout = cfg ? `${view.lo.toFixed(viewDigits)}–${view.hi.toFixed(viewDigits)} HZ  Δf ${cfg.fBin < 0.1 ? cfg.fBin.toFixed(3) : cfg.fBin.toFixed(2)}` : 'STARTING'
   const listenBtn = (
@@ -635,6 +659,7 @@ export default function App() {
 
   return (
     <div className={`app ios layout-${layout}`} data-layout={layout} data-gram-dir={gramDir} data-tab={tab} data-split={splitAxis}
+      data-detent={useDetents ? plotDetent : undefined} data-segments={hinge ? 'hinge' : undefined} data-portrait={portrait ? '1' : '0'}
       data-tabbar={tabMin ? 'min' : 'full'} data-fix-armed={fixStore.armed ? '1' : '0'} data-demon={demonCfgs.length ? '1' : '0'}>
       <GlassDefs />
       <Splash />
@@ -656,21 +681,20 @@ export default function App() {
       )}
       {showCmp && <div className={phone ? 'cmp-wrap cmp-sheet' : 'cmp-wrap'}><Compendium onClose={() => setShowCmp(false)} /></div>}
 
-      <main ref={wsRef} className="workspace" data-testid="workspace" aria-hidden={!instrumentsVisible || undefined}
-        style={{ '--split-a': `${split}fr`, '--split-b': `${1 - split}fr` } as React.CSSProperties}
-        onPointerDownCapture={onWorkspaceDown} onPointerUpCapture={onWorkspaceUp} onPointerCancelCapture={onWorkspaceUp}>
-        <div className="workspace-left">
-        <section className="panel gram-panel">
-          <div className="panel-head gram-head">
+      {tab === 'live' && (
+        <div className="chrome-bar glass" role="toolbar" aria-label="Gram chrome" data-testid="chrome-bar">
+          <div className="chrome-scroll panel-head gram-head">
             <h2 data-testid="gram-title">{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'} · {filter}</h2>
             <div className="seg" role="group" aria-label="Gram mode">
               <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title={`Amplitude as ${PALETTE_LABEL[palette].toLowerCase()} brightness`}>LOFAR</button>
               <button aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
             </div>
-            {gramMode === 'difar' && (
-              <DifarWheelButton omni={!!buoy && buoy.kind !== 'difar'} wheel={wheel} open={wheelOpen}
-                onOpen={() => setWheelOpen(true)} />
-            )}
+            <div className="wheel-slot" data-testid="wheel-slot">
+              {gramMode === 'difar' && (
+                <DifarWheelButton omni={!!buoy && buoy.kind !== 'difar'} wheel={wheel} open={wheelOpen}
+                  onOpen={() => setWheelOpen(true)} />
+              )}
+            </div>
             <div className="seg filter-seg" role="group" aria-label="Gram filter" data-testid="filter-seg">
               <button aria-pressed={wantFilter === 'NB'} onClick={() => setFilter('NB')} title="Narrowband: background-normalized (TPSW), 0–30 dB above the local noise">NB</button>
               <button aria-pressed={wantFilter === 'BB'} onClick={() => setFilter('BB')} title="Broadband: absolute level, 40–110 dB">BB</button>
@@ -719,6 +743,22 @@ export default function App() {
             <span className="readout" data-testid="view-readout">{viewReadout}</span>
             {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
           </div>
+        </div>
+      )}
+
+      <main ref={wsRef} className={`workspace${useDetents ? ' detent-stack' : ''}${hinge ? ' hinge-split' : ''}`} data-testid="workspace"
+        data-detent={useDetents ? plotDetent : undefined}
+        aria-hidden={!instrumentsVisible || undefined}
+        style={{
+          '--split-a': `${split}fr`,
+          '--split-b': `${1 - split}fr`,
+          '--plot-lift': String(liveProgress),
+          '--detent-ms': `${DETENT_SPRING_MS}ms`,
+          ...(segVars ?? {}),
+        } as React.CSSProperties}
+        onPointerDownCapture={onWorkspaceDown} onPointerUpCapture={onWorkspaceUp} onPointerCancelCapture={onWorkspaceUp}>
+        <div className="workspace-left stack-gram">
+        <section className="panel gram-panel gram-box">
           <div className="panel-body">
             {lofarCfgs.length > 0 && tab !== 'cuts' && (
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
@@ -780,8 +820,11 @@ export default function App() {
             streamIndex={Math.max(0, demonCfgs.findIndex((c) => c.channel === cfg?.channel))} />
         )}
         </div>
-        <SplitHandle axis={splitAxis} frac={split} onFrac={setSplit} storeKey={splitKey} targetRef={wsRef} defaultFrac={splitDefault} />
-        <section className="panel tac-panel" data-testid="tac-panel">
+        {!useDetents && !hinge && (
+          <SplitHandle axis={splitAxis} frac={split} onFrac={setSplit} storeKey={splitKey} targetRef={wsRef} defaultFrac={splitDefault} />
+        )}
+        {hinge && <div className="hinge-fold" aria-hidden data-testid="hinge-fold" />}
+        <section className="panel tac-panel stack-plot" data-testid="tac-panel">
           <div className="panel-body plot">
             <div className="plot-corner readout">
               <span className="sim-clock" data-testid="sim-clock">T+{fmtT(st.simT)}</span>
@@ -819,6 +862,14 @@ export default function App() {
             <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} detune={detune} />
           </div>
         </section>
+        {useDetents && (
+          <PlotGrabber
+            detent={plotDetent}
+            progress={liveProgress}
+            onLive={setPlotProgress}
+            onCommit={commitDetent}
+          />
+        )}
       </main>
 
       {tab === 'cuts' && (
@@ -947,7 +998,8 @@ export default function App() {
 
       <div className="dock" data-testid="dock" data-fix-armed={fixStore.armed ? '1' : '0'}>
         {!(fixStore.armed && (tab === 'live' || tab === 'plot')) && (
-          <TabBar tab={tab} onTab={(t) => { setTab(t) }} minimized={tabMin} onExpand={() => { clearTimeout(tabMinTimer.current); setTabMin(false) }} />
+          <TabBar tab={tab} onTab={(t) => { setTab(t) }} minimized={tabMin} onExpand={() => { clearTimeout(tabMinTimer.current); setTabMin(false) }}
+            hide={layout === 'phonePortrait' ? (['plot'] as const) : []} />
         )}
         {fixStore.armed && (tab === 'live' || tab === 'plot') ? (
           <FixBar store={fixStore} onLay={onLayFix} freshCount={freshCount} onDone={() => fixStore.setArmed(false)} />
