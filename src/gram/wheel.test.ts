@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_WHEEL, WHEEL_MUTED_RGB, WHEEL_NULL_RGB, difarRgb, difarWheelLut, quantizeBearing, sectorOf, wheelRgb } from '../gl/colormap'
 import { summary } from './DifarApplet'
+import { sectorDivisionStrokeCount, showsSectorDivisions } from './wheelSettings'
 import { wheelConic } from './DifarLegend'
 import { isDefaultWheel, sanitizeWheel, toggleSector } from './wheelSettings'
 
@@ -57,5 +58,16 @@ describe('DIFAR operator wheel', () => {
   it('summary names the state', () => {
     expect(summary(DEFAULT_WHEEL)).toBe('CONT · FULL')
     expect(summary(W({ steps: 8, look: 'bw', rotDeg: 90, isolated: 1, nulled: 1 << 4 }))).toBe('8 STEP · B&W · RED 090° · ISO N · NULL E')
+  })
+  it('360° continuous mode draws no sector division strokes; stepped modes keep all 16', () => {
+    expect(showsSectorDivisions(360)).toBe(false)
+    expect(showsSectorDivisions(16)).toBe(true)
+    expect(showsSectorDivisions(8)).toBe(true)
+    expect(sectorDivisionStrokeCount(360)).toBe(0)
+    expect(sectorDivisionStrokeCount(16)).toBe(16)
+    expect(sectorDivisionStrokeCount(8)).toBe(16)
+    // Marked null/isolate sectors still stroke in continuous mode so the operator can see them.
+    expect(sectorDivisionStrokeCount(360, 1 << 4, 0)).toBe(1)
+    expect(sectorDivisionStrokeCount(360, 1 << 0, 1 << 8)).toBe(2)
   })
 })

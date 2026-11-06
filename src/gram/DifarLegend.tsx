@@ -14,17 +14,34 @@ export const DIFAR_CONIC = (() => {
   return `conic-gradient(from 0deg, ${stops.join(', ')})`
 })()
 
-/** Compass legend for the DIFAR gram. Tap to open the wheel applet; shows a dot when settings differ from default. */
-export function DifarLegend({ omni = false, wheel = DEFAULT_WHEEL, onOpen }: { omni?: boolean; wheel?: DifarWheelSettings; onOpen?: () => void }) {
+/**
+ * Compact 44 pt glass control that opens the DIFAR wheel popover.
+ * Replaces the always-on overlay legend so the gram stays clear of chrome.
+ */
+export function DifarWheelButton({ omni = false, wheel = DEFAULT_WHEEL, open = false, onOpen }: {
+  omni?: boolean; wheel?: DifarWheelSettings; open?: boolean; onOpen?: () => void
+}) {
   const custom = !isDefaultWheel(wheel)
+  const label = omni
+    ? 'DIFAR bearing colour wheel (omni buoy, no bearing). Tap to adjust.'
+    : custom
+      ? 'DIFAR bearing colour wheel (custom). Tap to rotate, null or isolate bearings, or change steps and look'
+      : 'DIFAR bearing colour wheel. Tap to rotate, null or isolate bearings, or change steps and look'
   return (
-    <button type="button" className={`difar-legend${custom ? ' custom' : ''}`} data-testid="difar-legend" onClick={onOpen}
-      aria-label="DIFAR bearing colour wheel: tap to rotate, null or isolate bearings, or change steps and look" title="Tap to adjust the bearing wheel">
-      <div className="difar-wheel" style={{ background: isDefaultWheel(wheel) ? DIFAR_CONIC : wheelConic(wheel) }}>
-        <span className="n">N</span><span className="e">E</span><span className="s">S</span><span className="w">W</span>
-        <i />
-      </div>
-      <div className="difar-note">{omni ? 'OMNI · NO BRG' : custom ? 'BRG · CUSTOM' : 'BRG = HUE'}</div>
+    <button type="button"
+      className={`btn icon glass wheel-btn${custom ? ' custom' : ''}${open ? ' open' : ''}`}
+      data-testid="difar-wheel-btn"
+      data-custom={custom ? '1' : '0'}
+      data-omni={omni ? '1' : '0'}
+      aria-label={label}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      title={omni ? 'OMNI · NO BRG — tap to open wheel' : custom ? 'BRG · CUSTOM — tap to open wheel' : 'BRG = HUE — tap to open wheel'}
+      onClick={onOpen}>
+      <span className="wheel-hue-ring" style={{ background: isDefaultWheel(wheel) ? DIFAR_CONIC : wheelConic(wheel) }} aria-hidden />
     </button>
   )
 }
+
+/** @deprecated Prefer DifarWheelButton — kept as an alias so older imports keep typechecking during the move. */
+export const DifarLegend = DifarWheelButton

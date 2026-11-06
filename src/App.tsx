@@ -5,7 +5,7 @@ import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
 import { DemonPane } from './gram/DemonPane'
 import { isGramMode, type GramMode } from './gram/difarBearing'
-import { DifarLegend } from './gram/DifarLegend'
+import { DifarWheelButton } from './gram/DifarLegend'
 import { DifarApplet } from './gram/DifarApplet'
 import { loadWheel, saveWheel } from './gram/wheelSettings'
 import type { DifarWheelSettings } from './gl/colormap'
@@ -645,6 +645,10 @@ export default function App() {
               <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title={`Amplitude as ${PALETTE_LABEL[palette].toLowerCase()} brightness`}>LOFAR</button>
               <button aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
             </div>
+            {gramMode === 'difar' && (
+              <DifarWheelButton omni={!!buoy && buoy.kind !== 'difar'} wheel={wheel} open={wheelOpen}
+                onOpen={() => setWheelOpen(true)} />
+            )}
             <div className="seg filter-seg" role="group" aria-label="Gram filter" data-testid="filter-seg">
               <button aria-pressed={wantFilter === 'NB'} onClick={() => setFilter('NB')} title="Narrowband: background-normalized (TPSW), 0–30 dB above the local noise">NB</button>
               <button aria-pressed={wantFilter === 'BB'} onClick={() => setFilter('BB')} title="Broadband: absolute level, 40–110 dB">BB</button>
@@ -739,7 +743,6 @@ export default function App() {
                 <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
               </div>
             )}
-            {gramMode === 'difar' && <DifarLegend omni={!!buoy && buoy.kind !== 'difar'} wheel={wheel} onOpen={() => setWheelOpen(true)} />}
             {gramMode === 'difar' && wheelOpen && <DifarApplet wheel={wheel} onChange={setWheel} onClose={() => setWheelOpen(false)} />}
             {buoy && paintHealth(detune.get(buoy.id), buoy.state) === 'detuned' && (
               <div className="detuned-badge" data-testid="detuned-badge" role="status">DETUNED</div>

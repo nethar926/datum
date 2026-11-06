@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DEFAULT_WHEEL, WHEEL_LOOKS, WHEEL_SECTORS, WHEEL_STEPS, sectorOf, type DifarWheelSettings, type WheelLook } from '../gl/colormap'
 import { wheelConic } from './DifarLegend'
-import { normRot, toggleSector } from './wheelSettings'
+import { normRot, showsSectorDivisions, toggleSector } from './wheelSettings'
 
 const LOOK_LABEL: Record<WheelLook, string> = { full: 'Full', pastel: 'Pastel', bw: 'B&W', green: 'Green' }
 const STEP_LABEL = (s: number) => (s === 360 ? '360°' : `${s}`)
@@ -19,10 +19,23 @@ interface Props { wheel: DifarWheelSettings; onChange: (w: DifarWheelSettings) =
 /** DIFAR wheel applet: drag to rotate the colours, tap sectors to null or isolate, pick bearing steps and look. */
 export function DifarApplet({ wheel, onChange, onClose }: Props) {
   const [tool, setTool] = useState<'null' | 'isolate'>('null')
+  const [closing, setClosing] = useState(false)
   const drag = useRef<{ id: number; a0: number; rot0: number; moved: boolean; x: number; y: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const closingRef = useRef(false)
+  const requestClose = () => {
+    if (closingRef.current) return
+    closingRef.current = true
+    setClosing(true)
+    window.setTimeout(onClose, 180)
+  }
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || closingRef.current) return
+      closingRef.current = true
+      setClosing(true)
+      window.setTimeout(onClose, 180)
+    }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   }, [onClose])
 
@@ -50,19 +63,23 @@ export function DifarApplet({ wheel, onChange, onClose }: Props) {
   const rot = (delta: number) => onChange({ ...wheel, rotDeg: normRot(wheel.rotDeg + delta) })
   const nN = popcount(wheel.nulled), nI = popcount(wheel.isolated)
 
+  const divisions = showsSectorDivisions(wheel.steps)
   return (
-    <div className="difar-applet-scrim" onPointerDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="difar-applet" role="dialog" aria-label="DIFAR bearing wheel" data-testid="difar-applet">
+    <div className={`difar-applet-scrim${closing ? ' closing' : ''}`} onPointerDown={(e) => { if (e.target === e.currentTarget) requestClose() }}>
+      <div className={`difar-applet${closing ? ' closing' : ''}`} role="dialog" aria-label="DIFAR bearing wheel" data-testid="difar-applet">
         <div className="da-head">
           <span>DIFAR WHEEL</span>
-          <button className="btn icon" onClick={onClose} aria-label="Close" data-testid="difar-applet-close">✕</button>
+          <button className="btn icon" onClick={requestClose} aria-label="Close" data-testid="difar-applet-close">✕</button>
         </div>
-        <div className="da-wheel" ref={ref} data-testid="difar-applet-wheel" style={{ background: wheelConic(wheel) }}
+        <div className="da-wheel" ref={ref} data-testid="difar-applet-wheel" data-steps={wheel.steps}
+          data-divisions={divisions ? '1' : '0'}
+          style={{ background: wheelConic(wheel) }}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => { drag.current = null }}>
           <svg viewBox={`0 0 ${2 * R} ${2 * R}`} aria-hidden="true">
             {Array.from({ length: WHEEL_SECTORS }, (_, i) => {
               const b = 1 << i, cls = wheel.nulled & b ? 'nulled' : wheel.isolated & b ? 'isolated' : ''
-              return <path key={i} d={wedge(i)} className={cls} data-sector={i} />
+              const nodiv = !divisions && !cls ? ' nodiv' : ''
+              return <path key={i} d={wedge(i)} className={`${cls}${nodiv}`.trim()} data-sector={i} data-div={nodiv ? '0' : '1'} />
             })}
           </svg>
           <div className="da-hub">

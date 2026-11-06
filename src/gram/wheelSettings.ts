@@ -1,4 +1,4 @@
-import { DEFAULT_WHEEL, WHEEL_LOOKS, WHEEL_STEPS, type DifarWheelSettings } from '../gl/colormap'
+import { DEFAULT_WHEEL, WHEEL_LOOKS, WHEEL_SECTORS, WHEEL_STEPS, type DifarWheelSettings } from '../gl/colormap'
 
 export const WHEEL_KEY = 'datum.difarWheel'
 const mask = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) ? v & 0xffff : 0)
@@ -25,3 +25,16 @@ export function toggleSector(w: DifarWheelSettings, sector: number, tool: 'null'
 }
 export const isDefaultWheel = (w: DifarWheelSettings) =>
   w.rotDeg === 0 && w.steps === 360 && w.look === 'full' && !w.nulled && !w.isolated
+
+/** True when the applet should stroke the 16 sector wedges (stepped modes). Continuous 360° draws none. */
+export const showsSectorDivisions = (steps: number): boolean => steps !== 360
+
+/** How many sector paths get a division stroke (marked null/isolate sectors always stroke). */
+export function sectorDivisionStrokeCount(steps: number, nulled = 0, isolated = 0): number {
+  let n = 0
+  for (let i = 0; i < WHEEL_SECTORS; i++) {
+    const bit = 1 << i
+    if ((nulled & bit) || (isolated & bit) || showsSectorDivisions(steps)) n++
+  }
+  return n
+}
