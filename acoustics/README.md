@@ -70,6 +70,12 @@ The default client worker URL targets built ESM `dist/worker.js`.
 - `dropBuoy {id?,channel,kind:'omni'|'difar',x,y,hydrophoneDepthM,lifeS?}` (life default
   7200 s). RF channels unique. Then `subscribe {channel,kind:'lofar',bins?:1024,
   band?:[0,500]}`; `unsubscribe {streamId}`. Drops do not auto-subscribe.
+- `detuneBuoy {buoyId}` frees the buoy's RF channel (`channel:0` on tactical); the buoy stays
+  in the scenario for retune and streams fill NaN while detuned. `tuneBuoy {buoyId,channel?}`
+  reassigns host channel or lowest-free in 1..32 (`NO CH` when full). `setBuoyFault {buoyId,fault}`
+  sets engine-truth yellow health (`health:'fault'|'ok'`); life cycle stays on `state`.
+  Integrating/settle delay after drop or tune remains FE-owned (`INTEGRATE_MS`); no engine `settleS`.
+
 - `gramRows` transfers `[streamIds.buffer,rowIndex.buffer,data.buffer,bearingDeg.buffer]`:
   Int32 stream IDs, Uint32 per-stream indexes starting at 0, packed N×bins Float32 LOFAR/DEMON
   `data`, and packed N×bins Float32 `bearingDeg` (degrees true 0..360 for DIFAR LOFAR bins;
@@ -79,7 +85,7 @@ The default client worker URL targets built ESM `dist/worker.js`.
   sample arrays. Release rewraps returned buffers in typed views. Late old-config buffers may
   be discarded.
 - `tactical` at each clock tick/change: aircraft ENU/heading/groundspeed (illustrative altitude
-  300 m); buoy RF/depth/battery/state; strongest K≤8 DIFAR lines per buoy:
+  300 m); buoy RF/depth/battery/state/health (`ok`|`fault`); strongest K≤8 DIFAR lines per buoy:
   `{buoyId,freqHz,brgDeg,quality}` (quality=SNR dB). Numeric IDs map `buoy-N`. Fixed-length truth contacts include active flags and source-line tags (see M3 below).
 - `error {message}` is a diagnostic extension. Wideband, azigram, DICASS,
   VLAD, BT/SSP are reserved/rejected, not implemented. DEMON streams are enabled as described below.

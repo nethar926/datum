@@ -1,6 +1,6 @@
 import {AcousticEngine} from './engine.js';
 import {cpaScenario,lloydsCpaScenario} from './scenario.js';
-import {isAlive} from './buoys.js';
+import {isAlive,isFeeding} from './buoys.js';
 import type {GramConfig,GramRows,Tactical,WorkerRequest,WorkerResponse} from './protocol.js';
 type Frame={message:GramRows;transfer:ArrayBuffer[]};
 /** Row period: legacy grams 0.25 s; RES grams P=1/rowRateHz (exact: 8, 4 or 2 s). */
@@ -41,6 +41,7 @@ export class WorkerRuntime {
       case 'seek':this.seek(m.simT);break;
       case 'dropBuoy':{
         if(m.kind!=='omni'&&m.kind!=='difar')throw new Error('Receiver type pending approved plan');
+        if(!(m.channel>0)||!Number.isInteger(m.channel))throw new Error('Invalid RF channel');
         const id=m.id??(Math.max(0,...this.tactical.buoys.map(b=>b.id))+1);
         if(!Number.isInteger(id)||id<1||this.tactical.buoys.some(b=>b.id===id))throw new Error('Invalid buoy id');
         e.addBuoy({id:`buoy-${id}`,rfChannel:m.channel,type:m.kind==='omni'?'passive-omni':'difar',x:m.x,y:m.y,depth:m.hydrophoneDepthM,course:0,speed:0,deployedAt:e.time,life:m.lifeS??7200});
@@ -74,6 +75,9 @@ export class WorkerRuntime {
         // FE host that wants the newest sample calls engine.skipToLatest(id, out) directly.
         const idx=e.skipToLatest(m.streamId);if(idx>=0)this.indices.set(m.streamId,idx+1);break;
       }
+      case 'detuneBuoy':e.detuneBuoy(m.buoyId);this.sendTactical();break;
+      case 'tuneBuoy':e.tuneBuoy(m.buoyId,m.channel);this.sendTactical();break;
+      case 'setBuoyFault':e.setBuoyFault(m.buoyId,m.fault);this.sendTactical();break;
       case 'release':this.release(m.buffers);break;
       default:throw new Error('Unknown command');
     }
@@ -113,11 +117,11 @@ export class WorkerRuntime {
     e.advance(target-e.time);
     this.sendTactical();
   }catch(error){this.error(error);}}
-  private rebuildTactical():void{const e=this.engine!;this.tactical.buoys=e.scenario.buoys.map((b,i)=>({id:Number(b.id.replace(/\D/g,''))||i+1,channel:b.rfChannel,kind:b.type==='difar'?'difar':'omni',x:b.x,y:b.y,hydrophoneDepthM:b.depth,batteryFrac:1,lifeRemainingS:b.life,state:'live'}));}
+  private rebuildTactical():void{const e=this.engine!;this.tactical.buoys=e.scenario.buoys.map((b,i)=>({id:Number(b.id.replace(/\D/g,''))||i+1,channel:b.rfChannel,kind:b.type==='difar'?'difar':'omni',x:b.x,y:b.y,hydrophoneDepthM:b.depth,batteryFrac:1,lifeRemainingS:b.life,state:'live',health:b.fault?'fault':'ok'}));}
   private sendTactical():void{
     const e=this.engine!,s=e.scenario,t=this.tactical;t.simT=e.time;t.aircraft.x=s.ownship.x;t.aircraft.y=s.ownship.y;t.aircraft.hdgDeg=(s.ownship.course*180/Math.PI+360)%360;t.aircraft.gsMps=s.ownship.speed;
-    let count=0;for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],out=t.buoys[i];out.x=b.x;out.y=b.y;out.hydrophoneDepthM=b.depth;out.lifeRemainingS=Math.max(0,b.deployedAt+b.life-e.time);out.batteryFrac=Math.max(0,Math.min(1,out.lifeRemainingS/b.life));out.state=e.time<b.deployedAt?'falling':isAlive(b,e.time)?'live':'dead';
-      if(b.type==='difar'&&isAlive(b,e.time)){const g=e.generators[i];for(let j=0;j<g.lineCount;j++){const src=g.lines[j],dst=this.bearingStore[count];dst.buoyId=out.id;dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;t.bearings[count++]=dst;}}
+    let count=0;for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],out=t.buoys[i];out.x=b.x;out.y=b.y;out.hydrophoneDepthM=b.depth;out.channel=b.rfChannel;out.lifeRemainingS=Math.max(0,b.deployedAt+b.life-e.time);out.batteryFrac=Math.max(0,Math.min(1,out.lifeRemainingS/b.life));out.state=e.time<b.deployedAt?'falling':isAlive(b,e.time)?'live':'dead';out.health=b.fault?'fault':'ok';
+      if(b.type==='difar'&&isFeeding(b,e.time)){const g=e.generators[i];for(let j=0;j<g.lineCount;j++){const src=g.lines[j],dst=this.bearingStore[count];dst.buoyId=out.id;dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;t.bearings[count++]=dst;}}
     }t.bearings.length=count;t.truth=e.tactical().truth;this.emit(t);
   }
   private seek(target:number):void{
