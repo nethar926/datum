@@ -6,6 +6,25 @@ export type CutRichness='sparse'|'moderate'|'rich';
 /** Re-export canonical operator mode codes used by CutSeed.mode. */
 export type {OperatingMode};
 
+/**
+ * Optional gram-fidelity looks (Wilson CUT notes). Additive; FE may ignore unknown ids.
+ * Render applies the ones that need a small acoustics hook; the rest are seed/config only.
+ */
+export const GRAM_LOOK_IDS=[
+ 'engine-harmonics',
+ 'blade-harmonics-reinforced',
+ 'cavitation',
+ 'slow-demon-blade',
+ 'harmonic-skip',
+ 'ssma-harmonics-only',
+ 'compendium-truth',
+ 'electrical-ac-dc',
+ 'eda-locked',
+ 'propulsion-ramp',
+ 'msr-dominant',
+] as const;
+export type GramLookId=typeof GRAM_LOOK_IDS[number];
+
 export interface CutClassifyingLine {
   lineFamily:string;
   label:string;
@@ -33,6 +52,8 @@ export interface CutSeed {
   lookalikeGroupId?:string;
   /** Always 1–3 classifying lines the FE can score against. */
   classifyingLines:readonly CutClassifyingLine[];
+  /** Optional teaching looks this seed is meant to exercise. */
+  gramLooks?:readonly GramLookId[];
 }
 
 export interface CutLookalikePair {

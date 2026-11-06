@@ -6,6 +6,7 @@ import {CUT_MODEL_VERSION,type CutSeed,type CutStarterPack} from './types.js';
 export * from './types.js';
 export {validateCutSeed,validateStarterPack,validateLookalikePair} from './validate.js';
 export {lookalikeDiffersOn} from './lookalike.js';
+export {looksOf,bakeFidelityParams,applyRuntimeFidelity,CUT_SSMA_AUX} from './fidelity.js';
 export {scenarioFromCut,CutSession} from './render.js';
 export {STARTER_PACK,STARTER_CUTS} from './starterPack.js';
 

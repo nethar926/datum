@@ -1119,28 +1119,42 @@ public Urick/Ross mechanisms only. Seeds pin `modelVersion: "m3-cuts-1"`.
 ```ts
 import {
   listCutSeeds, getCutSeed, getCutStarterPack, renderCut, validateCutSeed,
-  CUT_MODEL_VERSION, type CutSeed, type CutSession,
+  CUT_MODEL_VERSION, type CutSeed, type GramLookId,
 } from '@sonar-sim/acoustics';
 
 listCutSeeds();                    // 5–10 curated CutSeed rows
-getCutSeed('cut-gloamspiral-aip'); // or undefined
-const session = renderCut('cut-pebblewisp-batt'); // or renderCut(seed)
+const session = renderCut('cut-orbelune-msr');
 const row = new Float32Array(session.lofar.bins);
 session.writeLofarRow(row);        // advances sim as needed; no wall-clock wait
 session.writeDemonRow(new Float32Array(512));
-session.drainLofar(row, 120);      // pull N rows as fast as the host drains
-session.checksumFirstRows(8);      // FNV-1a determinism helper
+session.drainLofar(row, 120);
 ```
 
 `CutSeed` fields: `v:1`, `modelVersion`, `id`, `seed`, `durationS` (≈300–600),
 `richness` (`sparse`|`moderate`|`rich`), `classId` (+ optional `variantId`/`hullId`),
 `mode` (`SURF`|`SNORK`|`D/E`|`BATT`|`AIP`|`NUC`), `speedKn`, `depthM`, optional
-`lookalikeGroupId`, and `classifyingLines` (1–3; `lineFamily`, `label`, optional
-`nominalHz`, `giveaway`).
+`lookalikeGroupId`, `classifyingLines` (1–3), and optional `gramLooks` (Wilson fidelity notes).
 
-`renderCut` builds a one-contact DIFAR scenario (MF LOFAR 0–2000 Hz / 2048 bins so HYDP
-lines are in-band), reuses `AcousticEngine`, and streams LOFAR + DEMON as fast as the
-host drains. Cuts that list a HYDP classifying line schedule a mid-cut `hydp` transient.
-The starter pack mixes diesel/nuclear, includes one AIP boat, varies snort/battery/speed,
-and ships two lookalike pairs that share nation/plant layout and differ on `HYDP` Hz
-(`lookalike-dorhan-coastal`, `lookalike-kaelun-ssn`).
+`renderCut` builds a one-contact DIFAR scenario (MF LOFAR 0–2000 Hz / 2048 bins), reuses
+`AcousticEngine`, and streams LOFAR + DEMON as fast as the host drains. Contacts are baked
+with `params` (no live `catalogRef`) so plantSpec overlays survive load. Cuts that list a
+HYDP classifying line schedule a mid-cut `hydp` transient.
+
+### Gram looks (fidelity)
+
+| look | what it exercises |
+| --- | --- |
+| `engine-harmonics` | strong snort/surf diesel CFR/EFR/CSR orders |
+| `blade-harmonics-reinforced` | BR h≥2 boosted relative to h1 |
+| `cavitation` | speed above depth-dependent inception (broadband on LOFAR) |
+| `slow-demon-blade` | crawl-speed BATT; blade rate on DEMON |
+| `harmonic-skip` | order-2 CFR/BR zeroed (intermediate drowned) |
+| `ssma-harmonics-only` | injected fictional SSMA aux with harmonics `[2,3]` only |
+| `compendium-truth` | classifyingLines ⊆ idKeys.linesVisiblePerMode[mode] |
+| `electrical-ac-dc` | GRID stable/discrete vs dcvr AUX unstable wander |
+| `eda-locked` | EDA tonals track engine running/CFR |
+| `propulsion-ramp` | engine/EDA/MESH powers ramp 0→1 over 10 s from t=20 |
+| `msr-dominant` | MSR floored up; BR attenuated (orbelune 124-slot BATT) |
+
+Starter pack: diesel+nuclear, one AIP (`cut-gloamspiral-aip`), snort/battery/speed variation,
+two HYDP lookalike pairs (`lookalike-dorhan-coastal`, `lookalike-kaelun-ssn`).

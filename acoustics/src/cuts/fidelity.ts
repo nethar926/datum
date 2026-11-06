@@ -1,0 +1,66 @@
+import type {Signature,TonalLine} from '../sourceModel.js';
+import type {AuxSpec} from '../catalog/drivetrain.js';
+import type {CutSeed,GramLookId} from './types.js';
+import {GRAM_LOOK_IDS} from './types.js';
+
+const ENGINE_FAMILIES=new Set(['CSR','CFR','EFR','EDA','MESH']);
+/** Fictional SSMA teaching tone (~shaft-aux); harmonics [2,3] only — no fundamental (Wilson note 5). */
+export const CUT_SSMA_AUX:AuxSpec={
+ id:'cut-ssma-teach',kind:'ssma',fHz:58,harmonics:[2,3],stability:'unstable',width:'discrete',duty:'continuous',
+};
+
+export function looksOf(cut:CutSeed):ReadonlySet<GramLookId> {
+ const out=new Set<GramLookId>();
+ for(const id of cut.gramLooks??[])if((GRAM_LOOK_IDS as readonly string[]).includes(id))out.add(id as GramLookId);
+ return out;
+}
+
+/** Bake plantSpec overlays into a derived signature before AcousticEngine construction. */
+export function bakeFidelityParams(sig:Signature,cut:CutSeed):Signature {
+ const looks=looksOf(cut);
+ if(!sig.plantSpec)return sig;
+ if(looks.has('ssma-harmonics-only')){
+  const aux=sig.plantSpec.aux.some(a=>a.id===CUT_SSMA_AUX.id)?sig.plantSpec.aux:[...sig.plantSpec.aux,CUT_SSMA_AUX];
+  sig.plantSpec={...sig.plantSpec,aux};
+ }
+ return sig;
+}
+
+/**
+ * Runtime, idempotent fidelity on live tonals after each sim advance.
+ * Does not allocate; only mutates power fields on existing tonal records.
+ */
+export function applyRuntimeFidelity(sig:Signature,cut:CutSeed,simT:number,bases:Map<TonalLine,number>):void {
+ const looks=looksOf(cut),tonals=sig.tonals;if(!tonals)return;
+ if(looks.has('propulsion-ramp')){
+  // Engines come online over ~10 s starting at t=20 (snort start teaching).
+  const gain=simT<20?0:Math.max(0,Math.min(1,(simT-20)/10));
+  for(const l of tonals){
+   if(!l.lineFamily||!ENGINE_FAMILIES.has(l.lineFamily))continue;
+   if(!bases.has(l))bases.set(l,l.power);
+   l.power=bases.get(l)!*gain;
+  }
+ }else if(bases.size){
+  // No ramp look: keep bases cleared so a later topology rewrite can resnapshot.
+  bases.clear();
+ }
+ if(looks.has('harmonic-skip')){
+  // Intermediate harmonic drowned (Wilson note 4): drop order-2 on CFR and BR.
+  for(const l of tonals)if(l.harmonic===2&&(l.lineFamily==='CFR'||l.lineFamily==='BR'))l.power=0;
+ }
+ if(looks.has('blade-harmonics-reinforced')){
+  // Reinforce off-fundamental blade orders (h≥2).
+  for(const l of tonals){
+   if(l.lineFamily!=='BR'||!l.harmonic||l.harmonic<2)continue;
+   const h=l.harmonic,shaft=sig.propulsion?.shafts[l.shaftIndex??0]?.hz??sig.shaftHz;
+   l.power=shaft>0?.25/(h*h)*2.4:0;
+  }
+ }
+ if(looks.has('msr-dominant')){
+  for(const l of tonals){
+   if(l.lineFamily==='MSR'){const h=l.harmonic??1;l.power=l.hz>0?.08/(h*h):0;}
+   else if(l.lineFamily==='BR'){const h=l.harmonic??1,shaft=sig.propulsion?.shafts[l.shaftIndex??0]?.hz??sig.shaftHz;l.power=shaft>0?.25/(h*h)*.35:0;}
+   else if(l.lineFamily==='AUX'&&!String(l.id??'').includes('ssma')){/* leave plant AUX; SSMA keep */}
+  }
+ }
+}

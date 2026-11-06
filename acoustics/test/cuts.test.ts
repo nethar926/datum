@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {
  listCutSeeds,getCutSeed,getCutStarterPack,renderCut,validateCutSeed,validateStarterPack,
- lookalikeDiffersOn,CUT_MODEL_VERSION,getClass,catalog,type CutSeed,
+ lookalikeDiffersOn,CUT_MODEL_VERSION,CUT_SSMA_AUX,getClass,catalog,type CutSeed,
 } from '../src/index.js';
 
 describe('CutSeed schema + starter pack',()=>{
@@ -41,23 +41,29 @@ describe('CutSeed schema + starter pack',()=>{
   expect(()=>validateCutSeed({...good,classId:'not-a-class'})).toThrow();
   expect(()=>validateCutSeed({...good,mode:'AIP',speedKn:40,classId:'red-gloamspiral'})).toThrow();
  });
+ it('classifying lines stay inside idKeys for the cut mode (compendium truth)',()=>{
+  for(const c of listCutSeeds()){
+   const visible=new Set(getClass(c.classId).idKeys.linesVisiblePerMode[c.mode]??[]);
+   for(const line of c.classifyingLines){
+    if(line.lineFamily==='HYDP'){expect(getClass(c.classId).hydp).toBeTruthy();continue;}
+    expect(visible.has(line.lineFamily as never)).toBe(true);
+   }
+  }
+ });
 });
 
-describe('renderCut',()=>{
+describe('renderCut + gram fidelity',()=>{
  it('streams LOFAR rows as fast as drained and is deterministic per seed',()=>{
-  const id='cut-pebblewisp-batt';
+  const id='cut-mistacorn-batt';
   const a=renderCut(id),b=renderCut(id),c=renderCut(getCutSeed(id)!);
   expect(a.lofar.bins).toBe(2048);expect(a.lofar.f0).toBe(0);
   const ha=a.checksumFirstRows(8),hb=b.checksumFirstRows(8),hc=c.checksumFirstRows(8);
   expect(ha).toBe(hb);expect(hb).toBe(hc);expect(ha).not.toBe(0);
-  // Different seed → different checksum
   const other:CutSeed={...getCutSeed(id)!,seed:(getCutSeed(id)!.seed+1)>>>0};
   expect(renderCut(other).checksumFirstRows(8)).not.toBe(ha);
  });
- it('exposes DEMON rows and stops at durationS',()=>{
-  const cut={...getCutSeed('cut-gloamspiral-aip')!,durationS:2}; // short for test
-  // durationS min validate is 60 — use real cut and drain a burst instead
-  const s=renderCut('cut-gloamspiral-aip');
+ it('exposes DEMON rows on the slow-blade cut',()=>{
+  const s=renderCut('cut-pebblewisp-demon');
   const row=new Float32Array(s.lofar.bins),demon=new Float32Array(512);
   expect(s.writeLofarRow(row)).toBe(0);expect([...row].some(Number.isFinite)).toBe(true);
   expect(s.writeDemonRow(demon)).toBeGreaterThanOrEqual(0);
@@ -71,6 +77,33 @@ describe('renderCut',()=>{
   expect(hydp.length).toBe(2);
   const at=contact.transients![0].at;s.engine.advance(at+1);
   expect(hydp[0].power).toBeGreaterThan(0);
+ });
+ it('cavitation cut is above inception; MSR cut exposes MSR; SSMA has no fundamental',()=>{
+  const cav=renderCut('cut-cinderlilt-cav');
+  expect(cav.engine.scenario.contacts[0].params.cavitationPower??0).toBeGreaterThan(0);
+  const msr=renderCut('cut-orbelune-msr');
+  const msrLines=msr.engine.scenario.contacts[0].params.tonals!.filter(l=>l.lineFamily==='MSR'&&l.power>0);
+  expect(msrLines.length).toBeGreaterThanOrEqual(1);
+  expect(getClass('blue-orbelune').motorSlots).toBe(124);
+  const ssma=renderCut('cut-emberbraid-ssma');
+  const aux=ssma.engine.scenario.contacts[0].params.plantSpec!.aux.filter(a=>a.id===CUT_SSMA_AUX.id);
+  expect(aux).toHaveLength(1);expect(aux[0].harmonics).toEqual([2,3]);
+  const ssmaTonals=ssma.engine.scenario.contacts[0].params.tonals!.filter(l=>Math.abs(l.hz-CUT_SSMA_AUX.fHz*2)<1e-6||Math.abs(l.hz-CUT_SSMA_AUX.fHz*3)<1e-6);
+  expect(ssmaTonals.length).toBeGreaterThanOrEqual(2);
+  expect(ssma.engine.scenario.contacts[0].params.tonals!.some(l=>Math.abs(l.hz-CUT_SSMA_AUX.fHz)<1e-6&&l.power>0)).toBe(false);
+ });
+ it('propulsion-ramp zeros engine lines at t0 then restores after ramp',()=>{
+  const s=renderCut('cut-brindleflux-snork');
+  const contact=s.engine.scenario.contacts[0];
+  const cfr=()=>contact.params.tonals!.filter(l=>l.lineFamily==='CFR');
+  expect(cfr().every(l=>l.power===0)).toBe(true);
+  // Drain past ramp window (starts 20 s, 10 s rise)
+  const row=new Float32Array(s.lofar.bins);
+  while(s.simT<32&&!s.done)s.writeLofarRow(row);
+  expect(s.simT).toBeGreaterThanOrEqual(30);
+  expect(cfr().some(l=>l.power>0)).toBe(true);
+  // harmonic-skip: order-2 CFR/BR stay at 0
+  expect(contact.params.tonals!.filter(l=>l.lineFamily==='CFR'&&l.harmonic===2).every(l=>l.power===0)).toBe(true);
  });
  it('renderCut(string) unknown id throws',()=>{expect(()=>renderCut('missing-cut')).toThrow(/Unknown cut/);});
  it('every starter cut opens without throwing',()=>{

@@ -1,22 +1,29 @@
-import {getClass,resolveReference} from '../catalog/derive.js';
+import {displayName,getClass,resolveReference,deriveSignature} from '../catalog/derive.js';
 import {AcousticEngine} from '../engine.js';
 import {knotsToMps} from '../units.js';
+import {loadScenario,type ScenarioInput} from '../scenario.js';
 import type {GramConfig} from '../protocol.js';
-import type {ScenarioInput} from '../scenario.js';
+import type {TonalLine} from '../sourceModel.js';
 import {validateCutSeed} from './validate.js';
+import {bakeFidelityParams,applyRuntimeFidelity,looksOf} from './fidelity.js';
 import type {CutSeed} from './types.js';
 
 const DEG=Math.PI/180;
 const ROW_DT=.25;
-/** Wide enough for HYDP (≈200–1500 Hz) plus machinery; MF teaching window. */
+/** Wide enough for HYDP (≈200–1500 Hz) plus MSR/SSMA; MF teaching window. */
 export const CUT_FMAX=2000;
 export const CUT_BINS=2048;
 
-/** Build a minimal single-contact aviation scenario from a validated CutSeed. */
+/** Build a minimal single-contact aviation scenario from a validated CutSeed.
+ * Contacts carry baked `params` (no catalogRef) so plantSpec overlays (SSMA etc.) survive loadScenario. */
 export function scenarioFromCut(cut:CutSeed):ScenarioInput {
  validateCutSeed(cut);
- const klass=getClass(cut.classId);
- resolveReference({classId:cut.classId,variantId:cut.variantId,hullId:cut.hullId});
+ const {klass}=resolveReference({classId:cut.classId,variantId:cut.variantId,hullId:cut.hullId});
+ const reactorOffline=cut.mode==='AIP'&&klass.plant==='nuclear';
+ const state={mode:cut.mode,speedKn:cut.speedKn,depthM:cut.depthM,...(reactorOffline?{reactorOffline:true}:{})};
+ let sig=deriveSignature(klass,cut.variantId,state);
+ sig={...sig,label:displayName(klass.name)};
+ bakeFidelityParams(sig,cut);
  const v=knotsToMps(cut.speedKn),course=Math.PI/2,cpa=900,tCpa=Math.min(cut.durationS*.4,240);
  const x=-tCpa*v*Math.sin(course)+cpa*Math.cos(course);
  const y=-tCpa*v*Math.cos(course)-cpa*Math.sin(course);
@@ -24,7 +31,6 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
  const hydpAt=Math.min(45,Math.max(15,Math.floor(cut.durationS*.08)));
  const traffic=cut.richness==='sparse'?0:cut.richness==='moderate'?.15:.35;
  const sea=cut.richness==='sparse'?0:cut.richness==='moderate'?2:3;
- const reactorOffline=cut.mode==='AIP'&&klass.plant==='nuclear';
  const motion=[{at:0,course,speed:v,depth:cut.depthM},...(wantsHydp?[{at:hydpAt,course:course+28*DEG,speed:v,depth:cut.depthM}]:[])];
  return {
   v:1,seed:cut.seed,mode:'aviation',bins:CUT_BINS,fmax:CUT_FMAX,fMax:CUT_FMAX,fBin:CUT_FMAX/(CUT_BINS-1),band:[0,CUT_FMAX],time:0,
@@ -33,8 +39,8 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
   environment:{seaState:sea,shipping:traffic<.33?'light':traffic<.67?'moderate':'heavy',shippingDensity:traffic,soundSpeed:1500,spreading:'spherical',transition:1000},
   contacts:[{
    id:`cut-contact-${cut.id}`,category:'subsurface',classificationTarget:true,behaviour:'transit',
-   catalogRef:{classId:cut.classId,variantId:cut.variantId,hullId:cut.hullId},
-   operatingMode:cut.mode,...(reactorOffline?{reactorOffline:true}:{}),
+   // Bake classId into params only — catalogRef would re-derive and drop SSMA overlays.
+   params:sig,operatingMode:cut.mode,...(reactorOffline?{reactorOffline:true}:{}),
    x,y,depth:cut.depthM,course,speed:v,motion,
    ...(wantsHydp?{transients:[{at:hydpAt,kind:'hydp',params:{}}]}:{}),
   }],
@@ -44,8 +50,7 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
 
 /**
  * Fast-drain CUT session: wraps AcousticEngine so the host can pull LOFAR (+ DEMON)
- * rows as quickly as it can consume them — no wall-clock wait. Advances sim by one
- * LOFAR row period (0.25 s) whenever a drain is requested and no row is due yet.
+ * rows as quickly as it can consume them — no wall-clock wait.
  */
 export class CutSession {
  readonly cut:CutSeed;
@@ -53,15 +58,24 @@ export class CutSession {
  readonly lofar:GramConfig;
  readonly demonStreamId:number;
  private readonly lofarBuf:Float32Array;
+ private readonly rampBases=new Map<TonalLine,number>();
  private ended=false;
  constructor(cut:CutSeed){
   validateCutSeed(cut);
   this.cut=cut;
-  this.engine=new AcousticEngine(scenarioFromCut(cut),cut.seed);
+  const loaded=loadScenario(scenarioFromCut(cut));
+  this.engine=new AcousticEngine(loaded,cut.seed);
+  // Snapshot engine-line powers at full plant output before the ramp look zeros them.
+  if(looksOf(cut).has('propulsion-ramp')){
+   const tonals=this.contact.params.tonals??[];
+   for(const l of tonals)if(l.lineFamily&&['CSR','CFR','EFR','EDA','MESH'].includes(l.lineFamily))this.rampBases.set(l,l.power);
+   applyRuntimeFidelity(this.contact.params,cut,0,this.rampBases);
+  }
   this.lofar=this.engine.subscribe({channel:1,kind:'lofar',bins:CUT_BINS,band:[0,CUT_FMAX]});
   this.demonStreamId=this.engine.subscribe({kind:'demon',buoyId:1,band:[1000,Math.min(4000,CUT_FMAX)]});
   this.lofarBuf=new Float32Array(this.lofar.bins);
  }
+ private get contact(){return this.engine.scenario.contacts.find(c=>c.category!=='surface')??this.engine.scenario.contacts[0];}
  get simT():number{return this.engine.time;}
  get done():boolean{return this.ended||(this.engine.time>=this.cut.durationS&&this.engine.rowsReady(this.lofar.streamId)===0);}
  private ensureLofarRow():boolean{
@@ -70,28 +84,25 @@ export class CutSession {
    const dt=Math.min(ROW_DT,this.cut.durationS-this.engine.time);
    if(dt<=0){this.ended=true;return false;}
    this.engine.advance(dt);
+   applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases);
   }
   return true;
  }
- /** Write next LOFAR row into caller-owned buffer. Returns row index, or -1 when done. */
  writeLofarRow(out:Float32Array,offset=0):number{
   if(!this.ensureLofarRow())return -1;
   return this.engine.writeRow(this.lofar.streamId,out,offset);
  }
- /** Write next DEMON row (shares sim clock with LOFAR). Returns row index or -1. */
  writeDemonRow(out:Float32Array,offset=0):number{
   if(!this.ensureLofarRow())return -1;
   if(this.engine.rowsReady(this.demonStreamId)===0){
-   if(this.engine.time<this.cut.durationS)this.engine.advance(ROW_DT);
+   if(this.engine.time<this.cut.durationS){this.engine.advance(ROW_DT);applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases);}
    if(this.engine.rowsReady(this.demonStreamId)===0)return -1;
   }
   return this.engine.writeRow(this.demonStreamId,out,offset);
  }
- /** Drain up to `maxRows` LOFAR rows as fast as the host can take them. */
  drainLofar(out:Float32Array,maxRows=Infinity):number{
   let n=0;while(n<maxRows){const i=this.writeLofarRow(out);if(i<0)break;n++;}return n;
  }
- /** Determinism helper: FNV-1a over the first `n` LOFAR rows (float32 bit patterns). */
  checksumFirstRows(n:number):number{
   let hash=0x811c9dc5>>>0;
   for(let r=0;r<n;r++){

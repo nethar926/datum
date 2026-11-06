@@ -1,6 +1,6 @@
 import {getClass,resolveReference,validateOperatingState} from '../catalog/derive.js';
 import {OPERATING_MODES,type OperatingMode} from '../catalog/schema.js';
-import {CUT_MODEL_VERSION,type CutClassifyingLine,type CutLookalikePair,type CutRichness,type CutSeed,type CutStarterPack} from './types.js';
+import {CUT_MODEL_VERSION,GRAM_LOOK_IDS,type CutClassifyingLine,type CutLookalikePair,type CutRichness,type CutSeed,type CutStarterPack,type GramLookId} from './types.js';
 
 const RICHNESS:readonly CutRichness[]=['sparse','moderate','rich'];
 const finite=(x:unknown,lo:number,hi:number):x is number=>typeof x==='number'&&Number.isFinite(x)&&x>=lo&&x<=hi;
@@ -33,10 +33,20 @@ export function validateCutSeed(value:unknown):asserts value is CutSeed {
  if(c.lookalikeGroupId!==undefined&&(typeof c.lookalikeGroupId!=='string'||!c.lookalikeGroupId))throw new Error('CutSeed.lookalikeGroupId invalid');
  if(!Array.isArray(c.classifyingLines)||c.classifyingLines.length<1||c.classifyingLines.length>3)throw new Error('CutSeed.classifyingLines must have 1–3 entries');
  c.classifyingLines.forEach((l,i)=>validateLine(l,`classifyingLines[${i}]`));
+ if(c.gramLooks!==undefined){
+  if(!Array.isArray(c.gramLooks))throw new Error('CutSeed.gramLooks invalid');
+  for(const g of c.gramLooks)if(!(GRAM_LOOK_IDS as readonly string[]).includes(g))throw new Error(`Unknown gramLook ${g}`);
+ }
  const klass=getClass(c.classId);
  let resolved;try{resolved=resolveReference({classId:c.classId,variantId:c.variantId,hullId:c.hullId});}catch(e){throw new Error(`CutSeed catalogRef invalid: ${e instanceof Error?e.message:e}`);}
  const reactorOffline=c.mode==='AIP'&&klass.plant==='nuclear';
  validateOperatingState(resolved.params,{mode:c.mode as OperatingMode,speedKn:c.speedKn,depthM:c.depthM,...(reactorOffline?{reactorOffline:true}:{})});
+ // Compendium truth: every classifying family must be visible in this mode (or HYDP teach overlay).
+ const visible=new Set(klass.idKeys.linesVisiblePerMode[c.mode]??[]);
+ for(const line of c.classifyingLines){
+  if(line.lineFamily==='HYDP'){if(!klass.hydp)throw new Error(`Cut ${c.id}: HYDP classifying line but class has no hydp`);continue;}
+  if(!visible.has(line.lineFamily as never))throw new Error(`Cut ${c.id}: ${line.lineFamily} not in idKeys for mode ${c.mode}`);
+ }
 }
 
 export function validateLookalikePair(pair:unknown,cuts:readonly CutSeed[]):asserts pair is CutLookalikePair {
@@ -62,4 +72,10 @@ export function validateStarterPack(pack:CutStarterPack):void {
  const plants=new Set(pack.cuts.map(c=>getClass(c.classId).plant));
  if(!plants.has('diesel')||!plants.has('nuclear'))throw new Error('starter pack needs diesel and nuclear cuts');
  if(!pack.cuts.some(c=>c.mode==='AIP'&&getClass(c.classId).aipCapable))throw new Error('starter pack needs an AIP cut');
+ // Wilson fidelity coverage: each of the 10 note-looks (excl. pure documentation) appears ≥1×
+ const covered=new Set<GramLookId>();
+ for(const c of pack.cuts)for(const g of c.gramLooks??[])covered.add(g);
+ for(const need of ['cavitation','slow-demon-blade','harmonic-skip','ssma-harmonics-only','msr-dominant','propulsion-ramp','eda-locked','blade-harmonics-reinforced','engine-harmonics','compendium-truth'] as GramLookId[]){
+  if(!covered.has(need))throw new Error(`starter pack missing gramLook ${need}`);
+ }
 }
