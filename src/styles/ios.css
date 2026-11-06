@@ -459,7 +459,7 @@ button.ios-row:active { background: var(--sys-fill); }
 .splash-logo { display: block; width: min(200px, 68%); height: auto; margin: 2px auto 0; border-radius: 10px; }
 .splash-disclaimer {
   margin: 0; text-align: center;
-  font: 400 13px/1.4 inherit; letter-spacing: -0.01em;
+  font: 600 11px/1.5 inherit; letter-spacing: 0.06em; text-transform: uppercase;
   color: rgba(235, 235, 245, 0.78); /* ≥ AA on #1c1c1e */
 }
 :root[data-scheme='light'] .splash-disclaimer {
