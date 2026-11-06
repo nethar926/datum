@@ -120,7 +120,6 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 /* Floating glass buttons on the plot: in the corner, never over the PPI centre. */
 .plot-float { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; gap: 6px; }
 .float-btn { --glass-tint: rgba(20, 22, 26, .5); color: #f2f3f5; }
-.float-btn.truth-chip { font: 600 11px/1 var(--font-mono); color: #e8c46a; padding: 0 14px; }
 .app.ios .plot-corner { top: 10px; right: 12px; font-size: 11px; color: #a4a7b0; display: grid; justify-items: end; gap: 2px; }
 .app.ios .plot-corner .sim-clock { color: #e6e8ee; font-variant-numeric: tabular-nums; }
 
@@ -243,7 +242,6 @@ button.ios-row:active { background: var(--sys-fill); }
 .sheet-head h2 { margin: 0; font: 600 17px/1.2 inherit; }
 .sheet-close { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--sys-fill); color: var(--sys-label-2); cursor: pointer; }
 .sheet-body { overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
-.sheet .truth-panel { position: static; max-width: none; max-height: none; overflow: visible; }
 .sheet .truth-bar { position: static; margin: 0 0 4px; }
 
 /* ---------- HORZ: hover-row hairline + Zulu label (crisp, solid label) ---------- */

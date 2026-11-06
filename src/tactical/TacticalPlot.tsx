@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { crossFixes } from './fix'
@@ -9,6 +9,8 @@ import type { DropController } from './dropController'
 import { dropCapturesPlot } from './fieldMode'
 import { planReadout, type DropPlan } from './drop'
 import { canAim, isArmed, type BearingArm } from './bearingArm'
+import { placeRevealTagsInPlace, revealRangeBrg, revealShapeForCategory } from './reveal'
+import type { TruthContact } from '../engine/contract'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -17,7 +19,7 @@ const BEARING_LEN_M = 7000
 const SEL_TOL_HZ = 1.5
 
 interface Props {
-  client: SimClient; showTruth: boolean; spanM?: number; selectedChannel?: number; selectedHz?: number | null; allBearings?: boolean
+  client: SimClient; showReveal: boolean; spanM?: number; selectedChannel?: number; selectedHz?: number | null; allBearings?: boolean
   showAuto?: boolean; showManual?: boolean; manual?: ManualBearings; fixSource?: FixSource
   /** Manual cursor moved (final=false while dragging, true on release); deg null clears it. */
   onManual?: (buoyId: number, deg: number | null, final: boolean) => void
@@ -36,19 +38,21 @@ const HIT_PX = 14
 // Fingers need a 44 pt target: 22 px radius on coarse pointers.
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
-/** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional truth. Canvas 2D. */
-export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim }: Props) {
+/** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional Reveal positions. Canvas 2D. */
+export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm })
-  props.current = { showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm }
+  const props = useRef({ showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm })
+  props.current = { showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm }
   const viewRef = useRef<PlotView | null>(null)
   const dragRef = useRef<number | null>(null)
   /** When set, the current pointer is an armed aim-tap (plot placement), not a buoy drag. */
   const aimTap = useRef(false)
   // Long-press a DIFAR buoy (touch stand-in for double-click) clears its manual bearing.
   const press = useRef<{ x: number; y: number; moved: boolean; timer: number } | null>(null)
+  const [picked, setPicked] = useState<TruthContact | null>(null)
+  const revealHits = useRef<{ id: number; x: number; y: number; r: number }[]>([])
 
   useEffect(() => {
     const canvas = ref.current!, over = oref.current
@@ -56,12 +60,16 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
     if (!ctx) return
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim() || '#888'
-    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), truth: col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim') }
+    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), reveal: col('--plot-reveal') || col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim') }
     const p = { x: 0, y: 0 }
     let raf = 0, lastT = -1, lastKey = '', lastGhost = -1
     // Splash start times per buoy index (typed, preallocated); known = buoys already on the plot.
     const splash = new Float64Array(MAX_SPLASH), known = { n: -1 }
     let splashing = false
+    let bag = makeBag(MAX_REVEAL)
+    const hitPool: { id: number; x: number; y: number; r: number }[] = Array.from({ length: MAX_REVEAL }, () => ({ id: 0, x: 0, y: 0, r: 0 }))
+    revealHits.current = hitPool
+    const hitCount = { n: 0 }
     // Overlay: new-buoy splash rings (each frame only while one runs) and the drop ghost.
     const drawOverlay = (v: PlotView, w: number, h: number, dpr: number, t: typeof client.status.tactical, now: number) => {
       if (!octx || !over) return
@@ -88,11 +96,11 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         if (known.n >= 0 && t.buoys.length > known.n) { for (let i = known.n; i < t.buoys.length && i < MAX_SPLASH; i++) splash[i] = now; splashing = true }
         known.n = t.buoys.length
       }
-      const { showTruth: truth, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs, arm: armSt } = props.current
+      const { showReveal: reveal, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs, arm: armSt } = props.current
       const dpr = capDpr(devicePixelRatio)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
       const armKey = armSt?.phase === 'aim' ? `aim${armSt.buoyId}` : armSt?.phase ?? 'idle'
-      const key = `${w}x${h}:${truth}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${JSON.stringify(man)}`
+      const key = `${w}x${h}:${reveal}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${JSON.stringify(man)}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
       const v = fitView(w, h, span)
@@ -187,14 +195,64 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         ctx.fillStyle = C.fix; ctx.fillText(f.freqHz < 0 ? 'MAN' : `${f.freqHz.toFixed(0)}Hz`, sx + 8 * dpr, sy - 6 * dpr)
       }
 
-      // Truth (instructor view).
-      if (truth && t.truth) {
-        ctx.strokeStyle = C.truth; ctx.fillStyle = C.truth; ctx.lineWidth = 1 * dpr
-        for (const c of t.truth.contacts) {
-          const sx = toScreenX(v, c.x), sy = toScreenY(v, c.y), th = (c.crsDeg * Math.PI) / 180
-          ctx.beginPath(); ctx.rect(sx - 4 * dpr, sy - 4 * dpr, 8 * dpr, 8 * dpr); ctx.moveTo(sx, sy)
-          ctx.lineTo(sx + Math.sin(th) * 18 * dpr, sy - Math.cos(th) * 18 * dpr); ctx.stroke()
-          ctx.fillText(`T${c.id}`, sx + 8 * dpr, sy + 12 * dpr)
+      // Reveal positions (instructor marks only — no text dump). Zero heap traffic on the hot path.
+      for (let i = 0; i < hitPool.length; i++) hitPool[i].r = 0
+      hitCount.n = 0
+      if (reveal && t.truth) {
+        const contacts = t.truth.contacts
+        if (contacts.length > bag.cap) bag = makeBag(contacts.length)
+        const { ax, ay, tw, th, outX, outY, obs, hit, tagCh, tagN } = bag
+        let n = 0, sN = 0, mN = 0
+        ctx.strokeStyle = C.reveal; ctx.fillStyle = C.reveal; ctx.lineWidth = 1.25 * dpr
+        ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
+        for (let i = 0; i < contacts.length; i++) {
+          const c = contacts[i]
+          if (c.active === false) continue
+          const shape = revealShapeForCategory(c.category)
+          if (!shape) continue
+          const prefix = c.category === 'subsurface' ? 0 : 1 // 0=S, 1=M
+          const num = prefix === 0 ? ++sN : ++mN
+          const sx = toScreenX(v, c.x), sy = toScreenY(v, c.y), heading = (c.crsDeg * Math.PI) / 180
+          const hx = Math.sin(heading), hy = -Math.cos(heading)
+          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + hx * 20 * dpr, sy + hy * 20 * dpr); ctx.stroke()
+          ctx.beginPath()
+          if (shape === 'triangle') {
+            const r = 7 * dpr
+            ctx.moveTo(sx + hx * r, sy + hy * r)
+            ctx.lineTo(sx - hx * r * 0.7 + hy * r * 0.7, sy - hy * r * 0.7 - hx * r * 0.7)
+            ctx.lineTo(sx - hx * r * 0.7 - hy * r * 0.7, sy - hy * r * 0.7 + hx * r * 0.7)
+            ctx.closePath(); ctx.stroke()
+          } else {
+            // circle (surface); square/warship reserved in REVEAL_SHAPE_BY_KIND
+            ctx.arc(sx, sy, 5 * dpr, 0, Math.PI * 2); ctx.stroke()
+          }
+          // Measure without building a string when possible: "S12" / "M12" via scratch.
+          const tag = (prefix === 0 ? TAG_S : TAG_M)[num - 1] ?? ((prefix === 0 ? 'S' : 'M') + num)
+          ax[n] = sx; ay[n] = sy
+          tw[n] = ctx.measureText(tag).width + 4 * dpr; th[n] = 12 * dpr
+          hit[n] = i; tagCh[n] = prefix; tagN[n] = num
+          if (hitCount.n < hitPool.length) {
+            const h = hitPool[hitCount.n++]
+            h.id = c.id; h.x = sx; h.y = sy; h.r = 14 * dpr
+          }
+          n++
+        }
+        let mObs = 0
+        const pushObs = (x: number, y: number, ow: number, oh: number) => {
+          obs[mObs * 4] = x; obs[mObs * 4 + 1] = y; obs[mObs * 4 + 2] = ow; obs[mObs * 4 + 3] = oh; mObs++
+        }
+        pushObs(0, 0, w, 36 * dpr)
+        pushObs(0, h - 52 * dpr, w, 52 * dpr)
+        pushObs(w - 160 * dpr, 0, 160 * dpr, 40 * dpr)
+        for (const b of t.buoys) {
+          const bx = toScreenX(v, b.x), by = toScreenY(v, b.y)
+          pushObs(bx - 8 * dpr, by - 8 * dpr, 16 * dpr, 16 * dpr)
+          pushObs(bx + 6 * dpr, by - 4 * dpr, 18 * dpr, 12 * dpr)
+        }
+        placeRevealTagsInPlace(n, ax, ay, tw, th, outX, outY, obs, mObs, w, h, 4 * dpr)
+        ctx.fillStyle = C.reveal
+        for (let i = 0; i < n; i++) {
+          ctx.fillText((tagCh[i] === 0 ? TAG_S : TAG_M)[tagN[i] - 1]!, outX[i] + 2 * dpr, outY[i] + 10 * dpr)
         }
       }
     }
@@ -221,6 +279,22 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
     }
     return best && { id: best.id, w }
   }
+  const hitReveal = (e: React.PointerEvent | React.MouseEvent) => {
+    if (!props.current.showReveal) return null
+    const c = ref.current; if (!c) return null
+    const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
+    const px = (e.clientX - rect.left) * dpr, py = (e.clientY - rect.top) * dpr
+    let best: { id: number; d: number } | null = null
+    for (let i = 0; i < revealHits.current.length; i++) {
+      // hitCount lives inside the effect; use r>0 as live flag — kept in sync each draw
+      const h = revealHits.current[i]
+      if (!h.r) continue
+      const d = Math.hypot(px - h.x, py - h.y)
+      if (d <= h.r && (!best || d < best.d)) best = { id: h.id, d }
+    }
+    return best?.id ?? null
+  }
+  useEffect(() => { if (!showReveal) setPicked(null) }, [showReveal])
   const setFrom = (id: number, wx: number, wy: number, final: boolean) => {
     const b = client.status.tactical?.buoys.find((x) => x.id === id); if (!b) return
     const deg = bearingTo(b, wx, wy); if (deg !== null) onManual?.(id, deg, final)
@@ -252,7 +326,16 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
           return
         }
         aimTap.current = false
-        if (!h || !onManual) return
+        if (!h) {
+          // Empty plot tap: track for reveal pick / dismiss.
+          if (props.current.showReveal) {
+            try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic */ }
+            press.current = { x: e.clientX, y: e.clientY, moved: false, timer: 0 }
+            dragRef.current = -1 // sentinel: reveal tap
+          }
+          return
+        }
+        if (!onManual) return
         dragRef.current = h.id; try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic pointer */ }
         const id = h.id, pr = { x: e.clientX, y: e.clientY, moved: false, timer: 0 }
         // Long-press clear only when not in the two-tap arm path (arm uses tap-to-pick).
@@ -271,7 +354,7 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         const id = dragRef.current; if (id === null) return
         const pr = press.current
         if (pr && !pr.moved) { if (!exceedsSlop(pr.x, pr.y, e.clientX, e.clientY)) return; pr.moved = true; clearTimeout(pr.timer) }
-        if (aimTap.current) return // aim-tap: ignore moves (placement is on up)
+        if (aimTap.current || id === -1) return // aim/reveal tap: placement/pick on up
         const w = world(e); if (w) setFrom(id, w.x, w.y, false)
       }}
       onPointerUp={(e) => {
@@ -282,6 +365,17 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         const pr = press.current; press.current = null; if (pr) clearTimeout(pr.timer)
         if (id === null) return
         const w = world(e)
+        // Reveal tap (sentinel -1): pick a mark or dismiss the card.
+        if (id === -1) {
+          if (pr && !pr.moved) {
+            const rid = hitReveal(e)
+            if (rid !== null) {
+              const c = client.status.tactical?.truth?.contacts.find((x) => x.id === rid) ?? null
+              setPicked(c)
+            } else setPicked(null)
+          }
+          return
+        }
         // Armed aim tap on the plot (no drag).
         if (aiming) {
           if (pr && !pr.moved && w && arm && canAim(arm)) onArmAim?.(arm.buoyId, w.x, w.y)
@@ -299,6 +393,21 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
       onContextMenu={(e) => e.preventDefault()}
       onDoubleClick={(e) => { if (dropping() || brgArmed) return; const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
     <canvas ref={oref} className="tac-overlay" data-testid="tactical-overlay" aria-hidden />
+    {picked && showReveal && (() => {
+      const buoy = client.status.tactical?.buoys.find((b) => b.channel === selectedChannel)
+      const rb = revealRangeBrg(buoy, picked)
+      const kts = picked.spdKts ?? picked.spdMps * 1.943844
+      const cls = (picked.label || picked.sourceId || `C${picked.id}`).toUpperCase()
+      return (
+        <div className="reveal-card readout" data-testid="reveal-card" role="dialog" aria-label="Reveal contact">
+          <div className="reveal-card-head">{cls}</div>
+          <div>CSE {String(Math.round(picked.crsDeg) % 360).padStart(3, '0')}° · {kts.toFixed(1)} KT{picked.depthM !== undefined ? ` · ${picked.depthM.toFixed(0)} M` : ''}</div>
+          {rb && <div>RNG {(rb.rngM / 1852).toFixed(2)} NM · BRG {String(Math.round(rb.brgDeg) % 360).padStart(3, '0')}°</div>}
+          {!rb && buoy && <div className="dim">On selected buoy</div>}
+          {!buoy && <div className="dim">Select a buoy for RNG/BRG</div>}
+        </div>
+      )
+    })()}
   </>)
 }
 
@@ -306,6 +415,24 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
  * Which DIFAR lines to draw. all: every confident line. Otherwise lines within SEL_TOL_HZ of the selected
  * frequency; with no frequency picked, the strongest line on the selected buoy sets it.
  */
+
+const MAX_REVEAL = 64
+const TAG_S = Array.from({ length: MAX_REVEAL }, (_, i) => 'S' + (i + 1))
+const TAG_M = Array.from({ length: MAX_REVEAL }, (_, i) => 'M' + (i + 1))
+function makeBag(cap: number) {
+  const c = Math.max(cap, MAX_REVEAL)
+  return {
+    cap: c,
+    ax: new Float64Array(c), ay: new Float64Array(c),
+    tw: new Float64Array(c), th: new Float64Array(c),
+    outX: new Float64Array(c), outY: new Float64Array(c),
+    obs: new Float64Array((c + 128) * 4),
+    hit: new Int32Array(c),
+    tagCh: new Int32Array(c),
+    tagN: new Int32Array(c),
+  }
+}
+
 export function selectBearings(bearings: Bearing[], buoys: TacticalBuoy[], selChannel: number | undefined, selHz: number | null, all: boolean): Bearing[] {
   const live = bearings.filter((b) => b.quality >= MIN_DRAW_Q && buoys.some((x) => x.id === b.buoyId && x.state !== 'dead'))
   if (all) return live

@@ -1,4 +1,3 @@
-import { TruthPanel } from './gram/TruthPanel'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
@@ -91,7 +90,7 @@ export default function App() {
   const st = useSyncExternalStore(client.subscribe, client.getStatus)
   const [stream, setStream] = useState(0)
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
-  const [truth, setTruth] = useState(false)
+  const [reveal, setReveal] = useState(false)
   const [gramDir, setGramDir] = useState<GramDir>(loadGramDir)
   const [zuluOriginMs, setZuluOriginMs] = useState(() => Date.now())
   useEffect(() => { saveGramDir(gramDir) }, [gramDir])
@@ -132,11 +131,9 @@ export default function App() {
   const [showNew, setShowNew] = useState(false)
   const [showCmp, setShowCmp] = useState(false)
   const layout = useLayout(), phone = layout !== 'wide'
-  const [truthSheet, setTruthSheet] = useState(false)
   const [buoySheet, setBuoySheet] = useState(false)
   const [layersSheet, setLayersSheet] = useState(false)
   const [trafficSheet, setTrafficSheet] = useState(false)
-  useEffect(() => { if (!phone) setTruthSheet(false) }, [phone])
   // iOS app structure: tabs, appearance, glass strength, split, tab bar minimize.
   const [tab, setTab] = useState<Tab>(() => parseTab(new URLSearchParams(location.search).get('tab')))
   const appearance = useAppearance(), glass = useGlass()
@@ -173,7 +170,7 @@ export default function App() {
     if (phase === 'start') {
       if (harmF0 === null) {
         // Truth on: snap to the nearest engine line family (CSR/CFR/EFR/EDA) whose harmonic is under the click.
-        const snap = truth ? snapToFamily(hz, familyFundamentals(st.tactical?.truth?.contacts), Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
+        const snap = reveal ? snapToFamily(hz, familyFundamentals(st.tactical?.truth?.contacts), Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
         if (snap) { setHarmF0(snap.fund.hz); setHarmK(snap.k); setHarmFam(familyLabel(snap.fund)); harmGrab.current = null; return }
         setHarmF0(hz); harmGrab.current = 1; setHarmK(1); setHarmFam(null); return
       }
@@ -258,7 +255,7 @@ export default function App() {
     setVernierPick(!vernierPick)
   }
   const viewDigits = (cfg?.fBin ?? 1) < 0.1 ? 2 : (cfg?.fBin ?? 1) < 1 ? 1 : 0
-  const probeName = truth && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
+  const probeName = reveal && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
   const buoy = st.tactical?.buoys[stream]
   const simTopHz = BAND_MAX[st.band]
   const flashCtr = (hz: number) => {
@@ -546,7 +543,7 @@ export default function App() {
               <span className="sim-clock" data-testid="sim-clock">T+{fmtT(st.simT)}</span>
               {st.tactical && <span data-testid="ac-readout">{`A/C ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}°  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</span>}
             </div>
-            <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
+            <TacticalPlot client={client} showReveal={reveal} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource}
               onManual={(id, deg, final) => {
                 onManual(id, deg, final)
@@ -562,10 +559,8 @@ export default function App() {
               }} />
             <div className="plot-float">
               <button className="glass glass-btn float-btn" data-testid="layers-open" aria-label="Plot layers" onClick={() => setLayersSheet(true)}><IcLayers /></button>
-              {truth && st.tactical?.truth && phone && <button className="glass glass-btn float-btn truth-chip" data-testid="truth-open" onClick={() => setTruthSheet(true)}>TRUTH · {st.tactical.truth.contacts.filter((c) => c.active !== false).length}</button>}
             </div>
             <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} />
-            {truth && st.tactical?.truth && !phone && <TruthPanel contacts={st.tactical.truth.contacts} />}
           </div>
         </section>
       </main>
@@ -620,8 +615,8 @@ export default function App() {
           <div className="ios-section">
             <h3>Simulation</h3>
             <div className="ios-group">
-              <label className="ios-row"><span className="row-label">Truth overlay</span>
-                <input type="checkbox" role="switch" className="ios-switch" data-testid="truth-switch" checked={truth} onChange={(e) => setTruth(e.target.checked)} /></label>
+              <label className="ios-row"><span className="row-label">Reveal positions<small>True contact marks on the plot</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="reveal-switch" checked={reveal} onChange={(e) => setReveal(e.target.checked)} /></label>
               <label className="ios-row" title="Off = ideal receiver with unlimited dynamic range (for comparison)"><span className="row-label">Realistic receiver<small>AGC, limited dynamic range</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /></label>
               <button className="ios-row" data-testid="traffic-open" onClick={() => setTrafficSheet(true)}><span className="row-label">Surface traffic</span><span className="row-value">{Math.round(st.surfaceTraffic * 100)}%</span><IcChevron className="chev" size={16} /></button>
@@ -686,11 +681,6 @@ export default function App() {
         <div className="ios-group pad"><TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} /></div>
         <p className="ios-foot">Shipping noise from fictional merchant traffic. Heavier traffic raises the broadband floor and adds distant tonals.</p>
       </Sheet>
-      {phone && truth && st.tactical?.truth && (
-        <Sheet open={truthSheet} onClose={() => setTruthSheet(false)} title="Truth" testId="truth-sheet">
-          <TruthPanel contacts={st.tactical.truth.contacts} />
-        </Sheet>
-      )}
     </div>
   )
 }
