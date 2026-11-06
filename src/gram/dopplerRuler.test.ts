@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { doppler, fitCpaFromDoppler } from '@acoustics'
 import {
-  C_MPS, KNEE, MAX_SPEED_MPS, MIN_DT_S, MPS_TO_KT, RulerStore, dragF1, dragF2, emptyRuler, fitRuler, halfGeom, kneeDfHz,
+  C_MPS, KNEE, MAX_SPEED_MPS, MIN_DT_S, MPS_TO_KT, RulerStore, clampOff, dragF1, dragF2, emptyRuler, fitRuler, halfGeom, kneeDfHz,
   mirror, moveF0, passHz, placeRuler, relink, rulerGeom, rulerHz, rulerText, sampleRuler,
 } from './dopplerRuler'
 
@@ -64,21 +64,44 @@ describe('handles', () => {
     moveF0(s, 121, 410)
     expect([s.f1Hz, s.t1S, s.f2Hz, s.t2S].map((x) => +x.toFixed(9))).toEqual([121.25, 340, 120.75, 480])
   })
-  it('keeps f1 above f0 / before CPA, clamps the speed, and f2 unlinks then re-links', () => {
+  it('f1 drags freely in both axes; f2 is the point-mirror through (f0, tCPA)', () => {
+    // Drag f1 by (−0.2 Hz, +30 s) relative to centre → f2 at (+0.2 Hz, −30 s).
     const s = placeRuler(emptyRuler(), 100, 400, 0.3, 50)
-    dragF1(s, 99, 450)
-    expect(s.f1Hz).toBeGreaterThan(100); expect(s.t1S).toBe(400 - MIN_DT_S)
+    dragF1(s, 100 - 0.2, 400 + 30)
+    expect(s.f1Hz - s.f0Hz).toBeCloseTo(-0.2, 12)
+    expect(s.t1S - s.tCpaS).toBeCloseTo(30, 12)
+    expect(s.f2Hz - s.f0Hz).toBeCloseTo(+0.2, 12)
+    expect(s.t2S - s.tCpaS).toBeCloseTo(-30, 12)
+    expect(s.linked).toBe(true)
+    // Geometry uses |Δf| / |Δt|, so the readout matches the approach-side seed of the same magnitudes.
+    const g = rulerGeom(s)
+    expect(g.speedMps).toBeCloseTo(halfGeom(100, 0.2, 30).speedMps, 12)
+    expect(g.rCpaM).toBeCloseTo(halfGeom(100, 0.2, 30).rCpaM, 12)
+  })
+  it('dragging f2 mirrors f1 (and the readout does not depend on which handle moved)', () => {
+    const a = placeRuler(emptyRuler(), 100, 400, 0.25, 40)
+    const b = placeRuler(emptyRuler(), 100, 400, 0.25, 40)
+    dragF1(a, 100 + 0.4, 400 - 60)
+    dragF2(b, 100 - 0.4, 400 + 60) // the point-mirror of a's f1
+    expect(b.linked).toBe(true)
+    expect(b.f1Hz).toBeCloseTo(a.f1Hz, 12); expect(b.t1S).toBeCloseTo(a.t1S, 12)
+    expect(b.f2Hz).toBeCloseTo(a.f2Hz, 12); expect(b.t2S).toBeCloseTo(a.t2S, 12)
+    expect(rulerGeom(a).speedMps).toBeCloseTo(rulerGeom(b).speedMps, 12)
+    expect(rulerGeom(a).rCpaM).toBeCloseTo(rulerGeom(b).rCpaM, 12)
+    expect(rulerText(true, rulerGeom(a), true, 0.0625)).toBe(rulerText(true, rulerGeom(b), true, 0.0625))
+  })
+  it('clamps |Δf| to MAX_SPEED and |Δt| to MIN_DT_S on either side of the centre', () => {
+    const s = placeRuler(emptyRuler(), 100, 400, 0.3, 50)
+    dragF1(s, 100, 400) // dead centre → pushed out to min |Δf| / |Δt|
+    expect(Math.abs(s.f1Hz - 100)).toBeGreaterThan(0)
+    expect(Math.abs(s.t1S - 400)).toBe(MIN_DT_S)
     dragF1(s, 150, 300)
-    expect(halfGeom(100, s.f1Hz - 100, 100).speedMps).toBeCloseTo(MAX_SPEED_MPS, 8)
-    dragF1(s, 100.3, 350)
-    dragF2(s, 99.8, 500)
-    expect(s.linked).toBe(false); expect([s.f2Hz, s.t2S]).toEqual([99.8, 500])
-    // Unlinked: each half follows its own handle, still continuous through f0.
-    expect(rulerHz(s, 500)).toBeCloseTo(99.8, 10); expect(rulerHz(s, 350)).toBeCloseTo(100.3, 10)
-    expect(rulerHz(s, 400 - 1e-9)).toBeCloseTo(rulerHz(s, 400 + 1e-9), 6)
+    expect(halfGeom(100, s.f1Hz - 100, s.t1S - 400).speedMps).toBeCloseTo(MAX_SPEED_MPS, 8)
+    // Legacy unlink path still re-links via relink().
+    s.linked = false; s.f2Hz = 99.5; s.t2S = 480
     relink(s)
-    expect(s.linked).toBe(true); expect(s.f2Hz).toBeCloseTo(99.7, 12); expect(s.t2S).toBeCloseTo(450, 12)
-    expect(mirror({ ...s }).f2Hz).toBeCloseTo(99.7, 12)
+    expect(s.linked).toBe(true); expect(s.f2Hz).toBeCloseTo(2 * 100 - s.f1Hz, 12)
+    expect(mirror({ ...s }).f2Hz).toBeCloseTo(s.f2Hz, 12)
   })
 })
 
@@ -120,9 +143,14 @@ describe('RulerStore', () => {
     const f1 = st.s.f1Hz
     st.nudge(10, 0)
     expect(st.s.f1Hz).toBeCloseTo(f1 + 0.1, 9); expect(st.s.f2Hz).toBeCloseTo(2 * 101 - st.s.f1Hz, 9)
-    st.select('f2'); st.nudge(0, 5)
-    expect(st.s.linked).toBe(false); expect(st.fit?.ok).toBe(true)
-    st.relink(); expect(st.fit).toBeNull()
+    // Nudging f2 by −10 px mirrors onto f1 (+10 px) and stays linked; |Δf| (hence speed) is unchanged when the
+    // opposite handle is moved by the same pixel amount the other way from a symmetric start — here we just
+    // check linkage and that f1 moved as the mirror of f2.
+    const f2 = st.s.f2Hz
+    st.select('f2'); st.nudge(-10, 0)
+    expect(st.s.linked).toBe(true)
+    expect(st.s.f2Hz).toBeCloseTo(f2 - 0.1, 9)
+    expect(st.s.f1Hz).toBeCloseTo(2 * 101 - st.s.f2Hz, 9)
     st.clear(); expect(st.placed).toBe(false)
   })
 })

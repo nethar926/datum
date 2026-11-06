@@ -11,10 +11,11 @@
  * i.e. a tanh-like curve, antisymmetric about (tCPA, f0), with asymptotes f0(1 ± v/c) and a steepness at CPA of
  * f0·v/(c·τ) = f0·v²/(c·R). c = 1500 m/s (nominal sea water).
  *
- * Handle convention: a single handle cannot fix both v and R, so f1 marks the "knee" of the approach leg, where the
- * line has made KNEE (95 %) of its full shift. Then the curve passes through every handle exactly and
- *   v = c·Δf / (KNEE · f0)  (≈ c·Δf/f0),   R = v·Δt · √(1 − KNEE²) / KNEE.
- * Moving f1 out in frequency raises the speed; moving it out in time softens the curve (longer range).
+ * Handle convention: f1 and f2 are point-mirrors about the CPA centre (f0, tCPA). Either handle drags freely in both
+ * axes (X = signed Δf from f0, Y = signed Δt from tCPA); the other follows. |Δf| and |Δt| set the pass:
+ *   v = c·|Δf| / (KNEE · f0),   R = v·|Δt| · √(1 − KNEE²) / KNEE
+ * (KNEE = 95 % of the asymptotic shift). Moving a handle out in frequency raises the speed; out in time softens the
+ * curve (longer range). Seeding still places f1 on the approach side (Δf > 0, Δt < 0).
  */
 import { C } from '@acoustics'
 
@@ -30,9 +31,9 @@ export const MIN_DT_S = 2
 export interface RulerState {
   /** f0 handle: CPA point (Hz, sim seconds). */
   f0Hz: number; tCpaS: number
-  /** f1 handle: approach leg (f1Hz > f0Hz, t1S < tCpaS). */
+  /** f1 handle: free 2-axis offset from (f0, tCPA); seeded on the approach side. */
   f1Hz: number; t1S: number
-  /** f2 handle: receding leg; the mirror of f1 while linked. */
+  /** f2 handle: point-mirror of f1 about (f0, tCPA) while linked. */
   f2Hz: number; t2S: number
   linked: boolean
 }
@@ -105,23 +106,32 @@ export function moveF0(s: RulerState, hz: number, tS: number): RulerState {
   return s
 }
 
-/** Clamp a handle offset: Δf > 0 up to MAX_SPEED_MPS at the knee (and at least minDf), Δt ≥ MIN_DT_S. */
-function clampOff(f0: number, df: number, dt: number, minDf: number, c: number): [number, number] {
+/**
+ * Clamp a signed offset from the CPA centre: |Δf| ∈ [minDf, maxDf(MAX_SPEED)], |Δt| ≥ MIN_DT_S.
+ * Preserves the sign of each axis so a handle can sit on either side of (f0, tCPA).
+ */
+export function clampOff(f0: number, df: number, dt: number, minDf: number, c: number = C_MPS): [number, number] {
   const maxDf = kneeDfHz(f0, MAX_SPEED_MPS, c)
-  return [Math.min(maxDf, Math.max(Math.min(minDf, maxDf), df)), Math.max(MIN_DT_S, dt)]
+  const adf = Math.min(maxDf, Math.max(Math.min(minDf, maxDf), Math.abs(df)))
+  const adt = Math.max(MIN_DT_S, Math.abs(dt))
+  const sf = df < 0 ? -1 : 1 // df === 0 keeps the approach-side default (+)
+  const st = dt < 0 ? -1 : 1 // dt === 0 keeps the "after CPA" default (+)
+  return [sf * adf, st * adt]
 }
 
-/** Drag f1 to (hz, t): stays above f0 and before CPA. f2 follows while linked. */
+/** Drag f1 to (hz, t) in both axes; f2 point-mirrors about (f0, tCPA) while linked. */
 export function dragF1(s: RulerState, hz: number, tS: number, minDfHz = 1e-4, c = C_MPS): RulerState {
-  const [df, dt] = clampOff(s.f0Hz, hz - s.f0Hz, s.tCpaS - tS, minDfHz, c)
-  s.f1Hz = s.f0Hz + df; s.t1S = s.tCpaS - dt
+  const [df, dt] = clampOff(s.f0Hz, hz - s.f0Hz, tS - s.tCpaS, minDfHz, c)
+  s.f1Hz = s.f0Hz + df; s.t1S = s.tCpaS + dt
   return s.linked ? mirror(s) : s
 }
 
-/** Fine-drag f2 to (hz, t): unlinks it from f1; stays below f0 and after CPA. */
+/** Drag f2 to (hz, t) in both axes; f1 point-mirrors about (f0, tCPA). Keeps the handles linked. */
 export function dragF2(s: RulerState, hz: number, tS: number, minDfHz = 1e-4, c = C_MPS): RulerState {
-  const [df, dt] = clampOff(s.f0Hz, s.f0Hz - hz, tS - s.tCpaS, minDfHz, c)
-  s.f2Hz = s.f0Hz - df; s.t2S = s.tCpaS + dt; s.linked = false
+  const [df, dt] = clampOff(s.f0Hz, hz - s.f0Hz, tS - s.tCpaS, minDfHz, c)
+  s.f2Hz = s.f0Hz + df; s.t2S = s.tCpaS + dt
+  // Point-mirror through the centre onto f1 (and stay linked).
+  s.f1Hz = 2 * s.f0Hz - s.f2Hz; s.t1S = 2 * s.tCpaS - s.t2S; s.linked = true
   return s
 }
 

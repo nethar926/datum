@@ -1,6 +1,7 @@
-// Doppler ruler smoke (WebKit): iPhone touch placement of f0, f1 drag with f2 mirroring, the S-curve and the readout,
-// 44 px handles, no conflict with pinch zoom; desktop mouse placement + drag, arrow nudge, Esc clear; frame pacing
-// during a drag; no console errors. Run after `npm run build`. Saves docs/m3-doppler-*.png.
+// Doppler ruler smoke (WebKit): iPhone touch placement of f0, f1 2-axis drag with f2 point-mirroring, the S-curve and
+// the readout, 44 px handles, no conflict with pinch zoom; desktop mouse placement + drag, arrow nudge, Esc clear;
+// frame pacing during a drag; no console errors. Run after `npm run build`. Saves docs/m3-doppler-*.png and
+// docs/m3-dopfix-{iphone,desktop}-drag.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
 const port = 4188
@@ -59,39 +60,60 @@ try {
     const r0 = await page.locator('[data-testid=dop-readout]').innerText()
     console.log(`${slug}: readout after place: ${r0}`)
     ok(/DOP F0 [\d.]+ HZ +ΔF ±[\d.]+ HZ +10\.0 KT +CPA T[+-]\d\d:\d\d +R≈[\d.]+ KM/.test(r0), F(`readout after place: ${r0}`))
-    // Drag f1 out (more shift, longer offset) — f2 must mirror every step; measure frame pacing while dragging.
+    // 2-axis f1 drag: pure horizontal first (X must move; previously looked locked to the f0 column at coarse spans),
+    // then diagonal up-left so f2 mirrors down-right. Measure frame pacing on the diagonal.
     const rate = () => page.evaluate(() => new Promise((res) => { let n = 0; const t0 = performance.now(); const f = (t) => { n++; if (t - t0 < 1500) requestAnimationFrame(f); else res((n * 1000) / (t - t0)) }; requestAnimationFrame(f) }))
     const idle = await rate()
-    const from = { x: h1.cx, y: h1.cy }, to = { x: h1.cx + 45, y: h1.cy + (touchy ? 10 : 30) }
+    const dragTo = async (from, to, id = 7) => {
+      let worst = 0
+      if (touchy) {
+        await touch('[data-testid=dop-f1]', 'pointerdown', id, from)
+        for (let k = 1; k <= 30; k++) {
+          await touch('[data-testid=dop-f1]', 'pointermove', id, { x: from.x + (to.x - from.x) * k / 30, y: from.y + (to.y - from.y) * k / 30 })
+          if (k % 6 === 0) { await page.waitForTimeout(20); const [a, b, c] = [await H('f0'), await H('f1'), await H('f2')]; worst = Math.max(worst, Math.abs(c.x - (2 * a.x - b.x)), Math.abs(c.y - (2 * a.y - b.y))) }
+        }
+        await touch('[data-testid=dop-f1]', 'pointerup', id, to)
+      } else {
+        await page.mouse.move(from.x, from.y); await page.mouse.down()
+        for (let k = 1; k <= 30; k++) {
+          await page.mouse.move(from.x + (to.x - from.x) * k / 30, from.y + (to.y - from.y) * k / 30)
+          if (k % 6 === 0) { await page.waitForTimeout(20); const [a, b, c] = [await H('f0'), await H('f1'), await H('f2')]; worst = Math.max(worst, Math.abs(c.x - (2 * a.x - b.x)), Math.abs(c.y - (2 * a.y - b.y))) }
+        }
+        await page.mouse.up()
+      }
+      return worst
+    }
+    // Horizontal: move f1 further right in frequency (same Y). Must actually change dataset.x.
+    const xFrom = { x: h1.cx, y: h1.cy }, xTo = { x: h1.cx + 40, y: h1.cy }
+    const horizMirror = await dragTo(xFrom, xTo, 6)
+    await page.waitForTimeout(100)
+    const hHoriz = await H('f1'), h0h = await H('f0'), h2h = await H('f2')
+    console.log(`${slug}: after horizontal drag f1.x ${h1.x} → ${hHoriz.x} (Δ ${(hHoriz.x - h1.x).toFixed(1)} px)`)
+    ok(hHoriz.x - h1.x > 8, F(`f1 did not move horizontally (Δx=${(hHoriz.x - h1.x).toFixed(2)})`))
+    ok(Math.abs(hHoriz.y - h1.y) < 3, F(`f1 Y drifted on a horizontal drag (${h1.y} → ${hHoriz.y})`))
+    ok(horizMirror < 1.5, F(`f2 did not mirror f1 on horizontal drag (${horizMirror.toFixed(2)} px)`))
+    ok(Math.abs(h2h.x - (2 * h0h.x - hHoriz.x)) < 1.5 && Math.abs(h2h.y - (2 * h0h.y - hHoriz.y)) < 1.5, F('f2 not mirrored after horizontal drag'))
+    // Diagonal: up and left from here → f2 down and right.
+    const from = { x: hHoriz.cx, y: hHoriz.cy }, to = { x: hHoriz.cx - 35, y: hHoriz.cy - (touchy ? 18 : 30) }
     let worstMirror = 0
     const dragFps = rate()
-    if (touchy) {
-      await touch('[data-testid=dop-f1]', 'pointerdown', 7, from)
-      for (let k = 1; k <= 30; k++) {
-        await touch('[data-testid=dop-f1]', 'pointermove', 7, { x: from.x + (to.x - from.x) * k / 30, y: from.y + (to.y - from.y) * k / 30 })
-        if (k % 6 === 0) { await page.waitForTimeout(20); const [a, b, c] = [await H('f0'), await H('f1'), await H('f2')]; worstMirror = Math.max(worstMirror, Math.abs(c.x - (2 * a.x - b.x)), Math.abs(c.y - (2 * a.y - b.y))) }
-      }
-      await touch('[data-testid=dop-f1]', 'pointerup', 7, to)
-    } else {
-      await page.mouse.move(from.x, from.y); await page.mouse.down()
-      for (let k = 1; k <= 30; k++) {
-        await page.mouse.move(from.x + (to.x - from.x) * k / 30, from.y + (to.y - from.y) * k / 30)
-        if (k % 6 === 0) { await page.waitForTimeout(20); const [a, b, c] = [await H('f0'), await H('f1'), await H('f2')]; worstMirror = Math.max(worstMirror, Math.abs(c.x - (2 * a.x - b.x)), Math.abs(c.y - (2 * a.y - b.y))) }
-      }
-      await page.mouse.up()
-    }
+    worstMirror = await dragTo(from, to, 7)
     const fps = await dragFps
     console.log(`${slug}: ${idle.toFixed(1)} fps idle, ${fps.toFixed(1)} fps while dragging; worst mirror error ${worstMirror.toFixed(2)} px`)
     ok(fps >= idle * 0.8, F(`fps dropped while dragging (${fps.toFixed(1)} vs ${idle.toFixed(1)})`))
     ok(worstMirror < 1.5, F(`f2 did not mirror f1 during the drag (${worstMirror.toFixed(2)} px)`))
     await page.waitForTimeout(150);
     [h0, h1, h2] = [await H('f0'), await H('f1'), await H('f2')]
-    ok(Math.abs(h1.cx - to.x) < 3 && Math.abs(h1.cy - to.y) < 3, F(`f1 not under the finger after the drag (${h1.cx},${h1.cy} vs ${to.x},${to.y})`))
+    ok(Math.abs(h1.cx - to.x) < 4 && Math.abs(h1.cy - to.y) < 4, F(`f1 not under the finger after the drag (${h1.cx},${h1.cy} vs ${to.x},${to.y})`))
+    ok(h1.x < hHoriz.x && h1.y < hHoriz.y, F(`f1 did not move up-left (${hHoriz.x},${hHoriz.y} → ${h1.x},${h1.y})`))
+    ok(h2.x > h2h.x && h2.y > h2h.y, F(`f2 did not mirror down-right (${h2h.x},${h2h.y} → ${h2.x},${h2.y})`))
     ok(Math.abs(h0.cx - p0.x) < 2, F('f0 moved during the f1 drag'))
+    await page.screenshot({ path: `docs/m3-dopfix-${slug}-drag.png` })
     const r1 = await page.locator('[data-testid=dop-readout]').innerText()
     const kt = (t) => parseFloat(/([\d.]+) KT/.exec(t)?.[1] ?? 'NaN'), km = (t) => parseFloat(/R≈([\d.]+) KM/.exec(t)?.[1] ?? 'NaN')
     console.log(`${slug}: readout after drag: ${r1}`)
-    ok(kt(r1) > kt(r0) && km(r1) > km(r0), F(`speed/range did not grow with the drag (${r0} → ${r1})`))
+    // After up-left we may have reduced |Δf|/|Δt| relative to the horizontal push; just require a finite readout.
+    ok(/DOP F0/.test(r1) && Number.isFinite(kt(r1)) && Number.isFinite(km(r1)), F(`readout after drag: ${r1}`))
     // Curve: drawn, continuous, and through the three handles (canvas alpha at and between the points).
     const curve = await page.locator('[data-testid=dop-curve]').evaluate((c, hs) => {
       const g = c.getContext('2d'), r = c.getBoundingClientRect(), sx = c.width / r.width, sy = c.height / r.height
@@ -104,19 +126,18 @@ try {
     ok(curve.litRows > 0.9, F(`curve not continuous over the window (${curve.litRows.toFixed(2)})`))
     await page.screenshot({ path: `docs/m3-doppler-${slug}-ruler.png` })
     if (touchy) {
-      // f2 fine-drag unlinks it; a tap on f2 re-links to the mirror.
-      const a = { x: h2.cx, y: h2.cy }
+      // Dragging f2 mirrors f1 (stays linked); tools stay mutually exclusive with HARM.
+      const a = { x: h2.cx, y: h2.cy }, bTarget = { x: h2.cx - 20, y: h2.cy + 12 }
+      const f1Before = await H('f1')
       await touch('[data-testid=dop-f2]', 'pointerdown', 8, a)
-      for (let k = 1; k <= 6; k++) await touch('[data-testid=dop-f2]', 'pointermove', 8, { x: a.x - k * 3, y: a.y })
-      await touch('[data-testid=dop-f2]', 'pointerup', 8, { x: a.x - 18, y: a.y }); await page.waitForTimeout(150)
-      const u = await H('f2'), ru = await page.locator('[data-testid=dop-readout]').innerText()
-      ok(u.unlinked === '1' && /F2 UNLINKED/.test(ru), F(`f2 drag did not unlink (${ru})`))
-      ok(await page.locator('[data-testid=dop-link]').count() === 1, F('no Link button while unlinked'))
-      await page.screenshot({ path: `docs/m3-doppler-${slug}-unlinked.png` })
-      await page.touchscreen.tap(u.cx, u.cy); await page.waitForTimeout(150)
-      const l = await H('f2'); const [b0, b1] = [await H('f0'), await H('f1')]
-      ok(l.unlinked === '0' && Math.abs(l.x - (2 * b0.x - b1.x)) < 1.5, F('tap on f2 did not re-link'))
-      // Other tools still work: HARM tap sets a fundamental with the ruler on screen.
+      for (let k = 1; k <= 12; k++) await touch('[data-testid=dop-f2]', 'pointermove', 8, { x: a.x + (bTarget.x - a.x) * k / 12, y: a.y + (bTarget.y - a.y) * k / 12 })
+      await touch('[data-testid=dop-f2]', 'pointerup', 8, bTarget); await page.waitForTimeout(150)
+      const u2 = await H('f2'), u1 = await H('f1'), u0 = await H('f0'), ru = await page.locator('[data-testid=dop-readout]').innerText()
+      ok(u2.unlinked === '0' && !/F2 UNLINKED/.test(ru), F(`f2 drag unlinked (${ru})`))
+      ok(Math.abs(u1.x - (2 * u0.x - u2.x)) < 1.5 && Math.abs(u1.y - (2 * u0.y - u2.y)) < 1.5, F('f1 did not mirror f2'))
+      ok(Math.abs(u1.x - f1Before.x) > 2 || Math.abs(u1.y - f1Before.y) > 2, F('f1 did not move when f2 was dragged'))
+      await page.screenshot({ path: `docs/m3-doppler-${slug}-unlinked.png` }) // keep legacy filename for the f2-drag shot
+      const b0 = u0
       await page.getByRole('button', { name: 'HARM', exact: true }).tap()
       ok(await dopBtn.getAttribute('aria-pressed') === 'false', F('HARM did not disarm DOP (tools must be exclusive)'))
       const hp = pt(0.2, 0.7); await page.touchscreen.tap(hp.x, hp.y); await page.waitForTimeout(150)

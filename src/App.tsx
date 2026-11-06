@@ -333,7 +333,7 @@ export default function App() {
       {!phone && <span className="seg-label">TOOLS</span>}
             <div className="seg" role="group" aria-label="Doppler ruler">
               <button aria-pressed={dopMode} onClick={() => armDop(!dopMode)} data-testid="dop-tool"
-                title="Doppler ruler: tap a line at CPA to place f0, drag f1 onto the approach leg (f2 mirrors). Drag f2 to fine-tune it alone, tap it to re-link. Keys: arrows nudge, Shift ×10, Esc clears.">DOP</button>
+                title="Doppler ruler: tap a line at CPA to place f0, drag f1 in both axes (f2 mirrors through f0/CPA), or drag f2 (f1 mirrors). Keys: arrows nudge, Shift ×10, Esc clears.">DOP</button>
               {ruler.placed && <button onClick={() => applyCenter(ruler.s.f0Hz)} data-testid="dop-center" title="Center the gram on f0 (C while DOP is armed). Finer RES is the way to see a sub-Hz shift.">CTR f0</button>}
               {ruler.placed && !ruler.s.linked && <button onClick={() => ruler.relink()} data-testid="dop-link" title="Re-link f2 to the mirror of f1">Link</button>}
               {ruler.placed && <button onClick={() => ruler.clear()} data-testid="dop-clear">Clear</button>}

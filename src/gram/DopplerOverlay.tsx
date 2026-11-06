@@ -14,8 +14,9 @@ const LABEL: Record<Handle, string> = { f0: 'f0', f1: 'f1', f2: 'f2' }
 
 /**
  * Doppler ruler overlay on the LOFAR gram: one continuous S-curve through f1–f0–f2 on a 2D canvas, plus three 44 px
- * touch handles. Everything that moves is written imperatively from a rAF loop (no React render per drag frame).
- * Handles take their own pointers (captured), so gram pan / pinch / other cursors never see a handle drag.
+ * touch handles. f1/f2 drag freely in both axes (X = Δf, Y = Δt); each is the point-mirror of the other about f0/CPA.
+ * Everything that moves is written imperatively from a rAF loop (no React render per drag frame). Handles take their
+ * own pointers (captured, touch-action: none), so gram pan / pinch / other cursors never see a handle drag.
  */
 export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; store: RulerStore; nowS: number; active: boolean }) {
   const layer = useRef<HTMLDivElement>(null), cv = useRef<HTMLCanvasElement>(null)
@@ -71,6 +72,8 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
         e.style.display = vis ? '' : 'none'
         if (vis) e.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`
         const sel = store.sel === k ? '1' : '0'; if (e.dataset.sel !== sel) e.dataset.sel = sel
+        // Selected (and the handle being dragged) stays above the others so a tiny-Δf grab isn't stolen by f0/f2.
+        e.style.zIndex = store.sel === k ? '3' : '2'
         const ul = k === 'f2' && !s.linked ? '1' : '0'; if (e.dataset.unlinked !== ul) e.dataset.unlinked = ul
         e.dataset.x = x.toFixed(1); e.dataset.y = y.toFixed(1)
       }
@@ -119,7 +122,7 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
     const G = grab.current; if (!G || G.id !== e.pointerId) return
     e.stopPropagation(); grab.current = null
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
-    // Tap on an unlinked f2 re-links it to the f1 mirror.
+    // Tap on an unlinked f2 (legacy) re-links it to the f1 mirror; normal f2 drags stay linked and mirror f1.
     if (!G.moved && G.h === 'f2' && !store.s.linked) { store.relink(); return }
     store.changed(true)
   }
@@ -130,7 +133,7 @@ export function DopplerOverlay({ ctx, store, nowS, active }: { ctx: OverlayCtx; 
         <div key={k} ref={(e) => { hEls.current[k] = e }} className={`dop-handle h-${k}`} data-testid={`dop-${k}`} role="button" tabIndex={active ? 0 : -1}
           aria-label={k === 'f0' ? 'Doppler f0 (CPA) handle' : k === 'f1' ? 'Doppler f1 (approach) handle' : 'Doppler f2 (receding) handle, tap to re-link'}
           onFocus={() => store.select(k)} onPointerDown={down(k)} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
-          onContextMenu={(e) => e.preventDefault()} style={{ display: 'none' }}>
+          onContextMenu={(e) => e.preventDefault()} style={{ display: 'none', touchAction: 'none' }}>
           <i /><span>{LABEL[k]}</span>
         </div>
       ))}
