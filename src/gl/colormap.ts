@@ -72,9 +72,44 @@ export function hueRgb(h: number): [number, number, number] {
 }
 /** Bearing (deg, any value) to RGB 0..255 on the continuous wheel. */
 export const difarRgb = (deg: number): [number, number, number] => hueRgb(difarHue(deg))
+/**
+ * Operator wheel settings (DIFAR applet). Sectors are 16 × 22.5° on TRUE bearing, centred on N (sector 0 = 348.75–11.25°),
+ * stored as 16-bit masks. Rotation only moves the colours; null/isolate/steps always refer to true bearing.
+ */
+export type WheelSteps = 360 | 16 | 8 | 4
+export type WheelLook = 'full' | 'pastel' | 'bw' | 'green'
+export interface DifarWheelSettings { rotDeg: number; steps: WheelSteps; look: WheelLook; nulled: number; isolated: number }
+export const WHEEL_SECTORS = 16
+export const DEFAULT_WHEEL: DifarWheelSettings = { rotDeg: 0, steps: 360, look: 'full', nulled: 0, isolated: 0 }
+export const WHEEL_STEPS: WheelSteps[] = [360, 16, 8, 4]
+export const WHEEL_LOOKS: WheelLook[] = ['full', 'pastel', 'bw', 'green']
+/** Grey for nulled sectors (same as "no bearing"); dark grey for sectors muted by an isolate. */
+export const WHEEL_NULL_RGB: [number, number, number] = [153, 153, 153]
+export const WHEEL_MUTED_RGB: [number, number, number] = [56, 56, 56]
+
+const norm = (d: number) => ((d % 360) + 360) % 360
+export const sectorOf = (deg: number): number => Math.floor(norm(deg + 11.25) / 22.5) % WHEEL_SECTORS
+/** Snap a bearing to the centre of its step bin (bins centred on N). 360 = continuous. */
+export const quantizeBearing = (deg: number, steps: WheelSteps): number =>
+  steps >= 360 ? norm(deg) : norm(Math.round(norm(deg) / (360 / steps)) * (360 / steps))
+
+const luma = ([r, g, b]: [number, number, number]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+/** Bearing → RGB under the operator's wheel settings. */
+export function wheelRgb(deg: number, w: DifarWheelSettings = DEFAULT_WHEEL): [number, number, number] {
+  const sec = sectorOf(deg), bit = 1 << sec
+  if (w.nulled & bit) return WHEEL_NULL_RGB
+  if (w.isolated && !(w.isolated & bit)) return WHEEL_MUTED_RGB
+  const c = difarRgb(quantizeBearing(deg, w.steps) - w.rotDeg)
+  switch (w.look) {
+    case 'pastel': return c.map((v) => Math.round(v * 0.55 + 255 * 0.45)) as [number, number, number]
+    case 'bw': { const y = Math.round(64 + (luma(c) / 255) * 191); return [y, y, y] }
+    case 'green': { const y = luma(c) / 255; return [Math.round(30 * y), Math.round(70 + 185 * y), Math.round(40 + 60 * y)] }
+    default: return c
+  }
+}
 /** 360-entry RGBA wheel (one texel per degree) for the GPU; sampled with linear filtering and REPEAT wrap. */
-export function difarWheelLut(size = 360): Uint8Array {
+export function difarWheelLut(size = 360, w: DifarWheelSettings = DEFAULT_WHEEL): Uint8Array {
   const out = new Uint8Array(size * 4)
-  for (let i = 0; i < size; i++) { const [r, g, b] = difarRgb((i * 360) / size); out.set([r, g, b, 255], i * 4) }
+  for (let i = 0; i < size; i++) { const [r, g, b] = wheelRgb((i * 360) / size, w); out.set([r, g, b, 255], i * 4) }
   return out
 }

@@ -1,5 +1,5 @@
 import { capDpr } from '../touch/gestures'
-import { difarWheelLut, paletteLut, type PaletteId } from './colormap'
+import { DEFAULT_WHEEL, difarWheelLut, paletteLut, type DifarWheelSettings, type PaletteId } from './colormap'
 
 const VS = `#version 300 es
 in vec2 aPos; out vec2 vUv;
@@ -57,6 +57,7 @@ export class WaterfallRenderer {
   private filled: Int32Array
   private lost = false
   private palette: PaletteId = 'green'
+  private wheelSettings: DifarWheelSettings = DEFAULT_WHEEL
   readonly bins: number
   readonly rows: number
   readonly streams: number
@@ -116,13 +117,22 @@ export class WaterfallRenderer {
     this.brg = Array.from({ length: this.bearingStreams }, ring)
     this.wheel = gl.createTexture()!
     gl.bindTexture(gl.TEXTURE_2D, this.wheel)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 360, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, difarWheelLut(360))
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 360, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, difarWheelLut(360, this.wheelSettings))
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.REPEAT], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v)
 
     this.lut = gl.createTexture()!
     gl.bindTexture(gl.TEXTURE_2D, this.lut)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, paletteLut(this.palette, 256))
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v)
+  }
+
+  /** Re-bake the DIFAR wheel LUT from the operator's settings (one 1.4 KB upload); survives context restore. */
+  setWheel(w: DifarWheelSettings): void {
+    this.wheelSettings = w
+    if (this.lost) return
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D, this.wheel)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 360, 1, gl.RGBA, gl.UNSIGNED_BYTE, difarWheelLut(360, w))
   }
 
   /** Swap the colour palette (one 1 KB texture upload); survives context restore. */

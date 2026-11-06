@@ -3,7 +3,7 @@ import type { GramConfig, Tactical } from '../engine/contract'
 import { fillLineBearings, type GramMode } from './difarBearing'
 import type { SimClient } from '../engine/client'
 import { WaterfallRenderer } from '../gl/waterfall'
-import type { PaletteId } from '../gl/colormap'
+import type { DifarWheelSettings, PaletteId } from '../gl/colormap'
 import { contrastRange } from './contrast'
 import { AutoLevel } from './autoLevel'
 import { SplitWindowNormalizer } from './whiten'
@@ -28,7 +28,9 @@ interface Props {
   crosshair?: boolean; nowS?: number
   auto?: boolean; normalized?: boolean; palette?: PaletteId
   /** Colour-scale gain about the dB midpoint (1 = engine range). Applies to LOFAR and DIFAR. */
-  contrast?: number; selectedHz?: number | null; onSelectHz?: (hz: number) => void
+  contrast?: number
+  /** DIFAR operator wheel (rotation, steps, look, null/isolate sectors). */
+  wheel?: DifarWheelSettings; selectedHz?: number | null; onSelectHz?: (hz: number) => void
   /** 'difar' colours each bin by bearing (hue) with intensity as brightness; 'lofar' uses the palette. */
   mode?: GramMode
   /** Latest tactical frame, used for per-bin bearings until the engine streams them. */
@@ -43,7 +45,7 @@ const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
  * Gram waterfall (LOFAR, DEMON): WebGL2 ring textures, frequency axis below, time axis right, cursor readout.
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
-export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
+export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
   label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0 }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -63,8 +65,9 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const full = (): FreqView => (cfg ? fullView(cfg) : { lo: 0, hi: fMax })
   const geo = geometryKey(configs)
   const limitHz = bandLimitHz(cfg)
-  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode, contrast })
-  viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode, contrast }
+  const [wheelTick, setWheelTick] = useState(0)
+  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick })
+  viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick }
   const tacRef = useRef(tactical); tacRef.current = tactical
 
   // (Re)create the renderer when the stream geometry changes.
@@ -112,8 +115,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     ro.observe(canvas)
     let lastKey = ''
     const frame = () => {
-      const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz, palette: pal, mode: md, contrast: k } = viewRef.current
-      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md},${c?.dbFloor},${c?.dbCeil},${k}`
+      const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz, palette: pal, mode: md, contrast: k, wheelTick: wt } = viewRef.current
+      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md},${c?.dbFloor},${c?.dbCeil},${k},${wt}`
       if ((dirty || key !== lastKey) && c) {
         const fl = level.get(s), useAuto = a && Number.isFinite(fl)
         const dbFloor = useAuto ? fl - AUTO_BELOW_DB : c.dbFloor, dbCeil = useAuto ? fl - AUTO_BELOW_DB + AUTO_SPAN_DB : c.dbCeil
@@ -148,6 +151,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
   useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, bins, configs.length, client, glGen])
+  useEffect(() => { if (wheel) { rendererRef.current?.setWheel(wheel); setWheelTick((t) => t + 1) } }, [wheel, bins, configs.length, client, glGen])
 
   const ticks = useMemo(() => niceTicks(view.lo, view.hi, Math.max(3, Math.floor(width / 90))), [view, width])
   const historyS = HISTORY_ROWS / rowRate

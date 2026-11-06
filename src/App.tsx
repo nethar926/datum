@@ -7,6 +7,9 @@ import { Gram } from './gram/Gram'
 // DemonPane (src/gram/DemonPane.tsx) is kept but off the display layout for now.
 import { isGramMode, type GramMode } from './gram/difarBearing'
 import { DifarLegend } from './gram/DifarLegend'
+import { DifarApplet } from './gram/DifarApplet'
+import { loadWheel, saveWheel } from './gram/wheelSettings'
+import type { DifarWheelSettings } from './gl/colormap'
 import { NewScenario } from './settings/NewScenario'
 import { TrafficSlider } from './settings/TrafficSlider'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
@@ -58,6 +61,9 @@ export default function App() {
   // LOFAR phosphor: green (default), amber or red. Amplitude only, no hue coding. DIFAR ignores it (bearing wheel).
   const [palette, setPalette] = useState<PaletteId>(loadPalette)
   const [contrast, setContrast] = useState<number>(loadContrast)
+  const [wheel, setWheel] = useState<DifarWheelSettings>(loadWheel)
+  const [wheelOpen, setWheelOpen] = useState(false)
+  useEffect(() => { saveWheel(wheel) }, [wheel])
   useEffect(() => { try { localStorage.setItem(CONTRAST_KEY, String(contrast)) } catch { /* private mode */ } }, [contrast])
   useEffect(() => { try { localStorage.setItem(PALETTE_KEY, palette) } catch { /* private mode */ } }, [palette])
   const [gramMode, setGramMode] = useState<GramMode>(loadGramMode)
@@ -310,7 +316,7 @@ export default function App() {
             {lofarCfgs.length > 0 && (
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
-                normalized={filter === 'NB'} palette={palette} contrast={contrast} selectedHz={selHz} onSelectHz={setSelHz}
+                normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
                 mode={gramMode} tactical={st.tactical}
                 onPickPoint={vernierPick ? (hz) => centerVernier(hz) : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
                 onDragPoint={vernierPick ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
@@ -342,7 +348,8 @@ export default function App() {
                 <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
               </div>
             )}
-            {gramMode === 'difar' && <DifarLegend omni={!!buoy && buoy.kind !== 'difar'} />}
+            {gramMode === 'difar' && <DifarLegend omni={!!buoy && buoy.kind !== 'difar'} wheel={wheel} onOpen={() => setWheelOpen(true)} />}
+            {gramMode === 'difar' && wheelOpen && <DifarApplet wheel={wheel} onChange={setWheel} onClose={() => setWheelOpen(false)} />}
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
           {layout === 'phonePortrait' && toolsRow}
