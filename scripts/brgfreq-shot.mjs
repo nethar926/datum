@@ -2,6 +2,7 @@
 // phone BRG arms pick-freq then gram tap sends. Port 4189. Saves docs/m3-brgfreq-*.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 
 const port = Number(process.env.PORT) || 4189
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
@@ -33,6 +34,7 @@ try {
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     await page.addInitScript(() => { try { localStorage.setItem('datum.gram', JSON.stringify({ res: 5, filter: 'NB' })); localStorage.removeItem('datum.band') } catch {} })
     await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=5`)
+    await dismissSplash(page)
     const cv = page.locator('[data-testid=lofar]')
     await cv.waitFor(); await page.waitForTimeout(8000)
     const F = (m) => `${slug}: ${m}`
@@ -93,6 +95,7 @@ try {
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     await page.addInitScript(() => { try { localStorage.setItem('datum.gram', JSON.stringify({ res: 5, filter: 'NB' })); localStorage.removeItem('datum.band') } catch {} })
     await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=5`)
+    await dismissSplash(page)
     const cv = page.locator('[data-testid=lofar]')
     await cv.waitFor(); await page.waitForTimeout(8000)
     const F = (m) => `${slug}: ${m}`

@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 
 const port = Number(process.env.PORT) || 4196
 mkdirSync('docs', { recursive: true })
@@ -151,6 +152,7 @@ try {
     page.on('pageerror', (e) => errs.push(String(e)))
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 })
+    await dismissSplash(page)
     await page.waitForSelector('[data-testid=tactical]', { timeout: 30000 })
     await page.waitForTimeout(3500)
     await page.waitForFunction(() => !!window.__datumTactical?.buoys?.length, { timeout: 10000 }).catch(() => null)

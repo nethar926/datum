@@ -47,6 +47,7 @@ import { CutController } from './cuts/session'
 import { CutsTab } from './cuts/CutsTab'
 import { listCutSeeds } from './cuts/api'
 import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
+import { Splash } from './ui/Splash'
 import { SPLIT_DEFAULT_H, SPLIT_DEFAULT_V, SPLIT_KEY_H, SPLIT_KEY_V, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
 import { useListen } from './audio/useListen'
@@ -626,6 +627,7 @@ export default function App() {
     <div className={`app ios layout-${layout}`} data-layout={layout} data-gram-dir={gramDir} data-tab={tab} data-split={splitAxis}
       data-tabbar={tabMin ? 'min' : 'full'} data-fix-armed={fixStore.armed ? '1' : '0'}>
       <GlassDefs />
+      <Splash />
       {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       {instrumentsVisible && (
         <NavBar title={tab === 'plot' ? 'Plot' : 'DATUM'} sub={phone ? undefined : navSub}

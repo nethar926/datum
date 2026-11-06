@@ -28,7 +28,14 @@ export function useAppearance() {
   useLayoutEffect(() => {
     const r = document.documentElement
     r.dataset.scheme = scheme; r.style.colorScheme = scheme
-    document.querySelector('meta[name=theme-color]')?.setAttribute('content', scheme === 'dark' ? '#000000' : '#f2f2f7')
+    const dark = scheme === 'dark'
+    const color = dark ? '#000000' : '#f2f2f7'
+    for (const m of document.querySelectorAll('meta[name=theme-color]')) {
+      const media = m.getAttribute('media')
+      if (!media) { m.setAttribute('content', color); continue }
+      if (media.includes('dark') && dark) m.setAttribute('content', color)
+      if (media.includes('light') && !dark) m.setAttribute('content', color)
+    }
   }, [scheme])
   useEffect(() => saveScheme(pref), [pref])
   return { pref, setPref, scheme }

@@ -272,7 +272,7 @@ button.ios-row:active { background: var(--sys-fill); }
 .app.ios.layout-wide .tabbar button { width: 76px; font-size: 11px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .tabbar, .tabbar button, .tool, .glass-btn, .split-handle i, .app.ios .workspace.settling, .sheet, .sheet-scrim, .ios-switch::after, .nav-title { transition: none !important; }
+  .tabbar, .tabbar button, .tool, .glass-btn, .split-handle i, .app.ios .workspace.settling, .sheet, .sheet-scrim, .ios-switch::after, .nav-title, .splash-root, .splash-card { transition: none !important; }
 }
 
 /* Grid areas so screens that hide the nav bar never shift the dock. */
@@ -373,3 +373,118 @@ button.ios-row:active { background: var(--sys-fill); }
 .cut-reveal-actions .btn { min-height: 44px; min-width: 44px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--sys-fill); color: var(--sys-label); font: 600 14px inherit; cursor: pointer; }
 .cut-reveal-actions .btn.primary { background: var(--tint); color: #fff; }
 @keyframes cut-fade { from { opacity: 0 } to { opacity: 1 } }
+
+/* ---------- Launch splash (per load) ---------- */
+/* Thick near-opaque material + a single full-screen scrim. Never .glass over instruments. */
+.splash-root {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: transparent;
+  transition: opacity var(--t, 190ms) ease, visibility var(--t, 190ms) ease;
+}
+.splash-root.leaving { opacity: 0; pointer-events: none; }
+/* One compositor layer: dim + blur the whole app once. */
+.splash-scrim {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: rgba(0, 0, 0, .68);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  backdrop-filter: blur(22px) saturate(140%);
+}
+:root[data-scheme='light'] .splash-scrim { background: rgba(0, 0, 0, .38); }
+/* Reduced transparency / low power: solid dim, no blur. */
+:root[data-glass='reduced'] .splash-scrim {
+  background: rgba(0, 0, 0, .78);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-glass='full']) .splash-scrim {
+    background: rgba(0, 0, 0, .78);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+.splash-card {
+  position: relative; z-index: 1;
+  width: min(400px, 100%); max-height: min(92dvh, 720px); overflow: auto;
+  border-radius: 28px;
+  padding: 22px 20px 18px; display: flex; flex-direction: column; align-items: stretch; gap: 12px;
+  color: var(--sys-label);
+  /* iOS thick / regular material — near-opaque so instruments never show through. */
+  background: #1c1c1e;
+  border: .5px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .35);
+  transform: scale(1); transform-origin: center;
+  transition: transform var(--t, 190ms) cubic-bezier(.32, .72, 0, 1), opacity var(--t, 190ms) ease;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+:root[data-scheme='light'] .splash-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .18), 0 2px 8px rgba(0, 0, 0, .08);
+}
+:root[data-glass='reduced'] .splash-card { background: #1c1c1e; }
+:root[data-scheme='light'][data-glass='reduced'] .splash-card { background: #ffffff; }
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-glass='full']) .splash-card { background: #1c1c1e; }
+  :root[data-scheme='light']:not([data-glass='full']) .splash-card { background: #ffffff; }
+}
+.splash-root.leaving .splash-card { transform: scale(.96); opacity: 0; }
+.splash-logo { display: block; width: min(200px, 68%); height: auto; margin: 2px auto 0; border-radius: 10px; }
+.splash-disclaimer {
+  margin: 0; text-align: center;
+  font: 400 13px/1.4 inherit; letter-spacing: -0.01em;
+  color: rgba(235, 235, 245, 0.78); /* ≥ AA on #1c1c1e */
+}
+:root[data-scheme='light'] .splash-disclaimer {
+  color: rgba(60, 60, 67, 0.85); /* ≥ AA on #ffffff */
+}
+.splash-a2hs {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 12px 10px; border-radius: 16px;
+  /* Secondary grouped inset — solid, not glass. */
+  background: #2c2c2e;
+  border: .5px solid rgba(255, 255, 255, 0.08);
+}
+:root[data-scheme='light'] .splash-a2hs { background: #f2f2f7; border-color: rgba(0, 0, 0, 0.06); }
+.splash-a2hs-title { margin: 0; font: 600 15px/1.2 inherit; letter-spacing: -0.02em; color: var(--sys-label); }
+.splash-a2hs-lead { margin: 0; font: 400 12px/1.35 inherit; color: var(--sys-label-2); }
+.splash-a2hs-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.splash-a2hs-steps li {
+  display: flex; align-items: center; gap: 10px;
+  font: 400 13px/1.3 inherit; color: var(--sys-label); min-height: 28px;
+}
+.splash-a2hs-steps .step-ic {
+  flex: 0 0 28px; width: 28px; height: 28px; border-radius: 7px;
+  display: grid; place-items: center;
+  background: rgba(120, 120, 128, 0.28); color: var(--tint);
+}
+:root[data-scheme='light'] .splash-a2hs-steps .step-ic { background: rgba(118, 118, 128, 0.16); }
+.splash-a2hs-actions { display: flex; gap: 8px; margin-top: 4px; }
+.splash-a2hs-btn {
+  flex: 1 1 0; min-width: 0; min-height: 44px; height: 44px; max-height: 44px;
+  border-radius: 12px; border: .5px solid var(--sys-sep) !important;
+  background: transparent !important; color: var(--sys-label) !important;
+  font: 600 13px/1 inherit !important; cursor: pointer;
+  padding: 0 8px !important;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: transform var(--t-fast, 160ms) var(--spring), background-color var(--t-fast, 160ms) ease;
+}
+.splash-a2hs-btn:active { transform: scale(.96); background: var(--sys-fill) !important; }
+.splash-continue {
+  flex: none; width: 100%; min-height: 44px; height: 44px;
+  border-radius: 999px; border: 0;
+  background: var(--tint); color: #fff; font: 600 15px/1 inherit; cursor: pointer;
+  padding: 0 16px; margin-top: 2px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
+  transition: transform var(--t-fast, 160ms) var(--spring), opacity var(--t-fast, 160ms) ease;
+}
+.splash-continue:active { transform: scale(.96); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-root, .splash-card, .splash-a2hs-btn, .splash-continue { transition: none !important; }
+  .splash-root.leaving .splash-card { transform: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .splash-scrim { background: rgba(0, 0, 0, .78); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

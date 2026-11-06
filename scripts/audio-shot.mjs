@@ -4,6 +4,7 @@
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { chromium, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 
 const port = Number(process.env.PORT) || 4197
 mkdirSync('docs', { recursive: true })
@@ -76,6 +77,7 @@ try {
     page.on('pageerror', (e) => errs.push(String(e)))
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 45000 })
+    await dismissSplash(page)
     await page.waitForSelector('[data-testid=lofar]', { timeout: 30000 })
     await page.waitForTimeout(3500) // let gram rows fill so the shot shows data
 

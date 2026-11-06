@@ -6,6 +6,7 @@
 // Saves docs/m3-ios-*.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 
 const port = Number(process.env.PORT) || 4191
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
@@ -93,6 +94,7 @@ try {
     // Fresh prefs on the first load only (reloads must keep what the test persisted).
     await page.addInitScript(() => { try { if (!sessionStorage.getItem('ios.seeded')) { for (const k of ['datum.gramDir', 'datum.band', 'datum.split.v', 'datum.split.h', 'datum.horz', 'datum.scheme', 'datum.glass']) localStorage.removeItem(k); sessionStorage.setItem('ios.seeded', '1') } } catch {} })
     await goto(page, URL())
+    await dismissSplash(page)
     await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(6000)
     const F = (m) => `${slug}: ${m}`
     const m = await measure(page)
@@ -156,7 +158,9 @@ try {
       const clampBot = await measure(page)
       ok(clampBot.plot.h >= 118, F(`plot pane under min after clamp (${clampBot.plot.h})`))
       await page.screenshot({ path: 'docs/m3-ios-iphone-portrait-split-max.png' })
-      await page.reload(); await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(1500)
+      await page.reload()
+      await dismissSplash(page)
+      await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(1500)
       const afterReload = (await measure(page)).gram.h
       ok(Math.abs(afterReload - clampBot.gram.h) < 3, F(`split did not survive reload (${clampBot.gram.h} → ${afterReload})`))
       const c = await H.boundingBox()
@@ -229,7 +233,9 @@ try {
       ok(await page.locator('[data-testid=lofar-cross]').count() === 0, F('HORZ must not show the crosshair readout'))
       ok(await page.evaluate(() => localStorage.getItem('datum.horz')) === '1', F('HORZ not persisted on'))
       await page.screenshot({ path: 'docs/m3-ios-desktop-horz.png' })
-      await page.reload(); await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(1500)
+      await page.reload()
+      await dismissSplash(page)
+      await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(1500)
       ok(await page.locator('[data-testid=horz-tool]').getAttribute('aria-pressed') === 'true', F('HORZ did not survive reload'))
       await page.locator('[data-testid=horz-tool]').click(); await page.mouse.move(gb.x + gb.width * 0.5, gb.y + gb.height * 0.5); await page.waitForTimeout(100)
       ok(await page.locator('[data-testid=lofar-horz]').count() === 0 && await page.evaluate(() => localStorage.getItem('datum.horz')) === '0', F('HORZ did not toggle off'))

@@ -45,3 +45,9 @@ export const IcSparkle = (p: P) => <S {...p}><path d="M12 3.5l1.8 5.2 5.2 1.8-5.
 export const IcSpeaker = (p: P) => <S {...p}><path d="M4.5 9.5v5h3.2L12.5 18V6L7.7 9.5z" /><path d="M15.2 9.2a3.2 3.2 0 0 1 0 5.6" /><path d="M17.4 7a5.6 5.6 0 0 1 0 10" opacity=".7" /></S>
 /** Speaker muted (listen off). */
 export const IcSpeakerMute = (p: P) => <S {...p}><path d="M4.5 9.5v5h3.2L12.5 18V6L7.7 9.5z" /><path d="M16 9.5l4 5M20 9.5l-4 5" /></S>
+/** Share (iOS): rounded square with an up arrow. */
+export const IcShare = (p: P) => <S {...p}><path d="M12 14.5V4.5" /><path d="M8.5 7.5 12 4l3.5 3.5" /><path d="M6.5 10.5v6.2A2.3 2.3 0 0 0 8.8 19h6.4a2.3 2.3 0 0 0 2.3-2.3v-6.2" /></S>
+/** Plus-in-box (Add to Home Screen). */
+export const IcPlusBox = (p: P) => <S {...p}><rect x="4" y="4" width="16" height="16" rx="3.5" /><path d="M12 8.5v7M8.5 12h7" /></S>
+/** Overflow / Android menu: three vertical dots. */
+export const IcMore = (p: P) => <S {...p}><circle cx="12" cy="5.5" r="1.35" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none" /><circle cx="12" cy="18.5" r="1.35" fill="currentColor" stroke="none" /></S>

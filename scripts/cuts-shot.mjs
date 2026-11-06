@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 
 const port = Number(process.env.PORT) || 4192
 mkdirSync('docs', { recursive: true })
@@ -70,6 +71,7 @@ try {
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     await page.addInitScript(() => { try { localStorage.removeItem('datum.band'); localStorage.removeItem('datum.gram') } catch {} })
     await page.goto(`http://127.0.0.1:${port}/datum/?autoplay&rate=16`, { waitUntil: 'domcontentloaded', timeout: 45000 })
+    await dismissSplash(page)
     await page.locator('[data-testid=lofar]').waitFor({ timeout: 20000 })
     await page.waitForTimeout(1200)
     const F = (m) => `${slug}: ${m}`

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 252 72" role="img" aria-label="DATUM">
+<g transform="translate(10,10) scale(0.52)"><line x1="22" y1="28" x2="41" y2="28" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.28"/>
+<line x1="59" y1="28" x2="78" y2="28" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.28"/>
+<line x1="22" y1="38" x2="41" y2="38" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.40"/>
+<line x1="59" y1="38" x2="78" y2="38" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.40"/>
+<line x1="22" y1="48" x2="41" y2="48" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.52"/>
+<line x1="59" y1="48" x2="78" y2="48" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.52"/>
+<line x1="22" y1="58" x2="41" y2="58" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.64"/>
+<line x1="59" y1="58" x2="78" y2="58" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.64"/>
+<line x1="22" y1="68" x2="41" y2="68" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.76"/>
+<line x1="59" y1="68" x2="78" y2="68" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.76"/>
+<line x1="22" y1="76" x2="41" y2="76" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.88"/>
+<line x1="59" y1="76" x2="78" y2="76" stroke="#39ff88" stroke-width="2.2" stroke-linecap="round" opacity="0.88"/>
+<path d="M50 20 C45 32, 39 40, 50 50 C61 60, 55 68, 50 80" fill="none" stroke="#39ff88" stroke-width="3" stroke-linecap="round"/></g>
+<g transform="translate(78.00,18.40) scale(1.0)" fill="#0c1610">
+  <path d="M3.80 0.10H15.08Q22.15 0.10 25.61 4.78Q29.07 9.46 29.07 18.25Q29.07 27.09 25.61 31.75Q22.15 36.40 15.08 36.40H3.80ZM14.61 30.94Q18.36 30.94 20.15 28.50Q21.94 26.05 21.94 21.37V15.08Q21.94 10.45 20.15 8.01Q18.36 5.56 14.61 5.56H10.50V30.94Z"/>
+  <path d="M54.55 36.40 52.00 27.20H41.24L38.74 36.40H31.88L42.07 0.10H51.53L61.78 36.40ZM46.85 6.81H46.44L42.43 21.63H50.86Z"/>
+  <path d="M81.38 5.72V36.40H74.62V5.72H63.70V0.10H92.30V5.72Z"/>
+  <path d="M103.64 0.10V22.72Q103.64 24.75 103.77 26.36Q103.90 27.98 104.44 29.09Q104.99 30.21 106.11 30.84Q107.22 31.46 109.20 31.46Q111.18 31.46 112.29 30.84Q113.41 30.21 113.96 29.09Q114.50 27.98 114.63 26.36Q114.76 24.75 114.76 22.72V0.10H121.58V21.68Q121.58 25.53 121.11 28.39Q120.64 31.25 119.29 33.18Q117.94 35.10 115.52 36.06Q113.10 37.02 109.20 37.02Q105.30 37.02 102.88 36.06Q100.46 35.10 99.11 33.18Q97.76 31.25 97.29 28.39Q96.82 25.53 96.82 21.68V0.10Z"/>
+  <path d="M147.58 19.60 147.89 9.10H147.42L140.40 27.77L133.38 9.10H132.91L133.22 19.60V36.40H127.30V0.10H135.41L140.45 13.47H140.82L145.91 0.10H153.50V36.40H147.58Z"/>
+</g>
+</svg>

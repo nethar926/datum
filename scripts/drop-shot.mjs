@@ -6,6 +6,7 @@
 // Run after `npm run build`. Saves docs/m3-drop-*.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 const port = Number(process.env.PORT) || 4186
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
@@ -23,6 +24,7 @@ try {
     page.on('pageerror', (e) => errs.push(String(e)))
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16`)
+    await dismissSplash(page)
     const plot = page.locator('[data-testid=tactical]'), bar = page.locator('[data-testid=drop-bar]')
     await plot.waitFor(); await page.waitForTimeout(5000)
     // Phone landscape: the tactical plot sits beside the gram (no slide-over any more).

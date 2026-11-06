@@ -3,6 +3,7 @@
 // long-press crosshair, sheets / slide-over, WebGL context-loss recovery. Saves docs/m3-touch-<profile>.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 
 const port = Number(process.env.PORT) || 4181
 const PROFILES = [
@@ -23,6 +24,7 @@ try {
     page.on('pageerror', (e) => errs.push(String(e)))
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16`)
+    await dismissSplash(page)
     await page.waitForSelector('[data-testid=lofar]')
     await page.waitForTimeout(4000)
     const F = (m) => `${slug}: ${m}`

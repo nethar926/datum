@@ -3,6 +3,7 @@
 // Run after `npm run build`. Saves docs/m3-reveal-*.png. One smoke at a time.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 
 const port = Number(process.env.PORT) || 4193
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
@@ -55,6 +56,7 @@ try {
     const page = await context.newPage()
     page.on('pageerror', (e) => fails.push(`${name} pageerror: ${e}`))
     await goto(page, URL('&tab=live'))
+    await dismissSplash(page)
     await page.waitForSelector('[data-testid=tactical]', { timeout: 30000 })
     await page.waitForTimeout(2500)
     await enableReveal(page)

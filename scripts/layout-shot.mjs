@@ -3,6 +3,7 @@
 // Run after `npm run build`. Saves docs/m3-layout-*.png. Port 4191.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 
 const port = Number(process.env.PORT) || 4191
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
@@ -94,11 +95,13 @@ try {
       page.on('pageerror', (e) => errs.push(String(e)))
       await page.addInitScript(() => { try { localStorage.removeItem('datum.gramDir'); localStorage.removeItem('datum.band') } catch {} })
       await goto(page, `http://127.0.0.1:${port}/datum/`)
+    await dismissSplash(page)
       await page.waitForTimeout(800)
       await page.evaluate(() => { for (const b of document.querySelectorAll('button')) if (/Acknowledge/i.test(b.innerText || '')) b.click() })
       await page.screenshot({ path: `docs/m3-layout-${slug}-before.png`, fullPage: false })
 
       await goto(page, `http://127.0.0.1:${port}/datum/?autoplay&rate=16`)
+    await dismissSplash(page)
       await page.waitForTimeout(800)
       await page.evaluate(() => { for (const b of document.querySelectorAll('button')) if (/Acknowledge/i.test(b.innerText || '')) b.click() })
       try { await page.waitForSelector('[data-testid=lofar]', { timeout: 10000 }) } catch {}
@@ -140,13 +143,16 @@ try {
         }
       })
       await goto(page, `http://127.0.0.1:${port}/datum/?autoplay&rate=16`)
+    await dismissSplash(page)
       await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(1500)
       await page.getByRole('tab', { name: 'Settings' }).click()
       await page.locator('[data-testid=gram-dir-top]').click()
       await page.waitForTimeout(150)
       ok((await page.locator('[data-gram-dir]').getAttribute('data-gram-dir')) === 'top', 'settings did not flip to top')
       ok((await page.evaluate(() => localStorage.getItem('datum.gramDir'))) === 'top', 'localStorage not top after click')
-      await page.reload(); await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(1000)
+      await page.reload()
+      await dismissSplash(page)
+      await page.waitForSelector('[data-testid=lofar]'); await page.waitForTimeout(1000)
       ok((await page.locator('[data-gram-dir]').getAttribute('data-gram-dir')) === 'top', 'gramDir did not persist')
       await page.screenshot({ path: 'docs/m3-layout-desktop-topdir.png', fullPage: false })
       await ctx.close(); console.log('flip persist ok')
