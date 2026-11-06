@@ -673,3 +673,9 @@ button, select { font: inherit; color: inherit; }
 .app.ios.layout-phonePortrait .navbar .rate-seg button { min-width: 44px; padding: 0 6px; }
 .app.ios.layout-phonePortrait .nav-title b { font-size: 15px; }
 .app.ios.layout-phonePortrait .listen-menu { right: 0; left: auto; min-width: 240px; }
+
+/* HIG4: LOFAR + DEMON stacked when demon streams are live. */
+.app[data-demon='1'] .workspace-left {
+  grid-template-rows: minmax(0, 1.15fr) minmax(140px, 0.85fr);
+}
+.app[data-demon='1'] .demon-panel { min-height: 140px; }

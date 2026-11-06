@@ -29,7 +29,7 @@ export function DemonPane({ client, configs, streamIndex, palette }: Props) {
   }
 
   return (
-    <section className="panel">
+    <section className="panel gram-panel demon-panel" data-testid="demon-panel">
       <div className="panel-head">
         <h2>DEMON</h2>
         <div className="seg" role="group" aria-label="Harmonic cursor">

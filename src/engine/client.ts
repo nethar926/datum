@@ -86,7 +86,8 @@ export class SimClient {
     if (this.status.handoff) this.setStatus({ handoff: undefined })
     const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
     this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic, lastDrop: undefined })
-    this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: false,
+    const demonOn = typeof location !== 'undefined' && new URLSearchParams(location.search).has('demon')
+    this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: demonOn,
       // Band gram (RES off) or RES gram: the engine keeps the two families exclusive, so send exactly one.
       ...(g0?.band ? { bandPreset: g0.band } : { gram: g0 ? { res: g0.res, filter: g0.filter } : undefined }) })
     if (!this.status.receiver) this.send({ type: 'setReceiver', enabled: false })

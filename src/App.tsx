@@ -3,7 +3,7 @@ import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
-// DemonPane (src/gram/DemonPane.tsx) is kept but off the display layout for now.
+import { DemonPane } from './gram/DemonPane'
 import { isGramMode, type GramMode } from './gram/difarBearing'
 import { DifarLegend } from './gram/DifarLegend'
 import { DifarApplet } from './gram/DifarApplet'
@@ -317,6 +317,7 @@ export default function App() {
 
   const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
   const lofarCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'lofar'), [st.configs])
+  const demonCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'demon'), [st.configs])
   const cfg = lofarCfgs[stream]
   const gram = st.gram
   const filter: GramFilter = cfg?.filter ?? gram?.filter ?? 'NB'
@@ -623,7 +624,7 @@ export default function App() {
 
   return (
     <div className={`app ios layout-${layout}`} data-layout={layout} data-gram-dir={gramDir} data-tab={tab} data-split={splitAxis}
-      data-tabbar={tabMin ? 'min' : 'full'} data-fix-armed={fixStore.armed ? '1' : '0'}>
+      data-tabbar={tabMin ? 'min' : 'full'} data-fix-armed={fixStore.armed ? '1' : '0'} data-demon={demonCfgs.length ? '1' : '0'}>
       <GlassDefs />
       <Splash />
       {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
@@ -749,6 +750,10 @@ export default function App() {
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
         </section>
+        {demonCfgs.length > 0 && tab !== 'cuts' && (
+          <DemonPane client={client} configs={demonCfgs} palette={palette}
+            streamIndex={Math.max(0, demonCfgs.findIndex((c) => c.channel === cfg?.channel))} />
+        )}
         </div>
         <SplitHandle axis={splitAxis} frac={split} onFrac={setSplit} storeKey={splitKey} targetRef={wsRef} defaultFrac={splitDefault} />
         <section className="panel tac-panel" data-testid="tac-panel">

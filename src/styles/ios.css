@@ -515,3 +515,15 @@ button.ios-row:active { background: var(--sys-fill); }
 @media (prefers-reduced-transparency: reduce) {
   .splash-scrim { background: rgba(0, 0, 0, .78); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+
+/* HIG4: LOFAR + DEMON stacked when ?demon=1 enables DEMON streams. */
+.app.ios[data-demon='1'] .workspace-left {
+  grid-template-rows: minmax(0, 1.15fr) minmax(140px, 0.85fr);
+  gap: var(--space-3, 8px);
+}
+.app.ios[data-demon='1'] .demon-panel {
+  min-height: 140px;
+}
+.app.ios.layout-phonePortrait[data-demon='1'] .workspace-left {
+  grid-template-rows: minmax(0, 1fr) minmax(120px, 0.7fr);
+}

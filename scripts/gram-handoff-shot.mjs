@@ -4,6 +4,7 @@
 // Run after `npm run build`. Saves docs/m3-handoff-*.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
+import { dismissSplash } from './splash-dismiss.mjs'
 const port = Number(process.env.PORT) || 4184
 const srv = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true })
 const fails = []; const ok = (c, m) => { if (!c) fails.push(m) }
@@ -22,6 +23,7 @@ try {
     page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()) })
     await page.addInitScript(() => { try { localStorage.setItem('datum.gram', JSON.stringify({ res: 5, filter: 'NB' })) } catch {} })
     await page.goto(`http://localhost:${port}/datum/?autoplay&rate=16&res=5&filter=NB`)
+    await dismissSplash(page)
     const cv = page.locator('[data-testid=lofar]')
     await cv.waitFor(); await page.waitForTimeout(9000) // ~70 rows per buoy at 16×
     const lit = async () => {
@@ -67,7 +69,7 @@ try {
     }
     const finer = page.locator('[data-testid=res-step] button[aria-label^="Finer"]')
     await page.screenshot({ path: `docs/m3-handoff-${slug}-before.png` })
-    const resIs = (n) => async () => new RegExp(`^RES ${n} `).test(await read())
+    const resIs = (n) => async () => new RegExp(`^RES ${n}(\\s|$)`).test(await read())
     const title = () => page.locator('[data-testid=gram-title]').innerText()
     await run('res5to4', () => finer.tap(), resIs(4))
     // Rapid double change: 4 → 3 → 2 (the first pending set is dropped, the displayed set keeps scrolling).

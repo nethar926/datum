@@ -448,7 +448,7 @@ export class SimHost {
       const pf = this.pools.get(p.bins)?.pop()
       if (pf) { this.writeLofar(pf, p); this.postFrame(pf) }
     }
-    if (due) this.stepDemon() // DEMON drains alongside displayed LOFAR rows, as before
+    if (due) this.stepDemon() // DEMON skipToLatest alongside displayed LOFAR rows (same simT)
     this.updateTactical()
     this.post(this.tactical!)
   }
@@ -653,24 +653,28 @@ export class SimHost {
     this.post(rows, bufs)
   }
 
-  /** One DEMON row per stream per step (draining any extra ready rows so the display stays current). Skipped if no frame is free. */
+  /**
+   * One DEMON row per stream per host step via skipToLatest (same latest-only path as band LOFAR).
+   * After a tab-throttle / stall gap the engine may owe many 4 Hz rows; we jump to the newest
+   * instead of draining the backlog (no stutter / CPU spike). Display rowRateHz is the host rate
+   * so the DEMON time axis stays locked to LOFAR. Skipped if no frame is free.
+   */
   private stepDemon(): void {
     if (!this.demonIds.length) return
     const frame = this.demonPool.pop()
     if (!frame) return
-    const e = this.engine as unknown as { writeRow: (id: number, out: Float32Array, off: number) => number; rowsReady?: (id: number) => number }
+    const engine = this.engine!
     let any = false
     for (let i = 0; i < this.demonIds.length; i++) {
       const id = this.demonIds[i], off = i * this.demonBins
       frame.streamIds[i] = id
-      let idx = -1
-      do { const r = e.writeRow(id, frame.data, off); if (r < 0) break; idx = r } while ((e.rowsReady?.(id) ?? 0) > 0)
+      const idx = engine.skipToLatest(id, frame.data, off)
       if (idx < 0) frame.data.fill(NaN, off, off + this.demonBins)
       else any = true
       frame.rowIndex[i] = Math.max(0, idx)
     }
     if (!any) { this.demonPool.push(frame); return }
-    const rows: GramRows = { v: 1, type: 'gramRows', simT: this.engine!.time, ...frame }
+    const rows: GramRows = { v: 1, type: 'gramRows', simT: engine.time, ...frame }
     this.post(rows, [frame.streamIds.buffer, frame.rowIndex.buffer, frame.data.buffer])
   }
 
