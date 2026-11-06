@@ -5,17 +5,22 @@ const VS = `#version 300 es
 in vec2 aPos; out vec2 vUv;
 void main(){ vUv = vec2(aPos.x*0.5+0.5, 0.5-aPos.y*0.5); gl_Position = vec4(aPos,0.,1.); }`
 
+// Ring index of a (possibly negative) slot offset. GLSL ES 3.00 leaves % undefined for negative operands, and
+// WebKit's WebGL really returns garbage there (rows baked into the wrong slots, a full-width seam after a swap).
+export const RING_GLSL = `int ringIdx(int a, int n){ return a >= 0 ? a % n : (n - 1) - ((-a - 1) % n); }`
+
 // Ring-texture waterfall. Newest row at top. Max-pools the bins under each pixel so narrow tonals never alias away.
-const FS = `#version 300 es
+export const FS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp sampler2D uTex; uniform sampler2D uLut; uniform highp sampler2D uBrg; uniform sampler2D uWheel;
 uniform int uHead, uRows, uFilled, uBins, uDifar, uHeadB, uFilledB;
 uniform float uB0, uB1, uFloor, uCeil, uPxW;
 in vec2 vUv; out vec4 o;
+${RING_GLSL}
 void main(){
   int age = int(floor(vUv.y * float(uRows)));
   if (age >= uFilled) { o = vec4(0.,0.,0.,1.); return; }
-  int row = ((uHead - age) % uRows + uRows) % uRows;
+  int row = ringIdx(uHead - age, uRows);
   float b = mix(uB0, uB1, vUv.x);
   float per = (uB1 - uB0) * uPxW;            // bins per pixel
   int i0 = int(floor(b - per*0.5)), n = int(clamp(ceil(per), 1., 8.));
@@ -31,27 +36,28 @@ void main(){
   float t = clamp((v - uFloor) / max(1e-3, uCeil - uFloor), 0., 1.);
   if (uDifar == 0) { o = vec4(texture(uLut, vec2(t, 0.5)).rgb, 1.); return; }
   // DIFAR: hue from the bearing of the strongest bin under this pixel, brightness from intensity.
-  float brg = age < uFilledB ? texelFetch(uBrg, ivec2(imax, ((uHeadB - age) % uRows + uRows) % uRows), 0).r : 0./0.;
+  float brg = age < uFilledB ? texelFetch(uBrg, ivec2(imax, ringIdx(uHeadB - age, uRows)), 0).r : 0./0.;
   vec3 hue = (isnan(brg) || brg != brg) ? vec3(0.6) : texture(uWheel, vec2(brg / 360., 0.5)).rgb;
   o = vec4(hue * t, 1.);
 }`
 
 // Handoff bake: resample the displayed ring (old RES/filter/vernier grid) into the older slots of the pending ring,
 // so the promoted gram is full on the first frame. Fragment = one texel (bin x, ring slot y) of the destination.
-const BAKE_FS = `#version 300 es
+export const BAKE_FS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp sampler2D uSrc;
 uniform int uRows, uSrcBins, uDstHead, uNew, uCover, uSrcHead, uSrcFilled, uBearing;
 uniform float uA, uB, uScale, uGain, uOff;
 out vec4 o;
+${RING_GLSL}
 void main(){
   int x = int(gl_FragCoord.x), slot = int(gl_FragCoord.y);
-  int age = ((uDstHead - slot) % uRows + uRows) % uRows;
+  int age = ringIdx(uDstHead - slot, uRows);
   int tAge = age - uNew;
   if (tAge < 0 || tAge >= uCover) discard;           // keep the pending set's own (newest) rows
   int sAge = int(floor(float(tAge) * uScale));
   if (sAge >= uSrcFilled) discard;
-  int srow = ((uSrcHead - sAge) % uRows + uRows) % uRows;
+  int srow = ringIdx(uSrcHead - sAge, uRows);
   float c = uA * float(x) + uB;                       // old-grid bin at this new bin's centre
   float nan = uintBitsToFloat(0x7fc00000u);
   if (c < -0.5 || c > float(uSrcBins) - 0.5) { o = vec4(uBearing == 1 ? nan : -60000., 0., 0., 1.); return; }
