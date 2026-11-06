@@ -5,6 +5,8 @@ import {sourceLevel,type Signature} from './sourceModel.js';
 import {transmissionLoss} from './transmissionLoss.js';
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
+import {DEMON_NORM} from './cuts/norm.js';
+const DEMON_DB_FLOOR=DEMON_NORM.clampFloorDb;
 const SIZE=4096,FS=SIZE*100/511;
 interface Envelope {shaft:number;blades:number;modulation:number;table:Float32Array;phase:number}
 // The same physical source envelope is shared by all buoy receivers; tables refresh only on state changes.
@@ -36,6 +38,9 @@ export class DemonStream {
   for(let j=0;j<this.contacts.length;j++){const w=this.weights[j]/total;if(w<=0)continue;const table=this.tables[j].table;for(let i=0;i<SIZE;i++)this.signal[i]+=w*table[i];}
   let mean=0;for(let i=0;i<SIZE;i++){this.signal[i]+=.0001*(this.rng()-.5);mean+=this.signal[i];}mean/=SIZE;for(let i=0;i<SIZE;i++)this.signal[i]-=mean;
   this.fft.transform(this.signal,true,true);for(let i=0;i<512;i++)this.median[i]=this.spectrum[i]=(this.fft.real[i]**2+this.fft.imag[i]**2)/(SIZE*SIZE);
-  const median=Math.max(1e-30,(select(this.median,255)+select(this.median,256))/2);for(let i=0;i<512;i++)out[offset+i]=powerToDb(this.spectrum[i]/median);
+  const median=Math.max(1e-30,(select(this.median,255)+select(this.median,256))/2);
+  // Clamp empty-bin floor (powerToDb(1e-30)≈−300). Peaks unchanged; stops FE split-window
+  // mean collapse that painted saturated full-height low-band DEMON columns.
+  for(let i=0;i<512;i++)out[offset+i]=Math.max(DEMON_DB_FLOOR,powerToDb(this.spectrum[i]/median));
  }
 }

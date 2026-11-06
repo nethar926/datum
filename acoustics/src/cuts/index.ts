@@ -7,7 +7,11 @@ export * from './types.js';
 export {validateCutSeed,validateStarterPack,validateLookalikePair} from './validate.js';
 export {lookalikeDiffersOn} from './lookalike.js';
 export {looksOf,bakeFidelityParams,applyRuntimeFidelity,CUT_SSMA_AUX} from './fidelity.js';
-export {scenarioFromCut,CutSession} from './render.js';
+export {scenarioFromCut,CutSession,CUT_BINS,CUT_FMAX} from './render.js';
+export {
+ CUT_LOFAR_NORM,DEMON_NORM,SplitWindowNormalizer,normalizeCutRow,normalizeDemonRow,
+ type NormParams,type DemonNormParams,
+} from './norm.js';
 export {STARTER_PACK,STARTER_CUTS} from './starterPack.js';
 
 validateStarterPack(STARTER_PACK);

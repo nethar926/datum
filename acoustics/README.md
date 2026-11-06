@@ -1164,3 +1164,34 @@ HYDP classifying line schedule a mid-cut `hydp` transient.
 
 Starter pack: diesel+nuclear, one AIP (`cut-gloamspiral-aip`), snort/battery/speed variation,
 two HYDP lookalike pairs (`lookalike-dorhan-coastal`, `lookalike-kaelun-ssn`).
+
+### Cut + DEMON NORM (m3 cut-norm)
+
+Cut LOFAR rows stay raw dB; display whitening is FE-owned but **params live here** so Cuts
+and Demon panes share one contract. Dense low-band plant on CUT Δf≈0.977 Hz makes the live
+band default (`window=24`) absorb CFR/GRID into the background (~3 dB whitened SNR). Cut-tuned
+`CUT_LOFAR_NORM.window=192` reaches quieter mid-band and restores ≳8–10 dB on classifying
+lines while keeping the 1–22 dB NORM LUT (do **not** switch cuts to absolute BB).
+
+DEMON rows are median-relative (`dbFloor:0`,`dbCeil:30`). Engine now clamps empty bins at
+`DEMON_NORM.clampFloorDb` (−5) so `powerToDb(1e-30)≈−300` cannot collapse a split-window mean
+into saturated full-height low-band columns. Peaks are unchanged and often exceed 22 dB —
+DemonPane must **not** reuse live NB 1–22.
+
+```ts
+import {
+  CUT_LOFAR_NORM, DEMON_NORM, SplitWindowNormalizer, normalizeCutRow, normalizeDemonRow,
+} from '@sonar-sim/acoustics';
+
+// CutsTab / Gram (cut LOFAR): keep normalized + 1–22 LUT, pass cut window/guard
+new SplitWindowNormalizer(bins, CUT_LOFAR_NORM.window, CUT_LOFAR_NORM.guard);
+// or normalizeCutRow(src, 0, dst, 0, bins);
+
+// DemonPane: prefer absolute map with config dbFloor/dbCeil (0/30). If whitening stays on,
+// clamp+whiten via normalizeDemonRow and colour with DEMON_NORM.floorDb..ceilDb — never 1–22.
+```
+
+FE wiring checklist: (1) cut Gram `SplitWindowNormalizer` ← `CUT_LOFAR_NORM.window/guard`;
+(2) DemonPane drop live NB 1–22 — use `normalized={false}` with stream `dbFloor`/`dbCeil`, or
+`DEMON_NORM` + `normalizeDemonRow`; (3) raw `CutSession.writeLofarRow` / seek checksums unchanged.
+
