@@ -26,7 +26,7 @@ const goto = async (page, url) => {
 
 const VIEWS = [
   ['iphone-portrait', { ...devices['iPhone 15'] }, { gramMin: 150 }],
-  ['iphone-landscape', { ...devices['iPhone 15 landscape'] }, { gramMin: 110 }],
+  ['iphone-landscape', { ...devices['iPhone 15 landscape'] }, { gramMin: 145 }],
   ['ipad-portrait', { ...devices['iPad Pro 11'] }, { gramMin: 400 }],
   ['ipad-landscape', { ...devices['iPad Pro 11 landscape'] }, { gramMin: 360 }],
   ['desktop', {

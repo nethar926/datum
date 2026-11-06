@@ -103,7 +103,7 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .app.ios .tac-panel .panel-body { background: var(--plot-bg); }
 .app.ios .panel-head { border-bottom: .5px solid var(--sys-sep); padding: 4px 6px 4px 14px; gap: 6px; background: var(--sys-cell);
   flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x; min-height: 52px; max-height: 52px;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); }
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
 .app.ios .panel-head::-webkit-scrollbar { display: none; }
 .app.ios .panel-head > * { flex: 0 0 auto; }
 .app.ios.layout-wide .panel-head { flex-wrap: wrap; max-height: none; -webkit-mask-image: none; mask-image: none; row-gap: 6px; padding-block: 6px; }
@@ -259,14 +259,41 @@ button.ios-row:active { background: var(--sys-fill); }
 .app.ios.layout-phonePortrait { gap: 6px; padding-inline: max(6px, env(safe-area-inset-left)) max(6px, env(safe-area-inset-right)); }
 .app.ios.layout-phonePortrait .panel { border-radius: 18px; }
 .app.ios.layout-phonePortrait .navbar { padding-left: 14px; }
-/* Phone landscape: compact bars so the gram keeps its height. */
-.app.ios.layout-phoneLandscape { --nav-h: 44px; --dock-h: 56px; gap: 6px; }
-.app.ios.layout-phoneLandscape .dock { padding-bottom: max(4px, env(safe-area-inset-bottom)); }
-.app.ios.layout-phoneLandscape .tabbar, .app.ios.layout-phoneLandscape .toolbar-glass { height: 52px; }
-.app.ios.layout-phoneLandscape .tabbar button { height: 44px; width: 60px; }
+/* Title duplicates LOFAR/DIFAR + NB/BB — hide so RES/filter chips stay whole. */
+.app.ios.layout-phonePortrait .panel-head h2 { display: none; }
+.app.ios.layout-phonePortrait .panel-head .readout { display: none; }
+.app.ios.layout-phonePortrait .panel-head .seg button { padding: 0 6px; }
+.app.ios.layout-phonePortrait .panel-head .res-step .res-read { padding-inline: 4px; font-size: 10px; }
+.app.ios.layout-phoneLandscape .panel-head .seg button { padding: 0 6px; }
+.app.ios.layout-phoneLandscape .panel-head .res-step .res-read { padding-inline: 4px; font-size: 10px; }
+/* Phone landscape: compact chrome so the gram waterfall stays tall (44 pt targets kept). */
+.app.ios.layout-phoneLandscape {
+  --nav-h: 44px; --dock-h: 44px; gap: 4px;
+  padding-top: max(4px, env(safe-area-inset-top));
+}
+.app.ios.layout-phoneLandscape .navbar {
+  min-height: 44px; height: 44px; padding-block: 0; border-radius: 22px;
+}
+.app.ios.layout-phoneLandscape .dock {
+  min-height: 44px; padding-top: 0; padding-bottom: max(2px, env(safe-area-inset-bottom));
+}
+.app.ios.layout-phoneLandscape .tabbar,
+.app.ios.layout-phoneLandscape .toolbar-glass { height: 44px; }
+.app.ios.layout-phoneLandscape .tabbar button { height: 44px; width: 56px; }
 .app.ios.layout-phoneLandscape .tool { height: 44px; }
-.app.ios.layout-phoneLandscape .panel-head { min-height: 50px; max-height: 50px; padding-block: 3px; }
-.app.ios.layout-phoneLandscape .panel { border-radius: 16px; }
+/* Single slim head row: hide the redundant title (mode/filter segs already show LOFAR·NB). */
+.app.ios.layout-phoneLandscape .panel-head {
+  min-height: 44px; max-height: 44px; padding-block: 0; padding-inline: 6px 4px; gap: 4px;
+}
+.app.ios.layout-phoneLandscape .panel-head h2 { display: none; }
+.app.ios.layout-phoneLandscape .panel-head .readout { display: none; }
+.app.ios.layout-phoneLandscape :is(.navbar, .panel-head) .seg { padding: 0; }
+.app.ios.layout-phoneLandscape :is(.navbar, .panel-head) .seg button { min-height: 44px; height: 44px; }
+.app.ios.layout-phoneLandscape .panel { border-radius: 14px; }
+.app.ios.layout-phoneLandscape .panel-head {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+}
 /* Wide (iPad, desktop): roomier, tab bar centred with the tools beside it. */
 .app.ios.layout-wide { gap: 10px; padding-inline: max(14px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right)); }
 .app.ios.layout-wide .tabbar button { width: 76px; font-size: 11px; }

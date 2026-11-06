@@ -11,10 +11,11 @@ export function fmtHz(hz: number): string {
   return String(Number(hz.toPrecision(2)))
 }
 
-/** Header readout, numbers straight from gramConfig. Compact drops the band (phone portrait). */
+/** Header readout, numbers straight from gramConfig. Compact drops the band (phone layouts). */
 export function resReadout(c: GramConfig | undefined, compact = false): string {
   if (!c || c.res === undefined) return 'RES —'
-  const head = `RES ${c.res} · ${fmtHz(c.fBin)} Hz`
+  // Compact (phone): short chip so −/RES/＋ stays whole in a 390 px head (fBin still on the stream).
+  const head = compact ? `RES ${c.res}` : `RES ${c.res} · ${fmtHz(c.fBin)} Hz`
   return compact || c.bandHz === undefined ? head : `${head} · ${fmtHz(c.bandHz)} Hz band`
 }
 

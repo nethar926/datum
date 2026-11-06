@@ -10,7 +10,7 @@ describe('RES readout helpers', () => {
     expect([0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8].map(fmtHz)).toEqual(['0.031', '0.063', '0.13', '0.25', '0.5', '1', '2', '4', '8'])
     expect(resReadout(cfg({}))).toBe('RES 5 · 0.5 Hz · 512 Hz band')
     expect(resReadout(cfg({ res: 1, fBin: 0.03125, bandHz: 32 }))).toBe('RES 1 · 0.031 Hz · 32 Hz band')
-    expect(resReadout(cfg({}), true)).toBe('RES 5 · 0.5 Hz')
+    expect(resReadout(cfg({}), true)).toBe('RES 5')
     expect(resReadout(undefined)).toBe('RES —')
   })
   it('labels the vernier only when the engine reports a centre', () => {

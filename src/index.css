@@ -241,7 +241,8 @@ button, select { font: inherit; color: inherit; }
   animation: gram-veil 200ms ease-out; }
 @keyframes gram-veil { from { opacity: .55; } to { opacity: 0; } }
 @media (pointer: coarse) { .res-step button.icon { min-width: 44px; } }
-.layout-phonePortrait .res-step .res-read { min-width: 13ch; }
+.layout-phonePortrait .res-step .res-read,
+.layout-phoneLandscape .res-step .res-read { min-width: 0; padding-inline: 6px; }
 @media (prefers-reduced-motion: reduce) { .res-step .res-read, .gram .gram-veil, .btn.vernier.pick { animation: none; } .gram .band-limit { transition: none; } }
 
 /* Gram contrast slider (tools row). Touch-sized: 44 px hit area. */
@@ -499,8 +500,29 @@ button, select { font: inherit; color: inherit; }
 .layout-phoneLandscape .drop-bar .drop-tools {
   flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden; /* field-mode stays whole; palette scrolls */
 }
+.layout-phonePortrait .drop-bar .field-mode,
+.layout-phoneLandscape .drop-bar .field-mode { flex: 0 0 auto; }
+.layout-phonePortrait .drop-bar .drop-palette,
+.layout-phoneLandscape .drop-bar .drop-palette {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+}
+.layout-phonePortrait .drop-bar .drop-palette::-webkit-scrollbar,
+.layout-phoneLandscape .drop-bar .drop-palette::-webkit-scrollbar { display: none; }
+/* Landscape plot is narrow: count-only until a toast, so PRE/AUTO/MAN stay whole. */
+.layout-phoneLandscape .drop-bar .drop-hint:not(.toast) .lbl-short { display: none; }
+.layout-phoneLandscape .drop-bar .drop-hint:not(.toast) { max-width: 52px; }
+.layout-phoneLandscape .drop-bar .drop-hint.toast { max-width: min(220px, 55%); overflow: hidden; }
 .layout-phonePortrait .drop-bar[data-phase='preview'],
 .layout-phoneLandscape .drop-bar[data-phase='preview'] {
   flex-direction: column;
@@ -512,18 +534,7 @@ button, select { font: inherit; color: inherit; }
   margin-bottom: 4px;
 }
 
-/* Freq axis unit corner label (ticks also stamp Hz on the last number) */
-.axis-x-unit {
-  position: absolute;
-  right: 4px;
-  top: 14px;
-  font: 600 10px/1 var(--font-mono);
-  color: var(--phosphor-dim);
-  pointer-events: none;
-  opacity: .85;
-}
-.layout-phonePortrait .axis-x-unit,
-.layout-phoneLandscape .axis-x-unit { display: none; } /* last tick already carries Hz */
+/* Freq unit lives on the last tick label only (placeFreqAxisTicks) — no corner .axis-x-unit. */
 
 /* Zulu Y labels: tabular, no wrap */
 .axis-y span {

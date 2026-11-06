@@ -11,6 +11,7 @@ import { AutoLevel } from './autoLevel'
 import { SplitWindowNormalizer } from './whiten'
 import { LevelHistory } from './levelHistory'
 import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
+import { placeFreqAxisTicks } from './freqAxis'
 import { bandLimitHz, fullView, minSpanOf } from './res'
 import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
 import { agoFromY, formatZulu, formatZuluSec, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
@@ -272,6 +273,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   useEffect(() => { if (wheel) { rendererRef.current?.setWheel(wheel); setWheelTick((t) => t + 1) } }, [wheel, rendererKey, client])
 
   const ticks = useMemo(() => niceTicks(view.lo, view.hi, Math.max(3, Math.floor(width / 90))), [view, width])
+  const freqLabels = useMemo(() => placeFreqAxisTicks(ticks, view, width, unit), [ticks, view, width, unit])
   const historyS = HISTORY_ROWS / rowRate
   const timeTicks = useMemo(() => timeTickAges(historyS, height), [historyS, height])
   const zuluOrigin = zuluOriginMs ?? (typeof performance !== 'undefined' ? Date.now() - nowS * 1000 : Date.now())
@@ -416,17 +418,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           const rect = e.currentTarget.getBoundingClientRect()
           onCenterFreq(xToFreq(e.clientX - rect.left, view, rect.width))
         }}>
-        {ticks.map((f, i) => {
-          const x = freqToX(f, view, width); const last = i === ticks.length - 1
-          // Clamp so edge labels (0 / hi) sit fully inside the axis — same idea as the Zulu Y labels.
-          const padL = 12, padR = last ? 32 : 12
-          return (
-            <span key={f} style={{ left: `clamp(${padL}px, ${x}px, calc(100% - ${padR}px))` }}>
-              <i className="tick-x" style={{ left: '50%', top: -6 }} />{f}{last ? ` ${unit}` : ''}
-            </span>
-          )
-        })}
-        <span className="axis-x-unit" aria-hidden>{unit}</span>
+        {freqLabels.map((t) => (
+          <span key={t.f} style={{ left: t.left }}>
+            <i className="tick-x" style={{ left: '50%', top: -6 }} />{t.label}
+          </span>
+        ))}
       </div>
       <div />
       {selPlace && (

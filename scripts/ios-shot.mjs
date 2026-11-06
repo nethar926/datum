@@ -105,7 +105,7 @@ try {
     ok(!m.small.length, F(`targets < 44: ${JSON.stringify(m.small.slice(0, 6))}`))
     ok(!m.outside.length, F(`buttons off screen: ${JSON.stringify(m.outside.slice(0, 6))}`))
     ok(m.over === 0, F(`glass chrome overlaps the gram/plot by ${m.over} px²`))
-    ok(m.gram && m.gram.h >= (slug.startsWith('iphone-landscape') ? 110 : 150) && m.gram.right <= m.vw + 1, F(`gram too small/off screen ${JSON.stringify(m.gram)}`))
+    ok(m.gram && m.gram.h >= (slug.startsWith('iphone-landscape') ? 145 : 150) && m.gram.right <= m.vw + 1, F(`gram too small/off screen ${JSON.stringify(m.gram)}`))
     ok(m.plot && m.plot.h >= 100 && m.plot.w >= 150 && m.plot.bottom <= m.vh + 1, F(`plot too small/off screen ${JSON.stringify(m.plot)}`))
     ok(!m.yClip.length, F(`time-axis labels clipped: ${JSON.stringify(m.yClip)}`))
     ok(!m.toolCut.length, F(`tool strip: ${m.toolCut.join(', ')}`))
