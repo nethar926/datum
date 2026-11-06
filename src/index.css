@@ -339,3 +339,14 @@ button, select { font: inherit; color: inherit; }
   .difar-applet > .da-row:nth-of-type(7) { grid-row: 5; }
   .da-foot { grid-column: 2; grid-row: 6; }
 }
+/* SIM start: Random first, Advanced collapsed. */
+.ns-group { display: grid; grid-template-columns: auto 1fr; gap: 10px 12px; align-items: center; }
+.ns-group .seg.big > button { min-height: 44px; flex: 1; }
+.ns-summary { grid-column: 1 / -1; margin: 0; font: 500 11px/1.4 var(--font-mono); letter-spacing: .04em; color: var(--text-2); }
+.ns-adv-toggle { justify-self: start; min-height: 44px; display: inline-flex; align-items: center; gap: 6px; }
+.ns-adv-toggle .chev { display: inline-block; transition: transform 160ms ease; }
+.ns-adv-toggle .chev.open { transform: rotate(90deg); }
+.ns-adv { animation: da-fade 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .ns-adv-toggle .chev, .ns-adv { transition: none; animation: none; } }
+.modal-head button, .modal-foot button { min-height: 44px; min-width: 44px; padding-inline: 16px; }
+.modal-foot button.primary { min-width: 96px; }

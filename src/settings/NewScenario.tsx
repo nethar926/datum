@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { acousticsV11, type Difficulty, type ScenarioParams } from '../scenarios/acousticsApi'
+import { useEffect, useState } from 'react'
+import { acousticsV11, trafficLabel, type Difficulty, type ScenarioParams } from '../scenarios/acousticsApi'
+import { applyPlant, loadSimStart, plantOfWeights, PLANT_PICKS, saveSimStart, type PlantPick, type SimStartPrefs } from './simStart'
 import { TrafficSlider } from './TrafficSlider'
 
 const DIFFS: { id: Difficulty; label: string }[] = [{ id: 'easy', label: 'Easy' }, { id: 'regular', label: 'Regular' }, { id: 'difficult', label: 'Difficult' }]
@@ -24,28 +25,48 @@ function Range({ label, value, min, max, step, unit, onChange }: { label: string
   )
 }
 
-/** New-scenario screen: a difficulty preset fills plain, editable parameters; the sliders show exactly what will run. */
+/** New-sim screen. Random is the default: three difficulties and Diesel / Nuke / Any, then Start.
+ * Advanced opens the full manual setup; the sliders show exactly what will run. */
 export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams) => void; onClose: () => void }) {
   const api = acousticsV11
+  const [prefs, setPrefs] = useState<SimStartPrefs>(loadSimStart)
   const [seed, setSeed] = useState(() => (Math.random() * 2 ** 31) >>> 0)
-  const [diff, setDiff] = useState<Difficulty | 'custom'>('regular')
-  const [p, setP] = useState<ScenarioParams | null>(() => api.presetToParams?.('regular', seed) ?? null)
-  const pick = (d: Difficulty) => { setDiff(d); setP(api.presetToParams!(d, seed)) }
-  const edit = (patch: Partial<ScenarioParams>) => { if (p) { setDiff('custom'); setP(api.clampParams ? api.clampParams({ ...p, ...patch }) : { ...p, ...patch }) } }
+  const [adv, setAdv] = useState(false)
+  const [custom, setCustom] = useState<ScenarioParams | null>(null)
+  const preset = (d: Difficulty, pl: PlantPick, s: number) => api.presetToParams ? applyPlant(api.presetToParams(d, s), pl) : null
+  const p = custom ?? preset(prefs.diff, prefs.plant, seed)
+  useEffect(() => saveSimStart(prefs), [prefs])
+  const pick = (patch: Partial<SimStartPrefs>) => { setPrefs((v) => ({ ...v, ...patch })); setCustom(null) }
+  const edit = (patch: Partial<ScenarioParams>) => { if (p) setCustom(api.clampParams ? api.clampParams({ ...p, ...patch }) : { ...p, ...patch }) }
   const editOp = (patch: Partial<ScenarioParams['opState']>) => p && edit({ opState: { ...p.opState, ...patch } })
+  const plantNow = p ? plantOfWeights(p.rarityWeights) : prefs.plant
+  const subs = p ? `${p.subCount} sub${p.subCount === 1 ? '' : 's'}` : ''
 
   return (
     <div className="modal-scrim" role="dialog" aria-modal aria-labelledby="ns-title" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
-      <div className="modal">
-        <div className="modal-head"><h2 id="ns-title">New scenario</h2><button onClick={onClose} aria-label="Close">✕</button></div>
+      <div className="modal" data-testid="sim-start">
+        <div className="modal-head"><h2 id="ns-title">New sim</h2><button onClick={onClose} aria-label="Close">✕</button></div>
         {!p ? (
           <p className="empty-note static" data-testid="ns-pending">Difficulty presets arrive with the next acoustics update. Until then the training field scenario runs.</p>
         ) : (<>
-          <div className="seg big" role="radiogroup" aria-label="Difficulty">
-            {DIFFS.map((d) => <button key={d.id} role="radio" aria-checked={diff === d.id} aria-pressed={diff === d.id} onClick={() => pick(d.id)}>{d.label}</button>)}
-            {diff === 'custom' && <span className="readout">CUSTOM</span>}
+          <div className="ns-group">
+            <span className="seg-label">RANDOM</span>
+            <div className="seg big" role="radiogroup" aria-label="Difficulty" data-testid="ns-diff">
+              {DIFFS.map((d) => <button key={d.id} role="radio" aria-checked={!custom && prefs.diff === d.id} aria-pressed={!custom && prefs.diff === d.id} onClick={() => pick({ diff: d.id })}>{d.label}</button>)}
+            </div>
+            <span className="seg-label">BOATS</span>
+            <div className="seg big" role="radiogroup" aria-label="Boats" data-testid="ns-plant">
+              {PLANT_PICKS.map((d) => <button key={d.id} role="radio" aria-checked={plantNow === d.id} aria-pressed={plantNow === d.id}
+                onClick={() => custom ? setCustom(applyPlant({ ...custom, rarityWeights: preset(prefs.diff, 'any', seed)!.rarityWeights }, d.id)) : pick({ plant: d.id })}>{d.label}</button>)}
+            </div>
+            <p className="ns-summary" data-testid="ns-summary">
+              {custom ? 'CUSTOM · ' : ''}{subs} · {PLANT_PICKS.find((x) => x.id === plantNow)!.label.toUpperCase()} · SEA {p.seaState} · {trafficLabel(p.surfaceTraffic).toUpperCase()} TRAFFIC
+            </p>
           </div>
-          <div className="fields">
+          <button className="btn ns-adv-toggle" aria-expanded={adv} aria-controls="ns-adv" data-testid="ns-advanced" onClick={() => setAdv((v) => !v)}>
+            <span className={`chev ${adv ? 'open' : ''}`} aria-hidden>▸</span> Advanced{custom ? ' · custom' : ''}
+          </button>
+          {adv && <div className="fields ns-adv" id="ns-adv" data-testid="ns-adv">
             <Num label="Submarines" value={p.subCount} min={1} max={6} step={1} onChange={(v) => edit({ subCount: v })} />
             <Num label="Sea state" value={p.seaState} min={0} max={6} step={1} onChange={(v) => edit({ seaState: v })} />
             <TrafficSlider id="ns-traffic" value={p.surfaceTraffic} onChange={(v) => edit({ surfaceTraffic: v })} />
@@ -56,12 +77,13 @@ export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams)
             <Num label="Buoy life" value={p.buoyLifeMin} min={10} max={480} step={10} fmt={(v) => `${Math.round(v)} min`} onChange={(v) => edit({ buoyLifeMin: v })} />
             <label className="check"><input type="checkbox" checked={p.opState.cavitationAllowed} onChange={(e) => editOp({ cavitationAllowed: e.target.checked })} /> Cavitation allowed</label>
             <div className="field"><label>Seed <b>{seed}</b></label>
-              <button onClick={() => { const s = (Math.random() * 2 ** 31) >>> 0; setSeed(s); if (diff !== 'custom') setP(api.presetToParams!(diff, s)); else edit({ seed: s }) }}>New seed</button></div>
-          </div>
+              <button onClick={() => { const s = (Math.random() * 2 ** 31) >>> 0; setSeed(s); if (custom) setCustom({ ...custom, seed: s }) }}>New seed</button></div>
+            {custom && <button className="btn" data-testid="ns-back-random" onClick={() => setCustom(null)}>Back to {DIFFS.find((d) => d.id === prefs.diff)!.label} preset</button>}
+          </div>}
         </>)}
         <div className="modal-foot">
           <button onClick={onClose}>Cancel</button>
-          <button className="primary" disabled={!p} onClick={() => p && onStart({ ...p, seed })}>Start</button>
+          <button className="primary" disabled={!p} data-testid="ns-start" onClick={() => p && onStart({ ...p, seed })}>Start</button>
         </div>
       </div>
     </div>
