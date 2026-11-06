@@ -17,6 +17,12 @@ export class AutoLevel {
     this.floor[s] = this.seen[s] ? this.floor[s] + (est - this.floor[s]) * this.alpha : est
     this.seen[s] = 1
   }
+  /** Same levels for the first streams, fresh ones after (m3-fe-drop: buoys joined the field). */
+  resized(streams: number): AutoLevel {
+    const a = new AutoLevel(streams, this.alpha, this.pct)
+    a.floor.set(this.floor.subarray(0, Math.min(streams, this.floor.length))); a.seen.set(this.seen.subarray(0, Math.min(streams, this.seen.length)))
+    return a
+  }
   /** Returns the floor estimate or NaN before any data. */
   get(s: number): number { return this.seen[s] ? this.floor[s] : NaN }
 }

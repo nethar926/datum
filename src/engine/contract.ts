@@ -47,7 +47,12 @@ export interface WorkerError { v: 1; type: 'error'; message: string }
 /** m3-fe-gram-handoff: a second LOFAR stream set subscribed with new RES/filter/vernier settings, rows flowing
  * alongside the displayed set until the display promotes it (gen matches the client's subscribeGram). */
 export interface PendingStreamSet { v: 1; type: 'pendingStreams'; gen: number; configs: GramConfig[] }
-export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet
+/** m3-fe-drop: one buoy to lay (engine dropBuoy). channel is a suggestion; the host bumps it to a free RF channel. */
+export interface DropSpec { kind: 'omni' | 'difar'; x: number; y: number; channel?: number; depthM?: number; lifeS?: number }
+export type DropSource = 'manual' | 'auto'
+/** m3-fe-drop: reply to dropBuoys (after the new streams + tactical): the RF channels laid, or why it stopped short. */
+export interface BuoysDropped { v: 1; type: 'dropped'; seq: number; source: DropSource; channels: number[]; error?: string }
+export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped
 
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'
@@ -68,5 +73,7 @@ export type ToWorker =
   | { type: 'promoteGram'; gen: number }
   /** Unsubscribe pending set `gen` (superseded or abandoned). */
   | { type: 'dropGram'; gen: number }
+  /** m3-fe-drop: lay buoys now; each gets a LOFAR stream like the field's (and a pending one during a handoff). */
+  | { type: 'dropBuoys'; seq: number; source: DropSource; buoys: DropSpec[] }
   | { type: 'step' }                                    // advance one row period of sim time
   | { type: 'release'; buffers: ArrayBuffer[] }

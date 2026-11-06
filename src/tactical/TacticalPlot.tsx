@@ -1,10 +1,13 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { crossFixes } from './fix'
 import { LONG_PRESS_MS, capDpr, exceedsSlop } from '../touch/gestures'
 import { fitView, toScreenX, toScreenY, toWorld, type PlotView } from './transform'
 import { bearingTo, distToRay, fixInputs, type FixSource, type ManualBearings } from './manual'
+import type { DropController } from './dropController'
+import { dropCapturesPlot } from './fieldMode'
+import { planReadout, type DropPlan } from './drop'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -17,14 +20,22 @@ interface Props {
   showAuto?: boolean; showManual?: boolean; manual?: ManualBearings; fixSource?: FixSource
   /** Manual cursor moved (final=false while dragging, true on release); deg null clears it. */
   onManual?: (buoyId: number, deg: number | null, final: boolean) => void
+  /** m3-fe-drop: while a pattern is armed, presses place it (ghost preview) instead of moving bearing cursors. */
+  drop?: DropController
 }
+const noSub = () => () => {}
+/** New-buoy splash: an expanding ring for this long after a buoy appears on the plot. */
+const SPLASH_MS = 700
+const MAX_SPLASH = 128
 const HIT_PX = 14
 // Fingers need a 44 pt target: 22 px radius on coarse pointers.
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional truth. Canvas 2D. */
-export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual }: Props) {
+export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
+  /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
+  const oref = useRef<HTMLCanvasElement>(null)
   const props = useRef({ showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource })
   props.current = { showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource }
   const viewRef = useRef<PlotView | null>(null)
@@ -33,26 +44,55 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
   const press = useRef<{ x: number; y: number; moved: boolean; timer: number } | null>(null)
 
   useEffect(() => {
-    const canvas = ref.current!
-    const ctx = canvas.getContext('2d')
+    const canvas = ref.current!, over = oref.current
+    const ctx = canvas.getContext('2d'), octx = over?.getContext('2d') ?? null
     if (!ctx) return
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim() || '#888'
     const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), truth: col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim') }
     const p = { x: 0, y: 0 }
-    let raf = 0, lastT = -1, lastKey = ''
+    let raf = 0, lastT = -1, lastKey = '', lastGhost = -1
+    // Splash start times per buoy index (typed, preallocated); known = buoys already on the plot.
+    const splash = new Float64Array(MAX_SPLASH), known = { n: -1 }
+    let splashing = false
+    // Overlay: new-buoy splash rings (each frame only while one runs) and the drop ghost.
+    const drawOverlay = (v: PlotView, w: number, h: number, dpr: number, t: typeof client.status.tactical, now: number) => {
+      if (!octx || !over) return
+      if (over.width !== w || over.height !== h) { over.width = w; over.height = h } else octx.clearRect(0, 0, w, h)
+      splashing = false
+      if (t) for (let i = 0; i < t.buoys.length && i < MAX_SPLASH; i++) {
+        const age = now - splash[i]
+        if (!splash[i] || age >= SPLASH_MS) continue
+        splashing = true
+        const b = t.buoys[i], k = age / SPLASH_MS
+        octx.strokeStyle = C.man; octx.globalAlpha = 1 - k; octx.lineWidth = 1.5 * dpr
+        octx.beginPath(); octx.arc(toScreenX(v, b.x), toScreenY(v, b.y), (6 + 22 * k) * dpr, 0, Math.PI * 2); octx.stroke()
+      }
+      octx.globalAlpha = 1
+      const gh = drop?.ghost
+      if (gh) drawGhost(octx, v, gh, dpr, C.man)
+    }
     const draw = () => {
       raf = requestAnimationFrame(draw)
-      const st = client.status, t = st.tactical
+      const st = client.status, t = st.tactical, now = performance.now()
+      const gv = drop ? drop.version : 0
+      if (t && t.buoys.length !== known.n) {
+        // First picture (or a restart): no splash. Growth: splash the newcomers.
+        if (known.n >= 0 && t.buoys.length > known.n) { for (let i = known.n; i < t.buoys.length && i < MAX_SPLASH; i++) splash[i] = now; splashing = true }
+        known.n = t.buoys.length
+      }
       const { showTruth: truth, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs } = props.current
       const dpr = capDpr(devicePixelRatio)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
       const key = `${w}x${h}:${truth}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${JSON.stringify(man)}`
-      if (t?.simT === lastT && key === lastKey) return
-      lastT = t?.simT ?? -1; lastKey = key
-      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
+      const base = !(t?.simT === lastT && key === lastKey)
+      if (!base && gv === lastGhost && !splashing) return
       const v = fitView(w, h, span)
       viewRef.current = v
+      if (gv !== lastGhost || splashing || base) { lastGhost = gv; drawOverlay(v, w, h, dpr, t, now) }
+      if (!base) return
+      lastT = t?.simT ?? -1; lastKey = key
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h }
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.fillStyle = C.bg; ctx.fillRect(0, 0, w, h)
       // Range rings every 2 km + grid.
@@ -165,10 +205,22 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
     const b = client.status.tactical?.buoys.find((x) => x.id === id); if (!b) return
     const deg = bearingTo(b, wx, wy); if (deg !== null) onManual?.(id, deg, final)
   }
-  return (
+  const dropPress = useRef<{ x: number; y: number; moved: boolean; id: number } | null>(null)
+  const dropping = () => !!drop && dropCapturesPlot(drop.state)
+  // Re-render (cursor/class only) when the drop tool arms or disarms.
+  useSyncExternalStore(drop?.subscribe ?? noSub, () => (drop ? dropCapturesPlot(drop.state) : false))
+  return (<>
     <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot"
-      style={{ cursor: onManual ? 'crosshair' : undefined, touchAction: 'none' }}
+      className={drop && dropping() ? 'dropping' : undefined}
+      style={{ cursor: onManual || dropping() ? 'crosshair' : undefined, touchAction: 'none' }}
       onPointerDown={(e) => {
+        if (drop && dropping()) {
+          if (dropPress.current) return // second finger: ignore
+          const w = world(e); if (!w) return
+          try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic pointer */ }
+          dropPress.current = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }
+          drop.dispatch({ type: 'press', at: { x: w.x, y: w.y } }); return
+        }
         const h = hitBuoy(e); if (!h || !onManual) return
         dragRef.current = h.id; try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic pointer */ }
         const id = h.id, pr = { x: e.clientX, y: e.clientY, moved: false, timer: 0 }
@@ -176,16 +228,27 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         press.current = pr
       }}
       onPointerMove={(e) => {
+        const dp = dropPress.current
+        if (dp && drop) {
+          if (e.pointerId !== dp.id) return
+          if (!dp.moved) { if (!exceedsSlop(dp.x, dp.y, e.clientX, e.clientY)) return; dp.moved = true }
+          const w = world(e); if (w) drop.dispatch({ type: 'drag', at: { x: w.x, y: w.y } }); return
+        }
         const id = dragRef.current; if (id === null) return
         const pr = press.current
         if (pr && !pr.moved) { if (!exceedsSlop(pr.x, pr.y, e.clientX, e.clientY)) return; pr.moved = true; clearTimeout(pr.timer) }
         const w = world(e); if (w) setFrom(id, w.x, w.y, false)
       }}
-      onPointerUp={(e) => { const id = dragRef.current; dragRef.current = null; const pr = press.current; press.current = null; if (pr) clearTimeout(pr.timer); if (id === null || !pr?.moved) return; const w = world(e); if (w) setFrom(id, w.x, w.y, true) }}
-      onPointerCancel={() => { dragRef.current = null; if (press.current) clearTimeout(press.current.timer); press.current = null }}
+      onPointerUp={(e) => {
+        const dp = dropPress.current
+        if (dp && drop) { if (e.pointerId !== dp.id) return; dropPress.current = null; drop.dispatch({ type: 'release' }); return }
+        const id = dragRef.current; dragRef.current = null; const pr = press.current; press.current = null; if (pr) clearTimeout(pr.timer); if (id === null || !pr?.moved) return; const w = world(e); if (w) setFrom(id, w.x, w.y, true) }}
+      onPointerCancel={() => {
+        if (dropPress.current && drop) { dropPress.current = null; drop.dispatch({ type: 'cancel' }); return } dragRef.current = null; if (press.current) clearTimeout(press.current.timer); press.current = null }}
       onContextMenu={(e) => e.preventDefault()}
-      onDoubleClick={(e) => { const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
-  )
+      onDoubleClick={(e) => { if (dropping()) return; const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
+    <canvas ref={oref} className="tac-overlay" data-testid="tactical-overlay" aria-hidden />
+  </>)
 }
 
 /**
@@ -204,4 +267,56 @@ export function selectBearings(bearings: Bearing[], buoys: TacticalBuoy[], selCh
     hz = best.freqHz
   }
   return live.filter((b) => Math.abs(b.freqHz - hz) <= SEL_TOL_HZ)
+}
+
+/**
+ * Ghost of a pattern about to be laid: the drag guide (anchor → finger, with bearing and extent), the pattern
+ * outline, hollow dashed buoy symbols (DIFAR triangle, omni circle) and the plan readout. Reads the plan's typed
+ * xy array; runs only when the ghost changes.
+ */
+function drawGhost(ctx: CanvasRenderingContext2D, v: PlotView, g: DropPlan, dpr: number, col: string): void {
+  const n = g.n, xy = g.xy, pl = g.placement
+  const sx = (i: number) => toScreenX(v, xy[2 * i]), sy = (i: number) => toScreenY(v, xy[2 * i + 1])
+  ctx.save()
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1.25 * dpr
+  // Drag guide.
+  if (pl.dragged && pl.from && pl.to) {
+    const x0 = toScreenX(v, pl.from.x), y0 = toScreenY(v, pl.from.y), x1 = toScreenX(v, pl.to.x), y1 = toScreenY(v, pl.to.y)
+    ctx.globalAlpha = 0.55; ctx.setLineDash([2 * dpr, 3 * dpr])
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke()
+    ctx.setLineDash([]); ctx.globalAlpha = 0.9
+    ctx.beginPath(); ctx.arc(x0, y0, 3 * dpr, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(x1, y1, 7 * dpr, 0, Math.PI * 2); ctx.stroke()
+  }
+  // Outline.
+  ctx.globalAlpha = 0.7; ctx.setLineDash([6 * dpr, 4 * dpr]); ctx.beginPath()
+  if (g.pattern === 'line' && n > 1) { ctx.moveTo(sx(0), sy(0)); for (let i = 1; i < n; i++) ctx.lineTo(sx(i), sy(i)) }
+  else if (g.pattern === 'circle') ctx.arc(toScreenX(v, g.center.x), toScreenY(v, g.center.y), g.extentM / v.mPerPx, 0, Math.PI * 2)
+  else if (g.pattern === 'wedge' && n > 1) {
+    // Legs alternate (odd = one side, even = the other), outward from the apex at index 0.
+    ctx.moveTo(sx(0), sy(0)); for (let i = 1; i < n; i += 2) ctx.lineTo(sx(i), sy(i))
+    ctx.moveTo(sx(0), sy(0)); for (let i = 2; i < n; i += 2) ctx.lineTo(sx(i), sy(i))
+  }
+  ctx.stroke(); ctx.setLineDash([])
+  // Buoys.
+  const r = 6 * dpr
+  for (let i = 0; i < n; i++) {
+    const x = sx(i), y = sy(i)
+    ctx.beginPath()
+    if (g.kinds[i] === 'difar') { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r); ctx.lineTo(x - r, y + r); ctx.closePath() } else ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.globalAlpha = 0.18; ctx.fill()
+    ctx.globalAlpha = 0.95; ctx.setLineDash([3 * dpr, 2 * dpr]); ctx.stroke(); ctx.setLineDash([])
+  }
+  // Readout above the pattern (phones show it in the confirm bar instead, which rides at the top of the plot).
+  if (typeof document !== 'undefined' && (document.querySelector('.app') as HTMLElement | null)?.dataset.layout !== 'wide') { ctx.restore(); return }
+  let top = Infinity, left = Infinity, right = -Infinity
+  for (let i = 0; i < n; i++) { top = Math.min(top, sy(i)); left = Math.min(left, sx(i)); right = Math.max(right, sx(i)) }
+  if (g.pattern === 'circle') top = Math.min(top, toScreenY(v, g.center.y) - g.extentM / v.mPerPx)
+  const label = planReadout(g)
+  ctx.font = `600 ${11 * dpr}px ui-monospace, Menlo, monospace`
+  const tw = ctx.measureText(label).width, pad = 4 * dpr
+  const lx = Math.max(pad, Math.min(v.w - tw - pad, (left + right) / 2 - tw / 2)), ly = Math.max(16 * dpr, top - 14 * dpr)
+  ctx.globalAlpha = 0.75; ctx.fillStyle = '#000'; ctx.fillRect(lx - pad, ly - 11 * dpr, tw + 2 * pad, 15 * dpr)
+  ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.fillText(label, lx, ly)
+  ctx.restore()
 }

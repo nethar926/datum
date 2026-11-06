@@ -1,4 +1,4 @@
-import type { Band, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
+import type { Band, BuoysDropped, DropSource, DropSpec, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 import { HandoffMachine, handoffLabel, type HandoffEvent, type HandoffTarget } from '../gram/handoff'
 
@@ -13,7 +13,9 @@ export interface SimStatus { receiver: boolean; scenarioId: string; seed: number
   /** RES/filter applied at init and by setGram; undefined = legacy 4 Hz gram. */
   gram?: GramSettings
   /** Gram handoff indicator: label stays after the swap with active=false so it can fade out. */
-  handoff?: { label: string; active: boolean; gen: number } }
+  handoff?: { label: string; active: boolean; gen: number }
+  /** m3-fe-drop: the worker's reply to the latest dropBuoys. */
+  lastDrop?: BuoysDropped }
 
 /** Track history for the plot: fixed-size ring of x,y pairs. */
 export class TrackRing {
@@ -66,7 +68,7 @@ export class SimClient {
     if (g0) { this.target = { res: g0.res, filter: g0.filter, ...(g0.band ? { band: g0.band } : {}) }; this.displayed = { ...this.target } }
     if (this.status.handoff) this.setStatus({ handoff: undefined })
     const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
-    this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic })
+    this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic, lastDrop: undefined })
     this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: false,
       // Band gram (RES off) or RES gram: the engine keeps the two families exclusive, so send exactly one.
       ...(g0?.band ? { bandPreset: g0.band } : { gram: g0 ? { res: g0.res, filter: g0.filter } : undefined }) })
@@ -115,6 +117,13 @@ export class SimClient {
   onHandoff(cb: HandoffListener): () => void { this.handoffListeners.add(cb); return () => this.handoffListeners.delete(cb) }
   /** Pending configs while a handoff is announced (a waterfall mounting mid-handoff picks these up). */
   pendingConfigs(): GramConfig[] | undefined { return this.handoff.phase === 'pending' ? this.handoff.configs : undefined }
+  private dropSeq = 0
+  /** m3-fe-drop: lay buoys now (manual or AUTO). Returns the request seq echoed in status.lastDrop. */
+  dropBuoys(buoys: DropSpec[], source: DropSource = 'manual'): number {
+    const seq = ++this.dropSeq
+    this.send({ type: 'dropBuoys', seq, source, buoys })
+    return seq
+  }
   setBand(band: Band): void { if (band !== this.status.band) this.start(this.status.seed, this.status.scenarioId, band) }
 
   onRows(cb: RowsListener): () => void { this.rowsListeners.add(cb); return () => this.rowsListeners.delete(cb) }
@@ -207,6 +216,7 @@ export class SimClient {
         this.track.push(m.aircraft.x, m.aircraft.y)
         this.setStatus({ simT: m.simT, tactical: m })
         break
+      case 'dropped': this.setStatus({ lastDrop: m }); break
       case 'error': this.inFlight = false; this.setStatus({ error: m.message, playing: false }); break
     }
   }

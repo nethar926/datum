@@ -92,7 +92,7 @@ export class WaterfallRenderer {
   private brg: WebGLTexture[] = []
   private headB: Int32Array
   private filledB: Int32Array
-  readonly bearingStreams: number
+  bearingStreams: number
   private vao!: WebGLVertexArrayObject
   private buf!: WebGLBuffer
   private u: Record<string, WebGLUniformLocation | null> = {}
@@ -332,6 +332,36 @@ export class WaterfallRenderer {
     const gl = this.gl
     gl.bindTexture(gl.TEXTURE_2D, this.lut)
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 256, 1, gl.RGBA, gl.UNSIGNED_BYTE, paletteLut(id, 256))
+  }
+
+  /**
+   * m3-fe-drop: grow the displayed bank in place (a buoy joined the field) so existing history survives.
+   * order[i] = old ring index whose texture and history become ring i, or -1 for a new empty ring. Bearing rings
+   * keep 0..old-1 and gain empty rings up to bearingStreams. The pending bank is released (a handoff in flight
+   * re-announces at the new size). Allocates only the new rings.
+   */
+  addStreams(order: ArrayLike<number>, bearingStreams: number): void {
+    if (this.lost) return
+    const tex: WebGLTexture[] = [], head = new Int32Array(order.length).fill(-1), filled = new Int32Array(order.length)
+    const kept = new Set<number>()
+    for (let i = 0; i < order.length; i++) {
+      const o = order[i]
+      if (o >= 0 && o < this.tex.length && !kept.has(o)) { kept.add(o); tex.push(this.tex[o]); head[i] = this.head[o]; filled[i] = this.filled[o] }
+      else tex.push(this.ring(this.bins))
+    }
+    const gl = this.gl
+    for (let o = 0; o < this.tex.length; o++) if (!kept.has(o)) { if (!gl.isContextLost()) gl.deleteTexture(this.tex[o]); this.textureCount-- }
+    this.tex = tex; this.head = head; this.filled = filled; this.streams = tex.length
+    if (bearingStreams > this.bearingStreams) {
+      const headB = new Int32Array(bearingStreams).fill(-1), filledB = new Int32Array(bearingStreams)
+      headB.set(this.headB); filledB.set(this.filledB)
+      for (let b = this.bearingStreams; b < bearingStreams; b++) this.brg.push(this.ring(this.bins))
+      this.headB = headB; this.filledB = filledB; this.bearingStreams = bearingStreams
+    }
+    if (this.ptex.length) this.freePending()
+    this.phead = new Int32Array(this.streams).fill(-1); this.pfilled = new Int32Array(this.streams)
+    this.pheadB = new Int32Array(this.bearingStreams).fill(-1); this.pfilledB = new Int32Array(this.bearingStreams)
+    this.pendingOn = false
   }
 
   /** Upload one row for stream index s (bins floats starting at offset). */

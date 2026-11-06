@@ -102,3 +102,25 @@ describe('WaterfallRenderer geometry change (RES ↔ band)', () => {
     expect(n.deleted).toBe(n.created)
   })
 })
+
+describe('WaterfallRenderer.addStreams (m3-fe-drop)', () => {
+  it('grows in place: old rings keep their history, new rings start empty, only new textures are created', () => {
+    const { n, canvas } = fakeGl()
+    const r = new WaterfallRenderer(canvas, 1024, 600, 12, 6) // band gram: 6 raw + 6 normalized, 6 bearing
+    const row = new Float32Array(1024)
+    for (let s = 0; s < 12; s++) for (let k = 0; k <= s; k++) r.pushRow(s, row, 0)
+    const before = n.created
+    // 6 → 8 streams: raw 0..5 stay, 2 new raw, normalized 6..11 move to 8..13, 2 new normalized.
+    r.addStreams([0, 1, 2, 3, 4, 5, -1, -1, 6, 7, 8, 9, 10, 11, -1, -1], 8)
+    expect(r.streams).toBe(16); expect(r.bearingStreams).toBe(8)
+    expect(n.created - before).toBe(4 + 2)
+    for (let s = 0; s < 6; s++) expect(r.rowsFilled(s)).toBe(s + 1)
+    expect(r.rowsFilled(6)).toBe(0); expect(r.rowsFilled(7)).toBe(0)
+    for (let s = 0; s < 6; s++) expect(r.rowsFilled(8 + s)).toBe(7 + s)
+    expect(r.rowsFilled(14)).toBe(0)
+    r.pushRow(15, row, 0); expect(r.rowsFilled(15)).toBe(1)
+    r.pushBearing(7, row, 0)
+    expect(r.textureCount).toBe(n.created - n.deleted)
+    r.dispose(); expect(n.deleted).toBe(n.created)
+  })
+})

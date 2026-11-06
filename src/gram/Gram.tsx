@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { GramConfig, Tactical } from '../engine/contract'
 import { fillLineBearings, type GramMode } from './difarBearing'
 import type { SimClient } from '../engine/client'
@@ -74,9 +74,14 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   // Streams the renderer is drawing right now. A handoff promote swaps this synchronously (before React
   // re-renders with the new configs), so the frame loop never pairs new textures with the old grid.
   const liveRef = useRef(configs), promotedRef = useRef<GramConfig[] | null>(null), epochRef = useRef(0)
+  // m3-fe-drop: buoys joined the field (same streams + new ones at the end, same grid) → grow the renderer in place.
+  const growRef = useRef<((cs: GramConfig[]) => void) | null>(null), growTo = useRef<GramConfig[] | null>(null)
   if (configs[0]?.streamId === liveRef.current[0]?.streamId) {
+    const prev = liveRef.current
+    const grew = configs !== prev && configs.length > prev.length && configs[0]?.bins === prev[0]?.bins && prev.every((c, i) => configs[i].streamId === c.streamId)
+    if (grew) growTo.current = configs
     // Same ids but a different grid without a handoff (legacy hot-swap setGram): rebuild the renderer.
-    if (configs[0]?.bins !== liveRef.current[0]?.bins || configs.length !== liveRef.current.length) epochRef.current++
+    else if (configs[0]?.bins !== prev[0]?.bins || configs.length !== prev.length) epochRef.current++
     liveRef.current = configs
   }
   else if (liveRef.current !== promotedRef.current) { liveRef.current = configs; epochRef.current++ } // a new stream set (restart), not a handoff
@@ -91,7 +96,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     let r: WaterfallRenderer
     // Textures 0..N-1 hold raw rows; band/legacy grams add N..2N-1 normalized rows, so NB/BB toggling keeps
     // full history. RES grams arrive engine-filtered (N textures).
-    const N = cs0.length
+    let N = cs0.length
     // Geometry-dependent CPU state; rebuilt only when a handoff changes bins or family (never per frame).
     const mk = (cs: GramConfig[]) => {
       const b = cs[0].bins
@@ -163,6 +168,24 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       }
       dirty = true
     })
+    growRef.current = (cs: GramConfig[]) => {
+      const old = N, n = cs.length
+      if (n <= old || cs[0]?.bins !== g.bins) return
+      // Raw rings 0..N-1 (+ normalized N..2N-1 on band/legacy grams): keep each old ring, add empty ones.
+      const order: number[] = []
+      for (let i = 0; i < n; i++) order.push(i < old ? i : -1)
+      if (!g.filtered) for (let i = 0; i < n; i++) order.push(i < old ? old + i : -1)
+      r.addStreams(order, n)
+      N = n; level = level.resized(n)
+      cs.forEach((c, i) => local.set(c.streamId, i))
+      // A handoff in flight re-announces at the new size; pick it up if it already has.
+      pendingLocal = new Map(); pendingCfgs = []; pg = g
+      const pc = client.pendingConfigs()
+      if (pc && pc.length === N && pc[0]?.bins) startPending(pc)
+      dirty = true
+    }
+    if (growTo.current && growTo.current.length > N) growRef.current(growTo.current)
+    growTo.current = null
     const ro = new ResizeObserver(() => { dirty = true; setWidth(canvas.clientWidth) })
     ro.observe(canvas)
     let lastKey = ''
@@ -200,9 +223,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     return () => {
       cancelAnimationFrame(raf); clearTimeout(lostTimer); off(); offHandoff(); ro.disconnect()
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
-      r.dispose(); rendererRef.current = null; histRef.current = null
+      r.dispose(); rendererRef.current = null; histRef.current = null; growRef.current = null
     }
   }, [client, configs.length > 0, rendererKey, HISTORY_ROWS])
+
+  useLayoutEffect(() => { const cs = growTo.current; if (cs && growRef.current) { growTo.current = null; growRef.current(cs) } }, [configs])
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
   useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, rendererKey, client])

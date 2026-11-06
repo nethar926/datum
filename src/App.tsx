@@ -21,6 +21,8 @@ import { RES_MAX, RES_MIN, clampRes, fullView, geometryKey, minSpanOf, resReadou
 import type { GramFilter, GramSettings, LofarBandPresetId } from './engine/contract'
 import { BAND_IDS, BAND_KEY, bandEdges, bandReadout, isBandId, parseBandChoice } from './gram/bands'
 import { TacticalPlot } from './tactical/TacticalPlot'
+import { DropBar } from './tactical/DropBar'
+import { DropController } from './tactical/dropController'
 import type { FixSource, ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
@@ -86,6 +88,7 @@ export default function App() {
   const [fixSource, setFixSource] = useState<FixSource>('both')
   const [manual, setManual] = useState<ManualBearings>({})
   const log = useMemo(() => new OperatorLog(), [])
+  const drop = useMemo(() => new DropController(), [])
   const logCount = useSyncExternalStore(log.subscribe, log.size)
   const onManual = (buoyId: number, deg: number | null, final: boolean) => {
     setManual((m) => { const n = { ...m }; if (deg === null) delete n[buoyId]; else n[buoyId] = deg; return n })
@@ -413,7 +416,8 @@ export default function App() {
             {st.tactical && <div className="plot-corner readout" data-testid="ac-readout">
               {`A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</div>}
             <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
-              showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} />
+              showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} drop={drop} />
+            <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} />
             {truth && st.tactical?.truth && !phone && <TruthPanel contacts={st.tactical.truth.contacts} />}
             {truth && st.tactical?.truth && phone && <button className="btn truth-chip" data-testid="truth-open" onClick={() => setTruthSheet(true)}>TRUTH · {st.tactical.truth.contacts.filter((c) => c.active !== false).length}</button>}
           </div>
