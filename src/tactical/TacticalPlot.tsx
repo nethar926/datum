@@ -8,6 +8,7 @@ import { bearingTo, distToRay, fixInputs, type FixSource, type ManualBearings } 
 import type { DropController } from './dropController'
 import { dropCapturesPlot } from './fieldMode'
 import { planReadout, type DropPlan } from './drop'
+import { canAim, isArmed, type BearingArm } from './bearingArm'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -22,6 +23,10 @@ interface Props {
   onManual?: (buoyId: number, deg: number | null, final: boolean) => void
   /** m3-fe-drop: while a pattern is armed, presses place it (ghost preview) instead of moving bearing cursors. */
   drop?: DropController
+  /** Armed two-tap bearing mode (B / BRG). Tap buoy → tap plot. Drag still works alongside. Inactive while drop captures the plot. */
+  arm?: BearingArm
+  onArmPick?: (buoyId: number) => void
+  onArmAim?: (buoyId: number, wx: number, wy: number) => void
 }
 const noSub = () => () => {}
 /** New-buoy splash: an expanding ring for this long after a buoy appears on the plot. */
@@ -32,14 +37,16 @@ const HIT_PX = 14
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional truth. Canvas 2D. */
-export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop }: Props) {
+export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource })
-  props.current = { showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource }
+  const props = useRef({ showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm })
+  props.current = { showTruth, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm }
   const viewRef = useRef<PlotView | null>(null)
   const dragRef = useRef<number | null>(null)
+  /** When set, the current pointer is an armed aim-tap (plot placement), not a buoy drag. */
+  const aimTap = useRef(false)
   // Long-press a DIFAR buoy (touch stand-in for double-click) clears its manual bearing.
   const press = useRef<{ x: number; y: number; moved: boolean; timer: number } | null>(null)
 
@@ -81,10 +88,11 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         if (known.n >= 0 && t.buoys.length > known.n) { for (let i = known.n; i < t.buoys.length && i < MAX_SPLASH; i++) splash[i] = now; splashing = true }
         known.n = t.buoys.length
       }
-      const { showTruth: truth, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs } = props.current
+      const { showTruth: truth, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs, arm: armSt } = props.current
       const dpr = capDpr(devicePixelRatio)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
-      const key = `${w}x${h}:${truth}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${JSON.stringify(man)}`
+      const armKey = armSt?.phase === 'aim' ? `aim${armSt.buoyId}` : armSt?.phase ?? 'idle'
+      const key = `${w}x${h}:${truth}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${JSON.stringify(man)}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
       const v = fitView(w, h, span)
@@ -157,6 +165,16 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         if (b.state === 'falling') ctx.setLineDash([2 * dpr, 2 * dpr])
         ctx.stroke(); ctx.setLineDash([])
         ctx.fillText(String(b.channel), sx + 8 * dpr, sy + 4 * dpr)
+        // Armed aim: ring the chosen DIFAR buoy.
+        if (armSt?.phase === 'aim' && armSt.buoyId === b.id) {
+          ctx.strokeStyle = C.man; ctx.lineWidth = 2 * dpr; ctx.setLineDash([3 * dpr, 3 * dpr])
+          ctx.beginPath(); ctx.arc(sx, sy, 12 * dpr, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([])
+        }
+      }
+      // Armed badge on the plot (bearing arm; drop has its own hint bar).
+      if (armSt && armSt.phase !== 'idle') {
+        ctx.fillStyle = C.man; ctx.font = `600 ${11 * dpr}px ui-monospace, Menlo, monospace`
+        ctx.fillText(armSt.phase === 'pick-buoy' ? 'BRG · tap DIFAR buoy' : 'BRG · tap to aim', 8 * dpr, 16 * dpr)
       }
 
       // Cross-fixes from DIFAR lines.
@@ -209,11 +227,13 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
   const dropping = () => !!drop && dropCapturesPlot(drop.state)
   // Re-render (cursor/class only) when the drop tool arms or disarms.
   useSyncExternalStore(drop?.subscribe ?? noSub, () => (drop ? dropCapturesPlot(drop.state) : false))
+  const brgArmed = !!(arm && isArmed(arm) && !dropping())
   return (<>
-    <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot"
+    <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot" data-arm={dropping() ? 'drop' : (arm?.phase ?? 'idle')}
       className={drop && dropping() ? 'dropping' : undefined}
-      style={{ cursor: onManual || dropping() ? 'crosshair' : undefined, touchAction: 'none' }}
+      style={{ cursor: onManual || dropping() || brgArmed ? 'crosshair' : undefined, touchAction: 'none' }}
       onPointerDown={(e) => {
+        // Drop pattern arm owns the plot while active (bearing arm is forced idle in App).
         if (drop && dropping()) {
           if (dropPress.current) return // second finger: ignore
           const w = world(e); if (!w) return
@@ -221,10 +241,22 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
           dropPress.current = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }
           drop.dispatch({ type: 'press', at: { x: w.x, y: w.y } }); return
         }
-        const h = hitBuoy(e); if (!h || !onManual) return
+        const h = hitBuoy(e)
+        // Armed aim on empty plot: capture so pointerup can place the bearing.
+        if (!h && brgArmed && canAim(arm!) && onArmAim) {
+          aimTap.current = true; dragRef.current = arm!.buoyId
+          try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic */ }
+          press.current = { x: e.clientX, y: e.clientY, moved: false, timer: 0 }
+          return
+        }
+        aimTap.current = false
+        if (!h || !onManual) return
         dragRef.current = h.id; try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic pointer */ }
         const id = h.id, pr = { x: e.clientX, y: e.clientY, moved: false, timer: 0 }
-        pr.timer = window.setTimeout(() => { if (!pr.moved && dragRef.current === id) { dragRef.current = null; onManual(id, null, true) } }, LONG_PRESS_MS)
+        // Long-press clear only when not in the two-tap arm path (arm uses tap-to-pick).
+        if (!brgArmed) {
+          pr.timer = window.setTimeout(() => { if (!pr.moved && dragRef.current === id) { dragRef.current = null; onManual(id, null, true) } }, LONG_PRESS_MS)
+        }
         press.current = pr
       }}
       onPointerMove={(e) => {
@@ -237,16 +269,33 @@ export function TacticalPlot({ client, showTruth, spanM = 18000, selectedChannel
         const id = dragRef.current; if (id === null) return
         const pr = press.current
         if (pr && !pr.moved) { if (!exceedsSlop(pr.x, pr.y, e.clientX, e.clientY)) return; pr.moved = true; clearTimeout(pr.timer) }
+        if (aimTap.current) return // aim-tap: ignore moves (placement is on up)
         const w = world(e); if (w) setFrom(id, w.x, w.y, false)
       }}
       onPointerUp={(e) => {
         const dp = dropPress.current
         if (dp && drop) { if (e.pointerId !== dp.id) return; dropPress.current = null; drop.dispatch({ type: 'release' }); return }
-        const id = dragRef.current; dragRef.current = null; const pr = press.current; press.current = null; if (pr) clearTimeout(pr.timer); if (id === null || !pr?.moved) return; const w = world(e); if (w) setFrom(id, w.x, w.y, true) }}
+        const id = dragRef.current; const aiming = aimTap.current
+        dragRef.current = null; aimTap.current = false
+        const pr = press.current; press.current = null; if (pr) clearTimeout(pr.timer)
+        if (id === null) return
+        const w = world(e)
+        // Armed aim tap on the plot (no drag).
+        if (aiming) {
+          if (pr && !pr.moved && w && arm && canAim(arm)) onArmAim?.(arm.buoyId, w.x, w.y)
+          return
+        }
+        // Armed: tap (no move) on a buoy picks it for aim; drag still sets a bearing.
+        if (brgArmed && pr && !pr.moved) { onArmPick?.(id); return }
+        if (!pr?.moved) return
+        if (w) setFrom(id, w.x, w.y, true)
+      }}
       onPointerCancel={() => {
-        if (dropPress.current && drop) { dropPress.current = null; drop.dispatch({ type: 'cancel' }); return } dragRef.current = null; if (press.current) clearTimeout(press.current.timer); press.current = null }}
+        if (dropPress.current && drop) { dropPress.current = null; drop.dispatch({ type: 'cancel' }); return }
+        dragRef.current = null; aimTap.current = false; if (press.current) clearTimeout(press.current.timer); press.current = null
+      }}
       onContextMenu={(e) => e.preventDefault()}
-      onDoubleClick={(e) => { if (dropping()) return; const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
+      onDoubleClick={(e) => { if (dropping() || brgArmed) return; const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
     <canvas ref={oref} className="tac-overlay" data-testid="tactical-overlay" aria-hidden />
   </>)
 }

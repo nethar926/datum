@@ -429,3 +429,20 @@ button, select { font: inherit; color: inherit; }
 :root:is([data-drop='armed'], [data-drop='placing'], [data-drop='preview']) .layout-phoneLandscape .tac-panel { width: 100%; }
 .layout-phoneLandscape .drop-confirm { flex-wrap: nowrap; padding-block: 4px; }
 .layout-phoneLandscape .drop-readout { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* m3-fe-center: center-on-frequency + manual bearing arm */
+.btn.center-btn { font: 600 11px/1 var(--font-mono); letter-spacing: .04em; color: #d6ffe2; border: 1px solid rgba(110, 220, 150, .7); background: rgba(50, 140, 80, .28); min-height: 44px; min-width: 44px; transition: background-color 150ms ease, border-color 150ms ease; }
+.btn.center-btn:hover, .btn.center-btn:focus-visible { background: rgba(60, 160, 90, .4); }
+.ctr-readout { font: 600 11px/1 var(--font-mono); color: #cfe8d4; letter-spacing: .04em; padding: 0 8px; animation: ctr-fade 1.6s ease forwards; }
+@keyframes ctr-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ctr-readout { animation: none; } }
+.hz-field { display: inline-flex; align-items: center; min-height: 44px; }
+.hz-field input { width: 7ch; min-height: 44px; padding: 0 8px; font: 500 16px/1 var(--font-mono); background: var(--bg-2, #0d0f12); color: var(--text-1, #e8eaed); border: 1px solid var(--hairline); border-radius: 6px; }
+.brg-btn { font: 600 11px/1 var(--font-mono); letter-spacing: .04em; min-height: 44px; min-width: 44px; transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease; }
+.brg-btn.armed, .brg-btn[aria-pressed='true'] { background: rgba(200, 140, 60, .28); border-color: rgba(230, 180, 90, .75); color: #ffe6b0; box-shadow: inset 0 0 0 1px rgba(230, 180, 90, .35); animation: brg-pulse 1.2s ease-in-out infinite; }
+@keyframes brg-pulse { 50% { border-color: rgba(255, 210, 120, .95); } }
+@media (prefers-reduced-motion: reduce) { .brg-btn.armed { animation: none; } }
+/* Frequency axis is a center target (44 px) — tap/click to center. */
+.gram { grid-template-rows: 1fr 44px; }
+.gram .axis-x { cursor: pointer; touch-action: manipulation; min-height: 44px; z-index: 2; }
+.gram .sel-marker, .gram .harm-marker, .gram .gram-layer, .gram .band-limit, .gram .gram-veil { bottom: 44px; }
+.gram .axis-x span { top: 14px; }

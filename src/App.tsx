@@ -23,13 +23,16 @@ import { BAND_IDS, BAND_KEY, bandEdges, bandReadout, isBandId, parseBandChoice }
 import { TacticalPlot } from './tactical/TacticalPlot'
 import { DropBar } from './tactical/DropBar'
 import { DropController } from './tactical/dropController'
-import type { FixSource, ManualBearings } from './tactical/manual'
+import { dropCapturesPlot } from './tactical/fieldMode'
+import { bearingTo, type FixSource, type ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
 import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
 import { CONTRAST_DEFAULT, CONTRAST_KEY, CONTRAST_MAX, CONTRAST_MIN, CONTRAST_STEP, clampContrast, loadContrast } from './gram/contrast'
+import { ctrLabel, parseHz, planCenter } from './gram/center'
+import { ARM_IDLE, armLabel, cancelArm, isArmed, pickBuoy, toggleArm, type BearingArm } from './tactical/bearingArm'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { Sheet } from './touch/Sheet'
@@ -95,6 +98,12 @@ export default function App() {
     if (final) log.add({ simT: client.status.simT, kind: 'bearing', buoyId, data: deg === null ? { source: 'manual', cleared: true } : { source: 'manual', brgDeg: Math.round(deg * 10) / 10 } })
   }
   const [selHz, setSelHz] = useState<number | null>(null)
+  const [cursorHz, setCursorHz] = useState<number | null>(null)
+  const [ctrFlash, setCtrFlash] = useState<number | null>(null)
+  const ctrTimer = useRef(0)
+  const [hzField, setHzField] = useState('')
+  const [brgArm, setBrgArm] = useState<BearingArm>(ARM_IDLE)
+  const [harmProbeOn, setHarmProbeOn] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showCmp, setShowCmp] = useState(false)
@@ -112,8 +121,8 @@ export default function App() {
   const harmGrab = useRef<number | null>(null)
   const [harmProbe, setHarmProbe] = useState<number | null>(null)
   const harmDrag = (phase: 'start' | 'move' | 'end', hz: number, _ago = 0, shift = false) => {
-    // Shift-click with a fundamental set drops a ratio probe instead of moving harmonics (EDA ×27.75 etc.).
-    if (shift && harmF0 !== null) { if (hz > 0) setHarmProbe(hz); harmGrab.current = null; return }
+    // Shift-click (or PROBE toggle on touch) with a fundamental set drops a ratio probe instead of moving harmonics.
+    if ((shift || harmProbeOn) && harmF0 !== null) { if (hz > 0) { setHarmProbe(hz); setHarmProbeOn(false) }; harmGrab.current = null; return }
     if (phase === 'start') {
       if (harmF0 === null) {
         // Truth on: snap to the nearest engine line family (CSR/CFR/EFR/EDA) whose harmonic is under the click.
@@ -186,6 +195,62 @@ export default function App() {
   const viewDigits = (cfg?.fBin ?? 1) < 0.1 ? 2 : (cfg?.fBin ?? 1) < 1 ? 1 : 0
   const probeName = truth && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
   const buoy = st.tactical?.buoys[stream]
+  const simTopHz = BAND_MAX[st.band]
+  const flashCtr = (hz: number) => {
+    setCtrFlash(hz); clearTimeout(ctrTimer.current)
+    ctrTimer.current = window.setTimeout(() => setCtrFlash(null), 1600)
+  }
+  const applyCenter = (hz: number) => {
+    const plan = planCenter({ hz, cfg, view, bandOn, res: wantRes, simTopHz, minSpan: minSpanOf(cfg) })
+    flashCtr(plan.hz)
+    if (plan.kind === 'none') return
+    if (plan.gram) client.setGram(plan.gram)
+    // View-only pan keeps the current span. Handoffs (vernier / band→res) land on the new full band via geometryKey.
+    if (plan.kind === 'view') setView(plan.view)
+  }
+  const centerFromSelection = () => {
+    const hz = selHz ?? cursorHz
+    if (hz !== null) applyCenter(hz)
+  }
+  const submitHzField = () => {
+    const hz = parseHz(hzField)
+    if (Number.isFinite(hz)) { applyCenter(hz); setHzField('') }
+  }
+  // Selected buoy for B-arm shortcut: live DIFAR on the current gram channel.
+  const selectedDifarId = (() => {
+    const b = buoy
+    return b && b.kind === 'difar' && b.state === 'live' ? b.id : null
+  })()
+  const toggleBrg = () => {
+    setBrgArm((a) => {
+      const next = toggleArm(a, selectedDifarId)
+      if (isArmed(next)) {
+        setShowManual(true)
+        // Only one plot arm at a time: put the drop palette away.
+        if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
+      }
+      return next
+    })
+  }
+  // Drop pattern arm clears the bearing arm (and the reverse is in toggleBrg).
+  const dropCapturing = useSyncExternalStore(drop.subscribe, () => dropCapturesPlot(drop.state))
+  useEffect(() => { if (dropCapturing) setBrgArm(ARM_IDLE) }, [dropCapturing])
+  const keyRef = useRef({ centerFromSelection, toggleBrg, brgArm })
+  keyRef.current = { centerFromSelection, toggleBrg, brgArm }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
+      const r = keyRef.current
+      if (k === 'c') { e.preventDefault(); r.centerFromSelection(); return }
+      if (k === 'b') { e.preventDefault(); r.toggleBrg(); return }
+      if (k === 'Escape' && isArmed(r.brgArm)) { e.preventDefault(); setBrgArm(cancelArm()); return }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const toolsRow = (
     <div className="panel-head gram-tools" data-testid="gram-tools">
@@ -196,8 +261,9 @@ export default function App() {
               {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
             </div>
             <div className="seg" role="group" aria-label="Harmonic cursor">
-              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
-              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null) }}>Clear</button>}
+              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click (or PROBE) another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
+              {harmF0 !== null && <button aria-pressed={harmProbeOn} onClick={() => setHarmProbeOn((v) => !v)} title="Next tap sets a ratio probe (touch stand-in for shift-click)" data-testid="harm-probe-btn">PROBE</button>}
+              {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false) }}>Clear</button>}
             </div>
             <div className="seg" role="group" aria-label="Cross cursor">
               <button aria-pressed={crossOn} onClick={() => setCrossOn(!crossOn)} title="Time / frequency crosshair with level readout">CROSS</button>
@@ -337,6 +403,17 @@ export default function App() {
               title={vLabel ? 'Back to the full band' : bandOn ? 'Vernier needs RES (band presets use the analytic band gram)' : 'Center the band on a line: uses the selected line, or tap one on the gram'}>
               {vLabel ? <>{vLabel} <span aria-hidden>✕</span></> : vernierPick ? 'VERNIER · tap a line' : layout === 'phonePortrait' ? 'VERNIER' : selHz !== null ? `VERNIER · ${selHz.toFixed(viewDigits + 1)} Hz` : 'VERNIER OFF · tap a line'}
             </button>
+            {selHz !== null && (
+              <button className="btn center-btn" data-testid="center-btn" onClick={() => applyCenter(selHz)}
+                title="Center the gram on the selected line (C)">CENTER</button>
+            )}
+            {!phone && (
+              <form className="hz-field" data-testid="hz-field" onSubmit={(e) => { e.preventDefault(); submitHzField() }} title="Type a frequency and Enter to center (optional)">
+                <input inputMode="decimal" enterKeyHint="go" aria-label="Center frequency Hz" placeholder="Hz" value={hzField}
+                  onChange={(e) => setHzField(e.target.value)} />
+              </form>
+            )}
+            {ctrFlash !== null && <span className="ctr-readout" data-testid="ctr-readout" aria-live="polite">{ctrLabel(ctrFlash, cfg?.fBin)}</span>}
             {cfg?.bandLimited && <span className="band-limit-tag" data-testid="band-limit-tag" title="Part of this band is above the simulated top frequency">BAND LIMIT</span>}
             {!phone && <span className="seg-label">BUOY</span>}
             <div className="seg" role="group" aria-label="Buoy channel">
@@ -355,8 +432,9 @@ export default function App() {
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
                 mode={gramMode} tactical={st.tactical} handoff={st.handoff}
-                onPickPoint={vernierPick ? (hz) => centerVernier(hz) : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
-                onDragPoint={vernierPick ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
+                onCenterFreq={applyCenter} onCursorHz={setCursorHz}
+                onPickPoint={vernierPick ? (hz) => centerVernier(hz) : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : harmProbeOn && harmF0 !== null ? (hz) => { setHarmProbe(hz); setHarmProbeOn(false) } : undefined}
+                onDragPoint={vernierPick || (harmProbeOn && harmF0 !== null) ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
                 crosshair={crossOn} nowS={st.simT}
                 overlay={cpaMarks.length || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
@@ -382,6 +460,12 @@ export default function App() {
                 </>}
                 {(lm.basis === 'none' || (lm.basis === 'cpaFit' && !cpaGeom)) &&
                   <label>Width s <input type="number" step={10} min={10} value={lm.tauS.toFixed(0)} onChange={(e) => setLm({ ...lm, tauS: Math.max(10, Number(e.target.value)) })} /></label>}
+                {lm.basis !== 'cpaFit' && (
+                  <div className="seg" role="group" aria-label="Lloyd CPA time" data-testid="lm-cpa-nudge">
+                    <button type="button" onClick={() => setLm({ ...lm, tCpaS: lm.tCpaS - 10 })} title="CPA time −10 s">CPA −</button>
+                    <button type="button" onClick={() => setLm({ ...lm, tCpaS: lm.tCpaS + 10 })} title="CPA time +10 s">CPA +</button>
+                  </div>
+                )}
                 <span className="lm-read" data-testid="lm-readout">{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
               </div>
             )}
@@ -405,6 +489,9 @@ export default function App() {
             <div className="seg" role="group" aria-label="Bearing layers">
               <button aria-pressed={showAuto} onClick={() => setShowAuto(!showAuto)} title="DIFAR-computed bearings (solid)">Auto</button>
               <button aria-pressed={showManual} onClick={() => setShowManual(!showManual)} title="Operator bearing cursors (dashed). Drag from a DIFAR buoy; double-click it to clear.">Man</button>
+              <button className={`brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)}
+                onClick={toggleBrg}
+                title="Arm manual bearing: tap a DIFAR buoy, then tap the plot to aim (B). Esc cancels. Disarms the drop palette if it was armed. Drag still works.">{armLabel(brgArm)}</button>
             </div>
             <span className="seg-label">FIX</span>
             <div className="seg" role="group" aria-label="Fix from">
@@ -416,7 +503,19 @@ export default function App() {
             {st.tactical && <div className="plot-corner readout" data-testid="ac-readout">
               {`A/C HDG ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</div>}
             <TacticalPlot client={client} showTruth={truth} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
-              showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource} onManual={onManual} drop={drop} />
+              showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource}
+              onManual={(id, deg, final) => {
+                onManual(id, deg, final)
+                if (final && deg !== null && isArmed(brgArm)) setBrgArm(ARM_IDLE)
+              }}
+              drop={drop}
+              arm={brgArm}
+              onArmPick={(id) => setBrgArm(pickBuoy(brgArm, id))}
+              onArmAim={(id, wx, wy) => {
+                const b = st.tactical?.buoys.find((x) => x.id === id); if (!b) return
+                const deg = bearingTo(b, wx, wy); if (deg === null) return
+                onManual(id, deg, true); setBrgArm(ARM_IDLE)
+              }} />
             <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} />
             {truth && st.tactical?.truth && !phone && <TruthPanel contacts={st.tactical.truth.contacts} />}
             {truth && st.tactical?.truth && phone && <button className="btn truth-chip" data-testid="truth-open" onClick={() => setTruthSheet(true)}>TRUTH · {st.tactical.truth.contacts.filter((c) => c.active !== false).length}</button>}

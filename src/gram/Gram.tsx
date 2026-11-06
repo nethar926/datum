@@ -38,6 +38,10 @@ interface Props {
   tactical?: Tactical
   /** Gram handoff indicator (RES/filter/vernier change filling); fades in/out, never blocks input. */
   handoff?: { label: string; active: boolean }
+  /** Tap/click the frequency axis to center the view on that Hz (m3-fe-center). */
+  onCenterFreq?: (hz: number) => void
+  /** Live cursor frequency (mouse move / touch scrub); null when the cursor leaves. */
+  onCursorHz?: (hz: number | null) => void
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
@@ -49,7 +53,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0, handoff }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0, handoff, onCenterFreq, onCursorHz }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -250,7 +254,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const local = (e: React.PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, w: r.width, h: r.height } }
   const ago = (y: number, h: number) => Math.max(0, (y / Math.max(1, h)) * historyS)
   const showAt = (x: number, y: number, w: number, h: number, withCross: boolean) => {
-    const hz = xToFreq(x, view, w); setCursor(hz)
+    const hz = xToFreq(x, view, w); setCursor(hz); onCursorHz?.(hz)
     if (withCross) setCross({ hz, agoS: ago(y, h), x })
   }
   const onPDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -319,7 +323,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas key={glGen} ref={canvasRef} data-testid={testId} onWheel={onWheel}
           onPointerDown={onPDown} onPointerMove={onPMove} onPointerUp={(e) => onPUp(e)} onPointerCancel={(e) => onPUp(e, true)}
-          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size) { setCursor(null); setCross(null) } }}
+          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size) { setCursor(null); setCross(null); onCursorHz?.(null) } }}
           onContextMenu={(e) => e.preventDefault()}
           className={pressHint ? 'pressing' : undefined}
           style={{ touchAction: 'none', cursor: onPickPoint ? 'crosshair' : onDragPoint ? 'ew-resize' : undefined }}
@@ -334,7 +338,21 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       <div className="axis axis-y" aria-hidden>
         {timeTicks.map((t) => <span key={t} style={{ top: `${(t / historyS) * 100}%` }}>{t === 0 ? 'now' : `-${t}s`}</span>)}
       </div>
-      <div className="axis axis-x" aria-hidden>
+      <div className="axis axis-x" data-testid={`${testId}-freq-axis`} role="slider" aria-label="Frequency axis · tap to center"
+        aria-valuemin={fMin} aria-valuemax={fMax} aria-valuenow={selectedHz ?? (view.lo + view.hi) / 2}
+        title={onCenterFreq ? 'Tap or click to center on this frequency' : undefined}
+        onPointerDown={(e) => {
+          if (!onCenterFreq) return
+          // Prevent the canvas above from seeing this as a scrub; still fire center.
+          e.preventDefault(); e.stopPropagation()
+          const rect = e.currentTarget.getBoundingClientRect()
+          onCenterFreq(xToFreq(e.clientX - rect.left, view, rect.width))
+        }}
+        onClick={(e) => {
+          if (!onCenterFreq) return
+          const rect = e.currentTarget.getBoundingClientRect()
+          onCenterFreq(xToFreq(e.clientX - rect.left, view, rect.width))
+        }}>
         {ticks.map((f) => { const x = freqToX(f, view, width); return (
           <span key={f} style={{ left: x }}><i className="tick-x" style={{ left: '50%', top: -6 }} />{f}</span>) })}
       </div>
