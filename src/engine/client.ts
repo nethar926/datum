@@ -109,7 +109,18 @@ export class SimClient {
     this.cutFirstCount = 0
     this.send({ type: 'seekCut', simT, ...(windowRows !== undefined ? { windowRows } : {}) })
   }
-  /** Subscribe to CUT seek notices (clear gram history / remap stream ids before the bulk rows arrive). */
+  /** Abandon the worker CutSession (back to list / unmount). Idempotent with a later init. */
+  disposeCut(): void {
+    if (!this.worker) return
+    this.seekingCut = false
+    this.cutSeekAwaitingDone = false
+    this.cutFirstData = null
+    this.cutFirstRowIndex = null
+    this.cutFirstCount = 0
+    this.send({ type: 'disposeCut' })
+  }
+
+    /** Subscribe to CUT seek notices (clear gram history / remap stream ids before the bulk rows arrive). */
   onCutSeek(cb: CutSeekListener): () => void { this.cutSeekListeners.add(cb); return () => this.cutSeekListeners.delete(cb) }
   /** True from seekCut() until the matching tactical lands — Gram uses this to avoid an epoch rebuild. */
   isSeekingCut(): boolean { return this.seekingCut }

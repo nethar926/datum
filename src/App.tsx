@@ -292,6 +292,7 @@ export default function App() {
   }
   const disposeCutOnly = () => {
     cuts.disposeSession()
+    client.disposeCut()
     ruler.clear()
     setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null)
     setTool('select')

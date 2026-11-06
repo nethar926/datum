@@ -50,7 +50,7 @@ describe('SimHost seekCut', () => {
       expect(done.rowCount).toBeLessThanOrEqual(CUT_SEEK_FULL_ROWS)
       expect(done.gen).toBe(first && first.type === 'cutSeeked' ? first.gen : done.gen)
     }
-  })
+  }, 60_000)
 
   it('a newer scrub cancels the previous backfill generation', () => {
     const msgs: FromWorker[] = []

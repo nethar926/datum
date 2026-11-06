@@ -91,4 +91,6 @@ export type ToWorker =
   | { type: 'step' }                                    // advance one row period of sim time
   /** CUT mode: silent seek to simT; host posts cutSeeked + tactical (preserves play/pause on the client). */
   | { type: 'seekCut'; simT: number; windowRows?: number }
+  /** CUT mode: dispose the live CutSession (+ abandoned backfill) without leaving the worker. */
+  | { type: 'disposeCut' }
   | { type: 'release'; buffers: ArrayBuffer[] }

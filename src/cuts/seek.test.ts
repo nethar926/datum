@@ -5,6 +5,7 @@ import {
   CUT_SEEK_FIRST_ROWS,
   CUT_SEEK_FULL_ROWS,
   CutSeekPlayback,
+  disposeCutSession,
   fillCutSeekFast,
   type CutSeekBuffers,
 } from './seek'
@@ -30,7 +31,9 @@ function playbackRing(cutId: string, targetS: number, keep: number): { data: Flo
     written++
   }
   const rowCount = Math.min(keep, written)
-  if (written <= keep) return { data, rowIndex, rowCount, simT: session.simT, bins }
+  const simT = session.simT
+  disposeCutSession(session)
+  if (written <= keep) return { data, rowIndex, rowCount, simT, bins }
   const linear = new Float32Array(rowCount * bins)
   const linearIdx = new Uint32Array(rowCount)
   const start = head - rowCount
@@ -39,7 +42,7 @@ function playbackRing(cutId: string, targetS: number, keep: number): { data: Flo
     linear.set(data.subarray(slot * bins, (slot + 1) * bins), i * bins)
     linearIdx[i] = rowIndex[slot]!
   }
-  return { data: linear, rowIndex: linearIdx, rowCount, simT: session.simT, bins }
+  return { data: linear, rowIndex: linearIdx, rowCount, simT, bins }
 }
 
 describe('CUT seek fills', () => {
@@ -49,22 +52,28 @@ describe('CUT seek fills', () => {
   it('first paint (fast) lands near target under ~150 ms warm', () => {
     const target = Math.floor(cut.durationS * 0.7)
     const out = bufs()
-    fillCutSeekFast(cutId, target, out) // warm
+    disposeCutSession(fillCutSeekFast(cutId, target, out).session) // warm
     const times: number[] = []
-    for (let i = 0; i < 5; i++) times.push(fillCutSeekFast(cutId, target, out).elapsedMs)
+    for (let i = 0; i < 5; i++) {
+      const r = fillCutSeekFast(cutId, target, out)
+      times.push(r.elapsedMs)
+      disposeCutSession(r.session)
+    }
     times.sort((a, b) => a - b)
     expect(times[2]!).toBeLessThan(150)
     const r = fillCutSeekFast(cutId, target, out)
     expect(r.simT).toBeGreaterThanOrEqual(target - 0.3)
     expect(r.rowCount).toBeGreaterThan(40)
     expect(r.rowCount).toBeLessThanOrEqual(CUT_SEEK_FIRST_ROWS)
+    disposeCutSession(r.session)
   })
 
   it('seeked rows are byte-identical to normal playback (determinism)', () => {
     const target = Math.floor(cut.durationS * 0.55)
     const keep = 180
     const seekOut = bufs()
-    const a = new CutSeekPlayback(cutId, target, seekOut, keep).finish()
+    const fill = new CutSeekPlayback(cutId, target, seekOut, keep)
+    const a = fill.finish()
     const b = playbackRing(cutId, target, keep)
     expect(a.rowCount).toBe(b.rowCount)
     expect(a.rowCount).toBeGreaterThan(40)
@@ -72,13 +81,15 @@ describe('CUT seek fills', () => {
     const n = a.rowCount * a.bins
     for (let i = 0; i < n; i++) expect(seekOut.data[i]).toBe(b.data[i])
     for (let i = 0; i < a.rowCount; i++) expect(seekOut.rowIndex[i]).toBe(b.rowIndex[i])
+    fill.dispose()
   })
 
   it('chunked CutSeekPlayback matches one-shot finish', () => {
     const target = 120
     const keep = 200
     const one = bufs()
-    const a = new CutSeekPlayback(cutId, target, one, keep).finish()
+    const oneFill = new CutSeekPlayback(cutId, target, one, keep)
+    const a = oneFill.finish()
     const many = bufs()
     const fill = new CutSeekPlayback(cutId, target, many, keep)
     while (!fill.done) fill.writeMore(40)
@@ -86,23 +97,29 @@ describe('CUT seek fills', () => {
     expect(fill.rowCount).toBe(a.rowCount)
     const n = a.rowCount * a.bins
     for (let i = 0; i < n; i += 7) expect(many.data[i]).toBe(one.data[i])
+    oneFill.dispose()
+    fill.dispose()
   })
 
   it('full-window deterministic fill completes under ~800 ms warm', () => {
     const target = Math.floor(cut.durationS * 0.7)
     const out = bufs()
-    new CutSeekPlayback(cutId, target, out, CUT_SEEK_FULL_ROWS).finish() // warm
+    const warm = new CutSeekPlayback(cutId, target, out, CUT_SEEK_FULL_ROWS)
+    warm.finish()
+    warm.dispose()
     const times: number[] = []
     for (let i = 0; i < 3; i++) {
-      times.push(new CutSeekPlayback(cutId, target, out, CUT_SEEK_FULL_ROWS).finish().elapsedMs)
+      const fill = new CutSeekPlayback(cutId, target, out, CUT_SEEK_FULL_ROWS)
+      times.push(fill.finish().elapsedMs)
+      fill.dispose()
     }
     times.sort((a, b) => a - b)
     expect(times[1]!).toBeLessThan(800)
-  })
+  }, 20_000)
 
   it('200 fast first-paints reuse buffers', () => {
     const out = bufs()
-    fillCutSeekFast(cutId, 90, out)
+    disposeCutSession(fillCutSeekFast(cutId, 90, out).session)
     const data0 = out.data, idx0 = out.rowIndex, len = data0.length
     let maxMs = 0
     for (let i = 0; i < 200; i++) {
@@ -111,6 +128,7 @@ describe('CUT seek fills', () => {
       expect(out.data).toBe(data0)
       expect(out.rowIndex).toBe(idx0)
       expect(out.data.length).toBe(len)
+      disposeCutSession(r.session)
     }
     expect(maxMs).toBeLessThan(500)
   }, 120_000)

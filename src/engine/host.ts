@@ -9,6 +9,7 @@ import {
   CUT_SEEK_FIRST_ROWS,
   CUT_SEEK_FULL_ROWS,
   CutSeekPlayback,
+  disposeCutSession,
   fillCutSeekFast,
   type CutSeekBuffers,
 } from '../cuts/seek'
@@ -93,6 +94,7 @@ export class SimHost {
       if (msg.type === 'release') return this.release(msg.buffers)
       if (msg.type === 'step') return this.step()
       if (msg.type === 'seekCut') return this.seekCut(msg.simT, msg.windowRows)
+      if (msg.type === 'disposeCut') return this.disposeCutMode()
       if (msg.type === 'setSurfaceTraffic') return this.setSurfaceTraffic(msg.value)
       if (msg.type === 'setGram') return this.setGram(msg)
       if (msg.type === 'subscribeGram') return this.subscribeGram(msg)
@@ -108,8 +110,29 @@ export class SimHost {
 
   private cancelCutBackfill(): void {
     this.cutSeekGen += 1
-    this.cutBackfill = null
+    this.abandonCutBackfill()
+  }
+
+  /** Drop in-flight backfill without bumping gen (seekCut bumps itself after). Disposes the orphan session. */
+  private abandonCutBackfill(): void {
     if (this.cutBackfillTimer) { this.cancelSchedule(this.cutBackfillTimer as number); this.cutBackfillTimer = 0 }
+    if (this.cutBackfill) {
+      const orphan = this.cutBackfill.session
+      this.cutBackfill = null
+      if (orphan !== this.cutSession) disposeCutSession(orphan)
+    }
+  }
+
+  /** Dispose the live CUT session (finish / leave CUT / replace). */
+  private disposeLiveCut(): void {
+    disposeCutSession(this.cutSession)
+    this.cutSession = null
+  }
+
+  /** Abandon CUT mode in the worker: cancel backfill and dispose the live session. Engine stays until next init. */
+  private disposeCutMode(): void {
+    this.cancelCutBackfill()
+    this.disposeLiveCut()
   }
 
   private init(msg: Extract<ToWorker, { type: 'init' }>): void {
@@ -123,7 +146,7 @@ export class SimHost {
       this.initCut(msg, cutId)
       return
     }
-    this.cutSession = null
+    this.disposeLiveCut()
     const gen = (Acoustics as unknown as { generateScenario?: (p: unknown) => ConstructorParameters<typeof AcousticEngine>[0] }).generateScenario
     const engine = new AcousticEngine(msg.params && gen ? gen(msg.params) : buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins))
     this.engine = engine
@@ -379,6 +402,7 @@ export class SimHost {
 
   /** CUT mode: open Acoustics renderCut and drain its LOFAR (+ optional DEMON) into the host pools. */
   private initCut(msg: Extract<ToWorker, { type: 'init' }>, cutId: string): void {
+    this.disposeLiveCut()
     const session = renderCut(cutId)
     this.cutSession = session
     this.engine = session.engine
@@ -473,10 +497,9 @@ export class SimHost {
     this.cutDemonOn = this.demonIds.length > 0
     this.cutRowRate = this.rowRateHz
 
-    // Cancel any in-flight backfill; this seek owns the new generation.
-    if (this.cutBackfillTimer) { this.cancelSchedule(this.cutBackfillTimer as number); this.cutBackfillTimer = 0 }
-    this.cutBackfill = null
-    const gen = ++this.cutSeekGen
+    // Cancel any in-flight backfill (disposes orphan session); this seek owns the new generation.
+    this.cancelCutBackfill()
+    const gen = this.cutSeekGen
 
     const filled = fillCutSeekFast(cutId, targetS, this.cutSeekBuf, firstRows)
     this.installCutSession(filled.session, this.cutDemonOn, this.cutRowRate)
@@ -492,6 +515,7 @@ export class SimHost {
   }
 
   private installCutSession(session: CutSession, demonOn: boolean, rowRate: number): void {
+    if (this.cutSession && this.cutSession !== session) disposeCutSession(this.cutSession)
     this.cutSession = session
     this.engine = session.engine
     this.n = 1
@@ -597,6 +621,8 @@ export class SimHost {
     const idx = session.writeLofarRow(frame.data, 0)
     if (idx < 0) {
       pool.push(frame)
+      // Cut finished (or already disposed): tear down once; further writers stay at -1.
+      if (session.done) disposeCutSession(session)
       this.updateTactical()
       this.post(this.tactical!)
       return

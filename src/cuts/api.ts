@@ -21,6 +21,15 @@ export {
 
 import { getCutSeed, type CutSeed } from '@acoustics'
 
+/**
+ * Deep clone of a CutSeed for UI draft edits. Starter-pack seeds from getCutSeed/listCutSeeds
+ * are deep-frozen by Acoustics — mutate a clone (or a spread copy of the fields you edit), never the catalog object.
+ */
+export function cloneCutSeed(cut: CutSeed): CutSeed {
+  return structuredClone(cut)
+}
+
+
 /** Scenario id the host recognises as a teaching cut (`cut:<id>`). */
 export const cutScenarioId = (cutId: string) => `cut:${cutId}`
 export const parseCutScenarioId = (scenarioId: string): string | null =>

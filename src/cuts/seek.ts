@@ -29,6 +29,13 @@ export const CUT_SEEK_CHUNK_ROWS = 64
 /** @deprecated alias — first-paint window */
 export const CUT_SEEK_WINDOW_ROWS = CUT_SEEK_FIRST_ROWS
 
+
+/** Idempotent teardown for an Acoustics CutSession (no-op if null/already disposed). */
+export function disposeCutSession(session: CutSession | null | undefined): void {
+  if (session && !session.isDisposed) session.dispose()
+}
+
+
 export interface CutSeekBuffers {
   /** rowCount × bins, row-major (oldest → newest) once compacted. */
   data: Float32Array
@@ -220,6 +227,12 @@ export class CutSeekPlayback {
     this.out.data.set(linear, 0)
     this.out.rowIndex.set(linearIdx, 0)
     this.compacted = true
+  }
+
+
+  /** Tear down this fill's session (e.g. abandoned backfill). Idempotent. */
+  dispose(): void {
+    disposeCutSession(this.session)
   }
 
   finish(): CutSeekResult {
