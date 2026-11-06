@@ -69,11 +69,28 @@ button, select { font: inherit; color: inherit; }
 .harm-marker.blade span { color: var(--plot-buoy); top: 16px; }
 .empty-note { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; font: 12px/1.4 var(--font-mono); color: var(--text-2); }
 .workspace-left { display: grid; grid-template-rows: minmax(0, 1fr); gap: inherit; min-height: 0; }
-/* Compact DIFAR wheel opener in the gram header (44 pt glass). */
-.wheel-btn { position: relative; min-width: 44px; min-height: 44px; width: 44px; height: 44px; padding: 0; display: inline-grid; place-items: center; flex-shrink: 0; border-radius: 10px; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; }
+/* Compact DIFAR wheel opener in the gram header (44 pt glass). Icon must be optically centered — beat panel-head .btn padding. */
+.wheel-btn,
+.app.ios .panel-head .btn.wheel-btn,
+.btn.icon.wheel-btn {
+  position: relative;
+  box-sizing: border-box;
+  width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  margin: 0; padding: 0;
+  display: grid; place-items: center; place-content: center;
+  flex-shrink: 0; border-radius: 10px; line-height: 0; font-size: 0;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
 .wheel-btn.custom { border-color: var(--accent, #5cff7a); }
 .wheel-btn.open, .wheel-btn[aria-expanded="true"] { background: rgba(255,255,255,.1); }
-.wheel-hue-ring { width: 22px; height: 22px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.35); -webkit-mask: radial-gradient(farthest-side, transparent 38%, #000 40%); mask: radial-gradient(farthest-side, transparent 38%, #000 40%); }
+.wheel-btn .wheel-hue-ring,
+.wheel-hue-ring {
+  width: 22px; height: 22px; margin: 0; padding: 0; border: 0;
+  border-radius: 50%; display: block; line-height: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+  -webkit-mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
+  mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
+}
 .wheel-btn.custom .wheel-hue-ring { box-shadow: inset 0 0 0 1px rgba(0,0,0,.35), 0 0 0 1.5px var(--accent, #5cff7a); }
 .gram-layer { position: absolute; left: 0; top: 0; bottom: 22px; pointer-events: none; overflow: hidden; }
 .gram-layer .harm-marker { bottom: 0; }
@@ -681,3 +698,13 @@ button, select { font: inherit; color: inherit; }
   grid-template-rows: minmax(0, 1.15fr) minmax(140px, 0.85fr);
 }
 .app[data-demon='1'] .demon-panel { min-height: 140px; }
+
+/* REFRESH: standalone reload control + update-available badge */
+.nav-btn.refresh-btn { position: relative; width: 44px; height: 44px; padding: 0; flex-shrink: 0; }
+.nav-btn.refresh-btn .update-dot {
+  position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--tint, #0a84ff); box-shadow: 0 0 0 1.5px var(--sys-cell, #1c1c1e);
+  pointer-events: none;
+}
+.app.ios.layout-phonePortrait .nav-btn.refresh-btn { width: 44px; height: 44px; }
+.ios-row .row-label .update-avail { color: var(--tint, #0a84ff); }

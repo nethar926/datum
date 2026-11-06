@@ -37,9 +37,8 @@ export function DifarWheelButton({ omni = false, wheel = DEFAULT_WHEEL, open = f
       aria-haspopup="dialog"
       aria-expanded={open}
       title={omni ? 'OMNI · NO BRG — tap to open wheel' : custom ? 'BRG · CUSTOM — tap to open wheel' : 'BRG = HUE — tap to open wheel'}
-      onClick={onOpen}>
-      <span className="wheel-hue-ring" style={{ background: isDefaultWheel(wheel) ? DIFAR_CONIC : wheelConic(wheel) }} aria-hidden />
-    </button>
+      onClick={onOpen}
+    ><span className="wheel-hue-ring" style={{ background: isDefaultWheel(wheel) ? DIFAR_CONIC : wheelConic(wheel) }} aria-hidden /></button>
   )
 }
 

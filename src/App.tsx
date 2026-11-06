@@ -46,8 +46,10 @@ import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, u
 import { CutController } from './cuts/session'
 import { CutsTab } from './cuts/CutsTab'
 import { listCutSeeds } from './cuts/api'
-import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
+import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
 import { Splash } from './ui/Splash'
+import { hardReloadApp } from './ui/appReload'
+import { useStandalone, useUpdateAvailable } from './ui/useAppUpdate'
 import { SPLIT_DEFAULT_H, SPLIT_DEFAULT_V, SPLIT_KEY_H, SPLIT_KEY_V, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
 import { useListen } from './audio/useListen'
@@ -193,7 +195,10 @@ export default function App() {
   const [trafficSheet, setTrafficSheet] = useState(false)
   // iOS app structure: tabs, appearance, glass strength, split, tab bar minimize.
   const [tab, setTab] = useState<Tab>(() => parseTab(new URLSearchParams(location.search).get('tab')))
-  const appearance = useAppearance(), glass = useGlass()
+  const appearance = useAppearance()
+  const standalone = useStandalone()
+  const updateAvailable = useUpdateAvailable()
+  const glass = useGlass()
   const portrait = usePortrait(), splitAxis: 'x' | 'y' = portrait ? 'y' : 'x'
   const splitKey = splitAxis === 'y' ? SPLIT_KEY_V : SPLIT_KEY_H, splitDefault = splitAxis === 'y' ? SPLIT_DEFAULT_V : SPLIT_DEFAULT_H
   const [split, setSplit] = useState(() => loadSplit(splitKey, splitDefault))
@@ -296,6 +301,11 @@ export default function App() {
     ruler.clear()
     setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null)
     setTool('select')
+  }
+  const reloadApp = () => {
+    void hardReloadApp(() => {
+      if (cuts.session) client.disposeCut()
+    })
   }
   const resumeLive = () => {
     disposeCutOnly()
@@ -631,7 +641,18 @@ export default function App() {
       {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       {instrumentsVisible && (
         <NavBar title={tab === 'plot' ? 'Plot' : 'DATUM'} sub={phone ? undefined : navSub}
-          trailing={<>{listenBtn}{rateSeg}{playBtn}</>} />
+          trailing={<>
+            {listenBtn}{rateSeg}{playBtn}
+            {standalone && (
+              <button type="button" className="nav-btn glass-btn refresh-btn" data-testid="nav-reload"
+                aria-label={updateAvailable ? 'Reload app — update available' : 'Reload app'}
+                title={updateAvailable ? 'Update available — tap to reload' : 'Reload app'}
+                onClick={reloadApp}>
+                <IcRefresh size={20} />
+                {updateAvailable && <span className="update-dot" aria-hidden data-testid="nav-reload-badge" />}
+              </button>
+            )}
+          </>} />
       )}
       {showCmp && <div className={phone ? 'cmp-wrap cmp-sheet' : 'cmp-wrap'}><Compendium onClose={() => setShowCmp(false)} /></div>}
 
@@ -905,6 +926,21 @@ export default function App() {
               <div className="ios-row"><span className="row-label">Operator log</span><span className="row-value" data-testid="log-count">{logCount}</span></div>
             </div>
             <p className="ios-foot">DATUM · training simulator. Every platform, country and acoustic signature is fictional.</p>
+          </div>
+          <div className="ios-section">
+            <h3>App</h3>
+            <div className="ios-group">
+              <button type="button" className="ios-row" data-testid="settings-reload" onClick={reloadApp}
+                aria-label={updateAvailable ? 'Reload app — update available' : 'Reload app'}>
+                <span className="row-label">Reload app
+                  {updateAvailable
+                    ? <small className="update-avail" data-testid="settings-reload-update">Update available</small>
+                    : <small>Fetch the latest build</small>}
+                </span>
+                <IcRefresh className="chev" size={18} />
+              </button>
+            </div>
+            <p className="ios-foot">Use Reload when the home-screen app has no browser refresh control.</p>
           </div>
         </LargeTitleScreen>
       )}

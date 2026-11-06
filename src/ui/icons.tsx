@@ -21,6 +21,8 @@ export const IcGear = (p: P) => <S {...p}><circle cx="12" cy="12" r="3" /><path 
 export const IcPlay = (p: P) => <S {...p}><path d="M8 5.5v13l10.5-6.5z" fill="currentColor" strokeWidth={1.4} /></S>
 export const IcPause = (p: P) => <S {...p}><rect x="6.5" y="5.5" width="3.6" height="13" rx="1.2" fill="currentColor" stroke="none" /><rect x="13.9" y="5.5" width="3.6" height="13" rx="1.2" fill="currentColor" stroke="none" /></S>
 export const IcRestart = (p: P) => <S {...p}><path d="M7.2 7.2A6.8 6.8 0 1 1 5.5 12" /><path d="M5 4.8v4.2h4.2" /></S>
+/** Refresh / reload: circular arrow (drawn in-house; not an SF Symbol). */
+export const IcRefresh = (p: P) => <S {...p}><path d="M19.2 12a7.2 7.2 0 1 1-2.1-5.1" /><path d="M19.2 4.5v5.2h-5.2" /></S>
 export const IcBack = (p: P) => <S {...p}><path d="M14.5 6l-6 6 6 6" /></S>
 export const IcChevron = (p: P) => <S {...p}><path d="M9.5 6l6 6-6 6" /></S>
 export const IcClose = (p: P) => <S {...p}><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></S>
