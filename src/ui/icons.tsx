@@ -41,3 +41,7 @@ export const IcUndo = (p: P) => <S {...p}><path d="M9 7H5v4" /><path d="M5 11a7 
 export const IcProbe = (p: P) => <S {...p}><path d="M12 3.5v17" strokeDasharray="2 2" /><path d="M7 9l5-5 5 5" /></S>
 export const IcLink = (p: P) => <S {...p}><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></S>
 export const IcSparkle = (p: P) => <S {...p}><path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z" /></S>
+/** Speaker (listen on). */
+export const IcSpeaker = (p: P) => <S {...p}><path d="M4.5 9.5v5h3.2L12.5 18V6L7.7 9.5z" /><path d="M15.2 9.2a3.2 3.2 0 0 1 0 5.6" /><path d="M17.4 7a5.6 5.6 0 0 1 0 10" opacity=".7" /></S>
+/** Speaker muted (listen off). */
+export const IcSpeakerMute = (p: P) => <S {...p}><path d="M4.5 9.5v5h3.2L12.5 18V6L7.7 9.5z" /><path d="M16 9.5l4 5M20 9.5l-4 5" /></S>

@@ -47,6 +47,8 @@ interface Props {
   onCenterFreq?: (hz: number) => void
   /** Live cursor frequency (mouse move / touch scrub); null when the cursor leaves. */
   onCursorHz?: (hz: number | null) => void
+  /** Optional suffix merged into the top-left cursor readout (e.g. listen FOCUS note). Never covers rows. */
+  cursorSuffix?: string | null
   /** Filled each frame with a sampler: Hz → DIFAR bearing deg (circular mean over recent rows), or null. */
   bearingAtRef?: React.MutableRefObject<((hz: number) => number | null) | null>
   /** Newest-at-bottom (default) or newest-at-top. */
@@ -64,7 +66,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -416,7 +418,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           <div className="cross-v" style={{ left: cross.x }} />
         </div>
       )}
-      {cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}</div> : cursor !== null && <div className="cursor-readout">{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}</div>}
+      {cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}{cursorSuffix ?? ''}</div> : cursor !== null && <div className="cursor-readout" data-testid={`${testId}-cursor`}>{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}{cursorSuffix ?? ''}</div>}
     </div>
   )
 }

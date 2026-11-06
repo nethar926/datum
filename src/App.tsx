@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
@@ -46,9 +46,12 @@ import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, u
 import { CutController } from './cuts/session'
 import { CutsTab } from './cuts/CutsTab'
 import { listCutSeeds } from './cuts/api'
-import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcTarget, IcTrash } from './ui/icons'
+import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
 import { SPLIT_DEFAULT_H, SPLIT_DEFAULT_V, SPLIT_KEY_H, SPLIT_KEY_V, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
+import { useListen } from './audio/useListen'
+import { FOCUS_HALF_WIDTHS } from './audio/focus'
+import { SHIFT_LABEL } from './audio/shift'
 
 const RATES = [1, 4, 16]
 const GRAM_MODE_KEY = 'datum.gramMode'
@@ -354,6 +357,50 @@ export default function App() {
   const viewDigits = (cfg?.fBin ?? 1) < 0.1 ? 2 : (cfg?.fBin ?? 1) < 1 ? 1 : 0
   const probeName = reveal && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
   const buoy = st.tactical?.buoys[stream]
+  const listen = useListen({
+    client, cfg, streamIndex: stream, configs: lofarCfgs, cursorHz, view,
+    tabLive: tab === 'live', detune, buoyId: buoy?.id, buoyState: buoy?.state,
+  })
+  useEffect(() => {
+    const w = window as Window & { __datumListen?: typeof listen.engine }
+    w.__datumListen = listen.engine
+    return () => { if (w.__datumListen === listen.engine) delete w.__datumListen }
+  }, [listen.engine])
+  const [listenMenu, setListenMenu] = useState(false)
+  const listenLong = useRef(0)
+  const listenLongFired = useRef(false)
+  useEffect(() => { if (!listen.userOn) setListenMenu(false) }, [listen.userOn])
+  useEffect(() => {
+    if (!listenMenu) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setListenMenu(false) }
+    const onPtr = (e: PointerEvent) => {
+      const t = e.target as Element | null
+      if (t?.closest?.('[data-testid=listen-wrap]')) return
+      setListenMenu(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onPtr, true)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onPtr, true) }
+  }, [listenMenu])
+  const openListenMenu = () => { setListenMenu(true) }
+  const onListenPointerDown = (e: ReactPointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return
+    listenLongFired.current = false
+    clearTimeout(listenLong.current)
+    listenLong.current = window.setTimeout(() => {
+      listenLongFired.current = true
+      void (async () => {
+        if (!listen.userOn) await listen.toggle()
+        openListenMenu()
+      })()
+    }, 420)
+  }
+  const onListenPointerUp = () => { clearTimeout(listenLong.current) }
+  const onListenClick = () => {
+    if (listenLongFired.current) { listenLongFired.current = false; return }
+    if (listenMenu) { setListenMenu(false); return }
+    void listen.toggle()
+  }
   const simTopHz = BAND_MAX[st.band]
   const flashCtr = (hz: number) => {
     setCtrFlash(hz); clearTimeout(ctrTimer.current)
@@ -529,6 +576,38 @@ export default function App() {
     </div>
   )
   const viewReadout = cfg ? `${view.lo.toFixed(viewDigits)}–${view.hi.toFixed(viewDigits)} HZ  Δf ${cfg.fBin < 0.1 ? cfg.fBin.toFixed(3) : cfg.fBin.toFixed(2)}` : 'STARTING'
+  const listenBtn = (
+    <div className={`listen-wrap${listenMenu ? ' open' : ''}`} data-testid="listen-wrap">
+      <button type="button" className={`nav-btn glass-btn listen-btn${listen.userOn ? ' on' : ''}`}
+        onClick={onListenClick}
+        onPointerDown={onListenPointerDown} onPointerUp={onListenPointerUp} onPointerCancel={onListenPointerUp}
+        onContextMenu={(e) => { e.preventDefault(); void (async () => { if (!listen.userOn) await listen.toggle(); openListenMenu() })() }}
+        aria-label={listen.userOn ? 'Mute listen (long-press for FOCUS settings)' : 'Unmute listen (long-press for FOCUS settings)'}
+        aria-pressed={listen.userOn} aria-haspopup="menu" aria-expanded={listenMenu}
+        title="Listen: tap mute/unmute · long-press FOCUS width + shift-up"
+        data-testid="listen-btn" disabled={listen.busy}>
+        {listen.userOn ? <IcSpeaker size={20} /> : <IcSpeakerMute size={20} />}
+      </button>
+      {listenMenu && (
+        <div className="listen-menu glass" role="menu" aria-label="Listen settings" data-testid="listen-menu">
+          <div className="listen-menu-row" role="group" aria-label="FOCUS half-width">
+            {FOCUS_HALF_WIDTHS.map((w) => (
+              <button key={w} type="button" role="menuitemradio" aria-checked={listen.half === w}
+                data-testid={`focus-width-${w}`} className={listen.half === w ? 'on' : undefined}
+                onClick={() => listen.setHalf(w)}>±{w}</button>
+            ))}
+          </div>
+          <button type="button" role="menuitemcheckbox" aria-checked={listen.shift === 'octave'}
+            className={`shift-btn${listen.shift === 'octave' ? ' on' : ''}`} data-testid="shift-up"
+            onClick={() => listen.setShift(listen.shift === 'octave' ? 'off' : 'octave')}
+            title="Octave-up so phone speakers can hear sub-200 Hz tonals">{SHIFT_LABEL[listen.shift]}</button>
+        </div>
+      )}
+    </div>
+  )
+  const focusSuffix = listen.userOn
+    ? ` · FOCUS ±${Math.round(listen.effectiveHalf)}${listen.shift === 'octave' ? ' ↑' : ''}`
+    : null
   const playBtn = (
     <button className={`nav-btn glass-btn play-btn${st.playing ? '' : ' primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}
       aria-label={st.playing ? 'Pause' : 'Play'} data-testid="play-btn">{st.playing ? <IcPause /> : <IcPlay />}</button>
@@ -549,8 +628,8 @@ export default function App() {
       <GlassDefs />
       {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       {instrumentsVisible && (
-        <NavBar title={tab === 'plot' ? 'Plot' : 'DATUM'} sub={navSub}
-          trailing={<>{rateSeg}{playBtn}</>} />
+        <NavBar title={tab === 'plot' ? 'Plot' : 'DATUM'} sub={phone ? undefined : navSub}
+          trailing={<>{listenBtn}{rateSeg}{playBtn}</>} />
       )}
       {showCmp && <div className={phone ? 'cmp-wrap cmp-sheet' : 'cmp-wrap'}><Compendium onClose={() => setShowCmp(false)} /></div>}
 
@@ -619,7 +698,7 @@ export default function App() {
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
                 mode={gramMode} tactical={st.tactical} handoff={st.handoff}
-                onCenterFreq={applyCenter} onCursorHz={setCursorHz} bearingAtRef={bearingAtRef}
+                onCenterFreq={applyCenter} onCursorHz={setCursorHz} cursorSuffix={focusSuffix} bearingAtRef={bearingAtRef}
                 onPickPoint={isPickFreq(brgArm) ? (hz) => { sendBrgAtFreq(hz) }
                   : vernierPick ? (hz) => centerVernier(hz)
                   : dopMode ? (hz, ago) => ruler.tap(hz, st.simT - ago)

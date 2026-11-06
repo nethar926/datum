@@ -48,8 +48,9 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .glass-btn:focus-visible, .tool:focus-visible, .tabbar button:focus-visible, .ios-row:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
 
 /* ---------- Navigation bar ---------- */
-.navbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: var(--nav-h);
-  padding: 2px 4px 2px 16px; border-radius: 26px; z-index: 6; }
+.navbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: var(--nav-h);
+  padding: 2px 6px 2px 16px; border-radius: 26px; z-index: 6; }
+.navbar:has(.nav-lead:not(:empty)) { grid-template-columns: auto minmax(0, 1fr) auto; }
 .navbar .nav-lead:empty { display: none; }
 .nav-title { min-width: 0; display: flex; align-items: baseline; gap: 8px; white-space: nowrap; overflow: hidden; transition: opacity var(--t) ease, transform var(--t) var(--ease); }
 .nav-title b { font: 600 17px/1.2 inherit; letter-spacing: -.02em; }
