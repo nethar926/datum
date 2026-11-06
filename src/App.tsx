@@ -49,8 +49,12 @@ import { PlotGrabber } from './touch/PlotGrabber'
 import { useViewportSegments } from './touch/useViewportSegments'
 import { DETENT_SPRING_MS, detentProgress, segmentCssVars, type PlotDetent } from './touch/layoutMath'
 import { CutController } from './cuts/session'
-import { CutsTab } from './cuts/CutsTab'
+import { CutsTab, type CutsGramTools } from './cuts/CutsTab'
 import { listCutSeeds } from './cuts/api'
+import {
+  availabilityMap, clearToolArm, emptyToolArm, FIX_DISABLED_REASON,
+  type ToolArmState,
+} from './cuts/cutTools'
 import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcLock, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
 import { Splash } from './ui/Splash'
 import { hardReloadApp } from './ui/appReload'
@@ -246,6 +250,15 @@ export default function App() {
   // CURLOCK: session-only locks for HARM / DOP / LM (default scrub lock lives inside Gram).
   const [locks, setLocks] = useState(EMPTY_LOCKS)
   const flipLock = (kind: CursorKind) => setLocks((s) => toggleLock(s, kind))
+  // CUTTOOLS: separate Cuts arm/locks/ruler so Live ↔ Cuts never leak armed tools or cursors.
+  const [cutArm, setCutArm] = useState<ToolArmState>(() => emptyToolArm())
+  const cutRuler = useMemo(() => new RulerStore(acousticsV11.fitCpaFromDoppler), [])
+  const cutRulerCommit = useSyncExternalStore(cutRuler.subscribe, cutRuler.getCommitted)
+  const flipCutLock = (kind: CursorKind) => setCutArm((s) => ({ ...s, locks: toggleLock(s.locks, kind) }))
+  const clearCutArm = () => {
+    cutRuler.clear()
+    setCutArm(clearToolArm())
+  }
   // HORZ: horizontal hairline on the default gram cursor (off by default, persisted).
   const [horzOn, setHorzOn] = useState<boolean>(loadHorz)
   useEffect(() => saveHorz(horzOn), [horzOn])
@@ -307,6 +320,44 @@ export default function App() {
     setTool('lm')
   }
 
+  // CUTTOOLS: Cuts-side HARM / LM / DOP handlers (isolated arm + cutRuler).
+  const cutCpaGeom: CpaGeom | null = useMemo(() => {
+    if (!cutRuler.placed || !(cutRuler.geom.speedMps > 0)) return null
+    const g = cutRuler.fit?.ok ? cutRuler.fit : cutRuler.geom
+    return { tCpaS: g.tCpaS, rCpaM: g.rCpaM, speedMps: g.speedMps }
+  }, [cutRuler, cutRulerCommit]) // eslint-disable-line react-hooks/exhaustive-deps
+  const cutLmDragRaw = useLloydDrag(cutArm.lm, (lm) => setCutArm((s) => ({ ...s, lm })), cutCpaGeom, st.simT)
+  const cutHarmGrab = useRef<number | null>(null)
+  const cutHarmDrag = (phase: 'start' | 'move' | 'end', hz: number, _ago = 0, shift = false) => {
+    if (cutArm.locks.harm && phase !== 'end') return
+    if ((shift || cutArm.harmProbeOn) && cutArm.harmF0 !== null) {
+      if (hz > 0) setCutArm((s) => ({ ...s, harmProbe: hz, harmProbeOn: false }))
+      cutHarmGrab.current = null
+      return
+    }
+    if (phase === 'start') {
+      if (cutArm.harmF0 === null) {
+        setCutArm((s) => ({ ...s, harmF0: hz, harmK: 1, harmFam: null }))
+        cutHarmGrab.current = 1
+        return
+      }
+      const k = nearestHarmonic(cutArm.harmF0, hz)
+      cutHarmGrab.current = k
+      setCutArm((s) => ({ ...s, harmK: k }))
+      return
+    }
+    if (phase === 'move') {
+      const k = cutHarmGrab.current
+      if (k !== null && hz > 0) setCutArm((s) => ({ ...s, harmF0: hz / k, harmFam: null }))
+      return
+    }
+    cutHarmGrab.current = null
+  }
+  const cutLmDrag = (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => {
+    if (cutArm.locks.lm && phase !== 'end') return
+    cutLmDragRaw(phase, hz, agoS, shift)
+  }
+
   useEffect(() => {
     client.setGram(loadGram())
     client.start()
@@ -317,9 +368,7 @@ export default function App() {
   }, [client])
 
   const startCut = (cutId: string) => {
-    ruler.clear()
-    setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false)
-    setTool('select'); setBrgArm(ARM_IDLE)
+    clearCutArm()
     setStream(0) // CUT renderCut exposes one LOFAR stream
     const sess = cuts.open(cutId)
     client.start(sess.cut.seed, sess.scenarioId, st.band, undefined)
@@ -329,15 +378,14 @@ export default function App() {
   /** Scrubber seek: jump the worker to tS and paint the visible window. Preserves play/pause; no restart. */
   const seekCut = (tS: number) => {
     if (!cuts.session) return
+    clearCutArm() // DISPOSE: scrub abandons placed cursors on the cut
     cuts.seek(tS) // UI latch (cleared when simT lands)
     client.seekCut(tS)
   }
   const disposeCutOnly = () => {
     cuts.disposeSession()
     client.disposeCut()
-    ruler.clear()
-    setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null)
-    setTool('select')
+    clearCutArm()
   }
   const reloadApp = () => {
     void hardReloadApp(() => {
@@ -407,7 +455,9 @@ export default function App() {
   const buoy = st.tactical?.buoys[stream]
   const listen = useListen({
     client, cfg, streamIndex: stream, configs: lofarCfgs, cursorHz, view,
-    tabLive: tab === 'live', detune, buoyId: buoy?.id, buoyState: buoy?.state,
+    // CUTTOOLS: listen/FOCUS also runs on an open cut player (mute gate treats this as allowed).
+    tabLive: tab === 'live' || (tab === 'cuts' && !!cuts.session),
+    detune, buoyId: buoy?.id, buoyState: buoy?.state,
   })
   useEffect(() => {
     const w = window as Window & { __datumListen?: typeof listen.engine }
@@ -621,6 +671,94 @@ export default function App() {
         <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="contrast-slider"
           onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
       </div>
+    </ToolsToolbar>
+  )
+  // CUTTOOLS: availability matrix + Cuts toolbar (same ToolsToolbar; FIX disabled with reason).
+  const cutBuoy = st.tactical?.buoys[0] ?? null
+  const cutAvail = availabilityMap({
+    hasSession: !!cuts.session,
+    buoyCount: st.tactical?.buoys.length ?? 0,
+    buoyKind: cutBuoy?.kind ?? null,
+    hasTactical: !!st.tactical,
+    difarMode: gramMode === 'difar',
+  })
+  const cutDopMode = cutArm.tool === 'dop'
+  const armCutDop = (on: boolean) => {
+    if (on) {
+      setCutArm((s) => ({ ...s, vernierPick: false, harmProbeOn: false, brgArm: ARM_IDLE, tool: 'dop' }))
+    } else {
+      setCutArm((s) => ({ ...s, tool: 'select' }))
+    }
+  }
+  const toggleCutLm = () => {
+    setCutArm((s) => {
+      if (s.tool === 'lm') return { ...s, tool: 'select' }
+      const lm = s.lm.tCpaS === 0 ? { ...s.lm, tCpaS: st.simT - 100 } : s.lm
+      return { ...s, tool: 'lm', brgArm: ARM_IDLE, vernierPick: false, harmProbeOn: false, lm }
+    })
+  }
+  const onCutBrgButton = () => {
+    if (!cutAvail.brg.enabled) return
+    setCutArm((s) => ({
+      ...s,
+      tool: 'select',
+      vernierPick: false,
+      harmProbeOn: false,
+      brgArm: s.brgArm.phase === 'idle' ? togglePickFreq(s.brgArm) : ARM_IDLE,
+    }))
+  }
+  const cutsToolsRow = (
+    <ToolsToolbar testId="cut-gram-tools" label="Cut gram tools" full={fullTools} leading={
+      <button className="tool fix-pin" aria-pressed={false} aria-label="FIX" data-testid="cut-fix-tool"
+        disabled={!cutAvail.fix.enabled}
+        title={cutAvail.fix.reason ?? FIX_DISABLED_REASON}
+        aria-description={cutAvail.fix.reason ?? FIX_DISABLED_REASON}
+        onClick={() => { /* disabled: single-buoy cut */ }}>
+        <IcFix /><span>FIX</span></button>
+    }>
+      <button className={`tool brg-btn${isArmed(cutArm.brgArm) ? ' armed' : ''}`} data-testid="cut-brg-btn"
+        aria-pressed={isArmed(cutArm.brgArm)} disabled={!cutAvail.brg.enabled}
+        title={cutAvail.brg.reason ?? 'BRG: tap the cut gram to send a DIFAR bearing at that Hz'}
+        onClick={onCutBrgButton}>
+        <IcBrg /><span>{armLabel(cutArm.brgArm)}</span></button>
+      <button className="tool" aria-pressed={cutDopMode} onClick={() => cutAvail.dop.enabled && armCutDop(!cutDopMode)}
+        data-testid="cut-dop-tool" aria-label="DOP" disabled={!cutAvail.dop.enabled}
+        title={cutAvail.dop.reason ?? 'Doppler ruler on the cut gram (cut time + buoy geometry)'}>
+        <IcDop /><span>DOP</span></button>
+      {cutRuler.placed && <button className="tool sub" onClick={() => applyCenter(cutRuler.s.f0Hz)} data-testid="cut-dop-center" title="Center the gram on f0"><IcTarget /><span>CTR f0</span></button>}
+      {cutRuler.placed && !cutRuler.s.linked && <button className="tool sub" onClick={() => cutRuler.relink()} data-testid="cut-dop-link" title="Re-link f2 to the mirror of f1"><IcLink /><span>Link</span></button>}
+      {cutRuler.placed && <button className="tool sub" onClick={() => { cutRuler.clear(); setCutArm((s) => s.locks.dop ? { ...s, locks: { ...s.locks, dop: false } } : s) }} data-testid="cut-dop-clear" aria-label="Clear Doppler ruler"><IcTrash /><span>Clear</span></button>}
+      <button className="tool" aria-pressed={cutArm.tool === 'harm'} aria-label="HARM" data-testid="cut-harm-tool"
+        disabled={!cutAvail.harm.enabled}
+        onClick={() => setCutArm((s) => s.tool === 'harm'
+          ? { ...s, tool: 'select' }
+          : { ...s, tool: 'harm', brgArm: ARM_IDLE, vernierPick: false, harmProbeOn: false })}
+        title={cutAvail.harm.reason ?? 'Harmonic cursor on the cut gram'}>
+        <IcHarm /><span>HARM</span></button>
+      {cutArm.harmF0 !== null && <button className="tool sub" aria-pressed={cutArm.harmProbeOn} data-testid="cut-harm-probe-btn" aria-label="PROBE"
+        onClick={() => setCutArm((s) => ({ ...s, harmProbeOn: !s.harmProbeOn, tool: s.harmProbeOn ? s.tool : 'harm', brgArm: ARM_IDLE }))}
+        title="Next tap sets a ratio probe"><IcProbe /><span>PROBE</span></button>}
+      {cutArm.harmF0 !== null && <button className="tool sub" onClick={() => setCutArm((s) => ({ ...s, harmF0: null, harmK: null, harmFam: null, harmProbe: null, harmProbeOn: false }))} aria-label="Clear harmonics" data-testid="cut-harm-clear"><IcTrash /><span>Clear</span></button>}
+      <button className="tool" aria-pressed={cutArm.tool === 'lm'} aria-label="LM" data-testid="cut-lm-tool"
+        disabled={!cutAvail.lm.enabled}
+        onClick={() => cutAvail.lm.enabled && toggleCutLm()}
+        title={cutAvail.lm.reason ?? "Lloyd's mirror on the cut gram"}>
+        <IcLm /><span>LM</span></button>
+      <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="cut-horz-tool"
+        disabled={!cutAvail.horz.enabled}
+        onClick={() => setHorzOn(!horzOn)}
+        title={cutAvail.horz.reason ?? 'HORZ: horizontal hairline with Zulu time of the cut row'}>
+        <IcHorz /><span>HORZ</span></button>
+      <div className="contrast tool-contrast" data-testid="cut-contrast">
+        <button className="tool contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label="Reset contrast to 1.0" title="Gram contrast (tap to reset to 1.0×)" data-testid="cut-contrast-reset" disabled={!cutAvail.con.enabled}><IcContrast /><span>CON {contrast.toFixed(2)}×</span></button>
+        <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="cut-contrast-slider"
+          disabled={!cutAvail.con.enabled}
+          onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
+      </div>
+      {gramMode === 'difar' && (
+        <DifarWheelButton omni={!!cutBuoy && cutBuoy.kind !== 'difar'} wheel={wheel} open={wheelOpen}
+          onOpen={() => cutAvail.difarWheel.enabled && setWheelOpen(true)} />
+      )}
     </ToolsToolbar>
   )
   const viewReadout = cfg ? `${view.lo.toFixed(viewDigits)}–${view.hi.toFixed(viewDigits)} HZ  Δf ${cfg.fBin < 0.1 ? cfg.fBin.toFixed(3) : cfg.fBin.toFixed(2)}` : 'STARTING'
@@ -910,8 +1048,46 @@ export default function App() {
           gramMode={gramMode}
           gramDir={gramDir}
           zuluOriginMs={zuluOriginMs}
-          harmF0={harmF0}
-          harmProbe={harmProbe}
+          harmF0={cutArm.harmF0}
+          harmProbe={cutArm.harmProbe}
+          tactical={st.tactical}
+          listenBtn={listenBtn}
+          gramModeSeg={
+            <div className="seg ios-seg cut-mode-seg" role="group" aria-label="Gram mode" data-testid="cut-gram-mode">
+              <button type="button" aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')}>LOFAR</button>
+              <button type="button" aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')}>DIFAR</button>
+            </div>
+          }
+          tools={cuts.session ? ({
+            tool: cutArm.tool,
+            locks: cutArm.locks,
+            harmF0: cutArm.harmF0,
+            harmK: cutArm.harmK,
+            harmFam: cutArm.harmFam,
+            harmProbe: cutArm.harmProbe,
+            harmProbeOn: cutArm.harmProbeOn,
+            lm: cutArm.lm,
+            cpaGeom: cutCpaGeom,
+            ruler: cutRuler,
+            dopMode: cutDopMode,
+            horzOn,
+            dragLocked: (cutArm.tool === 'harm' && cutArm.locks.harm) || (cutArm.tool === 'lm' && cutArm.locks.lm),
+            dragLockable: (cutArm.tool === 'harm' && cutArm.harmF0 !== null) || cutArm.tool === 'lm',
+            onDragLockTap: () => flipCutLock(cutArm.tool === 'lm' ? 'lm' : 'harm'),
+            onPickPoint: isPickFreq(cutArm.brgArm) ? (hz) => { sendBrgAtFreq(hz); setCutArm((s) => ({ ...s, brgArm: ARM_IDLE })) }
+              : cutDopMode ? (hz, ago) => { if (cutArm.locks.dop) { flipCutLock('dop'); return }; cutRuler.tap(hz, st.simT - ago) }
+              : cutArm.harmProbeOn && cutArm.harmF0 !== null ? (hz) => setCutArm((s) => ({ ...s, harmProbe: hz, harmProbeOn: false })) : undefined,
+            onDragPoint: isPickFreq(cutArm.brgArm) || (cutArm.harmProbeOn && cutArm.harmF0 !== null) ? undefined
+              : cutArm.tool === 'lm' ? cutLmDrag : cutArm.tool === 'harm' ? cutHarmDrag : undefined,
+            onCursorHz: setCursorHz,
+            cursorSuffix: focusSuffix,
+            flipLock: (k) => flipCutLock(k),
+            setLm: (lm) => setCutArm((s) => ({ ...s, lm })),
+            buoyDepthM: cutBuoy?.hydrophoneDepthM ?? null,
+            wheelOpen,
+            setWheel,
+            setWheelOpen,
+          } satisfies CutsGramTools) : null}
           onPick={(id) => startCut(id)}
           onPlay={() => client.setPlaying(true)}
           onPause={() => client.setPlaying(false)}
@@ -922,7 +1098,7 @@ export default function App() {
           onDeckClose={() => cuts.setDeckOpen(false)}
           onGuess={(id) => cuts.setGuessClassId(id)}
           onConfidence={(c) => cuts.setConfidence(c)}
-          onSubmit={() => cuts.submit({ harmF0Hz: harmF0, probeHz: harmProbe }, Math.max(1.5, 3 * (cfg?.fBin ?? 0.5)))}
+          onSubmit={() => cuts.submit({ harmF0Hz: cutArm.harmF0, probeHz: cutArm.harmProbe }, Math.max(1.5, 3 * (cfg?.fBin ?? 0.5)))}
           onClearReveal={() => cuts.clearReveal()}
           onNext={() => {
             const all = listCutSeeds()
@@ -1023,6 +1199,7 @@ export default function App() {
         ) : (
           <>
             {tab === 'live' && toolsRow}
+            {tab === 'cuts' && cuts.session && cutsToolsRow}
             {tab === 'plot' && (
               <div className="toolbar-glass glass" role="toolbar" aria-label="Plot tools">
                 <button className={`tool fix-pin${fixStore.armed ? ' armed' : ''}`} aria-pressed={fixStore.armed} aria-label="FIX" data-testid="fix-tool-plot"
@@ -1035,7 +1212,7 @@ export default function App() {
             )}
           </>
         )}
-        {(tab === 'cuts' || tab === 'settings') && <div className="dock-spacer" aria-hidden />}
+        {((tab === 'cuts' && !cuts.session) || tab === 'settings') && <div className="dock-spacer" aria-hidden />}
       </div>
 
       <Sheet open={buoySheet} onClose={() => setBuoySheet(false)} title={buoy ? `Buoy ${buoy.channel}` : 'Buoy'} testId="buoy-sheet"

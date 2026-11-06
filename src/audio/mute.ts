@@ -1,7 +1,7 @@
 /**
  * Listen mute state machine. Always boots muted (user gesture required on iOS).
- * Auto-gates off in Cuts, when the document is hidden, or when the selected buoy
- * is detuned / dead / error. Pure helpers — the engine applies the transitions.
+ * Auto-gates off when not on Live / an open Cuts player, when the document is hidden,
+ * or when the selected buoy is detuned / dead / error. Pure helpers — the engine applies the transitions.
  */
 
 export type MuteReason = 'boot' | 'user' | 'cuts' | 'hidden' | 'channel'
@@ -11,7 +11,7 @@ export type MutePhase = 'muted' | 'starting' | 'running' | 'silenced' | 'teardow
 export interface GateInput {
   /** Operator wants listen on (session toggle; always false at boot). */
   userOn: boolean
-  /** Live tab (not Cuts / Settings / Plot-only). */
+  /** Live tab or open Cuts player (Settings / Plot-only / Cuts picker stay gated). */
   liveTab: boolean
   /** document.visibilityState === 'visible'. */
   visible: boolean

@@ -9,7 +9,7 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 
 /* ---------- App frame: nav / workspace / dock ---------- */
 .app.ios { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); gap: 8px;
-  height: 100%; height: 100dvh; overflow: hidden; position: relative; background: var(--sys-grouped);
+  height: 100%; height: 100dvh; overflow: hidden; overflow-x: clip; position: relative; background: var(--sys-grouped);
   padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left)); }
 
 /* ---------- Liquid Glass ---------- */
@@ -316,9 +316,16 @@ button.ios-row:active { background: var(--sys-fill); }
 
 /* ---------- Cuts tab: picker + player ---------- */
 .cut-player { position: absolute; inset: 0; z-index: 5; display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px;
+  /* nav · optional mode chrome · gram · transport (DemonPane inserts via :has) */
+  grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 6px;
   padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
-  background: var(--sys-grouped); pointer-events: auto; }
+  background: var(--sys-grouped); pointer-events: auto;
+  /* CUTTOOLS: never widen the document — nav/tools must shrink inside the safe area. */
+  width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; overflow-x: clip; }
+.cut-player > .cut-chrome-row:not(:has(*)) { display: none; }
+.cut-player:not(:has(> .cut-chrome-row)) {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
 /* One-row panel (no panel-head): override .gram-panel's auto/1fr so the absolute .gram gets a real height.
    Force the opaque near-black instrument surface — never inherit light chrome (--sys-cell). */
 .cut-player .cut-gram.panel.gram-panel {
@@ -332,6 +339,9 @@ button.ios-row:active { background: var(--sys-fill); }
 }
 .cut-player .cut-gram .gram { background: var(--gram-bg, #000); }
 .cut-player:has([data-testid='demon-panel']) {
+  grid-template-rows: auto auto minmax(0, 1fr) minmax(220px, 0.5fr) auto;
+}
+.cut-player:has([data-testid='demon-panel']):not(:has(> .cut-chrome-row)) {
   grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.5fr) auto;
 }
 .cut-player .demon-panel.gram-panel,
@@ -346,10 +356,60 @@ button.ios-row:active { background: var(--sys-fill); }
   background: var(--gram-bg, #000);
 }
 .cut-player .demon-panel .gram { background: var(--gram-bg, #000); }
-.cut-player .cut-bar { margin: 0 0 4px; border-radius: 22px; }
-.cut-player .cut-deck-btn { padding: 0 14px; font: 600 13px/1 inherit; white-space: nowrap; }
-.cut-player .navbar .nav-trail { gap: 8px; }
-.cut-player .navbar .nav-trail .readout { font: 600 12px/1 var(--font-mono); color: var(--sys-label-2); }
+.cut-player .cut-bar { margin: 0 0 4px; border-radius: 22px; min-width: 0; max-width: 100%; }
+.cut-player > .navbar { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.cut-player .navbar .nav-trail {
+  gap: 4px; min-width: 0; flex-shrink: 1; max-width: 100%;
+  overflow: hidden;
+}
+.cut-player .navbar .nav-trail .readout,
+.cut-player .cut-score {
+  font: 600 12px/1 var(--font-mono); color: var(--sys-label-2);
+  flex: 0 1 auto; min-width: 0; max-width: 5.5rem;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.cut-player .cut-score-label { display: none; } /* compact "0/0" on phone; label returns ≥700px */
+.cut-player .cut-deck-btn {
+  width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0;
+  flex: 0 0 44px; display: inline-flex; align-items: center; justify-content: center;
+  font: 600 13px/1 inherit; white-space: nowrap;
+}
+.cut-player .cut-deck-label { display: none; }
+.cut-player .cut-mode-seg { flex: 0 0 auto; }
+.cut-player .cut-mode-seg button { min-width: 44px; padding: 0 8px; font-size: 12px; }
+.cut-player .cut-gram, .cut-player .cut-bar { min-width: 0; max-width: 100%; }
+.cut-player .cut-chrome-row {
+  display: flex; align-items: center; justify-content: flex-start; gap: 6px;
+  min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.cut-player .cut-chrome-row::-webkit-scrollbar { display: none; }
+.app.ios.layout-phonePortrait .cut-player > .navbar,
+.app.ios.layout-phoneLandscape .cut-player > .navbar {
+  grid-template-columns: auto auto; /* back | trail — title hidden */
+  gap: 6px;
+}
+/* HARM/DOP/LM readouts stay inside the gram box (no sideways page scroll). */
+.cut-player .gram-note {
+  left: max(8px, env(safe-area-inset-left, 0px));
+  right: auto;
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (min-width: 700px) {
+  .cut-player .cut-score-label { display: inline; }
+  .cut-player .cut-score { max-width: none; }
+  .cut-player .cut-deck-label { display: inline; margin-left: 6px; }
+  .cut-player .cut-deck-btn { width: auto; padding: 0 14px; flex: 0 0 auto; }
+}
+/* Phone: drop the "Cut N" title so LOFAR/DIFAR + listen + score + deck fit at 320/375. */
+.app.ios.layout-phonePortrait .cut-player .nav-title,
+.app.ios.layout-phoneLandscape .cut-player .nav-title {
+  display: none;
+}
 /* Player sits above the dock; leave room for the tab bar */
 .app.ios[data-tab='cuts'] .cut-player { bottom: calc(var(--dock-h) + env(safe-area-inset-bottom)); }
 .app.ios[data-tab='cuts'] .screen { position: absolute; inset: 0 0 calc(var(--dock-h) + env(safe-area-inset-bottom)); z-index: 5; }
@@ -366,7 +426,7 @@ button.ios-row:active { background: var(--sys-fill); }
 .cut-bar .cut-transport { width: 44px; height: 44px; padding: 0; flex: 0 0 auto; }
 .cut-bar .cut-transport.primary { color: #fff; background: var(--tint); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
 .cut-scrub { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0 6px; }
-.cut-scrub .readout { font: 600 12px/1 var(--font-mono); color: var(--sys-label-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cut-scrub .readout { font: 600 12px/1 var(--font-mono); color: var(--sys-label-2); font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 7.5rem; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .cut-scrub input[type=range] { flex: 1; min-width: 80px; height: 44px; accent-color: var(--tint); }
 
 .cut-deck-overlay, .cut-deck-sheet, .cut-reveal-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.45);
