@@ -442,7 +442,26 @@ button, select { font: inherit; color: inherit; }
 @keyframes brg-pulse { 50% { border-color: rgba(255, 210, 120, .95); } }
 @media (prefers-reduced-motion: reduce) { .brg-btn.armed { animation: none; } }
 /* Frequency axis is a center target (44 px) — tap/click to center. */
-.gram { grid-template-rows: 1fr 44px; }
+.gram { grid-template-rows: minmax(0, 1fr) 44px; } /* minmax: the canvas's intrinsic height must not push the axis row out over the tools row */
+.gram > canvas { height: auto; min-height: 0; align-self: stretch; justify-self: stretch; } /* fill the row, not the canvas's own last size */
 .gram .axis-x { cursor: pointer; touch-action: manipulation; min-height: 44px; z-index: 2; }
 .gram .sel-marker, .gram .harm-marker, .gram .gram-layer, .gram .band-limit, .gram .gram-veil { bottom: 44px; }
 .gram .axis-x span { top: 14px; }
+/* Doppler ruler (m3-fe-doppler): S-curve canvas + 44 px touch handles (hit slop via ::after). */
+.dop-layer { position: absolute; inset: 0; pointer-events: none; }
+.dop-curve { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.dop-handle { position: absolute; left: 0; top: 0; width: 44px; height: 44px; margin: -22px 0 0 -22px; pointer-events: none; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; outline: none; z-index: 2; }
+.dop-layer.active .dop-handle { pointer-events: auto; cursor: grab; }
+.dop-layer.active .dop-handle:active { cursor: grabbing; }
+.dop-handle::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; }
+.dop-handle i { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid #ffcc55; background: rgba(0,0,0,.45); box-shadow: 0 0 4px #000; box-sizing: border-box; }
+.dop-handle.h-f0 i { width: 18px; height: 18px; margin: -9px 0 0 -9px; background: rgba(255,204,85,.25); }
+.dop-handle[data-unlinked='1'] i { border-style: dashed; border-color: #ff9a55; }
+.dop-handle[data-sel='1'] i { box-shadow: 0 0 0 3px rgba(255,204,85,.35), 0 0 6px #000; }
+.dop-layer:not(.active) .dop-handle { opacity: .55; }
+.dop-handle span { position: absolute; left: 31px; top: 4px; font: 600 11px/1 var(--font-mono); color: #ffcc55; text-shadow: 0 0 4px #000, 0 0 2px #000; }
+.dop-handle:focus-visible i { outline: 2px solid #fff; outline-offset: 2px; }
+.dop-note { color: #ffcc55; bottom: 54px; }
+.dop-note .dop-hint { color: var(--text-2); }
+.dop-note { right: 52px; white-space: normal; overflow-wrap: anywhere; }
+.layout-phonePortrait .dop-note, .layout-phoneLandscape .dop-note { font-size: 10px; bottom: 30px; }

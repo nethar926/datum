@@ -28,13 +28,16 @@ try {
     await page.waitForTimeout(500)
   }
   if (process.env.CPA) {
-    // Mark a short diagonal run of points on the LOFAR (UI path only; positions are not a real tonal).
-    await page.getByRole('button', { name: 'CPA', exact: true }).click()
+    // Doppler ruler (replaces the m2 CPA marks): place f0, drag f1 (UI path only; not on a real tonal).
+    await page.getByRole('button', { name: 'DOP', exact: true }).click()
     const box = await page.locator('[data-testid=lofar]').boundingBox()
-    for (let k = 0; k < 6; k++) await page.mouse.click(box.x + box.width * (0.3 + 0.01 * k), box.y + box.height * (0.05 + 0.03 * k))
-    const t = await page.locator('[data-testid=cpa-readout]').innerText()
-    if (!/CPA/.test(t)) errors.push('cpa readout missing')
-    console.log('cpa:', t)
+    await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.4)
+    const f1 = await page.locator('[data-testid=dop-f1]').boundingBox()
+    await page.mouse.move(f1.x + f1.width / 2, f1.y + f1.height / 2); await page.mouse.down()
+    await page.mouse.move(f1.x + f1.width / 2 + 20, f1.y + f1.height / 2 + 15, { steps: 5 }); await page.mouse.up()
+    const t = await page.locator('[data-testid=dop-readout]').innerText()
+    if (!/DOP F0/.test(t)) errors.push('doppler readout missing')
+    console.log('doppler:', t)
     await page.waitForTimeout(300)
   }
   if (process.env.LM) {

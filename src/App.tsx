@@ -14,8 +14,9 @@ import { NewScenario } from './settings/NewScenario'
 import { SeedChip } from './settings/SeedChip'
 import { TrafficSlider } from './settings/TrafficSlider'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
-import { CpaOverlay, cpaReadout } from './gram/CpaOverlay'
-import { addSample, cpaFitterReady, MIN_CPA_SAMPLES, runCpaFit, type CpaSample } from './gram/cpa'
+import { DopplerOverlay, DopplerReadout } from './gram/DopplerOverlay'
+import { RulerStore } from './gram/dopplerRuler'
+import { acousticsV11 } from './scenarios/acousticsApi'
 import { clampView, type FreqView } from './gram/axis'
 import { RES_MAX, RES_MIN, clampRes, fullView, geometryKey, minSpanOf, resReadout, vernierLabel } from './gram/res'
 import type { GramFilter, GramSettings, LofarBandPresetId } from './engine/contract'
@@ -117,7 +118,7 @@ export default function App() {
   const [truthSheet, setTruthSheet] = useState(false)
   useEffect(() => { if (!phone) { setMenuOpen(false); setTruthSheet(false) } if (layout !== 'phoneLandscape') setTacOpen(false) }, [layout, phone])
   useEffect(() => installAudioUnlock(), [])
-  const [tool, setTool] = useState<'select' | 'cpa' | 'lm' | 'harm'>('select')
+  const [tool, setTool] = useState<'select' | 'dop' | 'lm' | 'harm'>('select')
   const [crossOn, setCrossOn] = useState(false)
   const [harmF0, setHarmF0] = useState<number | null>(null)
   const [harmK, setHarmK] = useState<number | null>(null)
@@ -140,17 +141,30 @@ export default function App() {
     if (k !== null && hz > 0) { setHarmF0(hz / k); setHarmFam(null) }
     if (phase === 'end') harmGrab.current = null
   }
-  const cpaMode = tool === 'cpa'
-  const setCpaMode = (on: boolean) => setTool(on ? 'cpa' : 'select')
+  const dopMode = tool === 'dop'
+  // One gram arm at a time: DOP drops vernier/PROBE/BRG/drop; BRG/drop/HARM/LM/PROBE/vernier drop DOP.
+  const armDop = (on: boolean) => {
+    if (on) {
+      setVernierPick(false); setHarmProbeOn(false); setBrgArm(ARM_IDLE)
+      if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
+    }
+    setTool(on ? 'dop' : 'select')
+  }
   const [lm, setLm] = useState<LloydState>({ basis: 'cpaFit', k: 40, tCpaS: 0, tauS: 300, manRangeM: 2000, manSpeedMps: 4 })
-  const [cpaMarks, setCpaMarks] = useState<CpaSample[]>([])
-  useEffect(() => { setCpaMarks([]) }, [stream, st.band])
-  const cpaFit = useMemo(() => runCpaFit(cpaMarks), [cpaMarks])
-  const cpaGeom: CpaGeom | null = cpaFit?.ok ? { tCpaS: cpaFit.tCpaS, rCpaM: cpaFit.rCpaM, speedMps: cpaFit.speedMps } : null
+  // Doppler ruler (f0 at CPA, f1 on the approach leg, f2 mirrored): its pass geometry also feeds Lloyd's mirror.
+  const ruler = useMemo(() => new RulerStore(acousticsV11.fitCpaFromDoppler), [])
+  const rulerCommit = useSyncExternalStore(ruler.subscribe, ruler.getCommitted)
+  useEffect(() => { ruler.clear() }, [ruler, stream, st.band])
+  const cpaGeom: CpaGeom | null = useMemo(() => {
+    if (!ruler.placed || !(ruler.geom.speedMps > 0)) return null
+    const g = ruler.fit?.ok ? ruler.fit : ruler.geom
+    return { tCpaS: g.tCpaS, rCpaM: g.rCpaM, speedMps: g.speedMps }
+  }, [ruler, rulerCommit]) // eslint-disable-line react-hooks/exhaustive-deps
   const lmDrag = useLloydDrag(lm, setLm, cpaGeom, st.simT)
   const toggleLm = () => {
     if (tool === 'lm') { setTool('select'); return }
     if (lm.tCpaS === 0) setLm({ ...lm, tCpaS: st.simT - 100 })
+    setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false)
     setTool('lm')
   }
 
@@ -195,7 +209,12 @@ export default function App() {
   const centerVernier = (hz: number) => { setVernierPick(false); client.setGram({ vernierHz: Math.max(0, hz) }) }
   const vernierOff = () => { setVernierPick(false); client.setGram({ vernierHz: null }) }
   const vLabel = vernierLabel(cfg)
-  const onVernier = () => { if (vLabel) vernierOff(); else if (selHz !== null) centerVernier(selHz); else setVernierPick(!vernierPick) }
+  const onVernier = () => {
+    if (vLabel) { vernierOff(); return }
+    if (selHz !== null) { centerVernier(selHz); return }
+    if (!vernierPick) { setBrgArm(ARM_IDLE); if (tool === 'dop') setTool('select') }
+    setVernierPick(!vernierPick)
+  }
   const viewDigits = (cfg?.fBin ?? 1) < 0.1 ? 2 : (cfg?.fBin ?? 1) < 1 ? 1 : 0
   const probeName = truth && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
   const buoy = st.tactical?.buoys[stream]
@@ -213,7 +232,8 @@ export default function App() {
     if (plan.kind === 'view') setView(plan.view)
   }
   const centerFromSelection = () => {
-    const hz = selHz ?? cursorHz
+    // DOP armed with a ruler on the gram: C centers on its f0 (the line at CPA).
+    const hz = tool === 'dop' && ruler.placed ? ruler.s.f0Hz : selHz ?? cursorHz
     if (hz !== null) applyCenter(hz)
   }
   const submitHzField = () => {
@@ -233,7 +253,7 @@ export default function App() {
     setShowManual(true)
     if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
     setVernierPick(false); setHarmProbeOn(false)
-    if (tool === 'cpa' || tool === 'lm' || tool === 'harm') setTool('select')
+    if (tool === 'dop' || tool === 'lm' || tool === 'harm') setTool('select')
   }
   /** Send a manual bearing from DIFAR per-bin data at hz for the current buoy. */
   const sendBrgAtFreq = (hz: number): boolean => {
@@ -277,9 +297,13 @@ export default function App() {
   }
   // Drop pattern arm clears the bearing arm (and the reverse is in toggleBrg).
   const dropCapturing = useSyncExternalStore(drop.subscribe, () => dropCapturesPlot(drop.state))
-  useEffect(() => { if (dropCapturing) setBrgArm(ARM_IDLE) }, [dropCapturing])
-  const keyRef = useRef({ centerFromSelection, toggleBrg, tryBrgFromCursor, brgArm })
-  keyRef.current = { centerFromSelection, toggleBrg, tryBrgFromCursor, brgArm }
+  useEffect(() => {
+    if (!dropCapturing) return
+    setBrgArm(ARM_IDLE)
+    setTool((t) => (t === 'dop' ? 'select' : t))
+  }, [dropCapturing])
+  const keyRef = useRef({ centerFromSelection, toggleBrg, tryBrgFromCursor, brgArm, dopMode, rulerPlaced: false })
+  keyRef.current = { centerFromSelection, toggleBrg, tryBrgFromCursor, brgArm, dopMode, rulerPlaced: ruler.placed }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
@@ -294,7 +318,11 @@ export default function App() {
         r.toggleBrg()
         return
       }
-      if (k === 'Escape' && isArmed(r.brgArm)) { e.preventDefault(); setBrgArm(cancelArm()); return }
+      if (k === 'Escape') {
+        if (isArmed(r.brgArm)) { e.preventDefault(); setBrgArm(cancelArm()); return }
+        // DopplerOverlay clears a placed ruler; if DOP is armed with nothing placed, drop the arm.
+        if (r.dopMode && !r.rulerPlaced) { e.preventDefault(); setTool('select'); return }
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -303,14 +331,22 @@ export default function App() {
   const toolsRow = (
     <div className="panel-head gram-tools" data-testid="gram-tools">
       {!phone && <span className="seg-label">TOOLS</span>}
-            <div className="seg" role="group" aria-label="CPA cursor">
-              <button aria-pressed={cpaMode} onClick={() => setCpaMode(!cpaMode)} title="Mark points along one tonal's Doppler S-curve to fit CPA time, speed and range">CPA</button>
-              {cpaMarks.length > 0 && <button onClick={() => setCpaMarks((m) => m.slice(0, -1))} title="Remove last mark">Undo</button>}
-              {cpaMarks.length > 0 && <button onClick={() => setCpaMarks([])}>Clear</button>}
+            <div className="seg" role="group" aria-label="Doppler ruler">
+              <button aria-pressed={dopMode} onClick={() => armDop(!dopMode)} data-testid="dop-tool"
+                title="Doppler ruler: tap a line at CPA to place f0, drag f1 onto the approach leg (f2 mirrors). Drag f2 to fine-tune it alone, tap it to re-link. Keys: arrows nudge, Shift ×10, Esc clears.">DOP</button>
+              {ruler.placed && <button onClick={() => applyCenter(ruler.s.f0Hz)} data-testid="dop-center" title="Center the gram on f0 (C while DOP is armed). Finer RES is the way to see a sub-Hz shift.">CTR f0</button>}
+              {ruler.placed && !ruler.s.linked && <button onClick={() => ruler.relink()} data-testid="dop-link" title="Re-link f2 to the mirror of f1">Link</button>}
+              {ruler.placed && <button onClick={() => ruler.clear()} data-testid="dop-clear">Clear</button>}
             </div>
             <div className="seg" role="group" aria-label="Harmonic cursor">
-              <button aria-pressed={tool === 'harm'} onClick={() => setTool(tool === 'harm' ? 'select' : 'harm')} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click (or PROBE) another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
-              {harmF0 !== null && <button aria-pressed={harmProbeOn} onClick={() => setHarmProbeOn((v) => !v)} title="Next tap sets a ratio probe (touch stand-in for shift-click)" data-testid="harm-probe-btn">PROBE</button>}
+              <button aria-pressed={tool === 'harm'} onClick={() => {
+                if (tool === 'harm') { setTool('select'); return }
+                setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('harm')
+              }} title="Harmonic cursor: click a line to set the fundamental, drag any marker to adjust, shift-click (or PROBE) another line to read its ratio to the fundamental (e.g. LOP ×27.75)">HARM</button>
+              {harmF0 !== null && <button aria-pressed={harmProbeOn} onClick={() => {
+                if (!harmProbeOn) { setBrgArm(ARM_IDLE); if (dopMode) setTool('harm') }
+                setHarmProbeOn((v) => !v)
+              }} title="Next tap sets a ratio probe (touch stand-in for shift-click)" data-testid="harm-probe-btn">PROBE</button>}
               {harmF0 !== null && <button onClick={() => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false) }}>Clear</button>}
             </div>
             <div className="seg" role="group" aria-label="Cross cursor">
@@ -355,7 +391,7 @@ export default function App() {
           <button className="btn" onClick={() => setShowNew(true)}>New</button>
           <select className="btn scn-select" data-testid="scenario-select" aria-label="Scenario"
             value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
-            onChange={(e) => { setCpaMarks([]); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
+            onChange={(e) => { ruler.clear(); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
             {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
             {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
           </select>
@@ -401,7 +437,7 @@ export default function App() {
         <Sheet open={menuOpen} onClose={() => setMenuOpen(false)} title="Controls" testId="menu-sheet">
           <div className="sheet-row"><span className="seg-label">SCENARIO</span><button className="btn" onClick={() => { setMenuOpen(false); setShowNew(true) }}>New</button><select className="btn scn-select" data-testid="scenario-select" aria-label="Scenario"
             value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
-            onChange={(e) => { setCpaMarks([]); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
+            onChange={(e) => { ruler.clear(); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
             {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
             {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
           </select>{st.scenarioId === 'generated' && <SeedChip seed={st.seed} />}</div>
@@ -484,21 +520,21 @@ export default function App() {
                 onCenterFreq={applyCenter} onCursorHz={setCursorHz} bearingAtRef={bearingAtRef}
                 onPickPoint={isPickFreq(brgArm) ? (hz) => { sendBrgAtFreq(hz) }
                   : vernierPick ? (hz) => centerVernier(hz)
-                  : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz }))
+                  : dopMode ? (hz, ago) => ruler.tap(hz, st.simT - ago)
                   : harmProbeOn && harmF0 !== null ? (hz) => { setHarmProbe(hz); setHarmProbeOn(false) } : undefined}
                 onDragPoint={isPickFreq(brgArm) || vernierPick || (harmProbeOn && harmF0 !== null) ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
                 crosshair={crossOn} nowS={st.simT}
-                overlay={cpaMarks.length || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
+                overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
                     <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
                   {harmF0 !== null && harmProbe !== null && harmProbe >= ctx.view.lo && harmProbe <= ctx.view.hi && (
                     <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(harmProbe, ctx.view, ctx.width) }}><span>×{(harmProbe / harmF0).toFixed(2)}</span></div>)}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
-                  {cpaMarks.length > 0 && <CpaOverlay ctx={ctx} marks={cpaMarks} fit={cpaFit} nowS={st.simT} />}
+                  {(ruler.placed || dopMode) && <DopplerOverlay ctx={ctx} store={ruler} nowS={st.simT} active={dopMode} />}
                 </>) : undefined} />
             )}
             {(tool === 'harm' || harmF0 !== null) && <div className="gram-note readout harm-note" data-testid="harm-readout">{harmText(harmF0, harmK, cfg ? fullView(cfg).hi : BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
-            {(cpaMode || cpaMarks.length > 0) && <div className="gram-note readout" data-testid="cpa-readout">{cpaReadout(cpaMarks, cpaFit, cpaFitterReady(), MIN_CPA_SAMPLES)}</div>}
+            {(dopMode || ruler.placed) && <DopplerReadout store={ruler} fBin={cfg?.fBin ?? 1} />}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">
                 <div className="seg" role="group" aria-label="Lloyd's mirror basis">
