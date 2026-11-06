@@ -20,6 +20,8 @@ export const IcPlot = (p: P) => <S {...p}><circle cx="12" cy="12" r="8.25" /><ci
 export const IcGear = (p: P) => <S {...p}><circle cx="12" cy="12" r="3" /><path d="M12 3.2l1.5 2.1 2.5-.6.6 2.5 2.4 1-.9 2.4 1.6 2-2 1.6.9 2.4-2.4 1-.6 2.5-2.5-.6L12 20.8l-1.5-2.1-2.5.6-.6-2.5-2.4-1 .9-2.4L4.3 12l1.6-1.6L5 8l2.4-1L8 4.5l2.5.6z" /></S>
 export const IcPlay = (p: P) => <S {...p}><path d="M8 5.5v13l10.5-6.5z" fill="currentColor" strokeWidth={1.4} /></S>
 export const IcPause = (p: P) => <S {...p}><rect x="6.5" y="5.5" width="3.6" height="13" rx="1.2" fill="currentColor" stroke="none" /><rect x="13.9" y="5.5" width="3.6" height="13" rx="1.2" fill="currentColor" stroke="none" /></S>
+export const IcRestart = (p: P) => <S {...p}><path d="M7.2 7.2A6.8 6.8 0 1 1 5.5 12" /><path d="M5 4.8v4.2h4.2" /></S>
+export const IcBack = (p: P) => <S {...p}><path d="M14.5 6l-6 6 6 6" /></S>
 export const IcChevron = (p: P) => <S {...p}><path d="M9.5 6l6 6-6 6" /></S>
 export const IcClose = (p: P) => <S {...p}><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" /></S>
 export const IcInfo = (p: P) => <S {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5" /><circle cx="12" cy="7.8" r=".9" fill="currentColor" stroke="none" /></S>

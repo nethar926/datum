@@ -2,7 +2,7 @@
 // Checks: tab bar (Live/Cuts/Plot/Settings), glass chrome never over the gram/plot, 44 pt targets, no page scroll,
 // light/dark chrome with dark instruments, portrait split grabber (drag, clamp, persist, double-tap reset), tab bar
 // minimize while working the gram, sheet detents + swipe dismiss, Settings large title collapse + gram flip,
-// Cuts placeholder, HORZ hairline + Zulu label (toggle + persistence), glass fallback, frame pacing with glass on/off.
+// Cuts picker, HORZ hairline + Zulu label (toggle + persistence), glass fallback, frame pacing with glass on/off.
 // Saves docs/m3-ios-*.png.
 import { spawn } from 'node:child_process'
 import { webkit, devices } from 'playwright'
@@ -180,9 +180,10 @@ try {
       await page.locator('[data-testid=layers-open]').tap(); await page.waitForTimeout(350)
       ok(await page.locator('[data-testid=layers-sheet]').isVisible(), F('layers sheet did not open'))
       await page.getByRole('button', { name: 'Close Plot layers' }).tap(); await page.waitForTimeout(350)
-      // Cuts placeholder.
+      // Cuts picker (grouped list).
       await page.locator('[data-testid=tab-cuts]').tap(); await page.waitForTimeout(300)
-      ok(/Coming soon/.test(await page.locator('[data-testid=cuts-screen]').innerText()), F('Cuts placeholder missing'))
+      ok(await page.locator('[data-testid=cut-picker]').count() === 1, F('Cuts picker missing'))
+      ok(await page.locator('[data-testid=cut-pick-1]').count() === 1, F('Cuts list empty'))
       await page.screenshot({ path: 'docs/m3-ios-iphone-portrait-cuts.png' })
       // Settings: inset grouped list, large title collapses on scroll, gram flip, appearance override.
       await page.locator('[data-testid=tab-settings]').tap(); await page.waitForTimeout(300)

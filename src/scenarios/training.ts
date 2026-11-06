@@ -11,6 +11,7 @@ const kn = (k: number) => k * 0.5144444444444445
 const deg = (d: number) => (d * Math.PI) / 180
 
 export function buildScenario(id: string, seed: number, fmax: number, bins: number): Scenario {
+  if (id.startsWith('cut:')) throw new Error(`Cut scenarios are hosted by renderCut (${id}); not buildScenario`)
   if (id === 'm2-lloyds-cpa') {
     // Acoustics' fictional cavitating CPA pass, re-binned to the selected display band.
     const s = lloydsCpaScenario(seed)

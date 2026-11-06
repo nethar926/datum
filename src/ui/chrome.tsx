@@ -124,19 +124,6 @@ export function LargeTitleScreen({ title, children, testId, trailing }: { title:
   )
 }
 
-/** Cuts tab: placeholder until the CUT player lands. */
-export function CutsScreen() {
-  return (
-    <LargeTitleScreen title="Cuts" testId="cuts-screen">
-      <div className="empty-state">
-        <div className="empty-icon"><IcCuts size={44} /></div>
-        <h2>Coming soon</h2>
-        <p>Sample cuts: short recorded grams of fictional classes to practise calling lines, with a reveal that explains the giveaway.</p>
-      </div>
-    </LargeTitleScreen>
-  )
-}
-
 /**
  * Grabber between the gram and the tactical plot. Axis 'y' (stacked, gram on top) or 'x' (side by side, gram
  * left). The drag writes a CSS variable on the workspace directly (no React render per move); on release the

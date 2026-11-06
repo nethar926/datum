@@ -1,8 +1,9 @@
 import * as Acoustics from '@acoustics'
 import { Receiver } from './receiver'
-import { AcousticEngine, isAlive } from '@acoustics'
+import { AcousticEngine, isAlive, renderCut, type CutSession } from '@acoustics'
 import type { Band, Bearing, DropSpec, FromWorker, GramConfig, GramRows, LofarBandPresetId, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
 import { buildScenario } from '../scenarios/training'
+import { parseCutScenarioId } from '../cuts/api'
 
 export const BANDS: Record<Band, { fmax: number; bins: number }> = {
   lofar1k: { fmax: 1000, bins: 2048 },
@@ -38,6 +39,8 @@ interface LofarSet { mode: 'legacy' | 'res' | 'band'; ids: Int32Array; configs: 
 /** Worker-side host: owns an AcousticEngine and speaks the data contract. Pure enough to unit test without a Worker. */
 export class SimHost {
   private engine?: AcousticEngine
+  /** When set, LOFAR/DEMON rows drain through Acoustics renderCut (CUT mode). */
+  private cutSession: CutSession | null = null
   /** LOFAR frame pools keyed by bins (RES 1024, band/legacy = scenario bins): only the live sets' sizes are kept. */
   private pools = new Map<number, Frame[]>()
   /** DEMON streams (v1.1 engines): own pool and own gramRows message, since bins differ from LOFAR. */
@@ -83,6 +86,12 @@ export class SimHost {
     const band = BANDS[msg.band]
     if (!band) throw new Error('Unknown band')
     if (!Number.isFinite(msg.rowRateHz) || msg.rowRateHz < 0.25 || msg.rowRateHz > 8) throw new Error('rowRateHz out of range')
+    const cutId = parseCutScenarioId(msg.scenarioId)
+    if (cutId) {
+      this.initCut(msg, cutId)
+      return
+    }
+    this.cutSession = null
     const gen = (Acoustics as unknown as { generateScenario?: (p: unknown) => ConstructorParameters<typeof AcousticEngine>[0] }).generateScenario
     const engine = new AcousticEngine(msg.params && gen ? gen(msg.params) : buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins))
     this.engine = engine
@@ -336,8 +345,56 @@ export class SimHost {
     }
   }
 
+  /** CUT mode: open Acoustics renderCut and drain its LOFAR (+ optional DEMON) into the host pools. */
+  private initCut(msg: Extract<ToWorker, { type: 'init' }>, cutId: string): void {
+    const session = renderCut(cutId)
+    this.cutSession = session
+    this.engine = session.engine
+    this.n = 1
+    this.dt = 1 / msg.rowRateHz
+    this.rowRateHz = msg.rowRateHz
+    this.rowCount = 0
+    this.pending = undefined
+    this.pendingGen = 0
+    this.pools = new Map()
+    this.retiredN.clear()
+    const lc = session.lofar
+    const cfg: GramConfig = {
+      v: 1, type: 'gramConfig', streamId: lc.streamId, kind: 'lofar', channel: lc.channel,
+      bins: lc.bins, f0: lc.f0, fBin: lc.fBin, rowRateHz: msg.rowRateHz,
+      dbFloor: lc.dbFloor, dbCeil: lc.dbCeil,
+    }
+    this.active = this.makeSet('legacy', new Int32Array([lc.streamId]), [cfg], {})
+    this.ensurePool(lc.bins)
+    this.tactical = this.makeTactical()
+    const configs: GramConfig[] = this.active.configs.slice()
+    this.demonIds = []
+    this.demonPool = []
+    this.demonBins = 0
+    if (msg.demon !== false) {
+      try {
+        const all = (session.engine as unknown as { configs: () => GramConfig[] }).configs()
+        const dc = all.find((c) => c.streamId === session.demonStreamId && c.kind === 'demon')
+        if (dc) {
+          this.demonIds = [session.demonStreamId]
+          this.demonBins = dc.bins
+          configs.push({
+            v: 1, type: 'gramConfig', streamId: dc.streamId, kind: 'demon', channel: dc.channel,
+            bins: dc.bins, f0: dc.f0, fBin: dc.fBin, rowRateHz: msg.rowRateHz,
+            dbFloor: dc.dbFloor, dbCeil: dc.dbCeil,
+          })
+          for (let k = 0; k < POOL_FRAMES; k++) this.demonPool.push(this.newDemonFrame())
+        }
+      } catch { this.demonIds = []; this.demonBins = 0 }
+    }
+    this.demonConfigs = configs.filter((c) => c.kind === 'demon')
+    this.post({ v: 1, type: 'streams', configs })
+    this.post(this.tactical)
+  }
+
   /** Advance one row period. With no free frame the sim waits (backpressure never drops sim time). */
   private step(): void {
+    if (this.cutSession) return this.stepCut()
     const engine = this.engine!, a = this.active, pool = this.pools.get(a.bins)!
     const frame = pool.pop()
     if (!frame) return
@@ -368,6 +425,43 @@ export class SimHost {
     const e = this.engine as unknown as { rowsReady: (id: number) => number }
     for (let i = 0; i < ids.length; i++) if (e.rowsReady(ids[i]) > 0) return true
     return false
+  }
+
+  /** Drain one LOFAR (+ DEMON) row from the Acoustics CutSession. */
+  private stepCut(): void {
+    const session = this.cutSession!, a = this.active, pool = this.pools.get(a.bins)!
+    const frame = pool.pop()
+    if (!frame) return
+    this.steerOrbit()
+    const idx = session.writeLofarRow(frame.data, 0)
+    if (idx < 0) {
+      pool.push(frame)
+      this.updateTactical()
+      this.post(this.tactical!)
+      return
+    }
+    frame.streamIds[0] = a.ids[0]
+    frame.rowIndex[0] = this.rowCount++
+    const e = this.engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void }
+    if (frame.bearingDeg) {
+      if (e.writeBearingRow) e.writeBearingRow.call(this.engine, a.ids[0], frame.bearingDeg, 0)
+      else frame.bearingDeg.fill(NaN)
+    }
+    if (this.rxEnabled && a.rx[0]) a.rx[0].process(frame.data, 0, a.bins, this.dt)
+    this.postFrame(frame)
+    if (this.demonIds.length && this.demonPool.length) {
+      const df = this.demonPool.pop()!
+      const di = session.writeDemonRow(df.data, 0)
+      if (di < 0) this.demonPool.push(df)
+      else {
+        df.streamIds[0] = this.demonIds[0]
+        df.rowIndex[0] = Math.max(0, di)
+        const rows: GramRows = { v: 1, type: 'gramRows', simT: this.engine!.time, ...df }
+        this.post(rows, [df.streamIds.buffer, df.rowIndex.buffer, df.data.buffer])
+      }
+    }
+    this.updateTactical()
+    this.post(this.tactical!)
   }
 
   private writeLofar(frame: Frame, set: LofarSet): void {

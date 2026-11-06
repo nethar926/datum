@@ -38,7 +38,10 @@ import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
-import { CutsScreen, GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, useAppearance, useGlass } from './ui/chrome'
+import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, useAppearance, useGlass } from './ui/chrome'
+import { CutController } from './cuts/session'
+import { CutsTab } from './cuts/CutsTab'
+import { listCutSeeds } from './cuts/api'
 import { IcBrg, IcChevron, IcContrast, IcDop, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcTarget, IcTrash } from './ui/icons'
 import { SPLIT_DEFAULT_H, SPLIT_DEFAULT_V, SPLIT_KEY_H, SPLIT_KEY_V, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
@@ -130,6 +133,10 @@ export default function App() {
   const [harmProbeOn, setHarmProbeOn] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showCmp, setShowCmp] = useState(false)
+  const cuts = useMemo(() => new CutController(), [])
+  const cutRev = useSyncExternalStore(cuts.subscribe, cuts.getSnapshot)
+  // cutRev gates a re-read of controller fields each emit.
+  void cutRev
   const layout = useLayout(), phone = layout !== 'wide'
   const [buoySheet, setBuoySheet] = useState(false)
   const [layersSheet, setLayersSheet] = useState(false)
@@ -215,6 +222,50 @@ export default function App() {
     if (q.has('autoplay')) { client.setRate(Number(q.get('rate')) || 16); client.setPlaying(true) }
     return () => client.dispose()
   }, [client])
+
+  const startCut = (cutId: string, seekToS: number | null = null) => {
+    ruler.clear()
+    setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false)
+    setTool('select'); setBrgArm(ARM_IDLE)
+    setStream(0) // CUT renderCut exposes one LOFAR stream
+    const sess = cuts.open(cutId)
+    client.start(sess.cut.seed, sess.scenarioId, st.band, undefined)
+    setZuluOriginMs(Date.now())
+    if (seekToS != null && seekToS > 0) {
+      client.setRate(16); client.setPlaying(true); cuts.seek(seekToS)
+    } else {
+      client.setPlaying(true)
+    }
+  }
+  const disposeCutOnly = () => {
+    cuts.disposeSession()
+    ruler.clear()
+    setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null)
+    setTool('select')
+  }
+  const resumeLive = () => {
+    disposeCutOnly()
+    client.start(7, 'ridgeline-field', st.band, undefined)
+    setZuluOriginMs(Date.now())
+    client.setPlaying(true)
+  }
+  // Leaving Cuts tab disposes any cut session and resumes the live field sim.
+  const prevTab = useRef(tab)
+  useEffect(() => {
+    if (prevTab.current === 'cuts' && tab !== 'cuts') resumeLive()
+    prevTab.current = tab
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
+  // Scrubber: restart + fast-forward until simT reaches the seek target, then pause.
+  useEffect(() => {
+    if (tab !== 'cuts' || !cuts.session || cuts.seekToS == null) return
+    if (st.simT >= cuts.seekToS) {
+      client.setPlaying(false)
+      cuts.clearSeek()
+    } else if (!st.playing) {
+      client.setRate(16); client.setPlaying(true)
+    }
+  }, [tab, cuts.seekToS, cuts.session, st.simT, st.playing, client, cuts])
 
   const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
   const lofarCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'lofar'), [st.configs])
@@ -485,7 +536,7 @@ export default function App() {
             {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
           </div>
           <div className="panel-body">
-            {lofarCfgs.length > 0 && (
+            {lofarCfgs.length > 0 && tab !== 'cuts' && (
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
@@ -565,7 +616,48 @@ export default function App() {
         </section>
       </main>
 
-      {tab === 'cuts' && <CutsScreen />}
+      {tab === 'cuts' && (
+        <CutsTab
+          cuts={cuts}
+          client={client}
+          cutId={cuts.cutId}
+          session={cuts.session}
+          deckOpen={cuts.deckOpen}
+          reveal={cuts.reveal}
+          score={cuts.score}
+          playing={st.playing}
+          simT={st.simT}
+          band={st.band}
+          configs={lofarCfgs}
+          view={view}
+          onView={setView}
+          palette={palette}
+          contrast={contrast}
+          wheel={wheel}
+          gramMode={gramMode}
+          gramDir={gramDir}
+          zuluOriginMs={zuluOriginMs}
+          harmF0={harmF0}
+          harmProbe={harmProbe}
+          onPick={(id) => startCut(id)}
+          onPlay={() => client.setPlaying(true)}
+          onPause={() => client.setPlaying(false)}
+          onRestart={() => cuts.session && startCut(cuts.session.cut.id)}
+          onSeek={(tS) => cuts.session && startCut(cuts.session.cut.id, tS)}
+          onBackToList={() => { disposeCutOnly(); client.setPlaying(false) }}
+          onDeckOpen={() => cuts.setDeckOpen(true)}
+          onDeckClose={() => cuts.setDeckOpen(false)}
+          onGuess={(id) => cuts.setGuessClassId(id)}
+          onConfidence={(c) => cuts.setConfidence(c)}
+          onSubmit={() => cuts.submit({ harmF0Hz: harmF0, probeHz: harmProbe }, Math.max(1.5, 3 * (cfg?.fBin ?? 0.5)))}
+          onClearReveal={() => cuts.clearReveal()}
+          onNext={() => {
+            const all = listCutSeeds()
+            const i = all.findIndex((c) => c.id === cuts.cutId)
+            startCut(all[(i + 1) % all.length].id)
+          }}
+        />
+      )}
       {tab === 'settings' && (
         <LargeTitleScreen title="Settings" testId="settings">
           <div className="ios-section">
