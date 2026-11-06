@@ -138,12 +138,12 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .tabbar.min button.on span { display: none; }
 .layout-phonePortrait .tabbar button { width: 56px; }
 .layout-phonePortrait .tabbar button span { font-size: 10px; }
-.toolbar-glass { flex: 1 1 auto; min-width: 0; height: 60px; padding: 4px; border-radius: 999px; overflow: hidden; }
+.toolbar-glass { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0; height: 60px; padding: 4px; border-radius: 999px; overflow: hidden; }
 .tool-scroll { display: flex; align-items: center; gap: 2px; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x;
   border-radius: 999px; overscroll-behavior-x: contain; scroll-padding-inline: 4px; scroll-snap-type: x proximity; }
 .tool-scroll > * { scroll-snap-align: start; }
 /* Overflow affordance: fade only the edge that has more, plus a chevron that pages the strip. */
-.tool-scroll-wrap { position: relative; height: 100%; min-width: 0; border-radius: 999px; overflow: hidden;
+.tool-scroll-wrap { position: relative; flex: 1 1 auto; height: 100%; min-width: 0; border-radius: 999px; overflow: hidden;
   --fl: 0px; --fr: 0px; }
 .tool-scroll-wrap[data-more-l='1'] { --fl: 40px; }
 .tool-scroll-wrap[data-more-r='1'] { --fr: 52px; }
@@ -242,6 +242,9 @@ button.ios-row:active { background: var(--sys-fill); }
 .sheet-head h2 { margin: 0; font: 600 17px/1.2 inherit; }
 .sheet-close { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--sys-fill); color: var(--sys-label-2); cursor: pointer; }
 .sheet-body { overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+.sheet-actions { flex: none; display: flex; gap: 10px; padding: 4px 16px 10px; min-height: 44px; align-items: stretch;
+  border-bottom: .5px solid var(--sys-sep, rgba(84,84,88,.45)); background: var(--sheet-fill); position: relative; z-index: 1; }
+.sheet-actions .btn { flex: 1; min-height: 44px; }
 .sheet .truth-bar { position: static; margin: 0 0 4px; }
 
 /* ---------- HORZ: hover-row hairline + Zulu label (crisp, solid label) ---------- */

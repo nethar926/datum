@@ -11,8 +11,10 @@ const DETENT_FRAC: Record<Detent, number> = { medium: 0.52, large: 0.92 }
  * detents and the drag itself are transform-only (compositor, 60 fps). Glass chrome: translucent fill + specular
  * rim, but no backdrop-filter over this large area (perf).
  */
-export function Sheet({ open, onClose, title, children, testId, detents = ['medium', 'large'], initial }: {
+export function Sheet({ open, onClose, title, children, testId, detents = ['medium', 'large'], initial, actions }: {
   open: boolean; onClose: () => void; title: string; children: React.ReactNode; testId?: string; detents?: Detent[]; initial?: Detent
+  /** 44pt action row under the header — always visible at the medium detent (outside the scroll body). */
+  actions?: React.ReactNode
 }) {
   const [shown, setShown] = useState(open)
   const [detent, setDetent] = useState<Detent>(initial ?? detents[0])
@@ -83,6 +85,7 @@ export function Sheet({ open, onClose, title, children, testId, detents = ['medi
             onClick={() => { if (moved.current) { moved.current = false; return } if (detents.length > 1) setDetent(detent === 'large' ? 'medium' : 'large') }}><i /></button>
           <div className="sheet-head"><h2>{title}</h2><button type="button" className="sheet-close" onClick={onClose} aria-label={`Close ${title}`}><IcClose size={18} /></button></div>
         </div>
+        {actions != null && <div className="sheet-actions" data-testid="sheet-actions">{actions}</div>}
         <div className="sheet-body">{children}</div>
       </div>
     </div>

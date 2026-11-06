@@ -139,7 +139,7 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
       ) : (
         <div key={hint} className={`drop-hint${toast ? ' toast' : ''}${toast === 'NO CH' ? ' noch' : ''}`} data-testid="drop-hint" aria-live="polite"><span className="drop-hint-count">{count}/{MAX_BUOYS}<span className="drop-hint-sep"> · </span></span><span className="lbl-full">{hint}</span><span className="lbl-short">{hintShort}</span></div>
       )}
-      <div className="drop-tools">
+      <div className="drop-tools" data-testid="pattern-row">
         <div className="seg field-mode" role="group" aria-label="Field mode" data-testid="field-mode">
           {FIELD_MODES.map((m) => (
             <button key={m} data-mode={m} aria-pressed={s.mode === m} aria-label={`${FIELD_MODE_LABEL[m]} field mode`} onClick={() => drop.dispatch({ type: 'mode', mode: m })}

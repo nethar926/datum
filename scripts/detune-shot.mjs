@@ -73,7 +73,8 @@ try {
     ok(await page.locator('[data-testid=buoy-status-legend] [data-health=dead]').count() === 1, `${name}: dead legend`)
     ok(await page.locator('[data-testid=buoy-status-legend] [data-health=error]').count() === 1, `${name}: error legend`)
     // Dismiss sheet (scrim / close).
-    await press(page.getByRole('button', { name: 'Close Plot layers' }))
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('[data-testid=layers-sheet]', { state: 'detached', timeout: 5000 }).catch(() => null)
     await page.waitForTimeout(400)
 
     const countBefore = parseInt((await page.locator('[data-testid=buoy-count]').textContent()) ?? 'NaN')
@@ -114,6 +115,31 @@ try {
     await page.waitForSelector('[data-testid=buoy-sheet]', { timeout: 5000 })
     ok(await page.locator('[data-testid=buoy-detune]').count() === 1, `${name}: DETUNE button missing`)
     ok(await page.locator('[data-testid=buoy-tune]').count() === 1, `${name}: TUNE button missing`)
+    // Medium detent: DETUNE/TUNE live in the sheet-actions row under the header — fully in viewport.
+    {
+      ok(await page.locator('[data-testid=sheet-actions]').count() === 1, `${name}: sheet-actions missing`)
+      ok(await page.locator('[data-testid=buoy-actions]').count() === 1, `${name}: buoy-actions row missing`)
+      // Wait for the sheet enter transition (transform) so medium-detent geometry is real.
+      await page.waitForFunction(() => {
+        const root = document.querySelector('.sheet-root')
+        const btn = document.querySelector('[data-testid=buoy-detune]')
+        if (!root?.classList.contains('open') || !btn) return false
+        const r = btn.getBoundingClientRect()
+        return r.y >= 0 && r.bottom <= window.innerHeight + 1
+      }, { timeout: 5000 })
+      const detent = await page.locator('[data-testid=buoy-sheet]').getAttribute('data-detent')
+      ok(detent === 'medium', `${name}: expected medium detent, got ${detent}`)
+      const vh = page.viewportSize()?.height ?? 0
+      for (const id of ['buoy-detune', 'buoy-tune']) {
+        const box = await page.locator(`[data-testid=${id}]`).boundingBox()
+        ok(!!box, `${name}: ${id} no box`)
+        if (box) {
+          ok(box.y >= 0 && box.y + box.height <= vh + 1,
+            `${name}: ${id} not in viewport at medium detent (y=${box.y}, h=${box.height}, vh=${vh})`)
+          ok(box.height >= 40, `${name}: ${id} shorter than 44pt (${box.height})`)
+        }
+      }
+    }
     const buoyId = await page.evaluate(() => {
       const d = window.__datumDetune
       const pressed = document.querySelector('[data-testid=buoy-seg] button[aria-pressed=true]')

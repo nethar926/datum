@@ -25,6 +25,9 @@ import { DropBar } from './tactical/DropBar'
 import { DropController } from './tactical/dropController'
 import { dropCapturesPlot } from './tactical/fieldMode'
 import { BUOY_STATUS_COLOR, BUOY_STATUS_LABEL, DetuneStore, paintHealth, type BuoyHealth } from './tactical/detune'
+import { FixStore } from './tactical/fixStore'
+import { FixBar } from './tactical/FixBar'
+import { FRESH_WINDOW_S, freshRays } from './tactical/crossFix'
 import { bearingTo, type FixSource, type ManualBearings } from './tactical/manual'
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
@@ -43,7 +46,7 @@ import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, u
 import { CutController } from './cuts/session'
 import { CutsTab } from './cuts/CutsTab'
 import { listCutSeeds } from './cuts/api'
-import { IcBrg, IcChevron, IcContrast, IcDop, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcTarget, IcTrash } from './ui/icons'
+import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcPause, IcPlay, IcProbe, IcTarget, IcTrash } from './ui/icons'
 import { SPLIT_DEFAULT_H, SPLIT_DEFAULT_V, SPLIT_KEY_H, SPLIT_KEY_V, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
 
@@ -120,11 +123,18 @@ export default function App() {
   const detune = useMemo(() => new DetuneStore(), [])
   const detuneSnap = useSyncExternalStore(detune.subscribe, detune.getSnapshot)
   void detuneSnap
+  const fixStore = useMemo(() => new FixStore(), [])
+  const fixSnap = useSyncExternalStore(fixStore.subscribe, fixStore.getSnapshot)
+  void fixSnap
+  /** simT when each manual bearing was last set (freshness for FIX). */
+  const [manualAges, setManualAges] = useState<Record<number, number>>({})
 
   // FE buoy status: seed from tactical, tick integrating→working, reset on new scenario.
   useEffect(() => {
     detune.reset()
-  }, [st.scenarioId, st.seed, detune])
+    fixStore.reset()
+    setManualAges({})
+  }, [st.scenarioId, st.seed, detune, fixStore])
   useEffect(() => {
     if (!st.tactical) return
     detune.syncTactical(st.tactical.buoys)
@@ -134,10 +144,26 @@ export default function App() {
     w.__datumDetune = detune
     return () => { if (w.__datumDetune === detune) delete w.__datumDetune }
   }, [detune])
+  useEffect(() => {
+    const w = window as Window & { __datumFix?: FixStore }
+    w.__datumFix = fixStore
+    return () => { if (w.__datumFix === fixStore) delete w.__datumFix }
+  }, [fixStore])
+  useEffect(() => {
+    const w = window as Window & { __datumTactical?: typeof st.tactical }
+    w.__datumTactical = st.tactical
+    return () => { if (w.__datumTactical === st.tactical) delete w.__datumTactical }
+  }, [st.tactical])
 
   const logCount = useSyncExternalStore(log.subscribe, log.size)
   const onManual = (buoyId: number, deg: number | null, final: boolean) => {
     setManual((m) => { const n = { ...m }; if (deg === null) delete n[buoyId]; else n[buoyId] = deg; return n })
+    setManualAges((a) => {
+      const n = { ...a }
+      if (deg === null) delete n[buoyId]
+      else n[buoyId] = client.status.simT
+      return n
+    })
     if (final) log.add({ simT: client.status.simT, kind: 'bearing', buoyId, data: deg === null ? { source: 'manual', cleared: true } : { source: 'manual', brgDeg: Math.round(deg * 10) / 10 } })
   }
   const [selHz, setSelHz] = useState<number | null>(null)
@@ -212,6 +238,7 @@ export default function App() {
     if (on) {
       setVernierPick(false); setHarmProbeOn(false); setBrgArm(ARM_IDLE)
       if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
+      fixStore.setArmed(false)
     }
     setTool(on ? 'dop' : 'select')
   }
@@ -363,6 +390,7 @@ export default function App() {
     if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
     setVernierPick(false); setHarmProbeOn(false)
     if (tool === 'dop' || tool === 'lm' || tool === 'harm') setTool('select')
+    fixStore.setArmed(false)
   }
   /** Send a manual bearing from DIFAR per-bin data at hz for the current buoy. */
   const sendBrgAtFreq = (hz: number): boolean => {
@@ -410,7 +438,8 @@ export default function App() {
     if (!dropCapturing) return
     setBrgArm(ARM_IDLE)
     setTool((t) => (t === 'dop' ? 'select' : t))
-  }, [dropCapturing])
+    fixStore.setArmed(false)
+  }, [dropCapturing, fixStore])
   const keyRef = useRef({ centerFromSelection, toggleBrg, tryBrgFromCursor, brgArm, dopMode, rulerPlaced: false })
   keyRef.current = { centerFromSelection, toggleBrg, tryBrgFromCursor, brgArm, dopMode, rulerPlaced: ruler.placed }
   useEffect(() => {
@@ -446,9 +475,29 @@ export default function App() {
     </select>
   )
   const clearHarm = () => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false) }
+  const freshCount = st.tactical
+    ? freshRays(manual, manualAges, st.tactical.buoys, st.tactical.simT, FRESH_WINDOW_S).length
+    : 0
+  const onLayFix = () => {
+    if (!st.tactical) return
+    const r = fixStore.layFix(manual, manualAges, st.tactical.buoys, st.tactical.simT)
+    if (r.ok) log.add({ simT: st.tactical.simT, kind: 'bearing', buoyId: r.fix.buoyIds[0] ?? 0, data: { source: 'fix', x: r.fix.x, y: r.fix.y, tag: r.fix.tag } })
+  }
   // One glass bottom toolbar for the gram tools (horizontally scrollable on narrow screens).
+  const onFixTool = () => {
+    if (!fixStore.armed) {
+      setBrgArm(ARM_IDLE); if (dopMode) setTool('select'); if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
+      fixStore.setArmed(true)
+      return
+    }
+    if (freshCount >= 2) onLayFix()
+    else fixStore.setArmed(false)
+  }
   const toolsRow = (
     <div className="toolbar-glass glass" role="toolbar" aria-label="Gram tools" data-testid="gram-tools">
+      <button className={`tool fix-pin${fixStore.armed ? ' armed' : ''}`} aria-pressed={fixStore.armed} aria-label="FIX" data-testid="fix-tool"
+        onClick={onFixTool}
+        title="FIX: with ≥2 fresh DIFAR bearings, tap to lay a cross-fix (error ellipse + CSE/SPD legs)"><IcFix /><span>FIX</span></button>
       <ToolScroll testId="gram-tools-scroll">
         <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)} onClick={onBrgButton}
           title="Hover a DIFAR gram line and press B to send that bearing. On touch: BRG then tap the gram (or a buoy on the plot to aim). Esc cancels.">
@@ -496,7 +545,7 @@ export default function App() {
 
   return (
     <div className={`app ios layout-${layout}`} data-layout={layout} data-gram-dir={gramDir} data-tab={tab} data-split={splitAxis}
-      data-tabbar={tabMin ? 'min' : 'full'}>
+      data-tabbar={tabMin ? 'min' : 'full'} data-fix-armed={fixStore.armed ? '1' : '0'}>
       <GlassDefs />
       {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       {instrumentsVisible && (
@@ -628,6 +677,16 @@ export default function App() {
             <div className="plot-corner readout">
               <span className="sim-clock" data-testid="sim-clock">T+{fmtT(st.simT)}</span>
               {st.tactical && <span data-testid="ac-readout">{`A/C ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}°  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</span>}
+              {(() => {
+                const fit = fixStore.activeFit()
+                const track = fixStore.tracks.find((tr) => tr.id === fixStore.activeTrackId)
+                if (!fit || !track) return null
+                return (
+                  <span className="fix-leg-readout" data-testid="fix-leg-readout" aria-live="polite">
+                    {track.tag} CSE {String(Math.round(fit.cseDeg) % 360).padStart(3, '0')}°T SPD {fit.spdKts.toFixed(0)} kt
+                  </span>
+                )
+              })()}
             </div>
             <TacticalPlot client={client} showReveal={reveal} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource}
@@ -637,6 +696,7 @@ export default function App() {
               }}
               drop={drop}
               detune={detune}
+              fix={fixStore}
               arm={brgArm}
               onArmPick={(id) => setBrgArm(pickBuoy(brgArm, id))}
               onArmAim={(id, wx, wy) => {
@@ -761,38 +821,54 @@ export default function App() {
         </LargeTitleScreen>
       )}
 
-      <div className="dock" data-testid="dock">
-        <TabBar tab={tab} onTab={(t) => { setTab(t) }} minimized={tabMin} onExpand={() => { clearTimeout(tabMinTimer.current); setTabMin(false) }} />
-        {tab === 'live' && toolsRow}
-        {tab === 'plot' && (
-          <div className="toolbar-glass glass" role="toolbar" aria-label="Plot tools">
-            <div className="tool-scroll">
-              <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} aria-pressed={isArmed(brgArm)} onClick={onBrgButton}><IcBrg /><span>{armLabel(brgArm)}</span></button>
-              <button className="tool" onClick={() => setLayersSheet(true)} aria-label="Layers"><IcLayers /><span>Layers</span></button>
-            </div>
-          </div>
+      <div className="dock" data-testid="dock" data-fix-armed={fixStore.armed ? '1' : '0'}>
+        {!(fixStore.armed && (tab === 'live' || tab === 'plot')) && (
+          <TabBar tab={tab} onTab={(t) => { setTab(t) }} minimized={tabMin} onExpand={() => { clearTimeout(tabMinTimer.current); setTabMin(false) }} />
+        )}
+        {fixStore.armed && (tab === 'live' || tab === 'plot') ? (
+          <FixBar store={fixStore} onLay={onLayFix} freshCount={freshCount} onDone={() => fixStore.setArmed(false)} />
+        ) : (
+          <>
+            {tab === 'live' && toolsRow}
+            {tab === 'plot' && (
+              <div className="toolbar-glass glass" role="toolbar" aria-label="Plot tools">
+                <button className={`tool fix-pin${fixStore.armed ? ' armed' : ''}`} aria-pressed={fixStore.armed} aria-label="FIX" data-testid="fix-tool-plot"
+                  onClick={() => { setBrgArm(ARM_IDLE); fixStore.setArmed(true) }}><IcFix /><span>FIX</span></button>
+                <div className="tool-scroll">
+                  <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} aria-pressed={isArmed(brgArm)} onClick={onBrgButton}><IcBrg /><span>{armLabel(brgArm)}</span></button>
+                  <button className="tool" onClick={() => setLayersSheet(true)} aria-label="Layers"><IcLayers /><span>Layers</span></button>
+                </div>
+              </div>
+            )}
+          </>
         )}
         {(tab === 'cuts' || tab === 'settings') && <div className="dock-spacer" aria-hidden />}
       </div>
 
-      <Sheet open={buoySheet} onClose={() => setBuoySheet(false)} title={buoy ? `Buoy ${buoy.channel}` : 'Buoy'} testId="buoy-sheet">
-        {buoy ? (() => {
+      <Sheet open={buoySheet} onClose={() => setBuoySheet(false)} title={buoy ? `Buoy ${buoy.channel}` : 'Buoy'} testId="buoy-sheet"
+        actions={buoy ? (() => {
           const fe = detune.get(buoy.id)
           const health = paintHealth(fe, buoy.state)
           const canDetune = health === 'working' || health === 'integrating'
           const canTune = health === 'detuned'
+          return (
+            <div className="buoy-actions" role="group" aria-label="Channel tune" data-testid="buoy-actions">
+              <button type="button" className="btn" data-testid="buoy-detune" disabled={!canDetune}
+                onClick={() => detune.detune(buoy.id)} title="Detune: stop feeding and free the RX channel">DETUNE</button>
+              <button type="button" className="btn primary" data-testid="buoy-tune" disabled={!canTune}
+                onClick={() => detune.tune(buoy.id)} title="Tune: re-acquire the lowest free RX channel">TUNE</button>
+            </div>
+          )
+        })() : undefined}>
+        {buoy ? (() => {
+          const fe = detune.get(buoy.id)
+          const health = paintHealth(fe, buoy.state)
           return (
           <div className="ios-group">
             <div className="ios-row"><span className="row-label">Type</span><span className="row-value">{buoy.kind === 'difar' ? 'DIFAR (directional)' : 'Omni (passive)'}</span></div>
             <div className="ios-row"><span className="row-label">Status</span>
               <span className="row-value buoy-status" data-testid="buoy-status" data-health={health} style={{ color: BUOY_STATUS_COLOR[health] }}>{BUOY_STATUS_LABEL[health].toUpperCase()}</span></div>
             <div className="ios-row"><span className="row-label">Channel</span><span className="row-value" data-testid="buoy-fe-channel">{health === 'detuned' ? '—' : (fe?.channel ?? buoy.channel)}</span></div>
-            <div className="ios-row buoy-actions" role="group" aria-label="Channel tune">
-              <button type="button" className="btn" data-testid="buoy-detune" disabled={!canDetune}
-                onClick={() => detune.detune(buoy.id)} title="Detune: stop feeding and free the RX channel">DETUNE</button>
-              <button type="button" className="btn primary" data-testid="buoy-tune" disabled={!canTune}
-                onClick={() => detune.tune(buoy.id)} title="Tune: re-acquire the lowest free RX channel">TUNE</button>
-            </div>
             <div className="ios-row"><span className="row-label">Engine state</span><span className="row-value">{buoy.state.toUpperCase()}</span></div>
             <div className="ios-row"><span className="row-label">Hydrophone depth</span><span className="row-value">{buoy.hydrophoneDepthM} m</span></div>
             <div className="ios-row"><span className="row-label">Battery</span><span className="row-value">{(buoy.batteryFrac * 100).toFixed(0)}%</span></div>

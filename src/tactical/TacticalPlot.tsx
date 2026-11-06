@@ -12,6 +12,7 @@ import { canAim, isArmed, type BearingArm } from './bearingArm'
 import { placeRevealTagsInPlace, revealRangeBrg, revealShapeForCategory } from './reveal'
 import type { TruthContact } from '../engine/contract'
 import { BUOY_STATUS_COLOR, paintHealth, type DetuneStore } from './detune'
+import type { FixStore } from './fixStore'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -32,6 +33,8 @@ interface Props {
   onArmAim?: (buoyId: number, wx: number, wy: number) => void
   /** FE-local buoy status (detune colours, integrating ring). */
   detune?: DetuneStore
+  /** Operator FIX tracks / legs / ellipses. */
+  fix?: FixStore
 }
 const noSub = () => () => {}
 /** New-buoy splash: an expanding ring for this long after a buoy appears on the plot. */
@@ -42,12 +45,12 @@ const HIT_PX = 14
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional Reveal positions. Canvas 2D. */
-export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune }: Props) {
+export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune, fix }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune })
-  props.current = { showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune }
+  const props = useRef({ showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix })
+  props.current = { showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix }
   const viewRef = useRef<PlotView | null>(null)
   const dragRef = useRef<number | null>(null)
   /** When set, the current pointer is an armed aim-tap (plot placement), not a buoy drag. */
@@ -120,7 +123,8 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
       const armKey = armSt?.phase === 'aim' ? `aim${armSt.buoyId}` : armSt?.phase ?? 'idle'
       const dtSnap = props.current.detune?.getSnapshot() ?? 0
-      const key = `${w}x${h}:${reveal}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${JSON.stringify(man)}`
+      const fixSnap = props.current.fix?.getSnapshot() ?? 0
+      const key = `${w}x${h}:${reveal}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
       const v = fitView(w, h, span)
@@ -137,8 +141,7 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
       ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke()
       ctx.font = `${10 * dpr}px ui-monospace, Menlo, monospace`; ctx.fillStyle = C.text
       ctx.fillText('N', w / 2 + 4 * dpr, 12 * dpr)
-      // Top-left under the layers float button (~8+44) — never under the drop chip / toolbar at the bottom.
-      ctx.fillText('2 km rings', 8 * dpr, 68 * dpr)
+      // Ring-scale label is a DOM node (data-testid=ring-scale) so chrome hit-tests stay off canvas.
       if (!t) return
 
       // Bearing lines: by default only those for the selected tonal (picked on the LOFAR, or the
@@ -213,12 +216,90 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
         ctx.fillText(armSt.phase === 'pick-buoy' ? 'BRG · tap DIFAR buoy' : 'BRG · tap to aim', 8 * dpr, 16 * dpr)
       }
 
-      // Cross-fixes from DIFAR lines.
+      // Cross-fixes from DIFAR lines (auto teaching aid).
       ctx.strokeStyle = C.fix; ctx.lineWidth = 1.5 * dpr
       for (const f of crossFixes(fixInputs(shown, sm ? man : {}, t.buoys, fs, selHz), t.buoys, SEL_TOL_HZ, MIN_DRAW_Q)) {
         const sx = toScreenX(v, f.x), sy = toScreenY(v, f.y), r = 6 * dpr
         ctx.beginPath(); ctx.moveTo(sx - r, sy - r); ctx.lineTo(sx + r, sy + r); ctx.moveTo(sx + r, sy - r); ctx.lineTo(sx - r, sy + r); ctx.stroke()
         ctx.fillStyle = C.fix; ctx.fillText(f.freqHz < 0 ? 'MAN' : `${f.freqHz.toFixed(0)}Hz`, sx + 8 * dpr, sy - 6 * dpr)
+      }
+
+      // Operator FIX tracks: ellipses, marks, legs (dim closed legs), short tags; track name on the leg.
+      const fx = props.current.fix
+      if (fx && fx.fixes.length) {
+        ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
+        for (const leg of fx.legs) {
+          const pts = leg.fixIds.map((id) => fx.fixes.find((f) => f.id === id)).filter(Boolean) as typeof fx.fixes
+          if (pts.length < 2) continue
+          const track = fx.tracks.find((tr) => tr.id === leg.trackId)
+          ctx.globalAlpha = leg.closed ? 0.4 : 1
+          ctx.strokeStyle = C.fix; ctx.lineWidth = (leg.closed ? 1.25 : 2) * dpr
+          ctx.setLineDash(leg.closed ? [5 * dpr, 4 * dpr] : [])
+          ctx.beginPath()
+          for (let i = 0; i < pts.length; i++) {
+            const sx = toScreenX(v, pts[i]!.x), sy = toScreenY(v, pts[i]!.y)
+            if (i) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy)
+          }
+          if (leg.fit) {
+            const last = pts[pts.length - 1]!
+            const th = (leg.fit.cseDeg * Math.PI) / 180
+            // ~3 minutes of steam at fitted speed, capped for the plot.
+            const len = Math.min(3500, Math.max(900, leg.fit.spdKts * 1852 / 3600 * 180))
+            ctx.lineTo(toScreenX(v, last.x + Math.sin(th) * len), toScreenY(v, last.y + Math.cos(th) * len))
+          }
+          ctx.stroke(); ctx.setLineDash([])
+          // Track name at the mid-leg (not on every mark).
+          if (track) {
+            const mid = pts[Math.floor(pts.length / 2)]!
+            const mx = toScreenX(v, mid.x), my = toScreenY(v, mid.y)
+            ctx.fillStyle = C.fix
+            ctx.font = `700 ${11 * dpr}px ui-monospace, Menlo, monospace`
+            ctx.fillText(track.tag, mx + 10 * dpr, my - 10 * dpr)
+            ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
+          }
+        }
+        ctx.globalAlpha = 1
+        const nF = fx.fixes.length
+        if (nF > bag.cap) bag = makeBag(nF)
+        const { ax, ay, tw, th, outX, outY, obs } = bag
+        let n = 0
+        for (const f of fx.fixes) {
+          const sx = toScreenX(v, f.x), sy = toScreenY(v, f.y)
+          const leg = fx.legs.find((l) => l.id === f.legId)
+          ctx.globalAlpha = leg?.closed ? 0.45 : 1
+          const el = f.ellipse
+          // Visible floor so a tight cut still reads as an ellipse on an 18 km plot.
+          const majPx = Math.max(20 * dpr, el.semiMajorM / v.mPerPx)
+          const minPx = Math.max(12 * dpr, el.semiMinorM / v.mPerPx)
+          ctx.save()
+          ctx.translate(sx, sy)
+          // orientDeg is °T (0 = north); canvas +X is east → rotate (θ − 90°).
+          ctx.rotate(((el.orientDeg - 90) * Math.PI) / 180)
+          ctx.strokeStyle = C.fix; ctx.lineWidth = 1.5 * dpr; ctx.globalAlpha *= 0.75
+          ctx.beginPath(); ctx.ellipse(0, 0, majPx, minPx, 0, 0, Math.PI * 2); ctx.stroke()
+          ctx.restore()
+          ctx.globalAlpha = leg?.closed ? 0.45 : 1
+          const r = 5 * dpr
+          ctx.strokeStyle = C.fix; ctx.lineWidth = 1.75 * dpr
+          ctx.beginPath(); ctx.moveTo(sx - r, sy - r); ctx.lineTo(sx + r, sy + r); ctx.moveTo(sx + r, sy - r); ctx.lineTo(sx - r, sy + r); ctx.stroke()
+          ax[n] = sx; ay[n] = sy
+          tw[n] = ctx.measureText(f.tag).width + 4 * dpr; th[n] = 12 * dpr
+          n++
+        }
+        let mObs = 0
+        const pushObs = (x: number, y: number, ow: number, oh: number) => {
+          obs[mObs * 4] = x; obs[mObs * 4 + 1] = y; obs[mObs * 4 + 2] = ow; obs[mObs * 4 + 3] = oh; mObs++
+        }
+        pushObs(0, 0, w, 80 * dpr) // layers float + ring-scale
+        pushObs(0, h - 56 * dpr, w, 56 * dpr)
+        pushObs(w - 200 * dpr, 0, 200 * dpr, 48 * dpr) // A/C readout
+        for (const b of t.buoys) {
+          const bx = toScreenX(v, b.x), by = toScreenY(v, b.y)
+          pushObs(bx - 8 * dpr, by - 8 * dpr, 16 * dpr, 16 * dpr)
+        }
+        placeRevealTagsInPlace(n, ax, ay, tw, th, outX, outY, obs, mObs, w, h, 4 * dpr)
+        ctx.fillStyle = C.fix; ctx.globalAlpha = 1
+        for (let i = 0; i < n; i++) ctx.fillText(fx.fixes[i]!.tag, outX[i] + 2 * dpr, outY[i] + 10 * dpr)
       }
 
       // Reveal positions (instructor marks only — no text dump). Zero heap traffic on the hot path.
@@ -329,6 +410,7 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
   const dropping = () => !!drop && dropCapturesPlot(drop.state)
   // Re-render (cursor/class only) when the drop tool arms or disarms.
   useSyncExternalStore(drop?.subscribe ?? noSub, () => (drop ? dropCapturesPlot(drop.state) : false))
+  useSyncExternalStore(fix?.subscribe ?? noSub, () => (fix ? fix.getSnapshot() : 0))
   const brgArmed = !!(arm && isArmed(arm) && !dropping())
   return (<>
     <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot" data-arm={dropping() ? 'drop' : (arm?.phase ?? 'idle')}
@@ -419,6 +501,7 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
       onContextMenu={(e) => e.preventDefault()}
       onDoubleClick={(e) => { if (dropping() || brgArmed) return; const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
     <canvas ref={oref} className="tac-overlay" data-testid="tactical-overlay" aria-hidden />
+    <div className="ring-scale" data-testid="ring-scale" aria-hidden>2 km rings</div>
     {picked && showReveal && (() => {
       const buoy = client.status.tactical?.buoys.find((b) => b.channel === selectedChannel)
       const rb = revealRangeBrg(buoy, picked)
