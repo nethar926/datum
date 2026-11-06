@@ -22,7 +22,7 @@ import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
 import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
-import type { PaletteId } from './gl/colormap'
+import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { Sheet } from './touch/Sheet'
 import { installAudioUnlock } from './touch/audioUnlock'
@@ -43,6 +43,10 @@ const loadGramMode = (): GramMode => { try { const v = localStorage.getItem(GRAM
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
 const fmtT = (s: number) => { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` }
 
+const PALETTE_LABEL: Record<PaletteId, string> = { green: 'Green', amber: 'Amber', red: 'Red' }
+const PALETTE_KEY = 'datum.palette'
+const loadPalette = (): PaletteId => { try { const u = new URLSearchParams(location.search).get('palette'); if (isPaletteId(u)) return u; const v = localStorage.getItem(PALETTE_KEY); return isPaletteId(v) ? v : 'green' } catch { return 'green' } }
+
 export default function App() {
   const client = useMemo(() => new SimClient(), [])
   const st = useSyncExternalStore(client.subscribe, client.getStatus)
@@ -50,8 +54,9 @@ export default function App() {
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
   const [truth, setTruth] = useState(false)
   const [vernierPick, setVernierPick] = useState(false)
-  // LOFAR is green only (amplitude = green brightness, no hue coding). DIFAR uses the bearing wheel instead.
-  const palette: PaletteId = 'green'
+  // LOFAR phosphor: green (default), amber or red. Amplitude only, no hue coding. DIFAR ignores it (bearing wheel).
+  const [palette, setPalette] = useState<PaletteId>(loadPalette)
+  useEffect(() => { try { localStorage.setItem(PALETTE_KEY, palette) } catch { /* private mode */ } }, [palette])
   const [gramMode, setGramMode] = useState<GramMode>(loadGramMode)
   useEffect(() => { try { localStorage.setItem(GRAM_MODE_KEY, gramMode) } catch { /* private mode */ } }, [gramMode])
   const [allBearings, setAllBearings] = useState(false)
@@ -238,6 +243,9 @@ export default function App() {
             {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
             {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
           </select></div>
+          <div className="sheet-row"><span className="seg-label">LOFAR</span><div className="seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
+            {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)} title={gramMode === 'difar' ? 'LOFAR colour (DIFAR uses the bearing wheel)' : `LOFAR amplitude in ${PALETTE_LABEL[id].toLowerCase()}`}>{PALETTE_LABEL[id]}</button>)}
+          </div></div>
           <div className="sheet-row"><span className="seg-label">BAND</span><div className="seg" role="group" aria-label="LOFAR band">
             <button aria-pressed={st.band === 'lofar1k'} onClick={() => changeBand('lofar1k')}>0–1 kHz</button>
             <button aria-pressed={st.band === 'lofar2k'} onClick={() => changeBand('lofar2k')}>0–2 kHz</button>
@@ -261,7 +269,7 @@ export default function App() {
           <div className="panel-head">
             <h2 data-testid="gram-title">{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'} · {filter}</h2>
             <div className="seg" role="group" aria-label="Gram mode">
-              <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title="Amplitude as green brightness">LOFAR</button>
+              <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title={`Amplitude as ${PALETTE_LABEL[palette].toLowerCase()} brightness`}>LOFAR</button>
               <button aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
             </div>
             <div className="seg filter-seg" role="group" aria-label="Gram filter" data-testid="filter-seg">

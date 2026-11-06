@@ -128,6 +128,12 @@ describe('bearing selection', () => {
 
 import { PALETTE_IDS, isPaletteId, paletteLut } from './gl/colormap'
 describe('palettes', () => {
+  it('LOFAR offers green (default), amber and red only: monochrome amplitude, no multicolour or gray', () => {
+    expect(PALETTE_IDS).toEqual(['green', 'amber', 'red'])
+    expect(isPaletteId('multi')).toBe(false); expect(isPaletteId('gray')).toBe(false)
+    const r = paletteLut('red'), mid = 128 * 4
+    expect(r[mid]).toBeGreaterThan(r[mid + 1] * 3) // red-dominant through the mid range
+  })
   it('every palette is 256 opaque entries, dark at the floor and bright at the top', () => {
     const lum = (l: Uint8Array, i: number) => 0.2126 * l[i * 4] + 0.7152 * l[i * 4 + 1] + 0.0722 * l[i * 4 + 2]
     for (const id of PALETTE_IDS) {

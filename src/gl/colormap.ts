@@ -1,15 +1,13 @@
 type Stop = [t: number, r: number, g: number, b: number]
 
 /**
- * Gram palettes. green/amber/gray: single-hue operator phosphors, black to near-white.
- * multi: perceptual multicolour (stops sampled from matplotlib's viridis, CC0), dark purple to yellow.
+ * LOFAR palettes: single-hue operator phosphors, black to near-white. Amplitude only, no hue coding
+ * (DIFAR ignores these and uses the bearing wheel).
  */
 export const PALETTES = {
   green: [[0, 0, 0, 0], [0.25, 0, 40, 8], [0.55, 20, 150, 45], [0.8, 92, 255, 122], [1, 225, 255, 230]],
   amber: [[0, 0, 0, 0], [0.25, 45, 18, 0], [0.55, 170, 90, 5], [0.8, 255, 176, 40], [1, 255, 238, 200]],
-  gray: [[0, 0, 0, 0], [1, 245, 245, 245]],
-  multi: [[0, 68, 1, 84], [0.125, 71, 39, 119], [0.25, 62, 73, 137], [0.375, 49, 103, 141], [0.5, 37, 131, 142],
-    [0.625, 30, 157, 136], [0.75, 53, 183, 120], [0.875, 140, 209, 70], [1, 253, 231, 37]],
+  red: [[0, 0, 0, 0], [0.25, 48, 0, 2], [0.55, 165, 12, 12], [0.8, 255, 72, 56], [1, 255, 222, 210]],
 } satisfies Record<string, Stop[]>
 export type PaletteId = keyof typeof PALETTES
 export const PALETTE_IDS = Object.keys(PALETTES) as PaletteId[]
