@@ -10,7 +10,7 @@ import { contrastRange } from './contrast'
 import { AutoLevel } from './autoLevel'
 import { SplitWindowNormalizer } from './whiten'
 import { LevelHistory } from './levelHistory'
-import { clampView, freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
+import { freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 import { placeFreqAxisTicks } from './freqAxis'
 import { bandLimitHz, fullView, minSpanOf } from './res'
 import { DOUBLE_TAP_MS, LONG_PRESS_MS, exceedsSlop, pinchView } from '../touch/gestures'
@@ -72,7 +72,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
-  const [glError, setGlError] = useState<string | null>(null)
+  // Key-scoped so a successful rebuild on a new rendererKey hides a prior failure without setState(null).
+  const [glFail, setGlFail] = useState<{ key: string; msg: string } | null>(null)
   // Bumped when a lost WebGL context is not restored (iOS backgrounding): remounts the canvas with a fresh context.
   const [glGen, setGlGen] = useState(0)
   const [pressHint, setPressHint] = useState(false)
@@ -87,19 +88,20 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const readoutElRef = useRef<HTMLDivElement>(null)
   const [readoutBox, setReadoutBox] = useState<ReadoutRect | null>(null)
   const cfg = configs[streamIndex] ?? configs[0]
-  const bins = cfg?.bins ?? 0, fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
+  const fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
   const fMin = cfg?.f0 ?? 0, minSpan = minSpanOf(cfg)
   const full = (): FreqView => (cfg ? fullView(cfg) : { lo: 0, hi: fMax })
   const limitHz = bandLimitHz(cfg)
-  const [wheelTick, setWheelTick] = useState(0)
-  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick })
+  // Bumped in the wheel effect so the RAF draw key changes after setWheel — ref, not state, to avoid set-state-in-effect.
+  const wheelTickRef = useRef(0)
+  const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode, contrast })
   const tacRef = useRef(tactical)
   // Latest props for the RAF/handoff closures — layout effect so render stays ref-free (oxlint react/refs).
   useLayoutEffect(() => {
-    viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick }
+    viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode, contrast }
     tacRef.current = tactical
-  }, [view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick, tactical])
+  }, [view, streamIndex, cfg, auto, normalized, palette, mode, contrast, tactical])
   // Streams the renderer is drawing right now. A handoff promote swaps this synchronously (before React
   // re-renders with the new configs), so the frame loop never pairs new textures with the old grid.
   const liveRef = useRef(configs), promotedRef = useRef<GramConfig[] | null>(null), epochRef = useRef(0)
@@ -129,176 +131,216 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   // the bin count changes (RES 1024 ↔ band 2048). A restart (new set, not a handoff) bumps the epoch → rebuild.
   const rendererKey = `${epochRef.current}:${glGen}`
   /* oxlint-enable react/refs */
+  const glError = glFail && glFail.key === rendererKey ? glFail.msg : null
 
+  const hasConfigs = configs.length > 0
   useEffect(() => {
     const canvas = canvasRef.current
     const cs0 = liveRef.current
     if (!canvas || !cs0.length || !cs0[0].bins) return
-    let r: WaterfallRenderer
-    // Textures 0..N-1 hold raw rows; band/legacy grams add N..2N-1 normalized rows, so NB/BB toggling keeps
-    // full history. RES grams arrive engine-filtered (N textures).
-    let N = cs0.length
     // Geometry-dependent CPU state; rebuilt only when a handoff changes bins or family (never per frame).
     const mk = (cs: GramConfig[]) => {
       const b = cs[0].bins
       return { bins: b, filtered: cs[0].res !== undefined, norm: new SplitWindowNormalizer(b), scratch: new Float32Array(b), brgRow: new Float32Array(b) }
     }
-    let g = mk(cs0), pg = g
-    let local = new Map<number, number>(), pendingLocal = new Map<number, number>()
-    cs0.forEach((c, i) => local.set(c.streamId, i))
-    try { r = new WaterfallRenderer(canvas, g.bins, HISTORY_ROWS, texturesFor(cs0), N) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
-    setGlError(null)
+    // Single mutable runtime box: oxlint react/immutability flags reassigning effect `let`s from nested
+    // RAF/row/handoff callbacks. Property writes on a const box are the same semantics without the lint.
+    const g0 = mk(cs0)
+    const rt: {
+      r: WaterfallRenderer
+      N: number
+      g: ReturnType<typeof mk>
+      pg: ReturnType<typeof mk>
+      level: AutoLevel
+      hist: LevelHistory
+      brgHist: BearingHistory
+      histStream: number
+      pendingCfgs: GramConfig[]
+      live: Map<number, number>
+      pending: Map<number, number>
+      dirty: boolean
+      raf: number
+      lostTimer: number
+      lastKey: string
+    } = {
+      r: null!,
+      N: cs0.length,
+      g: g0,
+      pg: g0,
+      level: null!,
+      hist: null!,
+      brgHist: null!,
+      histStream: viewRef.current.streamIndex,
+      pendingCfgs: [],
+      live: new Map(),
+      pending: new Map(),
+      dirty: true,
+      raf: 0,
+      lostTimer: 0,
+      lastKey: '',
+    }
+    cs0.forEach((c, i) => rt.live.set(c.streamId, i))
+    try {
+      rt.r = new WaterfallRenderer(canvas, rt.g.bins, HISTORY_ROWS, texturesFor(cs0), rt.N)
+    } catch (e) {
+      // Defer so we don't synchronously setState in the effect body (oxlint react/set-state-in-effect).
+      const msg = e instanceof Error ? e.message : String(e)
+      queueMicrotask(() => setGlFail({ key: rendererKey, msg }))
+      return
+    }
+    const r = rt.r
     rendererRef.current = r
-    let level = new AutoLevel(N)
-    let hist = new LevelHistory(HISTORY_ROWS, g.bins); histRef.current = hist
-    let brgHist = new BearingHistory(BRG_RECENT_ROWS, g.bins); brgHistRef.current = brgHist
+    rt.level = new AutoLevel(rt.N)
+    rt.hist = new LevelHistory(HISTORY_ROWS, rt.g.bins); histRef.current = rt.hist
+    rt.brgHist = new BearingHistory(BRG_RECENT_ROWS, rt.g.bins); brgHistRef.current = rt.brgHist
     if (bearingAtRef) bearingAtRef.current = (hz) => {
       const c = viewRef.current.cfg; if (!c) return null
-      return sampleBearingAt(brgHist, c, hz)
+      return sampleBearingAt(rt.brgHist, c, hz)
     }
-    let histStream = viewRef.current.streamIndex
-    let dirty = true, raf = 0
-    let pendingCfgs: GramConfig[] = []
     const startPending = (cs: GramConfig[]) => {
-      pendingLocal = new Map(); cs.forEach((c, i) => pendingLocal.set(c.streamId, i)); pendingCfgs = cs
-      pg = cs[0].bins === g.bins && (cs[0].res !== undefined) === g.filtered ? g : mk(cs)
+      rt.pending = new Map(); cs.forEach((c, i) => rt.pending.set(c.streamId, i)); rt.pendingCfgs = cs
+      rt.pg = cs[0].bins === rt.g.bins && (cs[0].res !== undefined) === rt.g.filtered ? rt.g : mk(cs)
       r.beginPending(cs[0].bins, texturesFor(cs))
     }
     const pc0 = client.pendingConfigs()
-    if (pc0 && pc0.length === N) startPending(pc0)
+    if (pc0 && pc0.length === rt.N) startPending(pc0)
     const offHandoff = client.onHandoff((h) => {
-      if (h.type === 'pending') { if (h.configs.length === N && h.configs[0]?.bins) startPending(h.configs); return }
-      if (h.type === 'drop') { pendingLocal.clear(); pendingCfgs = []; pg = g; r.dropPending(); return }
-      if (h.to.length !== N) return
+      if (h.type === 'pending') { if (h.configs.length === rt.N && h.configs[0]?.bins) startPending(h.configs); return }
+      if (h.type === 'drop') { rt.pending.clear(); rt.pendingCfgs = []; rt.pg = rt.g; r.dropPending(); return }
+      if (h.to.length !== rt.N) return
       // No pending bank (context lost/restored mid-handoff): route the new ids into a fresh bank of the new size.
-      if (!r.hasPending()) { r.beginPending(h.to[0].bins, texturesFor(h.to)); pg = mk(h.to) }
+      if (!r.hasPending()) { r.beginPending(h.to[0].bins, texturesFor(h.to)); rt.pg = mk(h.to) }
       r.promotePending(bakeMaps(h.from, h.to, texturesFor(h.from), texturesFor(h.to)))
-      if (pg !== g) {
-        g = pg; hist = new LevelHistory(HISTORY_ROWS, g.bins); histRef.current = hist
-        brgHist = new BearingHistory(BRG_RECENT_ROWS, g.bins); brgHistRef.current = brgHist
-        level = new AutoLevel(N)
-      } else { hist.clear(); brgHist.clear() }
-      local = pendingLocal; pendingLocal = new Map(); pendingCfgs = []
+      if (rt.pg !== rt.g) {
+        rt.g = rt.pg; rt.hist = new LevelHistory(HISTORY_ROWS, rt.g.bins); histRef.current = rt.hist
+        rt.brgHist = new BearingHistory(BRG_RECENT_ROWS, rt.g.bins); brgHistRef.current = rt.brgHist
+        rt.level = new AutoLevel(rt.N)
+      } else { rt.hist.clear(); rt.brgHist.clear() }
+      rt.live = rt.pending; rt.pending = new Map(); rt.pendingCfgs = []
       liveRef.current = h.to; promotedRef.current = h.to
-      dirty = true
+      rt.dirty = true
     })
     const offSeek = client.onCutSeek((n) => {
       // New CutSession stream id for the same single LOFAR pane; drop the painted window when replacing.
-      local = new Map([[n.streamId, 0]])
-      if (n.replace) { hist.clear(); brgHist.clear(); r.clearHistory() }
-      dirty = true
+      rt.live = new Map([[n.streamId, 0]])
+      if (n.replace) { rt.hist.clear(); rt.brgHist.clear(); r.clearHistory() }
+      rt.dirty = true
     })
     const off = client.onRows((rows) => {
-      if (viewRef.current.streamIndex !== histStream) { hist.clear(); brgHist.clear(); histStream = viewRef.current.streamIndex }
+      if (viewRef.current.streamIndex !== rt.histStream) { rt.hist.clear(); rt.brgHist.clear(); rt.histStream = viewRef.current.streamIndex }
       const n = rows.streamIds.length
       if (!n) return
       const bd = (rows as { bearingDeg?: Float32Array }).bearingDeg
       for (let k = 0; k < n; k++) {
         const id = rows.streamIds[k]
-        const s = local.get(id)
+        const s = rt.live.get(id)
         if (s === undefined) {
           // Pending handoff set: fills the hidden bank while the displayed bank keeps scrolling.
-          const p = pendingLocal.get(id)
-          if (p === undefined || rows.data.length !== n * pg.bins) continue
-          const b = pg.bins, o = k * b
+          const p = rt.pending.get(id)
+          if (p === undefined || rows.data.length !== n * rt.pg.bins) continue
+          const b = rt.pg.bins, o = k * b
           r.pushPendingRow(p, rows.data, o)
-          if (!pg.filtered) { pg.norm.apply(rows.data, o, pg.scratch, 0); r.pushPendingRow(N + p, pg.scratch, 0) }
+          if (!rt.pg.filtered) { rt.pg.norm.apply(rows.data, o, rt.pg.scratch, 0); r.pushPendingRow(rt.N + p, rt.pg.scratch, 0) }
           if (bd && bd.length === rows.data.length) r.pushPendingBearing(p, bd, o)
-          else { const tac = tacRef.current, c = pendingCfgs[p]; fillLineBearings(pg.brgRow, c, tac?.buoys.find((x) => x.channel === c.channel), tac?.bearings); r.pushPendingBearing(p, pg.brgRow, 0) }
+          else { const tac = tacRef.current, c = rt.pendingCfgs[p]; fillLineBearings(rt.pg.brgRow, c, tac?.buoys.find((x) => x.channel === c.channel), tac?.bearings); r.pushPendingBearing(p, rt.pg.brgRow, 0) }
           continue
         }
-        if (rows.data.length !== n * g.bins) continue // another pane's streams (different bin count)
-        const b = g.bins, o = k * b
-        r.pushRow(s, rows.data, o); level.update(s, rows.data, o, b)
-        if (s === histStream) hist.push(rows.data, o)
+        if (rows.data.length !== n * rt.g.bins) continue // another pane's streams (different bin count)
+        const b = rt.g.bins, o = k * b
+        r.pushRow(s, rows.data, o); rt.level.update(s, rows.data, o, b)
+        if (s === rt.histStream) rt.hist.push(rows.data, o)
         // RES grams arrive engine-filtered (NB = TPSW), so the display normalizer only runs on band/legacy grams.
-        if (!g.filtered) { g.norm.apply(rows.data, o, g.scratch, 0); r.pushRow(N + s, g.scratch, 0) }
+        if (!rt.g.filtered) { rt.g.norm.apply(rows.data, o, rt.g.scratch, 0); r.pushRow(rt.N + s, rt.g.scratch, 0) }
         // Bearing ring stays row-aligned with the power ring (NaN rows for omni buoys).
         // Engine per-bin bearings when streamed; else interim colouring from the tracked line bearings.
         if (bd && bd.length === rows.data.length) {
           r.pushBearing(s, bd, o)
-          if (s === histStream) brgHist.push(bd, o)
+          if (s === rt.histStream) rt.brgHist.push(bd, o)
         } else {
           const tac = tacRef.current, c = liveRef.current[s]
-          fillLineBearings(g.brgRow, c, tac?.buoys.find((x) => x.channel === c.channel), tac?.bearings)
-          r.pushBearing(s, g.brgRow, 0)
-          if (s === histStream) brgHist.push(g.brgRow, 0)
+          fillLineBearings(rt.g.brgRow, c, tac?.buoys.find((x) => x.channel === c.channel), tac?.bearings)
+          r.pushBearing(s, rt.g.brgRow, 0)
+          if (s === rt.histStream) rt.brgHist.push(rt.g.brgRow, 0)
         }
       }
-      dirty = true
+      rt.dirty = true
     })
     growRef.current = (cs: GramConfig[]) => {
-      const old = N, n = cs.length
-      if (n <= old || cs[0]?.bins !== g.bins) return
+      const old = rt.N, n = cs.length
+      if (n <= old || cs[0]?.bins !== rt.g.bins) return
       // Raw rings 0..N-1 (+ normalized N..2N-1 on band/legacy grams): keep each old ring, add empty ones.
       const order: number[] = []
       for (let i = 0; i < n; i++) order.push(i < old ? i : -1)
-      if (!g.filtered) for (let i = 0; i < n; i++) order.push(i < old ? old + i : -1)
+      if (!rt.g.filtered) for (let i = 0; i < n; i++) order.push(i < old ? old + i : -1)
       r.addStreams(order, n)
-      N = n; level = level.resized(n)
-      cs.forEach((c, i) => local.set(c.streamId, i))
+      rt.N = n; rt.level = rt.level.resized(n)
+      cs.forEach((c, i) => rt.live.set(c.streamId, i))
       // A handoff in flight re-announces at the new size; pick it up if it already has.
-      pendingLocal = new Map(); pendingCfgs = []; pg = g
+      rt.pending = new Map(); rt.pendingCfgs = []; rt.pg = rt.g
       const pc = client.pendingConfigs()
-      if (pc && pc.length === N && pc[0]?.bins) startPending(pc)
-      dirty = true
+      if (pc && pc.length === rt.N && pc[0]?.bins) startPending(pc)
+      rt.dirty = true
     }
-    if (growTo.current && growTo.current.length > N) growRef.current(growTo.current)
+    if (growTo.current && growTo.current.length > rt.N) growRef.current(growTo.current)
     growTo.current = null
-    const ro = new ResizeObserver(() => { dirty = true; setWidth(canvas.clientWidth); setHeight(canvas.clientHeight) })
+    const ro = new ResizeObserver(() => { rt.dirty = true; setWidth(canvas.clientWidth); setHeight(canvas.clientHeight) })
     ro.observe(canvas)
-    let lastKey = ''
     const frame = () => {
-      const { view: pv, streamIndex: s, cfg: pc, auto: a, normalized: nz, palette: pal, mode: md, contrast: k, wheelTick: wt } = viewRef.current
+      const { view: pv, streamIndex: s, cfg: pc, auto: a, normalized: nz, palette: pal, mode: md, contrast: k } = viewRef.current
       // Just promoted, React not caught up yet: draw the new stream over its full band (allocates for ≤ 2 frames).
       const live = liveRef.current[s] ?? liveRef.current[0], c = live ?? pc
       const v = live && pc && live.streamId !== pc.streamId ? fullView(live) : pv
-      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md},${c?.streamId},${c?.dbFloor},${c?.dbCeil},${k},${wt}`
-      if ((dirty || key !== lastKey) && c) {
-        const fl = level.get(s), useAuto = a && Number.isFinite(fl)
+      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md},${c?.streamId},${c?.dbFloor},${c?.dbCeil},${k},${wheelTickRef.current}`
+      if ((rt.dirty || key !== rt.lastKey) && c) {
+        const fl = rt.level.get(s), useAuto = a && Number.isFinite(fl)
         const dbFloor = useAuto ? fl - AUTO_BELOW_DB : c.dbFloor, dbCeil = useAuto ? fl - AUTO_BELOW_DB + AUTO_SPAN_DB : c.dbCeil
         const range = { binLo: (v.lo - c.f0) / c.fBin, binHi: (v.hi - c.f0) / c.fBin }
         const difar = md === 'difar' ? s : undefined
         // RES grams: the colour scale comes only from gramConfig (NB 0–30 dB, BB 40–110 dB).
         if (c.res !== undefined) r.draw(s, { ...range, ...contrastRange(c.dbFloor, c.dbCeil, k) }, difar)
-        else if (nz) r.draw(N + s, { ...range, ...contrastRange(NORM_FLOOR_DB, NORM_CEIL_DB, k) }, difar)
+        else if (nz) r.draw(rt.N + s, { ...range, ...contrastRange(NORM_FLOOR_DB, NORM_CEIL_DB, k) }, difar)
         else r.draw(s, { ...range, ...contrastRange(dbFloor, dbCeil, k) }, difar)
-        dirty = false; lastKey = key
+        rt.dirty = false; rt.lastKey = key
       }
-      raf = requestAnimationFrame(frame)
+      rt.raf = requestAnimationFrame(frame)
     }
-    raf = requestAnimationFrame(frame)
+    rt.raf = requestAnimationFrame(frame)
     // iOS may drop the context while backgrounded and never fire 'restored'; rebuild on return if still lost.
-    let lostTimer = 0
     const checkLost = () => {
       if (document.visibilityState !== 'visible' || !r.isLost()) return
-      clearTimeout(lostTimer)
-      lostTimer = window.setTimeout(() => { if (r.isLost()) setGlGen((g) => g + 1) }, 1000)
+      clearTimeout(rt.lostTimer)
+      rt.lostTimer = window.setTimeout(() => { if (r.isLost()) setGlGen((gen) => gen + 1) }, 1000)
     }
     const onLost = () => { if (document.visibilityState === 'visible') checkLost() }
     document.addEventListener('visibilitychange', checkLost); canvas.addEventListener('webglcontextlost', onLost)
-    const onShow = () => { dirty = true }
+    const onShow = () => { rt.dirty = true }
     window.addEventListener('pageshow', onShow)
     return () => {
-      cancelAnimationFrame(raf); clearTimeout(lostTimer); off(); offSeek(); offHandoff(); ro.disconnect()
+      cancelAnimationFrame(rt.raf); clearTimeout(rt.lostTimer); off(); offSeek(); offHandoff(); ro.disconnect()
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
       r.dispose(); rendererRef.current = null; histRef.current = null; brgHistRef.current = null
       if (bearingAtRef) bearingAtRef.current = null; growRef.current = null
     }
-  }, [client, configs.length > 0, rendererKey, HISTORY_ROWS])
+  }, [client, hasConfigs, rendererKey, HISTORY_ROWS, bearingAtRef])
 
   useLayoutEffect(() => { const cs = growTo.current; if (cs && growRef.current) { growTo.current = null; growRef.current(cs) } }, [configs])
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
   useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, rendererKey, client])
   useEffect(() => { rendererRef.current?.setFlip(newestAtBottom(dir)) }, [dir, rendererKey, client])
-  useEffect(() => { if (wheel) { rendererRef.current?.setWheel(wheel); setWheelTick((t) => t + 1) } }, [wheel, rendererKey, client])
+  useEffect(() => {
+    if (!wheel) return
+    rendererRef.current?.setWheel(wheel)
+    wheelTickRef.current += 1
+  }, [wheel, rendererKey, client])
 
   const ticks = useMemo(() => niceTicks(view.lo, view.hi, Math.max(3, Math.floor(width / 90))), [view, width])
   const freqLabels = useMemo(() => placeFreqAxisTicks(ticks, view, width, unit), [ticks, view, width, unit])
   const historyS = HISTORY_ROWS / rowRate
   const timeTicks = useMemo(() => timeTickAges(historyS, height), [historyS, height])
-  const zuluOrigin = zuluOriginMs ?? (typeof performance !== 'undefined' ? Date.now() - nowS * 1000 : Date.now())
+  // Stable fallback when the parent omits zuluOriginMs (e.g. DemonPane). App/Cuts always pass the prop.
+  const [zuluFallback] = useState(() => Date.now() - nowS * 1000)
+  const zuluOrigin = zuluOriginMs ?? zuluFallback
 
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
