@@ -350,3 +350,14 @@ button, select { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) { .ns-adv-toggle .chev, .ns-adv { transition: none; animation: none; } }
 .modal-head button, .modal-foot button { min-height: 44px; min-width: 44px; padding-inline: 16px; }
 .modal-foot button.primary { min-width: 96px; }
+/* Seed: field in New sim, chip after Start. */
+.ns-seed { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ns-seed input { font: 500 16px/1 var(--font-mono); min-height: 44px; width: 13ch; padding: 0 10px; background: var(--bg-2, #0d0f12); color: var(--text-1, #e8eaed); border: 1px solid var(--hairline); border-radius: 6px; }
+.ns-seed input.bad { border-color: #e5484d; }
+.ns-seed .btn { min-height: 44px; }
+.ns-seed-note { grid-column: 1 / -1; margin: -4px 0 0; font: 11px/1.3 var(--font-mono); color: var(--text-3, #8a8f98); }
+.ns-seed-note.bad { color: #ff8a8d; }
+.seed-chip { min-height: 44px; font-family: var(--font-mono); white-space: nowrap; transition: border-color 150ms ease, color 150ms ease; }
+.seed-chip b { font-weight: 600; }
+.seed-chip.copied { border-color: var(--accent, #3a9d5d); }
+.seed-ok { color: var(--accent, #3a9d5d); font-size: 11px; }

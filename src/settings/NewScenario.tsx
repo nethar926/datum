@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { acousticsV11, trafficLabel, type Difficulty, type ScenarioParams } from '../scenarios/acousticsApi'
-import { applyPlant, loadSimStart, plantOfWeights, PLANT_PICKS, saveSimStart, type PlantPick, type SimStartPrefs } from './simStart'
+import { applyPlant, loadSimStart, parseSeed, randomSeed, plantOfWeights, PLANT_PICKS, saveSimStart, type PlantPick, type SimStartPrefs } from './simStart'
 import { TrafficSlider } from './TrafficSlider'
 
 const DIFFS: { id: Difficulty; label: string }[] = [{ id: 'easy', label: 'Easy' }, { id: 'regular', label: 'Regular' }, { id: 'difficult', label: 'Difficult' }]
@@ -30,7 +30,11 @@ function Range({ label, value, min, max, step, unit, onChange }: { label: string
 export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams) => void; onClose: () => void }) {
   const api = acousticsV11
   const [prefs, setPrefs] = useState<SimStartPrefs>(loadSimStart)
-  const [seed, setSeed] = useState(() => (Math.random() * 2 ** 31) >>> 0)
+  const [seed, setSeedRaw] = useState(randomSeed)
+  const [seedText, setSeedText] = useState(() => String(seed))
+  const seedBad = parseSeed(seedText) === null
+  const setSeed = (s: number) => { setSeedRaw(s); setSeedText(String(s)); if (custom) setCustom({ ...custom, seed: s }) }
+  const typeSeed = (t: string) => { setSeedText(t); const v = parseSeed(t); if (v !== null) { setSeedRaw(v); if (custom) setCustom({ ...custom, seed: v }) } }
   const [adv, setAdv] = useState(false)
   const [custom, setCustom] = useState<ScenarioParams | null>(null)
   const preset = (d: Difficulty, pl: PlantPick, s: number) => api.presetToParams ? applyPlant(api.presetToParams(d, s), pl) : null
@@ -59,6 +63,14 @@ export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams)
               {PLANT_PICKS.map((d) => <button key={d.id} role="radio" aria-checked={plantNow === d.id} aria-pressed={plantNow === d.id}
                 onClick={() => custom ? setCustom(applyPlant({ ...custom, rarityWeights: preset(prefs.diff, 'any', seed)!.rarityWeights }, d.id)) : pick({ plant: d.id })}>{d.label}</button>)}
             </div>
+            <label className="seg-label" htmlFor="ns-seed">SEED</label>
+            <div className="ns-seed">
+              <input id="ns-seed" data-testid="ns-seed" className={seedBad ? 'bad' : ''} inputMode="numeric" autoComplete="off" spellCheck={false} value={seedText}
+                aria-invalid={seedBad} aria-describedby="ns-seed-note" onChange={(e) => typeSeed(e.target.value)} onFocus={(e) => e.target.select()} />
+              <button className="btn" data-testid="ns-seed-new" aria-label="New random seed" onClick={() => setSeed(randomSeed())}>New</button>
+              {prefs.lastSeed !== undefined && prefs.lastSeed !== seed && <button className="btn" data-testid="ns-seed-last" onClick={() => setSeed(prefs.lastSeed!)}>Last {prefs.lastSeed}</button>}
+            </div>
+            <p id="ns-seed-note" className={`ns-seed-note${seedBad ? ' bad' : ''}`}>{seedBad ? 'Seed is a whole number, 0 to 4294967295' : 'Same seed and settings replay the same scenario'}</p>
             <p className="ns-summary" data-testid="ns-summary">
               {custom ? 'CUSTOM · ' : ''}{subs} · {PLANT_PICKS.find((x) => x.id === plantNow)!.label.toUpperCase()} · SEA {p.seaState} · {trafficLabel(p.surfaceTraffic).toUpperCase()} TRAFFIC
             </p>
@@ -76,14 +88,12 @@ export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams)
             <Range label="CPA range" unit="km" value={p.cpaRangeKm} min={0.1} max={10} step={0.1} onChange={(v) => edit({ cpaRangeKm: v })} />
             <Num label="Buoy life" value={p.buoyLifeMin} min={10} max={480} step={10} fmt={(v) => `${Math.round(v)} min`} onChange={(v) => edit({ buoyLifeMin: v })} />
             <label className="check"><input type="checkbox" checked={p.opState.cavitationAllowed} onChange={(e) => editOp({ cavitationAllowed: e.target.checked })} /> Cavitation allowed</label>
-            <div className="field"><label>Seed <b>{seed}</b></label>
-              <button onClick={() => { const s = (Math.random() * 2 ** 31) >>> 0; setSeed(s); if (custom) setCustom({ ...custom, seed: s }) }}>New seed</button></div>
             {custom && <button className="btn" data-testid="ns-back-random" onClick={() => setCustom(null)}>Back to {DIFFS.find((d) => d.id === prefs.diff)!.label} preset</button>}
           </div>}
         </>)}
         <div className="modal-foot">
           <button onClick={onClose}>Cancel</button>
-          <button className="primary" disabled={!p} data-testid="ns-start" onClick={() => p && onStart({ ...p, seed })}>Start</button>
+          <button className="primary" disabled={!p || seedBad} data-testid="ns-start" onClick={() => { if (!p || seedBad) return; setPrefs((v) => { const n = { ...v, lastSeed: seed }; saveSimStart(n); return n }); onStart({ ...p, seed }) }}>Start</button>
         </div>
       </div>
     </div>

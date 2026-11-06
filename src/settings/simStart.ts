@@ -27,7 +27,7 @@ export function plantOfWeights(w: Record<string, number>): PlantPick {
   return d > 0 && n <= 0 ? 'diesel' : n > 0 && d <= 0 ? 'nuclear' : 'any'
 }
 
-export interface SimStartPrefs { diff: 'easy' | 'regular' | 'difficult'; plant: PlantPick }
+export interface SimStartPrefs { diff: 'easy' | 'regular' | 'difficult'; plant: PlantPick; lastSeed?: number }
 export const DEFAULT_SIM_START: SimStartPrefs = { diff: 'regular', plant: 'any' }
 export function loadSimStart(): SimStartPrefs {
   try {
@@ -35,7 +35,18 @@ export function loadSimStart(): SimStartPrefs {
     return {
       diff: v && ['easy', 'regular', 'difficult'].includes(v.diff as string) ? v.diff as SimStartPrefs['diff'] : DEFAULT_SIM_START.diff,
       plant: v && ['diesel', 'nuclear', 'any'].includes(v.plant as string) ? v.plant as PlantPick : DEFAULT_SIM_START.plant,
+      ...(v && parseSeed(String(v.lastSeed ?? '')) !== null ? { lastSeed: parseSeed(String(v.lastSeed))! } : {}),
     }
   } catch { return { ...DEFAULT_SIM_START } }
 }
 export function saveSimStart(p: SimStartPrefs) { try { localStorage.setItem(SIM_START_KEY, JSON.stringify(p)) } catch { /* private mode */ } }
+
+export const SEED_MAX = 4294967295
+/** Trainee-typed seed: digits only after stripping "#", spaces, commas; 0..2^32-1. Null if not a seed. */
+export function parseSeed(s: string): number | null {
+  const t = s.replace(/[#\s,_]/g, '')
+  if (!/^\d{1,10}$/.test(t)) return null
+  const v = Number(t)
+  return v <= SEED_MAX ? v : null
+}
+export const randomSeed = () => (Math.random() * 2 ** 31) >>> 0

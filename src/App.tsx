@@ -11,6 +11,7 @@ import { DifarApplet } from './gram/DifarApplet'
 import { loadWheel, saveWheel } from './gram/wheelSettings'
 import type { DifarWheelSettings } from './gl/colormap'
 import { NewScenario } from './settings/NewScenario'
+import { SeedChip } from './settings/SeedChip'
 import { TrafficSlider } from './settings/TrafficSlider'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
 import { CpaOverlay, cpaReadout } from './gram/CpaOverlay'
@@ -212,6 +213,7 @@ export default function App() {
             {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
             {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
           </select>
+          {st.scenarioId === 'generated' && <SeedChip seed={st.seed} />}
           <button className={`btn ${st.playing ? '' : 'primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}>
             {st.playing ? 'Pause' : 'Play'}
           </button>
@@ -256,7 +258,7 @@ export default function App() {
             onChange={(e) => { setCpaMarks([]); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
             {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
             {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
-          </select></div>
+          </select>{st.scenarioId === 'generated' && <SeedChip seed={st.seed} />}</div>
           <div className="sheet-row"><span className="seg-label">LOFAR</span><div className="seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
             {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)} title={gramMode === 'difar' ? 'LOFAR colour (DIFAR uses the bearing wheel)' : `LOFAR amplitude in ${PALETTE_LABEL[id].toLowerCase()}`}>{PALETTE_LABEL[id]}</button>)}
           </div></div>

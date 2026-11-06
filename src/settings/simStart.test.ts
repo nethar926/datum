@@ -35,3 +35,22 @@ describe('SIM start plant filter', () => {
     expect(plantOfWeights(applyPlant(zeroD, 'diesel').rarityWeights)).toBe('diesel')
   })
 })
+
+import { parseSeed } from './simStart'
+describe('seed field', () => {
+  it('parses typed and pasted seeds', () => {
+    expect(parseSeed('12345')).toBe(12345)
+    expect(parseSeed(' #1,820,590,169 ')).toBe(1820590169)
+    expect(parseSeed('0')).toBe(0)
+    expect(parseSeed('4294967295')).toBe(4294967295)
+    for (const bad of ['', 'abc', '-3', '1.5', '4294967296', '12345678901']) expect(parseSeed(bad)).toBeNull()
+  })
+  it('same seed + settings replays the same scenario; a different seed does not', () => {
+    for (const plant of ['diesel', 'nuclear', 'any'] as const) {
+      const p = applyPlant(api.presetToParams!('regular', 9001), plant)
+      const a = JSON.stringify(gen(api.clampParams!({ ...p, seed: 9001 })))
+      expect(JSON.stringify(gen(api.clampParams!({ ...p, seed: 9001 })))).toBe(a)
+      expect(JSON.stringify(gen(api.clampParams!({ ...applyPlant(api.presetToParams!('regular', 9002), plant), seed: 9002 })))).not.toBe(a)
+    }
+  })
+})
