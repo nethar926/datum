@@ -1,12 +1,12 @@
 {
   "name": "DATUM",
   "short_name": "DATUM",
-  "description": "Browser-based naval acoustic display and simulator",
+  "description": "Training simulator for fictional naval acoustic displays. Not for operational use.",
   "start_url": "/datum/",
   "scope": "/datum/",
   "display": "standalone",
   "background_color": "#05080a",
-  "theme_color": "#05080a",
+  "theme_color": "#000000",
   "icons": [
     {
       "src": "icon-192.png",
