@@ -38,3 +38,5 @@ export * from './catalog/compendium.js';
 export * from './catalog/matchClasses.js';
 export * from './patterns.js';
 export * from './behaviours.js';
+
+export * from './cuts/index.js';

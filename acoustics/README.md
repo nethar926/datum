@@ -1110,3 +1110,37 @@ never constructed or rendered. `writeRow` still generates a row only for the dra
 `lofarBandPairs()` / `lofarBandCacheSize()` expose the active set for FE/tests. RES/NB/BB
 (m3-res) is unchanged: `band`/`bandPreset` remain exclusive with `res`/`filter`/`vernierHz`.
 Baseline (busy 60×32 legacy LOFAR, pre-change): ~33 ms mean/step; hot path not regressed.
+
+## CUT mode seeds (m3-cuts)
+
+Fixed short classification practice grams. Every class, nation and frequency is fictional;
+public Urick/Ross mechanisms only. Seeds pin `modelVersion: "m3-cuts-1"`.
+
+```ts
+import {
+  listCutSeeds, getCutSeed, getCutStarterPack, renderCut, validateCutSeed,
+  CUT_MODEL_VERSION, type CutSeed, type CutSession,
+} from '@sonar-sim/acoustics';
+
+listCutSeeds();                    // 5–10 curated CutSeed rows
+getCutSeed('cut-gloamspiral-aip'); // or undefined
+const session = renderCut('cut-pebblewisp-batt'); // or renderCut(seed)
+const row = new Float32Array(session.lofar.bins);
+session.writeLofarRow(row);        // advances sim as needed; no wall-clock wait
+session.writeDemonRow(new Float32Array(512));
+session.drainLofar(row, 120);      // pull N rows as fast as the host drains
+session.checksumFirstRows(8);      // FNV-1a determinism helper
+```
+
+`CutSeed` fields: `v:1`, `modelVersion`, `id`, `seed`, `durationS` (≈300–600),
+`richness` (`sparse`|`moderate`|`rich`), `classId` (+ optional `variantId`/`hullId`),
+`mode` (`SURF`|`SNORK`|`D/E`|`BATT`|`AIP`|`NUC`), `speedKn`, `depthM`, optional
+`lookalikeGroupId`, and `classifyingLines` (1–3; `lineFamily`, `label`, optional
+`nominalHz`, `giveaway`).
+
+`renderCut` builds a one-contact DIFAR scenario (MF LOFAR 0–2000 Hz / 2048 bins so HYDP
+lines are in-band), reuses `AcousticEngine`, and streams LOFAR + DEMON as fast as the
+host drains. Cuts that list a HYDP classifying line schedule a mid-cut `hydp` transient.
+The starter pack mixes diesel/nuclear, includes one AIP boat, varies snort/battery/speed,
+and ships two lookalike pairs that share nation/plant layout and differ on `HYDP` Hz
+(`lookalike-dorhan-coastal`, `lookalike-kaelun-ssn`).
