@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { AcousticEngine } from '@acoustics'
 import { SimHost } from './host'
 import type { FromWorker, GramRows, PendingStreamSet, StreamSet, ToWorker } from './contract'
 
@@ -99,5 +100,63 @@ describe('SimHost band presets (m3-bands)', () => {
     for (let i = 0; i < 20; i++) { host.handle({ type: 'step' }); host.handle({ type: 'release', buffers: held.splice(0).flat() }) }
     expect(out.filter((m) => m.type === 'error')).toEqual([])
     expect(host.lofarStreamIds()).toMatchObject({ mode: 'band', pools: [2048] })
+  })
+
+  it('band backlog of N ready rows yields exactly one newest row per host step (skipToLatest)', () => {
+    const out: FromWorker[] = [], held: ArrayBuffer[][] = []
+    const host = new SimHost((m) => {
+      if (m.type === 'gramRows') {
+        out.push({ ...m, streamIds: m.streamIds.slice(), rowIndex: m.rowIndex.slice(), data: m.data.slice(), ...(m.bearingDeg ? { bearingDeg: m.bearingDeg.slice() } : {}) })
+        held.push([m.streamIds.buffer, m.rowIndex.buffer, m.data.buffer, ...(m.bearingDeg ? [m.bearingDeg.buffer] : [])] as ArrayBuffer[])
+      } else out.push(m)
+    })
+    host.handle({ type: 'init', seed: 7, scenarioId: 'ridgeline-field', band: 'lofar1k', rowRateHz: 2, demon: false, gram: { res: 5, filter: 'NB' } })
+    const releaseResOnly = () => {
+      const resBytes = 6 * 1024 * 4
+      const keep: ArrayBuffer[][] = []
+      for (const f of held.splice(0)) {
+        if (f[2].byteLength === resBytes) host.handle({ type: 'release', buffers: f })
+        else keep.push(f)
+      }
+      held.push(...keep)
+    }
+    for (let i = 0; i < 3; i++) { host.handle({ type: 'step' }); releaseResOnly() }
+
+    host.handle({ type: 'subscribeGram', gen: 1, bandPreset: 'MF' })
+    const bandIds = (last(out, 'pendingStreams') as PendingStreamSet).configs.map((c) => c.streamId)
+    // Exhaust the pending 2048 pool (POOL_FRAMES=3) while holding band frames, then build a backlog.
+    for (let i = 0; i < 3; i++) { host.handle({ type: 'step' }); releaseResOnly() }
+    const afterPool = rowsFor(out, bandIds).length
+    expect(afterPool).toBe(3)
+    const lastIdxBefore = Math.max(...Array.from(rowsFor(out, bandIds).at(-1)!.rowIndex))
+    // 4 more host steps (2 s) at 4 Hz → 8 ready rows backlog with no free pending frame.
+    for (let i = 0; i < 4; i++) { host.handle({ type: 'step' }); releaseResOnly() }
+    expect(rowsFor(out, bandIds).length).toBe(afterPool) // no further band posts while pool empty
+
+    const bandIdSet = new Set(bandIds)
+    let bandWrites = 0
+    const orig = AcousticEngine.prototype.writeRow
+    AcousticEngine.prototype.writeRow = function (this: AcousticEngine, streamId: number, ...rest: [Float32Array, number?]) {
+      if (bandIdSet.has(streamId)) bandWrites++
+      return orig.call(this, streamId, ...rest)
+    }
+    try {
+      // Return one band frame and step once: skipToLatest should write once per buoy (not N).
+      const bandFrame = held.find((f) => f[2].byteLength === 6 * 2048 * 4)!
+      held.splice(held.indexOf(bandFrame), 1)
+      host.handle({ type: 'release', buffers: bandFrame })
+      const n0 = out.length
+      host.handle({ type: 'step' }) // +0.5 s → backlog 8 + 2 = 10 ready; skip emits newest
+      releaseResOnly()
+      const rs = rowsFor(out, bandIds, n0)
+      expect(rs).toHaveLength(1)
+      expect(bandWrites).toBe(6) // one writeRow per buoy via skipToLatest, not 10×6 drain writes
+      const idx = Array.from(rs[0].rowIndex)
+      expect(new Set(idx).size).toBe(1) // all buoys share the same newest row index
+      expect(idx[0]).toBe(lastIdxBefore + 10) // 8 held + 2 from this step
+      expect(errors(out)).toHaveLength(0)
+    } finally {
+      AcousticEngine.prototype.writeRow = orig
+    }
   })
 })

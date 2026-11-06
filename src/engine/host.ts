@@ -23,7 +23,7 @@ const rad2deg = (r: number) => ((((r * 180) / Math.PI) % 360) + 360) % 360
 /**
  * One LOFAR stream per buoy, all alike. 'legacy' = the engine's registered pull streams (always a row);
  * 'res' = m3-res zoom-FFT subscriptions (rows every P s, phase-staggered); 'band' = m3-bands analytic
- * subscriptions with a named bandPreset (4 Hz in the engine, drained to the newest row once per host step).
+ * subscriptions with a named bandPreset (4 Hz in the engine, skipToLatest once per host step).
  */
 interface LofarSet { mode: 'legacy' | 'res' | 'band'; ids: Int32Array; configs: GramConfig[]; bins: number; filter: 'NB' | 'BB'; rx: Receiver[] }
 
@@ -137,7 +137,7 @@ export class SimHost {
         const req: Parameters<EngineSubscribe>[0] = p.bandPreset ? { channel, bandPreset: p.bandPreset } : { channel, res: p.res ?? 5, filter: p.filter ?? 'NB' }
         if (!p.bandPreset && p.vernierHz !== undefined && p.vernierHz !== null) req.vernierHz = p.vernierHz
         const c = toConfig(sub.call(engine, req))
-        // Band streams are drained once per host step, so the display's time axis uses the host row rate.
+        // Band streams emit once per host step (skipToLatest), so the display's time axis uses the host row rate.
         if (p.bandPreset) c.rowRateHz = this.rowRateHz
         ids[i] = c.streamId; configs.push(c)
       }
@@ -289,16 +289,15 @@ export class SimHost {
 
   private writeLofar(frame: Frame, set: LofarSet): void {
     const engine = this.engine!, bins = set.bins
-    const e = engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void; rowsReady: (id: number) => number }
+    const e = engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void }
     const wb = e.writeBearingRow
     // NB rows are already TPSW-normalised; the AGC model only applies to absolute (BB / legacy / band) levels.
     const rxOn = this.rxEnabled && (set.mode !== 'res' || set.filter === 'BB')
     for (let i = 0; i < this.n; i++) {
       const id = set.ids[i], off = i * bins
       frame.streamIds[i] = id
-      let idx = engine.writeRow(id, frame.data, off)
-      // Band subscriptions are ready at 4 Hz; drain to the newest so the display stays current (engine has no skip).
-      if (set.mode === 'band') while (idx >= 0 && e.rowsReady(id) > 0) idx = engine.writeRow(id, frame.data, off)
+      // Band streams are due at 4 Hz; skipToLatest keeps one newest row per host step (no N-write drain).
+      let idx = set.mode === 'band' ? engine.skipToLatest(id, frame.data, off) : engine.writeRow(id, frame.data, off)
       if (set.mode !== 'legacy' && idx < 0) { frame.streamIds[i] = -1; frame.rowIndex[i] = 0; continue }
       frame.rowIndex[i] = set.mode === 'legacy' ? this.rowCount : Math.max(0, idx)
       if (frame.bearingDeg) {
