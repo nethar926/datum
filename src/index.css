@@ -362,3 +362,9 @@ button, select { font: inherit; color: inherit; }
 .seed-chip.copied { border-color: var(--accent, #3a9d5d); }
 .seed-ok { color: var(--accent, #3a9d5d); font-size: 11px; }
 .ns-randomize { font-weight: 600; }
+/* m3-fe-gram-handoff: RES/filter/vernier change indicator on the gram. Display only (no hit area), 180 ms fades. */
+.gram .handoff-badge { position: absolute; left: 8px; top: 6px; z-index: 3; pointer-events: none; padding: 2px 7px; border-radius: 3px;
+  font: 600 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; color: #cfe8d4; background: rgba(5, 12, 9, .72);
+  border: 1px solid rgba(120, 200, 150, .35); opacity: 0; transition: opacity 180ms ease-out; white-space: nowrap; }
+.gram .handoff-badge.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .gram .handoff-badge { transition: none; } }

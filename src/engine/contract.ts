@@ -39,7 +39,10 @@ export interface Tactical {
 }
 export interface StreamSet { v: 1; type: 'streams'; configs: GramConfig[] }
 export interface WorkerError { v: 1; type: 'error'; message: string }
-export type FromWorker = StreamSet | GramRows | Tactical | WorkerError
+/** m3-fe-gram-handoff: a second LOFAR stream set subscribed with new RES/filter/vernier settings, rows flowing
+ * alongside the displayed set until the display promotes it (gen matches the client's subscribeGram). */
+export interface PendingStreamSet { v: 1; type: 'pendingStreams'; gen: number; configs: GramConfig[] }
+export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet
 
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'
@@ -50,5 +53,11 @@ export type ToWorker =
   | { type: 'setReceiver'; enabled: boolean }
   | { type: 'setSurfaceTraffic'; value: number }      // 0 none … 1 heavy
   | { type: 'setGram'; res?: number; filter?: GramFilter; vernierHz?: number | null } // all LOFAR streams
+  /** Gram handoff: subscribe a pending LOFAR stream per buoy with these settings (drops any older pending set). */
+  | { type: 'subscribeGram'; gen: number; res: number; filter: GramFilter; vernierHz?: number }
+  /** Pending set `gen` becomes the displayed set; the old displayed streams are unsubscribed. */
+  | { type: 'promoteGram'; gen: number }
+  /** Unsubscribe pending set `gen` (superseded or abandoned). */
+  | { type: 'dropGram'; gen: number }
   | { type: 'step' }                                    // advance one row period of sim time
   | { type: 'release'; buffers: ArrayBuffer[] }

@@ -14,6 +14,7 @@ const AIRCRAFT_ALT_M = 450 // display value for the fictional patrol aircraft
 
 type Post = (msg: FromWorker, transfer?: Transferable[]) => void
 interface Frame { streamIds: Int32Array; rowIndex: Uint32Array; data: Float32Array; bearingDeg?: Float32Array }
+type EngineSubscribe = (req: { channel: number; res: number; filter: 'NB' | 'BB'; vernierHz?: number }) => GramConfig & { simT?: number }
 type EngineSetGram = (id: number, p: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number | null }) => GramConfig & { simT?: number }
 /** Engine gramConfig → display contract (drops simT; keeps the RES fields). */
 const toConfig = (c: GramConfig & { simT?: number }): GramConfig => { const { simT: _t, ...rest } = c; return { ...rest, type: 'gramConfig', v: 1 } }
@@ -40,6 +41,14 @@ export class SimHost {
   private filter: 'NB' | 'BB' = 'NB'
   private demonConfigs: GramConfig[] = []
   private lofarConfigs: GramConfig[] = []
+  /** Displayed LOFAR stream id per buoy (1..n at init; the promoted pending ids after a handoff). */
+  private activeIds = new Int32Array(0)
+  /** m3-fe-gram-handoff: pending LOFAR set (gen > 0 while one exists), one stream per buoy, own receivers. */
+  private pendingGen = 0
+  private pendingIds = new Int32Array(0)
+  private pendingConfigs: GramConfig[] = []
+  private pendingRx: Receiver[] = []
+  private pendingFilter: 'NB' | 'BB' = 'NB'
   constructor(private readonly post: Post) {}
 
   handle(msg: ToWorker): void {
@@ -50,7 +59,10 @@ export class SimHost {
       if (msg.type === 'step') return this.step()
       if (msg.type === 'setSurfaceTraffic') return this.setSurfaceTraffic(msg.value)
       if (msg.type === 'setGram') return this.setGram(msg)
-      if (msg.type === 'setReceiver') { this.rxEnabled = !!msg.enabled; for (const r of this.rx) r.reset(); return }
+      if (msg.type === 'subscribeGram') return this.subscribeGram(msg)
+      if (msg.type === 'promoteGram') return this.promoteGram(msg.gen)
+      if (msg.type === 'dropGram') { if (msg.gen === this.pendingGen) this.dropPending(); return }
+      if (msg.type === 'setReceiver') { this.rxEnabled = !!msg.enabled; for (const r of this.rx) r.reset(); for (const r of this.pendingRx) r.reset(); return }
       throw new Error('Unknown message')
     } catch (e) {
       this.post({ v: 1, type: 'error', message: e instanceof Error ? e.message : String(e) })
@@ -65,6 +77,8 @@ export class SimHost {
     const engine = new AcousticEngine(msg.params && gen ? gen(msg.params) : buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins))
     this.engine = engine
     this.n = engine.scenario.buoys.length
+    this.activeIds = new Int32Array(this.n); for (let i = 0; i < this.n; i++) this.activeIds[i] = i + 1
+    this.pendingGen = 0; this.pendingIds = new Int32Array(0); this.pendingConfigs = []; this.pendingRx = []
     const setGram = (engine as unknown as { setGram?: EngineSetGram }).setGram
     this.resMode = !!msg.gram && typeof setGram === 'function'
     let resConfigs: GramConfig[] | undefined
@@ -117,10 +131,58 @@ export class SimHost {
     if (msg.res !== undefined) patch.res = msg.res
     if (msg.filter !== undefined) patch.filter = msg.filter
     if (msg.vernierHz !== undefined) patch.vernierHz = msg.vernierHz
+    if (this.pendingGen) this.dropPending()
     this.lofarConfigs = this.lofarConfigs.map((c) => toConfig(set.call(engine, c.streamId, patch)))
     this.filter = this.lofarConfigs[0]?.filter ?? 'NB'
     for (const r of this.rx) r.reset()
     this.post({ v: 1, type: 'streams', configs: [...this.lofarConfigs, ...this.demonConfigs] })
+  }
+
+  /**
+   * Gram handoff, step 1: subscribe a fresh RES stream per buoy with the new settings, alongside the displayed set.
+   * A newer request supersedes (unsubscribes) any older pending set, so rapid changes never leak engine streams.
+   */
+  private subscribeGram(msg: Extract<ToWorker, { type: 'subscribeGram' }>): void {
+    if (!this.resMode) throw new Error('subscribeGram needs a RES-mode init')
+    const engine = this.engine!, sub = (engine as unknown as { subscribe: EngineSubscribe }).subscribe
+    if (this.pendingGen) this.dropPending()
+    const ids = new Int32Array(this.n), configs: GramConfig[] = []
+    try {
+      for (let i = 0; i < this.n; i++) {
+        const req: Parameters<EngineSubscribe>[0] = { channel: engine.scenario.buoys[i].rfChannel, res: msg.res, filter: msg.filter }
+        if (msg.vernierHz !== undefined && msg.vernierHz !== null) req.vernierHz = msg.vernierHz
+        const c = toConfig(sub.call(engine, req)); ids[i] = c.streamId; configs.push(c)
+      }
+    } catch (e) { for (const c of configs) engine.unsubscribe(c.streamId); throw e }
+    this.pendingGen = msg.gen; this.pendingIds = ids; this.pendingConfigs = configs
+    this.pendingFilter = configs[0]?.filter ?? 'NB'
+    if (this.pendingRx.length !== this.n) this.pendingRx = Array.from({ length: this.n }, () => new Receiver())
+    for (const r of this.pendingRx) r.reset()
+    this.post({ v: 1, type: 'pendingStreams', gen: msg.gen, configs })
+  }
+
+  /** Gram handoff, step 2: the pending set becomes the displayed set; the old displayed streams stop. */
+  private promoteGram(gen: number): void {
+    if (!this.pendingGen || gen !== this.pendingGen) return // stale (superseded) promote: ignore
+    const engine = this.engine!
+    for (let i = 0; i < this.activeIds.length; i++) engine.unsubscribe(this.activeIds[i])
+    this.activeIds = this.pendingIds; this.lofarConfigs = this.pendingConfigs; this.filter = this.pendingFilter
+    const rx = this.rx; this.rx = this.pendingRx; this.pendingRx = rx
+    this.pendingGen = 0; this.pendingIds = new Int32Array(0); this.pendingConfigs = []
+    this.post({ v: 1, type: 'streams', configs: [...this.lofarConfigs, ...this.demonConfigs] })
+  }
+
+  private dropPending(): void {
+    const engine = this.engine!
+    for (let i = 0; i < this.pendingIds.length; i++) engine.unsubscribe(this.pendingIds[i])
+    this.pendingGen = 0; this.pendingIds = new Int32Array(0); this.pendingConfigs = []
+  }
+
+  /** Live engine subscriptions (test introspection: proves unsubscribe really stops streams). */
+  liveStreamCount(): number { return (this.engine as unknown as { configs?: () => unknown[] })?.configs?.().length ?? 0 }
+  /** Stream ids the host is generating LOFAR rows for: displayed set, then pending set. */
+  lofarStreamIds(): { active: number[]; pending: number[]; pendingGen: number } {
+    return { active: Array.from(this.activeIds), pending: Array.from(this.pendingIds), pendingGen: this.pendingGen }
   }
 
   /** Forwards to the engine's v1.1 setSurfaceTraffic when present; a no-op on v1 engines. */
@@ -170,36 +232,56 @@ export class SimHost {
     if (!frame) return
     this.steerOrbit()
     engine.advance(this.dt)
-    const wb = (engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void }).writeBearingRow
     // RES streams are phase-staggered (rowPhaseS), so only some fall due each step. Streams without a row
     // this step get streamId -1 (the display skips them); skip the post when none is due.
-    const ready = (engine as unknown as { rowsReady: (id: number) => number }).rowsReady
-    if (this.resMode) {
-      let any = false
-      for (let i = 0; i < this.n; i++) if (ready.call(engine, i + 1) > 0) { any = true; break }
-      if (!any) { this.pool.push(frame); this.updateTactical(); this.post(this.tactical!); return }
+    const active = !this.resMode || this.anyReady(this.activeIds)
+    if (!active) this.pool.push(frame)
+    else {
+      this.writeLofar(frame, this.activeIds, this.rx, this.filter, this.lofarConfigs)
+      this.rowCount++
+      this.postFrame(frame)
     }
+    // Pending handoff set: same frame layout (n × 1024), its own gramRows message. No free frame → its rows
+    // stay ready in the engine and drain on a later step.
+    if (this.pendingGen && this.anyReady(this.pendingIds)) {
+      const pf = this.pool.pop()
+      if (pf) { this.writeLofar(pf, this.pendingIds, this.pendingRx, this.pendingFilter, this.pendingConfigs); this.postFrame(pf) }
+    }
+    if (active) this.stepDemon() // DEMON drains alongside displayed LOFAR rows, as before
+    this.updateTactical()
+    this.post(this.tactical!)
+  }
+
+  private anyReady(ids: Int32Array): boolean {
+    const e = this.engine as unknown as { rowsReady: (id: number) => number }
+    for (let i = 0; i < ids.length; i++) if (e.rowsReady(ids[i]) > 0) return true
+    return false
+  }
+
+  private writeLofar(frame: Frame, ids: Int32Array, rx: Receiver[], filter: 'NB' | 'BB', configs: GramConfig[]): void {
+    const engine = this.engine!
+    const wb = (engine as unknown as { writeBearingRow?: (id: number, out: Float32Array, off: number) => void }).writeBearingRow
     // NB rows are already TPSW-normalised; the AGC model only applies to absolute (BB / legacy) levels.
-    const rxOn = this.rxEnabled && (!this.resMode || this.filter === 'BB')
+    const rxOn = this.rxEnabled && (!this.resMode || filter === 'BB')
     for (let i = 0; i < this.n; i++) {
-      frame.streamIds[i] = i + 1
-      const idx = engine.writeRow(i + 1, frame.data, i * this.bins)
+      const id = ids[i]
+      frame.streamIds[i] = id
+      const idx = engine.writeRow(id, frame.data, i * this.bins)
       if (this.resMode && idx < 0) { frame.streamIds[i] = -1; frame.rowIndex[i] = 0; continue }
       frame.rowIndex[i] = this.resMode ? Math.max(0, idx) : this.rowCount
       if (frame.bearingDeg) {
-        if (wb) wb.call(engine, i + 1, frame.bearingDeg, i * this.bins)
+        if (wb) wb.call(engine, id, frame.bearingDeg, i * this.bins)
         else frame.bearingDeg.fill(NaN, i * this.bins, (i + 1) * this.bins)
       }
-      if (rxOn) this.rx[i].process(frame.data, i * this.bins, this.bins, this.resMode ? 1 / (this.lofarConfigs[0]?.rowRateHz || 0.5) : this.dt)
+      if (rxOn) rx[i].process(frame.data, i * this.bins, this.bins, this.resMode ? 1 / (configs[0]?.rowRateHz || 0.5) : this.dt)
     }
-    this.rowCount++
-    const rows: GramRows = { v: 1, type: 'gramRows', simT: engine.time, ...frame }
+  }
+
+  private postFrame(frame: Frame): void {
+    const rows: GramRows = { v: 1, type: 'gramRows', simT: this.engine!.time, ...frame }
     const bufs: Transferable[] = [frame.streamIds.buffer, frame.rowIndex.buffer, frame.data.buffer]
     if (frame.bearingDeg) bufs.push(frame.bearingDeg.buffer)
     this.post(rows, bufs)
-    this.stepDemon()
-    this.updateTactical()
-    this.post(this.tactical!)
   }
 
   /** One DEMON row per stream per step (draining any extra ready rows so the display stays current). Skipped if no frame is free. */

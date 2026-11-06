@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { GramConfig, Tactical } from '../engine/contract'
 import { fillLineBearings, type GramMode } from './difarBearing'
 import type { SimClient } from '../engine/client'
-import { WaterfallRenderer } from '../gl/waterfall'
+import { WaterfallRenderer, type BakeMap } from '../gl/waterfall'
 import type { DifarWheelSettings, PaletteId } from '../gl/colormap'
 import { contrastRange } from './contrast'
 import { AutoLevel } from './autoLevel'
@@ -35,6 +35,8 @@ interface Props {
   mode?: GramMode
   /** Latest tactical frame, used for per-bin bearings until the engine streams them. */
   tactical?: Tactical
+  /** Gram handoff indicator (RES/filter/vernier change filling); fades in/out, never blocks input. */
+  handoff?: { label: string; active: boolean }
 }
 // Auto range: noise floor sits just above black, tonals reach the bright end of the phosphor palette.
 const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
@@ -46,7 +48,7 @@ const NORM_FLOOR_DB = 1, NORM_CEIL_DB = 22
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0 }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, crosshair = false, nowS = 0, handoff }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -69,6 +71,14 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const viewRef = useRef({ view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick })
   viewRef.current = { view, streamIndex, cfg, auto, normalized, palette, mode, contrast, wheelTick }
   const tacRef = useRef(tactical); tacRef.current = tactical
+  // Streams the renderer is drawing right now. A handoff promote swaps this synchronously (before React
+  // re-renders with the new configs), so the frame loop never pairs new textures with the old grid.
+  const liveRef = useRef(configs), promotedRef = useRef<GramConfig[] | null>(null), epochRef = useRef(0)
+  if (configs[0]?.streamId === liveRef.current[0]?.streamId) liveRef.current = configs
+  else if (liveRef.current !== promotedRef.current) { liveRef.current = configs; epochRef.current++ } // a new stream set (restart), not a handoff
+  // RES grams keep one renderer across RES/filter/vernier changes (the handoff swaps banks); legacy grams rebuild.
+  const resGram = configs[0]?.res !== undefined
+  const rendererKey = resGram ? `res:${epochRef.current}` : geo
 
   // (Re)create the renderer when the stream geometry changes.
   useEffect(() => {
@@ -77,24 +87,54 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     let r: WaterfallRenderer
     // Textures 0..N-1 hold raw rows, N..2N-1 the normalized rows, so toggling keeps full history.
     const N = configs.length
-    const local = new Map<number, number>()
-    configs.forEach((c, i) => local.set(c.streamId, i))
-    try { r = new WaterfallRenderer(canvas, bins, HISTORY_ROWS, N * 2, N) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
+    const engineFiltered = configs[0]?.res !== undefined
+    let local = new Map<number, number>(), pendingLocal = new Map<number, number>()
+    liveRef.current.forEach((c, i) => local.set(c.streamId, i))
+    // RES grams arrive engine-filtered, so they need no normalized copies (N textures, not 2N).
+    try { r = new WaterfallRenderer(canvas, bins, HISTORY_ROWS, engineFiltered ? N : N * 2, N) } catch (e) { setGlError(e instanceof Error ? e.message : String(e)); return }
     setGlError(null)
     rendererRef.current = r
     const level = new AutoLevel(N)
-    const engineFiltered = configs[0]?.res !== undefined
     const norm = new SplitWindowNormalizer(bins), scratch = new Float32Array(bins), brgRow = new Float32Array(bins)
     const hist = new LevelHistory(HISTORY_ROWS, bins); histRef.current = hist
     let histStream = viewRef.current.streamIndex
     let dirty = true, raf = 0
+    let pendingCfgs: GramConfig[] = []
+    const startPending = (cs: GramConfig[]) => {
+      pendingLocal = new Map(); cs.forEach((c, i) => pendingLocal.set(c.streamId, i)); pendingCfgs = cs
+      r.beginPending()
+    }
+    const pc = client.pendingConfigs()
+    if (pc && pc.length === N && pc[0].bins === bins) startPending(pc)
+    const offHandoff = client.onHandoff((h) => {
+      if (h.type === 'pending') { if (h.configs.length === N && h.configs[0]?.bins === bins) startPending(h.configs); return }
+      if (h.type === 'drop') { pendingLocal.clear(); pendingCfgs = []; r.dropPending(); return }
+      if (h.to.length !== N) return
+      // No pending bank (context lost/restored mid-handoff): just route the new ids into the current bank.
+      const maps: BakeMap[] = h.to.map((t, i) => { const f = h.from[i] ?? t; return {
+        f0From: f.f0, fBinFrom: f.fBin, f0To: t.f0, fBinTo: t.fBin, rowRateFrom: f.rowRateHz, rowRateTo: t.rowRateHz,
+        dbFloorFrom: f.dbFloor, dbCeilFrom: f.dbCeil, dbFloorTo: t.dbFloor, dbCeilTo: t.dbCeil } })
+      if (r.hasPending()) r.promotePending(maps)
+      local = pendingLocal; pendingLocal = new Map(); pendingCfgs = []
+      liveRef.current = h.to; promotedRef.current = h.to
+      hist.clear(); dirty = true
+    })
     const off = client.onRows((rows) => {
       if (viewRef.current.streamIndex !== histStream) { hist.clear(); histStream = viewRef.current.streamIndex }
       const n = rows.streamIds.length
       if (!n || rows.data.length !== n * bins) return // another pane's streams (different bin count)
       for (let k = 0; k < n; k++) {
         const s = local.get(rows.streamIds[k])
-        if (s === undefined) continue
+        if (s === undefined) {
+          // Pending handoff set: fills the hidden bank while the displayed bank keeps scrolling.
+          const p = pendingLocal.get(rows.streamIds[k])
+          if (p === undefined) continue
+          r.pushPendingRow(p, rows.data, k * bins)
+          const pb = (rows as { bearingDeg?: Float32Array }).bearingDeg
+          if (pb && pb.length === rows.data.length) r.pushPendingBearing(p, pb, k * bins)
+          else { const tac = tacRef.current, c = pendingCfgs[p]; fillLineBearings(brgRow, c, tac?.buoys.find((b) => b.channel === c.channel), tac?.bearings); r.pushPendingBearing(p, brgRow, 0) }
+          continue
+        }
         r.pushRow(s, rows.data, k * bins); level.update(s, rows.data, k * bins, bins)
         if (s === histStream) hist.push(rows.data, k * bins)
         // RES grams arrive engine-filtered (NB = TPSW), so the display normalizer only runs on legacy grams.
@@ -104,7 +144,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         const bd = (rows as { bearingDeg?: Float32Array }).bearingDeg
         if (bd && bd.length === rows.data.length) r.pushBearing(s, bd, k * bins)
         else {
-          const tac = tacRef.current, c = configs[s]
+          const tac = tacRef.current, c = liveRef.current[s]
           fillLineBearings(brgRow, c, tac?.buoys.find((b) => b.channel === c.channel), tac?.bearings)
           r.pushBearing(s, brgRow, 0)
         }
@@ -115,8 +155,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     ro.observe(canvas)
     let lastKey = ''
     const frame = () => {
-      const { view: v, streamIndex: s, cfg: c, auto: a, normalized: nz, palette: pal, mode: md, contrast: k, wheelTick: wt } = viewRef.current
-      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md},${c?.dbFloor},${c?.dbCeil},${k},${wt}`
+      const { view: pv, streamIndex: s, cfg: pc, auto: a, normalized: nz, palette: pal, mode: md, contrast: k, wheelTick: wt } = viewRef.current
+      // Just promoted, React not caught up yet: draw the new stream over its full band (allocates for ≤ 2 frames).
+      const live = liveRef.current[s] ?? liveRef.current[0], c = live ?? pc
+      const v = live && pc && live.streamId !== pc.streamId ? fullView(live) : pv
+      const key = `${v.lo},${v.hi},${s},${a},${nz},${pal},${md},${c?.streamId},${c?.dbFloor},${c?.dbCeil},${k},${wt}`
       if ((dirty || key !== lastKey) && c) {
         const fl = level.get(s), useAuto = a && Number.isFinite(fl)
         const dbFloor = useAuto ? fl - AUTO_BELOW_DB : c.dbFloor, dbCeil = useAuto ? fl - AUTO_BELOW_DB + AUTO_SPAN_DB : c.dbCeil
@@ -143,11 +186,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     const onShow = () => { dirty = true }
     window.addEventListener('pageshow', onShow)
     return () => {
-      cancelAnimationFrame(raf); clearTimeout(lostTimer); off(); ro.disconnect()
+      cancelAnimationFrame(raf); clearTimeout(lostTimer); off(); offHandoff(); ro.disconnect()
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
       r.dispose(); rendererRef.current = null; histRef.current = null
     }
-  }, [client, bins, configs.length, geo, HISTORY_ROWS, glGen])
+  }, [client, bins, configs.length, rendererKey, HISTORY_ROWS, glGen])
 
   // Palette swap: one LUT upload on the live renderer (runs after a renderer is (re)created); the frame loop redraws on key change.
   useEffect(() => { rendererRef.current?.setPalette(palette) }, [palette, bins, configs.length, client, glGen])
@@ -245,7 +288,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           style={{ touchAction: 'none', cursor: onPickPoint ? 'crosshair' : onDragPoint ? 'ew-resize' : undefined }}
           onDoubleClick={() => onView(full())} aria-label={label} />
       )}
-      {cfg && <div key={geo} className="gram-veil" aria-hidden />}
+      {cfg && <div key={rendererKey} className="gram-veil" aria-hidden />}
+      {handoff && <div className={`handoff-badge${handoff.active ? ' on' : ''}`} data-testid={`${testId}-handoff`} data-active={handoff.active ? '1' : '0'} aria-live="polite">{handoff.label}</div>}
       {limitHz !== null && freqToX(limitHz, view, width) < width && (
         <div className="band-limit" data-testid={`${testId}-band-limit`} style={{ left: Math.max(0, freqToX(limitHz, view, width)), width: width - Math.max(0, freqToX(limitHz, view, width)) }}
           title={`Above ${limitHz.toFixed(0)} Hz is past the simulated band`}><span>BAND LIMIT</span></div>

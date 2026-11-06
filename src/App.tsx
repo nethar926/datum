@@ -1,5 +1,5 @@
 import { TruthPanel } from './gram/TruthPanel'
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
@@ -142,11 +142,14 @@ export default function App() {
   const gram = st.gram
   const filter: GramFilter = cfg?.filter ?? gram?.filter ?? 'NB'
   useEffect(() => { if (gram) try { localStorage.setItem(GRAM_KEY, JSON.stringify(gram)) } catch { /* private mode */ } }, [gram])
-  // New RES / vernier grid: show the whole new band (the old view is on a different frequency grid).
+  // New RES / vernier grid: show the whole new band (the old view is on a different frequency grid). Layout
+  // effect, so the waterfall never draws a frame with the old view on the new grid after a handoff swap.
   const geo = geometryKey(lofarCfgs)
-  useEffect(() => { if (cfg) setView(fullView(cfg)) }, [geo]) // eslint-disable-line react-hooks/exhaustive-deps
-  const stepRes = (d: number) => { const r = clampRes((cfg?.res ?? gram?.res ?? 5) + d); if (r !== cfg?.res) client.setGram({ res: r }) }
-  const setFilter = (f: GramFilter) => { if (f !== filter) client.setGram({ filter: f }) }
+  useLayoutEffect(() => { if (cfg) setView(fullView(cfg)) }, [geo]) // eslint-disable-line react-hooks/exhaustive-deps
+  // RES / filter controls act on the requested settings (st.gram), which lead the display during a handoff.
+  const wantRes = gram?.res ?? cfg?.res ?? 5, wantFilter: GramFilter = gram?.filter ?? filter
+  const stepRes = (d: number) => { const r = clampRes(wantRes + d); if (r !== wantRes) client.setGram({ res: r }) }
+  const setFilter = (f: GramFilter) => { if (f !== wantFilter) client.setGram({ filter: f }) }
   const centerVernier = (hz: number) => { setVernierPick(false); client.setGram({ vernierHz: Math.max(0, hz) }) }
   const vernierOff = () => { setVernierPick(false); client.setGram({ vernierHz: null }) }
   const vLabel = vernierLabel(cfg)
@@ -289,14 +292,14 @@ export default function App() {
               <button aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
             </div>
             <div className="seg filter-seg" role="group" aria-label="Gram filter" data-testid="filter-seg">
-              <button aria-pressed={filter === 'NB'} onClick={() => setFilter('NB')} title="Narrowband: background-normalized (TPSW), 0–30 dB above the local noise">NB</button>
-              <button aria-pressed={filter === 'BB'} onClick={() => setFilter('BB')} title="Broadband: absolute level, 40–110 dB">BB</button>
+              <button aria-pressed={wantFilter === 'NB'} onClick={() => setFilter('NB')} title="Narrowband: background-normalized (TPSW), 0–30 dB above the local noise">NB</button>
+              <button aria-pressed={wantFilter === 'BB'} onClick={() => setFilter('BB')} title="Broadband: absolute level, 40–110 dB">BB</button>
             </div>
             {!phone && <span className="seg-label">RES</span>}
             <div className="seg res-step" role="group" aria-label="Resolution" data-testid="res-step">
-              <button className="icon" onClick={() => stepRes(-1)} disabled={!cfg || (cfg.res ?? 5) <= RES_MIN} aria-label="Finer resolution (RES down)" title="Finer bins, narrower band">−</button>
+              <button className="icon" onClick={() => stepRes(-1)} disabled={!cfg || wantRes <= RES_MIN} aria-label="Finer resolution (RES down)" title="Finer bins, narrower band">−</button>
               <span key={cfg?.res} className="res-read" data-testid="res-readout" aria-live="polite">{resReadout(cfg, layout === 'phonePortrait')}</span>
-              <button className="icon" onClick={() => stepRes(1)} disabled={!cfg || (cfg.res ?? 5) >= RES_MAX} aria-label="Coarser resolution (RES up)" title="Wider bins, wider band">+</button>
+              <button className="icon" onClick={() => stepRes(1)} disabled={!cfg || wantRes >= RES_MAX} aria-label="Coarser resolution (RES up)" title="Wider bins, wider band">+</button>
             </div>
             <button className={`btn vernier${vLabel ? ' on' : vernierPick ? ' pick' : ''}`} data-testid="vernier" aria-pressed={!!vLabel || vernierPick} onClick={onVernier}
               title={vLabel ? 'Back to the full band' : 'Center the band on a line: uses the selected line, or tap one on the gram'}>
@@ -319,7 +322,7 @@ export default function App() {
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
-                mode={gramMode} tactical={st.tactical}
+                mode={gramMode} tactical={st.tactical} handoff={st.handoff}
                 onPickPoint={vernierPick ? (hz) => centerVernier(hz) : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
                 onDragPoint={vernierPick ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
                 crosshair={crossOn} nowS={st.simT}
