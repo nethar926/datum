@@ -61,6 +61,11 @@ try {
     await page.locator('[data-testid=filter-seg] button').last().tap()
     await page.waitForFunction(() => /· BB/.test(document.querySelector('[data-testid=gram-title]')?.textContent ?? ''), null, { timeout: 5000 }).catch(() => ok(false, F('RES: BB did not apply')))
     await page.locator('[data-testid=filter-seg] button').first().tap(); await page.locator('[data-testid=res-step] button').first().tap()
+    for (const sel of ['[data-testid=contrast-slider]', '[data-testid=contrast-reset]']) { const b = await bbox(sel); ok(b && b.height >= 44, F(`CONTRAST: ${sel} under 44`)) }
+    await page.locator('[data-testid=contrast-slider]').fill('2')
+    ok(/CON 2\.00×/.test(await page.locator('[data-testid=contrast-reset]').innerText()), F('CONTRAST: slider did not set 2.00×'))
+    await page.locator('[data-testid=contrast-reset]').tap()
+    ok(/CON 1\.00×/.test(await page.locator('[data-testid=contrast-reset]').innerText()), F('CONTRAST: reset did not return to 1.00×'))
     // HARM drag: tap HARM, drag on the gram, readout shows the fundamental.
     await page.getByRole('button', { name: 'HARM', exact: true }).evaluate((b) => b.scrollIntoView({ inline: 'center' }))
     await page.getByRole('button', { name: 'HARM', exact: true }).tap()

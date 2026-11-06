@@ -22,6 +22,7 @@ import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
 import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
+import { CONTRAST_DEFAULT, CONTRAST_KEY, CONTRAST_MAX, CONTRAST_MIN, CONTRAST_STEP, clampContrast, loadContrast } from './gram/contrast'
 import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { Sheet } from './touch/Sheet'
@@ -56,6 +57,8 @@ export default function App() {
   const [vernierPick, setVernierPick] = useState(false)
   // LOFAR phosphor: green (default), amber or red. Amplitude only, no hue coding. DIFAR ignores it (bearing wheel).
   const [palette, setPalette] = useState<PaletteId>(loadPalette)
+  const [contrast, setContrast] = useState<number>(loadContrast)
+  useEffect(() => { try { localStorage.setItem(CONTRAST_KEY, String(contrast)) } catch { /* private mode */ } }, [contrast])
   useEffect(() => { try { localStorage.setItem(PALETTE_KEY, palette) } catch { /* private mode */ } }, [palette])
   const [gramMode, setGramMode] = useState<GramMode>(loadGramMode)
   useEffect(() => { try { localStorage.setItem(GRAM_MODE_KEY, gramMode) } catch { /* private mode */ } }, [gramMode])
@@ -162,6 +165,11 @@ export default function App() {
             </div>
             <div className="seg" role="group" aria-label="Lloyd's mirror">
               <button aria-pressed={tool === 'lm'} onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)">LM</button>
+            </div>
+            <div className="contrast" data-testid="contrast">
+              <button className="contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label="Reset contrast to 1.0" title="Gram contrast (tap to reset to 1.0×)" data-testid="contrast-reset">CON {contrast.toFixed(2)}×</button>
+              <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="contrast-slider"
+                onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
             </div>
             <span className="readout">
               {cfg ? `${view.lo.toFixed(viewDigits)}–${view.hi.toFixed(viewDigits)} HZ  Δf ${cfg.fBin < 0.1 ? cfg.fBin.toFixed(3) : cfg.fBin.toFixed(2)}` : 'STARTING'}
@@ -302,7 +310,7 @@ export default function App() {
             {lofarCfgs.length > 0 && (
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
-                normalized={filter === 'NB'} palette={palette} selectedHz={selHz} onSelectHz={setSelHz}
+                normalized={filter === 'NB'} palette={palette} contrast={contrast} selectedHz={selHz} onSelectHz={setSelHz}
                 mode={gramMode} tactical={st.tactical}
                 onPickPoint={vernierPick ? (hz) => centerVernier(hz) : cpaMode ? (hz, ago) => setCpaMarks((m) => addSample(m, { tS: st.simT - ago, fHz: hz })) : undefined}
                 onDragPoint={vernierPick ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}

@@ -287,3 +287,10 @@ button, select { font: inherit; color: inherit; }
 /* LOFAR panel has two head rows (view + tools); on phone portrait the tools row sits below the gram. */
 .panel.gram-panel { grid-template-rows: auto auto minmax(0, 1fr); }
 .layout-phonePortrait .panel.gram-panel { grid-template-rows: auto minmax(0, 1fr) auto; }
+
+/* Gram contrast slider (tools row). Touch-sized: 44 px hit area. */
+.contrast { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.contrast-label { min-height: 44px; min-width: 76px; padding: 0 8px; background: transparent; border: 1px solid var(--line, #2a3a2e); border-radius: 6px; color: inherit; font: inherit; font-variant-numeric: tabular-nums; letter-spacing: .04em; cursor: pointer; transition: background-color 150ms ease; }
+.contrast-label:hover { background: rgba(255,255,255,.06); }
+.contrast input[type=range] { width: 120px; height: 44px; margin: 0; accent-color: var(--accent, #5cff7a); touch-action: none; cursor: pointer; }
+.layout-phonePortrait .contrast input[type=range] { width: 96px; }
