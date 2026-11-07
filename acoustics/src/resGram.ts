@@ -10,7 +10,7 @@ import type {WaterColumnProfile} from './waterColumn.js';
 import {ambientLevel} from './ambientNoise.js';
 import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
 import {BEARING_NOISE_K,BEARING_SNR_FLOOR} from './lofar.js';
-import {RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand,type TileBand} from './res.js';
+import {RES_FRAME_S,RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand,type TileBand} from './res.js';
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import type {SpeedGated} from './catalog/drivetrain.js';
@@ -30,6 +30,8 @@ export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:
  *
  * Capacity defaults to RES_BINS=1024 (vernier path). FULLBAND passes capacity=TILE_BINS and uses
  * selectTile + renderTile so the same line physics covers an arbitrary f0 tile window. */
+/** Late-read margin kept in the snapshot ring (s). */
+export const RING_LATE_MARGIN_S=8;
 export class ResLofarGenerator {
   private waterColumn:WaterColumnProfile|undefined;
  /** Current output width (RES_BINS vernier, or TILE_BINS for a full-axis tile). */
@@ -51,6 +53,8 @@ export class ResLofarGenerator {
  private readonly zr:Float64Array;private readonly zi:Float64Array;
  private readonly halfWidth:Int32Array;private readonly clipped:Float64Array;
  private readonly p0:Float64Array;private readonly p1:Float64Array;private readonly p2:Float64Array;private readonly p3:Float64Array;
+ /** Window integration (engine path): per-frame expected-spectrum snapshots on the RES_FRAME_S grid. */
+ private ring:Float32Array=new Float32Array(0);private ringDifar:Float32Array=new Float32Array(0);private ringT:Float64Array=new Float64Array(0);private ringN=0;private ringHead=0;private ringCount=0;private lastSampleT=-Infinity;
  private readonly contacts:ResContact[];private readonly rng:Random;private readonly bearingRng:Random;private readonly baseSeed:number;private readonly bearingSeed:number;
  private readonly g=createGeometry();private readonly difar:boolean;private environment:Environment;private sigma=0;private bias=1;
  /** Per-tile AR(1) state for FULLBAND (K=1); vernier uses zr/zi directly. */
@@ -77,7 +81,7 @@ export class ResLofarGenerator {
  /** Config-time: change RES/filter/vernier. Resets the row counter and AR(1) state. Vernier window is always RES_BINS. */
  configure(settings:ResGramSettings):void{
   const s=normalizeResSettings(settings);this.settings=s;this.params=resParams(s.res);this.band=resBand(s.res,s.vernierHz,this.fmax);this.bins=RES_BINS;this.tileIndex=0;this.rowIndex=0;this.tileAr.clear();this.bias=tpswBias(this.params.edof);
-  this.applyWindow();
+  this.applyWindow();this.allocRing();
  }
  /** Preallocate per-tile AR(1) buffers so renderTile stays allocation-free after setup. */
  prepareFullAxis(tileCount:number):void{
@@ -106,15 +110,50 @@ export class ResLofarGenerator {
   const rowKey=this.rowIndex++;
   return this.render(rowKey,out,offset,false);
  }
+ /** Engine hook: snapshot the instantaneous expected spectrum at every RES_FRAME_S grid point up to t
+  * (state is the current one; engine advances in ≤ one frame per call on the cut/worker paths). */
+ sample(t:number):void{
+  const f=RES_FRAME_S,L=this.band.liveBins;if(this.ringN===0)return;
+  let tk=Number.isFinite(this.lastSampleT)?this.lastSampleT+f:Math.floor(t/f+1e-9)*f;if(tk>t+1e-9)return;
+  this.computeExpected();const P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower,difar=this.difar;
+  for(;tk<=t+1e-9;tk+=f){const h=this.ringHead,o=h*L;for(let i=0;i<L;i++)this.ring[o+i]=P[i];if(difar){const d=3*o;for(let i=0;i<L;i++){this.ringDifar[d+3*i]=sE[i];this.ringDifar[d+3*i+1]=sN[i];this.ringDifar[d+3*i+2]=sP[i];}}
+   this.ringT[h]=tk;this.ringHead=(h+1)%this.ringN;this.ringCount=Math.min(this.ringCount+1,this.ringN);this.lastSampleT=tk;}
+ }
+ /** Engine path: render the row whose analysis span ends at tEnd (simT stamp = window END). */
+ generateAt(tEnd:number,out:Float32Array=this.row,offset=0):Float32Array{
+  const rowKey=this.rowIndex++;return this.render(rowKey,out,offset,false,tEnd);
+ }
+ /** Analysis span (s) of one row: K Hann segments of length T, hop T/4 → T+(K−1)·T/4. */
+ get spanS():number{const p=this.params;return p.integrationS+(p.averages-1)*p.hopS;}
+ /** Rows may be pulled up to this late after their due time and still integrate from the ring. */
+ private allocRing():void{
+  const n=Math.ceil((this.spanS+RING_LATE_MARGIN_S)/RES_FRAME_S)+2,L=this.band.liveBins;
+  if(this.ringN!==n||this.ring.length!==n*L){this.ringN=n;this.ring=new Float32Array(n*L);this.ringDifar=this.difar?new Float32Array(3*n*L):new Float32Array(0);this.ringT=new Float64Array(n);}
+  this.ringHead=0;this.ringCount=0;this.lastSampleT=-Infinity;
+ }
+ /** Welch power weighting of a snapshot interval: Σ_m Hann²(segment m) averaged over 8 sub-points
+  * of the frame (ts−f, ts]. Segment m spans [tEnd−m·hop−T, tEnd−m·hop]. */
+ private frameWeight(ts:number,tEnd:number):number{
+  const p=this.params,T=p.integrationS,hop=p.hopS,K=p.averages,f=RES_FRAME_S;let w=0;
+  for(let q=0;q<8;q++){const t=ts-f+(q+.5)*f/8;for(let m=0;m<K;m++){const x=(t-(tEnd-m*hop-T))/T;if(x>0&&x<1){const s=Math.sin(Math.PI*x);w+=s*s*s*s;}}}
+  return w;
+ }
+ /** Replace expected/signal* with the Welch-weighted average over the row's analysis span.
+  * Falls back to the instantaneous spectrum when no snapshot overlaps (cold start). */
+ private integrate(tEnd:number):void{
+  const L=this.band.liveBins,P=this.expected,difar=this.difar,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;let wsum=0,first=true;
+  for(let c=0;c<this.ringCount;c++){const h=(this.ringHead-1-c+this.ringN)%this.ringN,w=this.frameWeight(this.ringT[h],tEnd);if(!(w>0))continue;const o=h*L;
+   if(first){for(let i=0;i<L;i++)P[i]=0;if(difar){sE.fill(0);sN.fill(0);sP.fill(0);}first=false;}
+   for(let i=0;i<L;i++)P[i]+=w*this.ring[o+i];if(difar){const d=3*o;for(let i=0;i<L;i++){sE[i]+=w*this.ringDifar[d+3*i];sN[i]+=w*this.ringDifar[d+3*i+1];sP[i]+=w*this.ringDifar[d+3*i+2];}}wsum+=w;}
+  if(wsum>0){const k=1/wsum;for(let i=0;i<L;i++)P[i]*=k;if(difar)for(let i=0;i<L;i++){sE[i]*=k;sN[i]*=k;sP[i]*=k;}}
+ }
  /** FULLBAND: render one tile at an explicit rowKey (shared across tiles of the same row time). Does not bump rowIndex. */
  renderTile(tileIndex:number,rowKey:number,out:Float32Array=this.row,offset=0,tileBins:number=TILE_BINS):Float32Array{
   this.selectTile(tileIndex,tileBins);
   return this.render(rowKey,out,offset,true);
  }
- private render(rowKey:number,out:Float32Array,offset:number,perTileAr:boolean):Float32Array{
-  const W=this.bins;
-  if(!Number.isInteger(offset)||offset<0||out.length<offset+W)throw new Error('Row size mismatch');
-  this.rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
+ /** Instantaneous expected spectrum (ambient + contacts) at the current scenario state → expected/signal*. */
+ private computeExpected():void{
   const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
   for(let i=0;i<L;i++)P[i]=this.ambientBin[i];if(difar){sE.fill(0);sN.fill(0);sP.fill(0);}
   for(let j=0;j<this.contacts.length;j++){
@@ -138,6 +177,13 @@ export class ResLofarGenerator {
     if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
    }
   }
+ }
+ private render(rowKey:number,out:Float32Array,offset:number,perTileAr:boolean,tEnd?:number):Float32Array{
+  const W=this.bins;
+  if(!Number.isInteger(offset)||offset<0||out.length<offset+W)throw new Error('Row size mismatch');
+  this.rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
+  this.computeExpected();if(tEnd!==undefined&&!perTileAr)this.integrate(tEnd);
+  const enbw=this.params.enbwHz,L=this.band.liveBins,difar=this.difar,P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
   // Noise: K=1 → exact AR(1) on complex amplitudes (correlated rows); K>1 → unit-mean χ²_ν gamma.
   const pw=this.power,rng=this.rng;
   if(this.params.averages===1){const a=HANN_75_AMPLITUDE_CORRELATION,b=Math.sqrt(1-a*a),h=Math.SQRT1_2;
