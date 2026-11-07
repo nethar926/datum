@@ -110,7 +110,7 @@ FE: draw each row at its `simT`, with no shift. Use `rowRateHz`/`fBin` from `gra
 
   Seed-777 edge 10/50/90 % rise and fall times differ from the reference by ≤ 1.7e-6 s in every band; the test asserts at most one hop.
 
-## CPU and memory (e835cfe, Node, single thread, 32 buoys × 8 band streams + 1 panned FULLBAND each)
+## CPU and memory (e835cfe, Node, single thread, 32 buoys × 8 band streams + 1 panned FULLBAND each; no DEMON, partial load)
 
 | Run | Wall / 900 s | % real time | ms/tick mean / p95 / max | RSS start / mid / end (MB) | Heap start / mid / end (MB) | Acoustics retained |
 |---|---|---|---|---|---|---|
@@ -144,7 +144,7 @@ Fast minus reference, **microseconds**, interpolated 10/50/90% crossings. No ban
 
 Worst absolute timing difference: 1.6834 microseconds (SRC ELF), far below one hop.
 
-### Sequential benchmark matrix
+### Sequential benchmark matrix (8 band streams + FULLBAND NB, no DEMON)
 
 Existing standalone pan harness (`/workspace/fastpath-logs/measure.ts`, copied from the prior measurement harness), fast path default, single process, seed 303. Each of 32 buoys has 8 NB/BB band streams plus its own FULLBAND stream; all tiles collect, including off-screen. FULLBAND pans every 3 s when multiple tiles exist. Every due row is drained. Thus this is **32 FULLBAND streams**, not a one-visible-pane computation shortcut. RES5 has one tile; RES2 has eight. No warm-up excluded. Each matrix case ran in a separate process, sequentially, after tests completed; no competing acoustics benchmark/test job ran.
 
@@ -164,7 +164,7 @@ All memory columns below are **MiB (2^20 bytes)**, not decimal MB. RSS/heap incl
 
 Accounted acoustic memory passes 50 MB even in decimal units: maximum sampled total 25,681,376 bytes (24.49 MiB, 60-contact RES2), flat from midpoint to end. This is **not** a total-process 50 MB pass: RSS/heap exceed that limit. FE's 15-minute display history and GPU allocation still need a combined budget/frame-cost review; these results do not clear the release hold. Retained history is not evicted, no visibility-dependent collection was introduced, and no workers/SIMD were added. Everything remains local, unpushed and held.
 
-## Spectrum-kernel profile on 673183a (2026-11-07, ET; proposals only)
+## Spectrum-kernel profile on 673183a (2026-11-07, ET; duplicated bands, no DEMON; proposals only)
 
 **Harness correction:** the previous standalone harness actually had 4 bands × NB/BB = **8**, not 16 band subscriptions per buoy. The prior benchmark headings overstated that count; their numbers remain measurements of 8. For this profile, `profile-measure.ts` explicitly subscribes **16** (two identical subscriptions per band/filter) plus **one FULLBAND per buoy**, across 32 buoys. These are 16 actual streams but 8 unique band/filter configurations, sharing deterministic acoustic sums as designed. All tiles collect, with panning every 3 s; no one-visible-pane shortcut.
 
@@ -241,3 +241,27 @@ Accuracy risk: the absorption interpolation residual grows roughly with chunk wi
 **Runner-up:** a bounded per-(history frame, buoy, contact, environment epoch) memo of geometry and scalar spreading/propagation setup, shared across bands/tiles. No spectra retained and no history evicted. Estimated **1.01–1.03×** overall because setup is small versus broadband arithmetic. Low numerical risk (reuse identical inputs/results), but stale-key/invalidation and extra retained-memory accounting need explicit tests; benchmark and FE combined-budget review before acceptance. Do not combine it with the first experiment.
 
 Only this note changes the repository. No optimization, workers, push or release approval; held pending the Lead and FE review.
+
+## Stream-set reconciliation and provisional manifest v1
+
+FE's objection is correct: the two earlier harnesses did **not** exercise the same set, and neither included DEMON. Their timing/profile figures above are historical partial/duplicated-band loads, **not full-load acceptance results**.
+
+| Per-buoy subscription | `measure.ts` (earlier timings) | `profile-measure.ts` (0e95d52 profiles) | `bench/fullLoad.bench.ts`, provisional manifest v1 |
+|---|---|---|---|
+| ELF NB / BB, RES2, vernier 25 Hz | 1 each | 2 each | 1 each |
+| VLF NB / BB, RES4, vernier 100 Hz | 1 each | 2 each | 1 each |
+| LF NB / BB, RES5, vernier 250 Hz | 1 each | 2 each | 1 each |
+| MF NB / BB, RES7, vernier 1000 Hz | 1 each | 2 each | 1 each |
+| FULLBAND NB, run-selected RES5 or RES2, pan every 3 s | 1 | 1 | 1 |
+| FULLBAND BB, same RES/panning | 0 | 0 | 1 |
+| DEMON, carrier 500–2000 Hz | 0 | 0 | 1 |
+| DEMON, carrier 2000–6000 Hz | 0 | 0 | 1 |
+| Total actual gram subscriptions | 9 | 17 | **12** |
+
+Both DEMON streams have 512 bins on the 0–100 Hz modulation axis, at 4 Hz row rate. The old harnesses did not explicitly drain bearing rows or poll tactical truth / water-column outputs. The new harness drains each LOFAR row and its paired DIFAR bearing, drains both DEMON streams without skipping ready rows, reads tactical/truth each 0.25 s tick and supplies/checks the shared water-column profile. DIFAR does not need another LOFAR subscription. All 32 buoys keep collecting every required band and FULLBAND tile regardless of visibility.
+
+**Repo versus provisional manifest:** `acoustics/src/streamSet.ts:19–30` defines 12 **logical** ids: the 8 `lofar/{ELF,VLF,LF,MF}/{NB,BB}` entries, `demon`, `difarBearing`, `waterColumn`, and `truth`. `liveSimStreamSet()` and `cutStreamSet()` return the same set. `cuts/render.ts` explicitly treats the last three as tool outputs requiring no gram subscribe. That set does not specify two DEMON carriers or FULLBAND NB/BB. `docs/data-contract.md` defines gram units/shapes (default DEMON carrier 1000–4000 Hz); current FE `src/engine/host.ts` subscribes an active LOFAR view per buoy (plus a temporary handoff set), with DEMON optional. None of those establishes 16 unique band subscriptions. The Lead's **provisional manifest v1** is the explicit benchmark load: **8 band + 2 DEMON + 2 FULLBAND = 12 actual gram streams per buoy, 384 at 32 buoys**, plus the shared logical tool outputs. It does not modify the production logical contract.
+
+**DEMON approximation:** `demonStream.ts` sets carrier = (band low + band high)/2 and computes transmission loss at that centre frequency only: 1250 Hz and 4000 Hz for these carriers. This is **not band-integrated source weighting**; carrier selection is approximate and source weighting is **unvalidated**. No physical-model change is made here.
+
+The single-DEMON/single-FULLBAND runs started before the Lead's steering were stopped and archived in `/workspace/fastpath-logs/superseded-single-demon-single-full/`; they are excluded from provisional-manifest results. The authoritative replacement harness is tracked under `acoustics/bench/fullLoad.bench.ts`. Old `measure.ts` and `profile-measure.ts` logs are preserved unchanged for audit.
