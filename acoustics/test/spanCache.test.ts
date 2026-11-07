@@ -1,7 +1,7 @@
 import {describe,it,expect,afterEach} from 'vitest';
-import {AcousticEngine,cpaScenario,fictionalSignature,resForBand,vernierHzForBand,setResRowPath,spanCacheStats,resetSpanCacheStats,SIM_STREAM_SET,parseLofarStreamId,attachWaterColumn} from '../src/index.js';
+import {AcousticEngine,cpaScenario,fictionalSignature,resForBand,vernierHzForBand,setResRowPath,spanCacheStats,resetSpanCacheStats,setSpanCache,SIM_STREAM_SET,parseLofarStreamId,attachWaterColumn} from '../src/index.js';
 
-afterEach(()=>{setResRowPath('fast');resetSpanCacheStats();});
+afterEach(()=>{setResRowPath('fast');setSpanCache(true);resetSpanCacheStats();});
 
 function scen(nB:number,nC:number){const s=cpaScenario();s.fmax=2000;s.seed=303;
  s.contacts=Array.from({length:nC},(_,i)=>({id:'m'+i,category:'subsurface' as const,x:-1500+i*137,y:600+i*91,depth:60+i,course:Math.PI/2+i*.1,speed:4,motion:[{at:0,course:Math.PI/2+i*.1,speed:4,depth:60+i}],params:{...fictionalSignature,levelDb:150,modulation:0,cavitationPower:.05,tonals:[{family:'motor' as const,hz:40+i,power:1,width:'discrete' as const,stability:'stable' as const}]}}));

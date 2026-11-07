@@ -1,5 +1,5 @@
 /** Provisional manifest v1 full-load benchmark. Run each case in a fresh process; no optimizations. */
-import {AcousticEngine,cpaScenario,fictionalSignature,resForBand,vernierHzForBand,attachWaterColumn,SIM_STREAM_SET,parseLofarStreamId} from '../src/index.js';
+import {AcousticEngine,cpaScenario,fictionalSignature,resForBand,vernierHzForBand,attachWaterColumn,SIM_STREAM_SET,parseLofarStreamId,spanCacheBytes,rowCacheBytes,fftSharedTableBytes,sharedScratchBytes} from '../src/index.js';
 import type {GramConfig} from '../src/protocol.js';
 export function scen(nBuoys:number,nContacts=1){const s=cpaScenario();s.fmax=2000;s.seed=303;
  s.contacts=Array.from({length:nContacts},(_,i)=>({id:'m'+i,category:'subsurface' as const,x:-1500+i*137,y:600+i*91,depth:60+i,course:Math.PI/2+i*.1,speed:4,motion:[{at:0,course:Math.PI/2+i*.1,speed:4,depth:60+i}],params:{...fictionalSignature,levelDb:150,modulation:0,cavitationPower:.05,tonals:[{family:'motor' as const,hz:40+i,power:1,width:'discrete' as const,stability:'stable' as const}]}}));
@@ -30,7 +30,7 @@ export function runFullLoad(sec:number,res:number,nC:number){
  const memory=()=>{const u=process.memoryUsage(),resBytes=e.retainedBytes().total,seen=new Set<ArrayBufferLike>();
   const demonBytes=ownedBuffers([...internal.subscriptions.values()].filter((s:any)=>s.renderer).map((s:any)=>s.renderer),seen);
   const legacyBytes=ownedBuffers(internal.generators,seen);
-  return {rssBytes:u.rss,heapBytes:u.heapUsed,resBytes,demonBytes,legacyBytes,acousticBytes:resBytes+demonBytes+legacyBytes};};
+  const rb=e.retainedBytes();return {rssBytes:u.rss,heapBytes:u.heapUsed,resBytes,demonBytes,legacyBytes,acousticBytes:resBytes+demonBytes+legacyBytes,breakdown:{history:rb.history,scratch:rb.scratch,streams:rb.streams,spanCache:spanCacheBytes(),rowCache:rowCacheBytes(),fftShared:fftSharedTableBytes(),sharedScratch:sharedScratchBytes()}};};
  mem.push({at:'start',...memory()});const N=sec*4,start=performance.now();
  for(let k=1;k<=N;k++){const t0=performance.now();e.advance(.25);const t=k*.25;
   if(t%3===0)for(const [i,c] of fulls.entries())if(c.tileCount!>1){const df=c.fBin,tb=c.tileBins!,v=(Math.floor(t/3)+i)%c.tileCount!;e.setViewWindow(c.streamId,{fLo:v*tb*df+1,fHi:v*tb*df+tb*df/2});}

@@ -17,7 +17,7 @@ import type {GramFilter,LofarBandPresetId} from './protocol.js';
 import type {GramConfig,Tactical,DropBuoy,TruthContact} from './protocol.js';
 import {isLofarBandPresetId,resolveLofarBand} from './bands.js';
 import {StateHistory} from './stateHistory.js';
-import {sharedScratchBytes} from './resGram.js';
+import {sharedScratchBytes,invalidateSpanCache} from './resGram.js';
 /** @deprecated Retained for API compat; HYDP no longer curves high→fixed (Wilson squally bar). */
 export const HYDP_START_OFFSET_PCT=1.5;
 /** Simultaneous tuned RF channels (= FE field cap / bench budget). */
@@ -76,7 +76,7 @@ export class AcousticEngine {
     s.buoys.forEach((_,i)=>{this.streams.set(i+1,i);this.legacyIndices.set(i+1,0);});
     this.rows=s.buoys.map((b,i)=>({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:this.generators[i].row}));
     s.classificationTargets??=this.baseContacts.filter(c=>c.category!=='surface'&&c.classificationTarget!==false).map(c=>c.id);this.syncTacticalBuoys();
-    this.history=new StateHistory(this.allContacts);
+    this.history=new StateHistory(this.allContacts);invalidateSpanCache();
   }
   /** Acoustics-side retained bytes for RES streams: shared state history + shared render scratch +
    * each RES generator's own tables/rows/AR state. Excludes FE-held row history. */
@@ -103,7 +103,7 @@ export class AcousticEngine {
   }
   setSurfaceTraffic(v:number):void{v=Number.isFinite(v)?clamp(v,0,1):.5;this.scenario.surfaceTraffic=v;const pool=this.scenario.surfacePool;if(pool){const n=surfaceCount(v,pool.length),contacts=this.scenario.contacts;contacts.length=this.baseContacts.length;for(let i=0;i<pool.length;i++){pool[i].active=i<n;if(i<n)contacts.push(pool[i]);}}this.setEnvironment({...this.scenario.environment,shippingDensity:v,shipping:v<.33?'light':v<.67?'moderate':'heavy'});}
   registerStream(id:number,channel:number):void {if(!(channel>0))throw new Error('Unknown RF channel');const i=this.scenario.buoys.findIndex(b=>b.rfChannel===channel);if(i<0)throw new Error('Unknown RF channel');this.streams.set(id,i);if(!this.legacyIndices.has(id))this.legacyIndices.set(id,0);}
-  addBuoy(b:Buoy):void {const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);g.setWaterColumn?.(this.scenario.waterColumn);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:g.row});this.syncTacticalBuoys();}
+  addBuoy(b:Buoy):void {const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);g.setWaterColumn?.(this.scenario.waterColumn);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:g.row});invalidateSpanCache();this.syncTacticalBuoys();}
   /** Subscription rows are ready at 4 Hz since subscribe; legacy registered streams remain pull-based.
    * If multiple rows accumulate, each is rendered using current geometry (no historical snapshot queue). */
   subscribe(req:{kind:'demon';buoyId:number;band?:[number,number]}):number;
@@ -194,7 +194,7 @@ export class AcousticEngine {
     if(!gen||gen.capacity!==needCap){gen?.dispose();gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);gen.setWaterColumn?.(s.waterColumn);gen.setHistory(this.history);}
     // History starts with the first RES stream (pre-filled with the state at that instant).
     if(!this.historyOn){this.historyOn=true;this.history.record(this.time);}
-    else gen.configure(settings);
+    else{gen.configure(settings);invalidateSpanCache();}
     const p=gen.params,frames=Math.round(p.rowPeriodS/RES_FRAME_S),phase=Math.floor(i*frames/s.buoys.length)*RES_FRAME_S;
     if(fullAxis){
       const tileBins=TILE_BINS,tileCount=tileCountFor(fmax,p.fBin,tileBins);
@@ -227,7 +227,7 @@ export class AcousticEngine {
   }
   unsubscribe(streamId:number):void{
     const sub=this.subscriptions.get(streamId);sub?.res?.dispose();if(sub?.bandKey){const entry=this.lofarBandCache.get(sub.bandKey);if(entry&&--entry.refs<=0)this.lofarBandCache.delete(sub.bandKey);}
-    this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);
+    this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);if(sub?.res)invalidateSpanCache();
   }
   /** Active subscribed legacy-LOFAR buoy×band pairs (one entry per stream). Unused combinations
    * are not rendered: only these pairs have a cached renderer, and writeRow generates a row only

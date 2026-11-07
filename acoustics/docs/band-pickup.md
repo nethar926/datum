@@ -467,4 +467,31 @@ exact-grid work (already deduped); RES2 matches the measured ~1.98× duplication
 Residual centre-grid overlap and the `coreFast` bin loop remain the bottleneck; **WASM SIMD
 prototype is next** (Lead), with this reuse kept.
 
+## SPAN_CACHE toggle, memory budget, and invalidation (Lead/FE 2026-11-07)
+
+### Bench toggle
+`setSpanCache(true|false)` / `spanCacheEnabled()` — default **ON**. Disabling clears entries so
+ON vs OFF short screens isolate the exact-reuse speedup on the same tip (identical DEMON
+weighting). Test/bench only; production stays ON.
+
+### Memory (manifest v1, RES2 × 60 contacts, 32 buoys)
+Acoustic total = `retainedBytes().total` + DEMON renderers + legacy LOFAR generators, with
+`SPAN_CACHE` and shared FFT twiddles counted.
+
+| Item | Before (ba6fada) | After |
+|---|---|---|
+| SPAN_CACHE | 16×4×TILE_BINS f64 ≈ 2.10 MB | **8×3×TILE_BINS f64 ≈ 0.79 MB** (drop S; recompute) |
+| DEMON FFT twiddles | per-stream copies ≈ +5 MB dup | **shared** `fftTables(size)` ≈ 0.08 MB once |
+| Acoustic total (subscribe) | ≈ 51.7 MB | **≈ 45.2 MB** |
+| After ~10 s history fill | ≈ 53.0 MB | **≈ 46.5 MB** |
+
+Under the ≤50 MB acoustic target. Breakdown exposed on the full-load bench `mem[].breakdown`.
+
+### Invalidation / boundedness
+- Fixed capacity `SPAN_CACHE_ENTRIES=8` with ring eviction; bytes never grow with run length.
+- Key includes `spanEpoch` plus history uid, buoy, RES, f0, L, tEnd, envEpoch, difar, coarse, `history.last`.
+- `invalidateSpanCache()` bumps epoch and clears: engine construct, `setEnvironment`, `addBuoy`,
+  RES reconfigure (`applyRes` after first history), RES unsubscribe, coarse-flag toggle.
+- Compute cache is independent of FE retained display rows; eviction does not mutate emitted copies.
+- Tests: `test/spanCacheSafety.test.ts`.
 

@@ -36,7 +36,7 @@ export function resRowPath():ResRowPath{return ROW_PATH;}
  * and CZ gain are per-contact scalars (exact); tonals and swaths are exact. Reference path and
  * the flag-off fast path are unchanged. */
 let COARSE_BB=false;
-export function setCoarseBroadband(on:boolean):void{COARSE_BB=on;ACCUMS.clear();clearSpanCache();envEpoch++;}
+export function setCoarseBroadband(on:boolean):void{COARSE_BB=on;ACCUMS.clear();invalidateSpanCache();envEpoch++;}
 export function coarseBroadband():boolean{return COARSE_BB;}
 /** Coarse node spacing: 1/48 octave (relative step 2^(1/48)−1), clamped to [1,32] bins. */
 export const COARSE_REL_STEP=2**(1/48)-1,COARSE_MAX_BINS=32;
@@ -76,14 +76,22 @@ export function rowCacheBytes():number{let b=0;for(const c of ROW_CACHE)b+=c.P.b
 /** Exact reuse of a span-averaged spectrum for the fast integrateHistory path (FULLBAND with
  * >ACCUM_MAX_TILES tiles, where sliding accumulators are not used). NB and BB of the same
  * (buoy, RES, f0, liveBins, tEnd) share one entry — the pre-filter modelled spectrum is
- * bit-identical across filters. Sized for ≥8 RES2 tiles so a buoy's NB drain leaves hits for BB.
- * Fixed bytes, counted in sharedScratchBytes. Default ON (exact reuse, not an approximation). */
-const SPAN_CACHE_ENTRIES=16;
-const SPAN_CACHE=Array.from({length:SPAN_CACHE_ENTRIES},()=>({key:'',L:0,P:new Float64Array(TILE_BINS),E:new Float64Array(TILE_BINS),N:new Float64Array(TILE_BINS),S:new Float64Array(TILE_BINS)}));
-let spanCacheNext=0,spanCacheHits=0,spanCacheMisses=0;
-export function spanCacheBytes():number{let b=0;for(const c of SPAN_CACHE)b+=c.P.byteLength*4;return b;}
-export function spanCacheStats():{hits:number;misses:number;entries:number}{return {hits:spanCacheHits,misses:spanCacheMisses,entries:SPAN_CACHE_ENTRIES};}
+ * bit-identical across filters. Capacity = 8 (one RES2 tile set) with ring eviction: fixed bytes,
+ * never grows with run length; counted in sharedScratchBytes. Stores P/E/N only (S = max(0,P−amb)
+ * recomputed on hit — same formula as the miss path). Default ON; `setSpanCache(false)` disables
+ * for bench isolation (test/bench only). Separate from FE retained display history — eviction must
+ * never touch emitted rows. */
+export const SPAN_CACHE_ENTRIES=8;
+const SPAN_CACHE=Array.from({length:SPAN_CACHE_ENTRIES},()=>({key:'',L:0,P:new Float64Array(TILE_BINS),E:new Float64Array(TILE_BINS),N:new Float64Array(TILE_BINS)}));
+let spanCacheNext=0,spanCacheHits=0,spanCacheMisses=0,spanCacheOn=true,spanEpoch=1;
+export function spanCacheBytes():number{let b=0;for(const c of SPAN_CACHE)b+=c.P.byteLength*3;return b;}
+export function spanCacheStats():{hits:number;misses:number;entries:number;enabled:boolean;epoch:number}{return {hits:spanCacheHits,misses:spanCacheMisses,entries:SPAN_CACHE_ENTRIES,enabled:spanCacheOn,epoch:spanEpoch};}
 export function resetSpanCacheStats():void{spanCacheHits=0;spanCacheMisses=0;}
+export function spanCacheEnabled():boolean{return spanCacheOn;}
+/** Bench/test toggle. Disabling clears entries so a cold path is measured. Default remains ON. */
+export function setSpanCache(on:boolean):void{spanCacheOn=on;clearSpanCache();}
+/** Drop all entries and bump the generation id so keys cannot match a prior scenario/config. */
+export function invalidateSpanCache():void{spanEpoch++;clearSpanCache();}
 function clearSpanCache():void{for(const c of SPAN_CACHE)c.key='';spanCacheNext=0;}
 interface Trk{x:number;y:number;depth:number;course:number;speed:number}
 interface ResContact {contact:Contact;frequencies:Float64Array;powers:Float64Array;sigmaHz:Float64Array;gain:number;trk:Trk;act:boolean;srcDb:number;flowDb:number;flowFrac:number;cav:number;swG:Float64Array;swLo:Float64Array;swHi:Float64Array;swaths:{source:SpeedGated;loHz:number;hiHz:number;lo:number;hi:number}[]}
@@ -202,7 +210,7 @@ export class ResLofarGenerator {
  }
  private applySwathWindow():void{const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins;for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}}
  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
- setEnvironment(e:Environment):void{envEpoch++;clearSpanCache();this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);this.tileTables.clear();this.useTables();}
+ setEnvironment(e:Environment):void{envEpoch++;invalidateSpanCache();this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);this.tileTables.clear();this.useTables();}
  /** Release shared accumulators (engine calls on unsubscribe / generator replacement). */
  dispose():void{this.releaseAccum();}
  /** Acquire (allocate on first use) the shared accumulator for (history, buoy, RES, f0, L). Called at
@@ -244,9 +252,9 @@ export class ResLofarGenerator {
   if(newest<tEnd-1e-6||oldest-f>tEnd-span+1e-6)return false;
   const L=this.band.liveBins,difar=this.difar;
   let spanKey='';
-  if(fast){
-   spanKey=`${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${h.last}`;
-   for(const c of SPAN_CACHE)if(c.key===spanKey){SH.P.set(c.P.subarray(0,L));if(difar){SH.E.set(c.E.subarray(0,L));SH.N.set(c.N.subarray(0,L));SH.S.set(c.S.subarray(0,L));}spanCacheHits++;return true;}
+  if(fast&&spanCacheOn){
+   spanKey=`${spanEpoch}|${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${h.last}`;
+   for(const c of SPAN_CACHE)if(c.key===spanKey){const amb=this.ambientBin;SH.P.set(c.P.subarray(0,L));if(difar){SH.E.set(c.E.subarray(0,L));SH.N.set(c.N.subarray(0,L));for(let i=0;i<L;i++)SH.S[i]=Math.max(0,SH.P[i]!-amb[i]!);}spanCacheHits++;return true;}
   }
   const P=SH.P,E=SH.E,N=SH.N,S=SH.S,FP=SH.FP,FE=SH.FE,FN=SH.FN,FS=SH.FS;let wsum=0;
   P.fill(0,0,L);if(difar){E.fill(0,0,L);N.fill(0,0,L);S.fill(0,0,L);}
@@ -254,7 +262,7 @@ export class ResLofarGenerator {
    this.loadFrame(sl);if(fast){this.coreFast(FP,FE,FN,FS);if(difar)for(let i=0;i<L;i++){P[i]+=w*FP[i]!;E[i]+=w*FE[i]!;N[i]+=w*FN[i]!;}else for(let i=0;i<L;i++)P[i]+=w*FP[i]!;}
    else{this.core(FP,FE,FN,FS);for(let i=0;i<L;i++)P[i]+=w*FP[i]!;if(difar)for(let i=0;i<L;i++){E[i]+=w*FE[i]!;N[i]+=w*FN[i]!;S[i]+=w*FS[i]!;}}wsum+=w;}
   if(!(wsum>0))return false;const k=1/wsum,amb=this.ambientBin;for(let i=0;i<L;i++)P[i]*=k;if(difar){if(fast)for(let i=0;i<L;i++){E[i]*=k;N[i]*=k;S[i]=Math.max(0,P[i]!-amb[i]!);}else for(let i=0;i<L;i++){E[i]*=k;N[i]*=k;S[i]*=k;}}
-  if(fast){const c=SPAN_CACHE[spanCacheNext]!;spanCacheNext=(spanCacheNext+1)%SPAN_CACHE_ENTRIES;c.key=spanKey;c.L=L;c.P.set(P.subarray(0,L));if(difar){c.E.set(E.subarray(0,L));c.N.set(N.subarray(0,L));c.S.set(S.subarray(0,L));}spanCacheMisses++;}
+  if(fast&&spanCacheOn){const c=SPAN_CACHE[spanCacheNext]!;spanCacheNext=(spanCacheNext+1)%SPAN_CACHE_ENTRIES;c.key=spanKey;c.L=L;c.P.set(P.subarray(0,L));if(difar){c.E.set(E.subarray(0,L));c.N.set(N.subarray(0,L));}spanCacheMisses++;}
   return true;
  }
  private integrateCached(tEnd:number):boolean{
