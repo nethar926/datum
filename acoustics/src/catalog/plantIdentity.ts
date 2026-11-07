@@ -51,6 +51,11 @@ export function varyPlantIdentity(s:VesselPlantSpec,id:string):VesselPlantSpec {
  }
  // Guarantee a DC teaching aux on diesel plants when none exists (seeded fictional Hz).
  if(diesel&&!s.aux.some(a=>a.kind==='dcvr')){const d=stream(id,'dc-teach');s.aux.push({id:'fictional-dc-bus',kind:'dcvr',duty:'continuous',fHz:Number((22+d()*55).toFixed(2)),harmonics:[1,2],stability:'unstable',width:'discrete'});}
+ // Continuous SSMA on a seeded subset (~1/3 of classes) as a classification clue. Some are
+ // harmonics-only (no fundamental) per Wilson CUT notes; not engine-proportional.
+ const SSMA_IDS=new Set(['blue-orbelune','green-fennelglint','red-emberbraid','red-gloamspiral','blue-vellumwake','red-frostwhorl','green-thistledrift']);
+ if(SSMA_IDS.has(id)&&!s.aux.some(a=>a.kind==='ssma')){const sm=stream(id,'ssma-teach'),harmonicsOnly=sm()<.45;s.aux.push({id:'fictional-ssma',kind:'ssma',duty:'continuous',fHz:Number((48+sm()*40).toFixed(2)),harmonics:harmonicsOnly?[2,3]:[1,2],stability:'unstable',width:'discrete'});}
+ for(const a of s.aux)if(a.kind==='ssma'){a.stability='unstable';a.width='discrete';delete a.sigmaBins;}
  return s;
 }
 /** Hash order, not catalog insertion order, assigns non-overlapping teaching bands.
