@@ -265,3 +265,60 @@ Both DEMON streams have 512 bins on the 0–100 Hz modulation axis, at 4 Hz row 
 **DEMON approximation:** `demonStream.ts` sets carrier = (band low + band high)/2 and computes transmission loss at that centre frequency only: 1250 Hz and 4000 Hz for these carriers. This is **not band-integrated source weighting**; carrier selection is approximate and source weighting is **unvalidated**. No physical-model change is made here.
 
 The single-DEMON/single-FULLBAND runs started before the Lead's steering were stopped and archived in `/workspace/fastpath-logs/superseded-single-demon-single-full/`; they are excluded from provisional-manifest results. The authoritative replacement harness is tracked under `acoustics/bench/fullLoad.bench.ts`. Old `measure.ts` and `profile-measure.ts` logs are preserved unchanged for audit.
+
+## Coarse smooth-broadband prototype (APPROXIMATION; flag default OFF; not shipping)
+
+Lead-approved for evaluation only. `setCoarseBroadband(true)` (resGram.ts) swaps the fast kernel's
+per-contact broadband loop for `coreCoarse`; with the flag off the reference path and the existing
+fast path are unchanged (test: flag-off rows bit-identical to a fresh fast run).
+
+**What is approximated.** Only the smooth per-contact broadband envelope: source shape
+1/(1+(f/400)²)·ENBW × Thorp absorption, flow noise, and the slowly varying Lloyd's-mirror
+reflection amplitude c=q·exp(−2k²σ²sin²θ). These are evaluated at coarse nodes and interpolated
+linearly in power to the output bins.
+
+**What stays exact on the output-bin grid.** The Lloyd's-mirror phase factor cos(kΔ) (recurrence
+at every bin), tonals (Hann/Gaussian deposits with exact `exactGain`), swaths (per-bin absorption),
+ambient (already a per-bin table), and per-contact scalars (spreading, CZ gain, cavitation power,
+level). The interference is split *exactly* as gain = (1−c)² + 2c(1−cos kΔ): the smooth part
+b(1−c)²+flow, times the envelope, is summed over contacts on the nodes and interpolated once per
+bin; the oscillatory part's amplitude 2bc·env is interpolated per contact and multiplied by the
+fine-grid (1−cos kΔ). The combined spectrum is never treated as smooth, so null frequencies come
+from the exact phase, and null depth = the interpolated (1−c)² floor (both terms are ≥0).
+
+**Grid choice.** Nodes every 1/48 octave (relative step 2^(1/48)−1 ≈ 1.45 %), clamped to 1–32
+output bins (32 matches the existing chunked-exp span). The envelope terms vary on octave scales;
+the linear-interpolation bound h²|g''|/(8g) for the steepest term (shape ∝ f⁻² above 400 Hz,
+g''/g = 6/f²) gives ≈1.6·10⁻⁴ relative ≈ 7·10⁻⁴ dB. Power-linear (not dB) interpolation keeps
+the per-bin work to adds, preserves positivity and sums across contacts exactly; dB interpolation
+would need an exp per bin, which is the cost being removed.
+
+**Measured vs the reference path** (test/coarseBroadband.test.ts, a0f1d7c; noise-free expected
+spectrum, max / mean |ΔdB|):
+
+| Case | ELF | VLF | LF | MF | FULLBAND |
+|---|---|---|---|---|---|
+| 3 contacts, FULLBAND RES5 | 5.7e-6 / 1.0e-6 | 1.4e-5 / 4.2e-6 | 1.8e-4 / 2.8e-5 | 5.9e-4 / 1.7e-4 | 4.7e-4 / 1.4e-4 |
+| 3 contacts, FULLBAND RES2 | same bands | | | | 1.5e-5 / 4.4e-6 |
+| 60 contacts, FULLBAND RES5 | 6.4e-6 / 1.3e-6 | 1.5e-5 / 4.6e-6 | 2.3e-4 / 3.9e-5 | 8.6e-4 / 2.9e-4 | 6.7e-4 / 2.3e-4 |
+
+- Lloyd's mirror, 16 cases (range 300/1000/3000/8000 m × zs 30/120 m × zr 20/90 m), FULLBAND RES5 +
+  all bands: 9,011 fringe nulls (≥1 dB contrast); null bins identical, fringe spacing identical
+  (0 bins), worst null-to-peak contrast |Δ| 0.0010 dB. Linear interpolation can add sub-0.01 dB
+  wiggles on very flat fringe crests (worst spurious minimum 0.0016 dB deep); these are excluded
+  by the 1 dB contrast rule and are far below the display quantum.
+- CPA pass (CPA 1200 m, zs 60, zr 90, 10 m/s; LF/MF, 120 rows): every row's null bins identical,
+  apex (turning-point) row identical; lloydCpaApex.test.ts (015366a) passes.
+- Cavitation knee, depths 20/80/200 m × speeds 1–15 m/s: knee speed identical (5 m/s each), worst
+  level |Δ| 3.8e-4 dB, spectral −3 dB knee bin identical (0 bins).
+- Seed-777 10/50/90 % edge times: worst |Δ| 1.7 µs (swath and src), limit one hop.
+- Flag on: deterministic; play→seek→replay and fresh-seek rows bit-identical.
+
+Tolerances: max ≤0.02 dB / mean ≤0.002 dB (2× the fast-path budget, still ≪ the ~0.1 dB display
+quantum); null bins and spacing exact; contrast ≤0.1 dB; knee speed exact, level ≤0.02 dB,
+spectral knee ≤1 bin; edges ≤1 hop.
+
+**Sources & Methods wording (for FE):** "Prototype option: smooth broadband source and
+transmission-loss envelopes are computed on a 1/48-octave grid and linearly interpolated; Lloyd's-
+mirror interference, tonals and all rapidly varying terms are computed at every display bin.
+Measured difference from the exact model ≤0.001 dB. Off by default."
