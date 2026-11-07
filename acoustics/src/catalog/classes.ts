@@ -62,8 +62,21 @@ const data:Omit<SubmarineClass,'idKeys'>[]=legacy.classes.map((c,i)=>{
  if(diesel&&'engines' in spec.machinery){const erpm=spec.machinery.engines.map(e=>e.erpm);c.params.erpmMin=Math.min(...erpm.map(e=>e.obsMin));c.params.erpmMax=Math.max(...erpm.map(e=>e.obsMax));}c.params.srcHzPerKn=[Number((.8+rng()*1.8).toFixed(3)),Number((2.9+rng()*2.5).toFixed(3))];if(i===16&&spec.machinery.kind==='nuclearGR'){spec.machinery.reactors=2;spec.machinery.turbineGenerators.count=2;spec.machinery.reactorSets=[{id:'fictional-reactor-port',coolantPumpHz:21,turboGenerator:{rpm:1500,polePairs:2}},{id:'fictional-reactor-starboard',coolantPumpHz:24,turboGenerator:{rpm:1000,polePairs:3}}];spec.emergencyPropulsor={maxRpm:180,blades:3,maxSpeedKts:3};}
  return {...c,...spec,propeller:{shafts:spec.shafts,blades:c.params.blades,type:i%5===0?'cpp':i%3===0?'flat':'skewed'},propellerType:i%5===0?'cpp':i%3===0?'flat':'skewed',tpk:spec.maxPsrpm/c.params.maxSpeedKn,...(i%5===0?{tpkMinKts:3}:{}),speedWindows:[{name:'SRC-1',kind:'SRC',speedKts:[2,Math.min(10,c.params.maxSpeedKn)],hz:6*(2.5+rng()*4),hzPerKnot:2.5+rng()*4},{name:'SWATH-1',kind:'SWATH',speedKts:[c.params.quietSpeedKn*(1.1+rng()*.25),c.params.maxSpeedKn*(.83+rng()*.1)],loHz:band.loHz,hiHz:band.hiHz}],era:i===16?1980:2005+i%10,quietingTier:i===16?'gen2':i%2?'gen3':'gen4',...(i===16?{archetype:'largeTwinShaftGuidedMissile'}:{}),drivetrainCode:drivetrainCode(spec.machinery),drivetrainLabel:drivetrainLabel(spec.machinery),plant:diesel?'diesel':'nuclear',aipCapable:!!aip,...(aip?{aip}:{}),operatorNationId:nation.id,snorkelDepthM:diesel?12+2*(i%5):0,maxSpeedKts:{surfaced:c.params.maxSpeedKn*(diesel?.75:.65),submerged:c.params.maxSpeedKn,snorkel:c.params.maxSpeedKn*(diesel?.65:1),battery:diesel?Math.min(8,c.params.quietSpeedKn+1):c.params.maxSpeedKn},quietSpeedKts:[c.params.quietSpeedKn*.6,c.params.quietSpeedKn]};
 });
+// PRES (prop resonance): invented per-class order windows (envelope in PSR orders; lines always n·PSR).
+// ~40% of classes carry it so it can serve as a classification clue. Centre at patrol lands ~30–160 Hz.
+const PROP_RESONANCE:Record<string,import('./drivetrain.js').PropResonanceSpec>={
+ 'blue-brindleflux':{nCentre:14,halfWidth:2,levelDb:-6,stability:'stable'},
+ 'blue-vellumwake':{nCentre:30,halfWidth:3,levelDb:-8,onsetKn:6,offsetKn:22,stability:'stable'},
+ 'green-fennelglint':{nCentre:22,halfWidth:3,levelDb:-7,stability:'unstable'},
+ 'green-thistledrift':{nCentre:45,halfWidth:4,levelDb:-9,stability:'stable'},
+ 'red-emberbraid':{nCentre:11,halfWidth:2,levelDb:-5,onsetKn:5,stability:'unstable'},
+ 'red-sablequill':{nCentre:60,halfWidth:3,levelDb:-10,onsetKn:7,offsetKn:20,stability:'stable'},
+ 'red-dorhan-pebblewisp':{nCentre:9,halfWidth:2,levelDb:-6,stability:'unstable'},
+ 'red-frostwhorl':{nCentre:38,halfWidth:4,levelDb:-8,stability:'stable'},
+ 'red-lanternmoss':{nCentre:18,halfWidth:3,levelDb:-7,onsetKn:4,stability:'stable'},
+};
 // Lead: auto-declutch onto the propulsion motor only on geared diesels with a clutch-shift to their
 // battery motor. Russetwake (GR) is fixed-coupled: out-of-band commands are rejected. Direct drives never declutch.
 const DECLUTCH_TO_MOTOR=new Set(['green-morrowcoil','red-emberbraid']);
-for(const c of data){if(DECLUTCH_TO_MOTOR.has(c.id))c.declutchToMotor=true;}
+for(const c of data){const r=PROP_RESONANCE[c.id];if(r)c.propResonance=structuredClone(r);if(DECLUTCH_TO_MOTOR.has(c.id))c.declutchToMotor=true;}
 export const catalog:Catalog={catalogVersion:1,classes:data.map(c=>({...c,idKeys:buildIdKeys(c)}))};

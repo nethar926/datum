@@ -125,7 +125,7 @@ export function updatePropulsion(s:Signature,fraction:number,mode:ModeInput):Pro
  if(mode==='AIP'){if(!spec.aip||((p.kind==='nuclearGR'||p.kind==='nuclearElectric')&&!s.reactorOffline))throw new Error('AIP backup requires capability and reactor-off for nuclear');for(const g of t.generators!){g.hz=AIP_HZ[spec.aip.kind];g.rpm=g.hz*60/2;}}
  t.tpkValid=!!spec.tpk&&(!spec.tpkMinKts||fraction*spec.maxPsrpm/spec.tpk+1e-9>=spec.tpkMinKts);t.propulsor.brHz=t.shafts[0].hz*s.blades;if(t.stages.length!==d.stages.length||t.ratio!==d.ratio)throw new Error('Reconfigure static mode before changing drivetrain');t.mode=mode as OperatingMode;if(t.aip)t.aip.active=mode==='AIP';let input=t.shafts[0].hz*d.ratio;for(const g of t.stages){g.meshHz=input*g.pinionTeeth;input/=g.ratio;}return t;
 }
-function put(s:Signature,i:number,family:TonalFamily,hz:number,power:number,harmonic:number,shaftIndex?:number,engineIndex?:number,profile?:LineProfile,reactorId?:string,operatorFamily?:'COOLANT'|'TG'|'VANE'|'HYDP'):void {
+function put(s:Signature,i:number,family:TonalFamily,hz:number,power:number,harmonic:number,shaftIndex?:number,engineIndex?:number,profile?:LineProfile,reactorId?:string,operatorFamily?:'COOLANT'|'TG'|'VANE'|'HYDP'|'PRES'):void {
  let l=s.tonals![i];if(!l)l=s.tonals![i]={family,hz,power};if(family!=='eda')l.eda=undefined;l.reactorId=reactorId;l.family=family;l.hz=hz;l.power=power;l.harmonic=harmonic;l.shaftIndex=shaftIndex;l.engineIndex=engineIndex;l.engineId=engineIndex===undefined?undefined:s.propulsion!.engines[engineIndex].id;l.lineFamily=operatorFamily??(family==='shaft'?'PSR':family==='blade'?'BR':family==='electrical'?'GRID':family==='src'?'SRC':family==='motor'&&shaftIndex===0?'MSR':family==='crank'?'CSR':family==='cylinder'?'CFR':family==='diesel'?'EFR':family==='eda'?'EDA':family==='gear'?'MESH':family==='turbine'?'TURBINE':family==='pump'||family==='motor'?'AUX':undefined);const engine=engineIndex===undefined?undefined:s.propulsion!.engines[engineIndex];l.fundamentalHz=family==='shaft'?s.propulsion!.shafts[shaftIndex!].hz:family==='blade'?s.propulsion!.shafts[shaftIndex!].hz*s.blades:family==='motor'&&shaftIndex===0?s.propulsion!.motor!.msrHz:family==='crank'?engine!.csrHz:family==='cylinder'?engine!.cfrHz:family==='diesel'?engine!.efrHz:l.lineFamily?hz/harmonic:undefined;tagLine(l,i,profile??s.lineProfiles?.[family]);
 }
 /** Public rotation orders only (Urick/Ross); relative powers are invented. Fixed topology
@@ -144,6 +144,7 @@ export function writePlantTonals(s:Signature,mode:ModeInput,electricalHarmonics:
  if(mode==='AIP'){for(let h=1;h<=2;h++)put(s,i++,'pump',AIP_HZ[spec.aip!.kind]*.5*h,.025/(h*h),h);}else for(const a of spec.aux)if(a.kind!=='hydp')for(const h of a.harmonics)put(s,i++,a.kind==='acPump'||a.kind==='ssma'?'pump':'motor',a.fHz*h,.025/(h*h),h,undefined,undefined,a);
  for(const w of s.speedGated??NO_GATES)if(w.kind==='SRC')for(let h=1;h<=2;h++)put(s,i++,'src',w.hz*h,.04*w.gain/(h*h),h);
  for(const rate of srcHzPerKn)put(s,i++,'src',speedKn*rate,speedKn>0?.06:0,1);
+ if(spec.propResonance)i=writePropResonance(s,i,spec.propResonance,speedKn);
  if(s.hydpTransient&&spec.hydp)writeHydpBurst(s,i,spec.hydp,s.hydpTransient),i+=HYDP_MAX_ORDERS;
  s.tonals!.length=i;
 }
@@ -171,3 +172,20 @@ export function writeHydpBurst(s:Signature,i:number,h:import('./drivetrain.js').
 }
 /** @deprecated alias — pair curve retired; writes harmonic burst slots. */
 export const writeHydpPair=writeHydpBurst;
+const PRES_EDGE_KN=.5;
+/** PRES amplitude envelope (weights ONLY; never moves a line): raised cosine in PSR order about nCentre. */
+export function presEnvelope(r:import('./drivetrain.js').PropResonanceSpec,n:number):number{return .5*(1+Math.cos(Math.PI*(n-r.nCentre)/(r.halfWidth+1)));}
+/** Abrupt-ish speed gate for the optional [onsetKn, offsetKn] band (0.5 kn edges). */
+export function presSpeedGain(r:import('./drivetrain.js').PropResonanceSpec,speedKn:number):number{
+ const on=r.onsetKn===undefined?1:Math.max(0,Math.min(1,(speedKn-r.onsetKn)/PRES_EDGE_KN)),off=r.offsetKn===undefined?1:Math.max(0,Math.min(1,(r.offsetKn-speedKn)/PRES_EDGE_KN));return Math.min(on,off);
+}
+/** PRES line family. Frequencies: shaft-synchronous n·PSR_shaft for every installed shaft (fixed slot
+ * topology shafts × (2·halfWidth+1)). No physics-side merging: each shaft always emits its own lines;
+ * matched rates give coincident lines that sum incoherently in power, and each stream's own FFT bin
+ * width decides whether a twin pair resolves into a doublet. Zero power when PSR is 0; on D/E/BATT it
+ * still tracks PSR (never the engine). */
+export function writePropResonance(s:Signature,i:number,r:import('./drivetrain.js').PropResonanceSpec,speedKn:number):number{
+ const t=s.propulsion!,gate=presSpeedGain(r,speedKn),peak=.1*10**(r.levelDb/10),lo=r.nCentre-r.halfWidth,width=2*r.halfWidth+1,profile:LineProfile={stability:r.stability,width:'discrete'};
+ for(let shaft=0;shaft<t.shafts.length;shaft++){const hz=t.shafts[shaft].hz;for(let k=0;k<width;k++){const n=lo+k;put(s,i++,'shaft',hz*n,hz>0?peak*presEnvelope(r,n)*gate:0,n,shaft,undefined,profile,undefined,'PRES');}}
+ return i;
+}

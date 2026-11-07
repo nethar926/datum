@@ -24,7 +24,14 @@ export type SpeedWindowSpec={name:string;kind:'SRC';speedKts:[number,number];hz:
 export type SpeedGated={name:string;kind:'SRC';hz:number;active:boolean;gain:number}|{name:string;kind:'SWATH';loHz:number;hiHz:number;active:boolean;gain:number};
 export interface PropellerSpec {shafts:number;blades:number;type:'flat'|'skewed'|'cpp'}
 export interface HydpSpec {nominalHz:number;pairSpacingHz:number;durationS:number}
-export interface VesselPlantSpec {/** Geared diesel with a clutch-shift onto its propulsion motor: an out-of-band coupled command auto-declutches. Unflagged coupled plants reject such commands. */declutchToMotor?:boolean;propeller?:PropellerSpec;hydp?:HydpSpec;tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
+/** PRES (prop resonance), fictional. FREQUENCIES are always shaft-synchronous: line n sits at n·PSR for every
+ * integer n in [nCentre−halfWidth, nCentre+halfWidth] (Wilson: resonance shares PSR spacing, ∝ PSR).
+ * The AMPLITUDE ENVELOPE is a separate weight defined in PSR orders (raised cosine about nCentre), so the
+ * whole cluster, centre included, scales with PSR. No fixed natural-frequency envelope. levelDb is the
+ * envelope peak relative to the PSR h=1 line. Optional [onsetKn, offsetKn] speed band with ~0.5 kn edges.
+ * No physics-side merging: each shaft emits its own n·PSR lines; each stream's FFT bin decides doublets. */
+export interface PropResonanceSpec {nCentre:number;halfWidth:number;levelDb:number;onsetKn?:number;offsetKn?:number;stability:LineStability}
+export interface VesselPlantSpec {propResonance?:PropResonanceSpec;/** Geared diesel with a clutch-shift onto its propulsion motor: an out-of-band coupled command auto-declutches. Unflagged coupled plants reject such commands. */declutchToMotor?:boolean;propeller?:PropellerSpec;hydp?:HydpSpec;tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
 export interface PropulsionTruth {
  kind:Plant['kind']|'unspecified';tpk:number;tpkValid:boolean;tpkMinKts?:number;propulsor:{shafts:number;blades:number;bladeType:PropellerSpec['type'];brHz:number};emergencyPropulsor?:{active:boolean;rpm:number;hz:number;blades:number};mode:OperatingMode;drivetrainCode:DrivetrainCode|'unspecified';drivetrainLabel:string;aip?:{kind:AipSpec['kind'];active:boolean};ratio:number;ratioLabel:string;
  /** Speed window where PSR×R:R sits inside every engine's own erpmMin–erpmMax (coupled D/D & GR). */
@@ -61,6 +68,7 @@ export function validateVesselPlant(s:VesselPlantSpec,electricalHz:50|60):void {
  if(!s||!finite(s.maxPsrpm,20,1200)||!Number.isInteger(s.shafts)||!finite(s.shafts,1,3)||!Array.isArray(s.shaftMismatchPct)||s.shaftMismatchPct.length!==2||!finite(s.shaftMismatchPct[0],0,2)||!finite(s.shaftMismatchPct[1],s.shaftMismatchPct[0],2))throw new Error('Invalid vessel shaft envelope');
  if(s.aip&&(!['stirling','fuelcell','closed-cycle'].includes(s.aip.kind)||!finite(s.aip.powerKw,1,1000)||!finite(s.aip.maxSpeedKts,1,8)||!finite(s.aip.enduranceDays,.1,90)))throw new Error('Invalid AIP backup');
  if(s.speedWindows)for(const w of s.speedWindows)if(!w||!w.name||!Array.isArray(w.speedKts)||w.speedKts.length!==2||!finite(w.speedKts[0],0,45)||!finite(w.speedKts[1],w.speedKts[0],45)||(w.kind==='SRC'?(!finite(w.hz,.01,1e5)||(w.hzPerKnot!==undefined&&!finite(w.hzPerKnot,.01,100))):w.kind!=='SWATH'||!finite(w.loHz,0,1e5)||!finite(w.hiHz,w.loHz+1e-6,1e5)))throw new Error('Invalid speed window');
+ if(s.propResonance){const r=s.propResonance;if(!Number.isInteger(r.nCentre)||!Number.isInteger(r.halfWidth)||!finite(r.halfWidth,1,6)||!finite(r.nCentre,r.halfWidth+2,120)||!finite(r.levelDb,-20,6)||!['stable','unstable'].includes(r.stability)||(r.onsetKn!==undefined&&!finite(r.onsetKn,0,45))||(r.offsetKn!==undefined&&!finite(r.offsetKn,(r.onsetKn??0)+1,45)))throw new Error('Invalid prop resonance');}
  if(s.declutchToMotor&&(s.machinery?.kind!=='dieselGR'||!s.machinery.motor))throw new Error('declutchToMotor needs a geared diesel with a propulsion motor');
  const p=s.machinery;if(!p||!['dieselDirect','dieselGR','dieselElectric','nuclearGR','nuclearElectric'].includes(p.kind))throw new Error('Invalid plant');let rated=0;
  if(p.kind==='dieselDirect'||p.kind==='dieselGR'||p.kind==='dieselElectric'){
