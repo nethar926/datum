@@ -2,7 +2,7 @@ import {configurePropulsion,updatePropulsion,writePlantTonals,writeHydpBurst,pic
 import type {HydpSpec} from './catalog/drivetrain.js';
 import {LineWander} from './lineModel.js';
 import {surfaceCount,createSurfacePool,refreshSurfaceSignature} from './catalog/surface.js';
-import {DemonStream} from './demonStream.js';
+import {DemonStream,bumpDemonWeightTick} from './demonStream.js';
 import {resolveReference,updateDerivedSignature} from './catalog/derive.js';
 import type {ClassParams} from './catalog/schema.js';
 import type {Contact} from './scenario.js';
@@ -333,6 +333,7 @@ export class AcousticEngine {
     for(let i=0;i<this.allContacts.length;i++){const c=this.allContacts[i],out=this.truthState.contacts[i];out.active=c.active!==false;out.x=c.x;out.y=c.y;out.depthM=c.depth;out.crsDeg=(c.course*180/Math.PI+360)%360;out.spdMps=c.speed;out.spdKts=mpsToKnots(c.speed);for(let j=0;j<out.lines.length;j++){const line=c.lines![j],dst=out.lines[j];dst.f0Hz=line.hz;dst.freqHz=line.frequencyHz??line.hz;dst.power=line.power;dst.stability=line.stability!;dst.width=line.width!;dst.sigmaBins=line.sigmaBins??0;dst.eda=line.eda;dst.reactorId=line.reactorId;dst.lineFamily=line.lineFamily;dst.fundamentalHz=line.fundamentalHz;dst.harmonic=line.harmonic;dst.engineId=line.engineId;dst.shaftIndex=line.shaftIndex;}}return t;
   }
   advance(dt:number):void {
+    bumpDemonWeightTick();
     if(!Number.isFinite(dt)||dt<0||dt>1e6||this.scenario.time+dt>1e9)throw new Error('Invalid step dt');
     const s=this.scenario,from=s.time;s.time+=dt;advance(s.ownship,dt);
     for(const c of this.allContacts){let t=from;for(const leg of c.motion)if(leg.at>from&&leg.at<=s.time){advance(c,leg.at-t);c.course=leg.course;c.speed=leg.speed;c.depth=leg.depth;t=leg.at;}advance(c,s.time-t);}

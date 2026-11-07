@@ -262,7 +262,9 @@ Both DEMON streams have 512 bins on the 0–100 Hz modulation axis, at 4 Hz row 
 
 **Repo versus provisional manifest:** `acoustics/src/streamSet.ts:19–30` defines 12 **logical** ids: the 8 `lofar/{ELF,VLF,LF,MF}/{NB,BB}` entries, `demon`, `difarBearing`, `waterColumn`, and `truth`. `liveSimStreamSet()` and `cutStreamSet()` return the same set. `cuts/render.ts` explicitly treats the last three as tool outputs requiring no gram subscribe. That set does not specify two DEMON carriers or FULLBAND NB/BB. `docs/data-contract.md` defines gram units/shapes (default DEMON carrier 1000–4000 Hz); current FE `src/engine/host.ts` subscribes an active LOFAR view per buoy (plus a temporary handoff set), with DEMON optional. None of those establishes 16 unique band subscriptions. The Lead's **provisional manifest v1** is the explicit benchmark load: **8 band + 2 DEMON + 2 FULLBAND = 12 actual gram streams per buoy, 384 at 32 buoys**, plus the shared logical tool outputs. It does not modify the production logical contract.
 
-**DEMON approximation:** `demonStream.ts` sets carrier = (band low + band high)/2 and computes transmission loss at that centre frequency only: 1250 Hz and 4000 Hz for these carriers. This is **not band-integrated source weighting**; carrier selection is approximate and source weighting is **unvalidated**. No physical-model change is made here.
+**DEMON carrier weighting (Lead, 2026-11-07):** spectrum-based envelope model (not waveform-derived DEMON). Per contact the carrier weight is the **linear** band integral ∫ S(f)·G(r,f) df over the carrier band (500–2000 Hz and 2000–6000 Hz), with S(f) the same fictional broadband shape 1/(1+(f/400)²) used by NB/BB and G carrying spreading × Thorp absorption(f) × Lloyd's-mirror `exactGain` × CZ — matching the NB/BB path. TL is **not** averaged in dB; a centre-frequency TL shortcut is no longer used. Absolute scale cancels in the incoherent envelope mix. Carriers remain labelled an **approximation** until source weighting is validated against teaching cuts.
+
+**Cost (60 s manifest v1, RES5, after band-integral + Lloyd recurrence, 48–96 midpoint samples):** 1 contact 9.8 %RT / 24.4 ms tick (was 9.1 % / 22.8 ms centre-TL); 60 contacts 50.8 %RT / 127 ms tick (was 44.4 % / 111 ms). ≈ +7 % / +15 % wall — acceptable for the correct linear ∫S·G.
 
 The single-DEMON/single-FULLBAND runs started before the Lead's steering were stopped and archived in `/workspace/fastpath-logs/superseded-single-demon-single-full/`; they are excluded from provisional-manifest results. The authoritative replacement harness is tracked under `acoustics/bench/fullLoad.bench.ts`. Old `measure.ts` and `profile-measure.ts` logs are preserved unchanged for audit.
 
@@ -347,3 +349,51 @@ no new approximation and no workers yet.
 transmission-loss envelopes are computed on a 1/48-octave grid and linearly interpolated; Lloyd's-
 mirror interference, tonals and all rapidly varying terms are computed at every display bin.
 Measured difference from the exact model ≤0.001 dB. Off by default."
+
+## Shared per-contact calculations across streams and buoys (analysis only; Lead 2026-11-07)
+
+No code change, no new approximation, no workers. Measured from the existing spectrum-kernel
+profile / component timers on tip `0e95d52` / `673183a` (60 contacts, provisional-style load;
+ratios below are the shareable fraction of that profile, scaled to the manifest-v1 short-screen
+tick costs on `e2eaf1a` flag-off: RES5 ≈ 111 ms/tick, RES2 ≈ 2237 ms/tick).
+
+### Buoy-independent (source-side) — already mostly shared
+
+| Term | Where today | Share scope |
+|---|---|---|
+| Source spectrum shape `1/(1+(f/400)²)` | Per-stream band table | Table already per-stream; shape is frequency-only |
+| Tonal / line levels (`fillTonals`, `sourceLevel`) | `loadFrame` → `stateHistory` | **Engine-wide** once per 0.25 s frame |
+| Cavitation power, flow scalars | history slot | Engine-wide |
+| Events / swaths / HYDP gains | history slot | Engine-wide |
+| DEMON source envelope tables | `WeakMap<Signature,Envelope>` | Shared across all buoy DEMON streams |
+
+Further source-side sharing has essentially **no remaining headroom** (~0 % of tick): the
+history ring already computes these once per contact per frame for every buoy/stream.
+
+### Buoy-dependent geometry — recomputed per stream today
+
+| Term | Profile self-time (RES5 / RES2, 60c) | Notes |
+|---|---|---|
+| `geometry` (range, bearing, radials) | ~1.1 % / ~0.7 % | Identical for all streams on the **same** buoy+frame |
+| `spreadingLoss` | ~0.06 % / ~0.06 % | Function of range only |
+| `pathDifference` / Lloyd Δ | ~0.1 % / ~0.09 % | Buoy depth + contact depth + horizontal |
+| `exactGain` (outside the hot bin loop) | ~0.6 % / ~0.09 % | Mostly inlined inside `coreFast` bin loop (dominant) |
+| Doppler | ~n/a / ~0.09 % | Line path only |
+| CZ estimate | in setup | Water-column × depths × range |
+
+Component timers put explicit **setup** (per-contact scalars before the bin loop) at
+~1.9 % of BANDS+FULLBAND work at RES5 and ~1.0 % at RES2. Broadband + Lloyd phase inside
+`coreFast` is 95–99 % of that work and is **inherently** buoy-dependent × per-bin.
+
+### Estimated savings if buoy-dependent scalars are computed once per buoy per frame and reused across that buoy's ~12 gram streams
+
+| Case | Shareable setup fraction | After (11/12) reuse | Estimated tick save | Residual bottleneck |
+|---|---|---|---|---|
+| RES5 × 60, manifest v1 | ~2 % of kernel | ~1.8 % of tick | **~2 ms / ~111 ms ≈ 1.5–3 %** | `coreFast` bin loop |
+| RES2 × 60, manifest v1 | ~1 % of kernel | ~0.9 % of tick | **~20 ms / ~2237 ms ≈ 0.5–1.5 %** | `coreFast` bin loop (FULLBAND) |
+
+Cross-**buoy** sharing of geometry is not possible (each buoy has its own range/bearing/Δ).
+Cross-stream sharing on one buoy is real but small. It does **not** replace a kernel change
+for the RES2 full-load gap; it is the right next step only as a low-risk exact refactor
+before any new approximation or workers.
+

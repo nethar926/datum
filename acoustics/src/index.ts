@@ -12,6 +12,7 @@ export * from './bands.js';
 export * from './res.js';
 export * from './resGram.js';
 export * from './demon.js';
+export * from './demonStream.js';
 export * from './scenario.js';
 export * from './engine.js';
 export * from './protocol.js';
