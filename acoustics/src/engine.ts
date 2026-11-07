@@ -310,7 +310,7 @@ export class AcousticEngine {
     if(!Number.isFinite(dt)||dt<0||dt>1e6||this.scenario.time+dt>1e9)throw new Error('Invalid step dt');
     const s=this.scenario,from=s.time;s.time+=dt;advance(s.ownship,dt);
     for(const c of this.allContacts){let t=from;for(const leg of c.motion)if(leg.at>from&&leg.at<=s.time){advance(c,leg.at-t);c.course=leg.course;c.speed=leg.speed;c.depth=leg.depth;t=leg.at;}advance(c,s.time-t);}
-    for(const state of this.catalogStates){const c=state.contact;if(c.speed!==state.speed||c.depth!==state.depth){updateDerivedSignature(c.params,state.params,mpsToKnots(c.speed),c.depth,c.operatingMode??'normal');state.speed=c.speed;state.depth=c.depth;}}
+    const env=s.environment;for(const c of this.allContacts){c.params.waterTempC=env.temperatureC??15;c.params.waterSalinity=env.salinityPsu??35;if(c.params.plantSpec){c.params.reinforceBr1=c.params.plantSpec.reinforceBr1;c.params.psrHarmonicsStopAtBlades=c.params.plantSpec.psrHarmonicsStopAtBlades;}}for(const state of this.catalogStates){const c=state.contact;if(c.speed!==state.speed||c.depth!==state.depth){updateDerivedSignature(c.params,state.params,mpsToKnots(c.speed),c.depth,c.operatingMode??'normal');state.speed=c.speed;state.depth=c.depth;}}
     for(const state of this.surfaceStates){const c=state.contact;if(c.speed!==state.speed){refreshSurfaceSignature(c.params,state.type,mpsToKnots(c.speed));state.speed=c.speed;}}
     for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(false);this.updateSwaths();this.updateNarrowTransients();
     for(const w of this.lineWanders)w.advance(dt);

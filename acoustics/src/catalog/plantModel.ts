@@ -148,7 +148,8 @@ function put(s:Signature,i:number,family:TonalFamily,hz:number,power:number,harm
  * for a fixed mode: inactive installed engines keep zero-power slots; updates reuse records. */
 export function writePlantTonals(s:Signature,mode:ModeInput,electricalHarmonics:readonly number[]=DEFAULT_HARMONICS,srcHzPerKn:readonly number[]=NO_SRCS,speedKn=0):void {
  mode=normalizeMode(mode,s.plantSpec?.machinery.kind);const spec=s.plantSpec!,p=spec.machinery,t=s.propulsion!;let i=0;
- for(let shaft=0;shaft<t.shafts.length;shaft++){const hz=t.shafts[shaft].hz;for(let h=1;h<=3;h++){put(s,i++,'shaft',hz*h,hz>0?.1/(h*h):0,h,shaft);put(s,i++,'blade',hz*s.blades*h,hz>0?.25/(h*h):0,h,shaft);}}
+ const psrMax=s.psrHarmonicsStopAtBlades||spec.psrHarmonicsStopAtBlades?Math.max(1,s.blades):3,brBoost=(s.reinforceBr1||spec.reinforceBr1)?1.6:1;
+ for(let shaft=0;shaft<t.shafts.length;shaft++){const hz=t.shafts[shaft].hz;for(let h=1;h<=3;h++){const psrLive=h<=psrMax;put(s,i++,'shaft',hz*h,hz>0&&psrLive?.1/(h*h):0,h,shaft);const brPow=hz>0?.25/(h*h)*(h===1?brBoost:1):0;put(s,i++,'blade',hz*s.blades*h,brPow,h,shaft);}}
  for(const h of electricalHarmonics)put(s,i++,'electrical',(mode==='AIP'?AIP_HZ[spec.aip!.kind]:(s.electricalHz??60))*h,.04/(h*h),h);
  if(p.motor){for(let h=1;h<=3;h++)put(s,i++,'motor',(t.motor!.slots?t.motor!.msrHz:t.motor!.shaftHz)*h,t.motor!.rpm>0?.05/(h*h):0,h,t.motor!.slots?0:undefined);}
  // Seeded brightness + richness (sparse/partial/rich). Topology always emits 1..6 slots; power fades.

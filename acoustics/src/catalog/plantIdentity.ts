@@ -64,6 +64,11 @@ export function varyPlantIdentity(s:VesselPlantSpec,id:string):VesselPlantSpec {
  // Class-specific narrowband unintentional transients (subset) — classification clues.
  const TR_IDS=new Set(['blue-brindleflux','green-thistledrift','red-velvetshoal','red-lanternmoss','blue-orbelune']);
  if(TR_IDS.has(id)){const tr=stream(id,'class-transient');s.classTransients=[{id:'fictional-tool-drop',name:'Dropped tool',hz:Number((180+tr()*220).toFixed(2)),harmonics:tr()<.6?[1]:[1,2],durationS:Number((.4+tr()*1.2).toFixed(2))}];}
+ // Optional cavitation teaching flags (Lead: neither mandatory).
+ const BR1_IDS=new Set(['green-thistledrift','red-velvetshoal','red-twilightweft','blue-vellumwake']);
+ const PSR_CUT_IDS=new Set(['blue-brindleflux','red-emberbraid','green-morrowcoil']);
+ if(BR1_IDS.has(id))s.reinforceBr1=true;
+ if(PSR_CUT_IDS.has(id))s.psrHarmonicsStopAtBlades=true;
  return s;
 }
 /** Hash order, not catalog insertion order, assigns non-overlapping teaching bands.
