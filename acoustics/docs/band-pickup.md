@@ -318,6 +318,31 @@ Tolerances: max ≤0.02 dB / mean ≤0.002 dB (2× the fast-path budget, still �
 quantum); null bins and spacing exact; contrast ≤0.1 dB; knee speed exact, level ≤0.02 dB,
 spectral knee ≤1 bin; edges ≤1 hop.
 
+
+**Result: closed as an unsuccessful performance experiment (Lead, 2026-11-07).**
+
+Sequential 60 s short screen on provisional manifest v1 (`5b83b3c`), 3 uncontended
+reps per cell (including the contended RES2 c60 baseline, re-run clean). Raw rows:
+`bench/results/coarse-broadband-seq-2026-11-07.jsonl`.
+
+| Case | flag OFF median %RT [min–max] / tick ms | flag ON median %RT [min–max] / tick ms | wall speedup (off÷on) |
+|---|---|---|---|
+| RES5 × 1 contact | 9.1% [9.1–9.2] / 22.8 ms | 9.8% [9.5–9.8] / 24.4 ms | 0.94× (slower) |
+| RES2 × 1 contact | 38.1% [37.8–38.5] / 95.3 ms | 43.0% [42.6–43.9] / 107.5 ms | 0.89× (slower) |
+| RES5 × 60 contacts | 44.4% [44.4–45.0] / 110.9 ms | 48.9% [48.8–49.8] / 122.2 ms | 0.91× (slower) |
+| RES2 × 60 contacts | 894.8% [862.6–920.4] / 2236.9 ms | 675.5% [640.4–781.0] / 1688.7 ms | **1.32×** |
+
+Accuracy of the approximation was excellent (≤8.6e-4 dB; LM nulls, fringe spacing and
+cavitation knees identical — see table above), but keeping the Lloyd's-mirror phase on the
+fine output-bin grid retains a per-contact × per-bin loop; interpolation overhead outweighs
+the saved `exp` work except at RES2 × 60 contacts (~1.3×). That single win does not clear
+the RES2 full-load budget and regresses the other three cells.
+
+The flag stays **default OFF**. Code (`coreCoarse`, `setCoarseBroadband`) is preserved for
+the record and must not ship. No further coarse-grid tuning; next kernel proposal is shared
+per-contact work across streams/buoys (buoy-independent vs buoy-dependent geometry), with
+no new approximation and no workers yet.
+
 **Sources & Methods wording (for FE):** "Prototype option: smooth broadband source and
 transmission-loss envelopes are computed on a 1/48-octave grid and linearly interpolated; Lloyd's-
 mirror interference, tonals and all rapidly varying terms are computed at every display bin.
