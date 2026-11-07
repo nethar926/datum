@@ -96,8 +96,8 @@ JSON-safe `v:1`, seed, environment, aircraft/contacts/buoys. Each contact has ac
 `params` ready for a later catalog adapter, initial position, and ordered `motion` legs
 `{at,course,speed,depth}` starting at 0. Initial leg sets motion; later changes apply at
 exact boundaries. ENU metres, depth down, m/s, course radians clockwise from north.
-Waypoint targets are typed/reserved and reject. Transients accept only `kind:'hydp'` (m3-events,
-see below); other kinds stay reserved and reject.
+Waypoint targets are typed/reserved and reject. Transients accept `kind:'hydp'` and `kind:'engine-ramp'`
+(m3-events / m3 diesel-dyn, see below); other kinds stay reserved and reject.
 Catalog references are an additive v1 extension; legacy raw params still work. Validation caps 250 contacts, 128 buoys, depths 0..1e6 m (stress-test bound,
 not physically valid), bins 2..16384. Worker M1 is fixed to 1024 bins.
 
@@ -1118,19 +1118,34 @@ Generation: `BEHAVIOUR_HORIZON_S=3600` (60 min of legs).
   ship's fictional signature in place when a leg changes its speed.
 - Truth contacts expose optional `behaviour`.
 
-### HYDP manoeuvre transient
+### HYDP manoeuvre transient (Wilson hydraulic bar)
 
-A leg that turns ≥10° or changes depth ≥5 m schedules `{at,kind:'hydp',params:{}}` (optional
-`durationS` 0.01..3600, `startOffsetPct` 0..20). When a contact's plant has `hydp` metadata,
-the engine reserves two fixed tonal slots (`lineFamily:'HYDP'`, nominal and nominal +
-pairSpacingHz), so the line topology never changes. During a transient the pair is
-speed-independent and follows f = F·(1+δ·e^(−3τ/D)), with δ = 1.5 % by default and D = the
-class `durationS`. Gain ramps up over 0.5 s and down over the final 1 s; otherwise the slots
-carry zero power. The latest-started transient wins. `HYDP_POWER=.05` is an invented level,
-about 2× an aux line. Contacts without scheduled transients have no HYDP slots.
+A leg that turns ≥10° or changes depth ≥5 m schedules HYDP bursts. Burst count is seeded
+(usually 1, sometimes 2, rarely 3) — not fixed pairs. Optional `durationS` 0.01..3600.
+When a contact's plant has `hydp` metadata, the engine reserves `HYDP_MAX_ORDERS` (4) fixed
+harmonic slots at `nominalHz × n` so topology never changes. Seeded `HydpShape` picks live
+orders (1–4), whether ambient drowns the fundamental, and a tiny fade. Bursts are squally:
+abrupt on/off at the **fixed** class frequency (speed-independent; no high→fixed curve).
+`HYDP_POWER≈0.14` so short bursts read on grams. Contacts without scheduled hydp transients
+have no HYDP slots.
+
+### Engine-ramp knee (m3 diesel-dyn)
+
+`{at,kind:'engine-ramp',params:{durationS,toScale,fromScale?}}` — `durationS` 0.01..3600,
+`toScale`/`fromScale` 0.05..1.5 (default fromScale=1). Smoothstep-lerps `Signature.plantRpmScale`
+so CSR, CFR (=CSR/2 on 4-stroke), EFR (=CFR×N), and CFR-locked EDAs fall together with fixed
+ratios; Hn tracks n×f0 so higher lines bend more in Hz. Coupled D/D / GR shafts follow the same
+scale (CSR≡PSR). After the window the end scale holds. Invented teaching curve only — not a
+real platform signature.
+
+Diesel CSR/CFR/EFR emit orders 1..6 (`ENGINE_HARMONICS`) with seeded brightness profiles (EFR>CSR>CFR common, not always) and sparse/partial/rich harmonic gains; EDA stays CFR×multiple locked through every plantRpmScale change (same fractional Δf/f). Sketches are examples of visible engine data — not every diesel cut is a full rich family; each diesel class carries ≥2 EDAs with harmonics `[1,2,3]`. Generated SNORK/SURF diesels get an
+`engine-ramp` after the CPA hold (~720–900 s). Example scenario `m3-diesel-dyn` /
+`dieselDynScenario()` pairs a rich Brindleflux snort, a clear CPA, a mid-pass knee, and a mild
+post-CPA speed drop (BR/PSR motion). Starter cut `cut-brindleflux-snork` adds gramLook
+`engine-knee`.
 
 Deferred: an event-scheme editor and Save-as-cut; waypoint legs; intermittent auxiliary
-duty rendering; mode transitions (SNORK↔BATT etc.) within a run; HYDP on surface ships;
+duty rendering; full mode transitions (SNORK↔BATT etc.) within a run; HYDP on surface ships;
 smooth turn and depth rates (legs still change instantly at `at`).
 
 ## Named LOFAR band presets (m3-bands)
@@ -1183,7 +1198,7 @@ session.drainLofar(row, 120);
 `CutSeed` fields: `v:1`, `modelVersion`, `id`, `seed`, `durationS` (≈300–600),
 `richness` (`sparse`|`moderate`|`rich`), `classId` (+ optional `variantId`/`hullId`),
 `mode` (`SURF`|`SNORK`|`D/E`|`BATT`|`AIP`|`NUC`), `speedKn`, `depthM`, optional
-`lookalikeGroupId`, `classifyingLines` (1–3 with optional `harmonicOf` / `n` / `behaviour` tags), and optional `gramLooks` (Wilson fidelity notes). Line tags: `n` (harmonic order), `harmonicOf` (parent family), `behaviour` (`stable`|`unstable`|`skipped`|`harmonics-only`|`ramping`|`broadband`). Slip rate and full mode-switch propulsion ramps are deferred; `propulsion-ramp` uses catalog EDA `riseS`/`fallS` only.
+`lookalikeGroupId`, `classifyingLines` (1–3 with optional `harmonicOf` / `n` / `behaviour` tags), and optional `gramLooks` (Wilson fidelity notes). Line tags: `n` (harmonic order), `harmonicOf` (parent family), `behaviour` (`stable`|`unstable`|`skipped`|`harmonics-only`|`ramping`|`broadband`). Full SNORK↔BATT mode-switch remains deferred; `propulsion-ramp` uses catalog EDA `riseS`/`fallS` only; `engine-knee` schedules a ratio-locked `engine-ramp` RPM scale.
 
 `renderCut` builds a one-contact DIFAR scenario (MF LOFAR 0–2000 Hz / 2048 bins), reuses
 `AcousticEngine`, and streams LOFAR + DEMON as fast as the host drains. Contacts are baked
@@ -1204,6 +1219,7 @@ HYDP classifying line schedule a mid-cut `hydp` transient.
 | `electrical-ac-dc` | GRID stable/discrete vs dcvr AUX unstable wander |
 | `eda-locked` | EDA tonals track engine running/CFR |
 | `propulsion-ramp` | EDA powers ramp 0→1 over catalog `eda.ramp.riseS` (no mode switch) |
+| `engine-knee` | ratio-locked CSR/CFR/EFR/EDA slowdown via `engine-ramp` transient |
 | `msr-dominant` | MSR floored up; BR attenuated (orbelune 124-slot BATT) |
 
 Starter pack: diesel+nuclear, one AIP (`cut-gloamspiral-aip`), snort/battery/speed variation,

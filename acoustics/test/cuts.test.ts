@@ -74,7 +74,7 @@ describe('renderCut + gram fidelity',()=>{
   const contact=s.engine.scenario.contacts.find(c=>c.category!=='surface')!;
   expect(contact.transients?.some(t=>t.kind==='hydp')).toBe(true);
   const hydp=contact.params.tonals!.filter(l=>l.lineFamily==='HYDP');
-  expect(hydp.length).toBe(2);
+  expect(hydp.length).toBeGreaterThanOrEqual(1);
   const at=contact.transients![0].at;s.engine.advance(at+1);
   expect(hydp[0].power).toBeGreaterThan(0);
  });
@@ -95,7 +95,7 @@ describe('renderCut + gram fidelity',()=>{
  it('classifyingLines carry harmonicOf / n / behaviour tags',()=>{
   for(const c of listCutSeeds())for(const line of c.classifyingLines){
    expect(line.n===undefined||(Number.isInteger(line.n)&&line.n>=1&&line.n<=20)).toBe(true);
-   if(line.behaviour)expect(['stable','unstable','skipped','harmonics-only','ramping','broadband']).toContain(line.behaviour);
+   if(line.behaviour)expect(['stable','unstable','skipped','harmonics-only','ramping','kneeing','broadband']).toContain(line.behaviour);
   }
   const b=getCutSeed('cut-brindleflux-snork')!;
   expect(b.classifyingLines.some(l=>l.n===2&&l.behaviour==='skipped')).toBe(true);

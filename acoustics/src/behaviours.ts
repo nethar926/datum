@@ -75,9 +75,12 @@ export function checkBehaviourLegs(legs:readonly MotionLeg[],limits:BehaviourLim
 }
 export interface HydpTrigger {courseDeg?:number;depthM?:number}
 /** Rudder/hydroplane proxy: a leg that turns ≥courseDeg (default 10°) or changes depth ≥depthM
- * (default 5 m) schedules one `hydp` transient at that leg's time (rendered as a paired blip). */
-export function maneuverTransients(legs:readonly MotionLeg[],trigger:HydpTrigger={}):{at:number;kind:'hydp';params:Record<string,number>}[] {
+ * (default 5 m) schedules HYDP bursts. Burst count is seeded: usually 1, sometimes 2, rarely 3
+ * (Wilson hydraulic bar — not fixed pairs). Optional `rng` makes counts deterministic. */
+export function maneuverTransients(legs:readonly MotionLeg[],trigger:HydpTrigger={},rng?:Random):{at:number;kind:'hydp';params:Record<string,number>}[] {
  const minC=(trigger.courseDeg??10)*DEG,minD=trigger.depthM??5,out:{at:number;kind:'hydp';params:Record<string,number>}[]=[];
- for(let i=1;i<legs.length;i++){const a=legs[i-1],b=legs[i],dc=Math.abs(wrap(b.course-a.course+Math.PI)-Math.PI);if(dc>=minC||Math.abs(b.depth-a.depth)>=minD)out.push({at:b.at,kind:'hydp',params:{}});}
+ const roll=()=>{if(!rng)return 1;const u=rng();return u<.7?1:u<.95?2:3;};
+ for(let i=1;i<legs.length;i++){const a=legs[i-1],b=legs[i],dc=Math.abs(wrap(b.course-a.course+Math.PI)-Math.PI);if(dc<minC&&Math.abs(b.depth-a.depth)<minD)continue;
+  const n=roll(),burstDur=1.2+(rng?rng()*2.5:1.5);for(let k=0;k<n;k++)out.push({at:b.at+k*.4,kind:'hydp',params:{durationS:Number(burstDur.toFixed(2))}});}
  return out;
 }

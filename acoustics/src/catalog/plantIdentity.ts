@@ -12,10 +12,17 @@ export function varyPlantIdentity(s:VesselPlantSpec,id:string):VesselPlantSpec {
  const rng=stream(id,'eda'),names=['LOP','Cooling pump','Fuel transfer','Lube scavenger','Freshwater pump','Ventilation drive'];
  for(let i=names.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[names[i],names[j]]=[names[j],names[i]];}
  if(id==='blue-brindleflux'){const at=names.indexOf('LOP');[names[0],names[at]]=[names[at],names[0]];}
- s.edas=diesel?Array.from({length:1+Math.floor(rng()*3)},(_,i)=>{const example=id==='blue-brindleflux'&&i===0,cfrMultiple=example?27.75:3+Math.floor(rng()*41)+[.25,.5,.75][Math.floor(rng()*3)],name=example?'LOP':names[i];return {id:`fictional-eda-${i}`,name,cfrMultiple,perCrankRev:cfrMultiple*(p.engines[0].stroke===4?.5:1),harmonics:[1,2],ramp:{riseS:3,fallS:2}};}):[];
+ s.edas=diesel?Array.from({length:2+Math.floor(rng()*2)},(_,i)=>{const example=id==='blue-brindleflux'&&i===0,cfrMultiple=example?27.75:3+Math.floor(rng()*41)+[.25,.5,.75][Math.floor(rng()*3)],name=example?'LOP':names[i];return {id:`fictional-eda-${i}`,name,cfrMultiple,perCrankRev:cfrMultiple*(p.engines[0].stroke===4?.5:1),harmonics:[1,2,3],ramp:{riseS:3,fallS:2}};}):[];
  const motor=stream(id,'slots');delete s.motorSlots;if(diesel&&p.motor&&(id==='blue-orbelune'||motor()<.55))s.motorSlots=id==='blue-orbelune'?124:48+Math.floor(motor()*153);
  const hydp=stream(id,'hydraulics');s.hydp={nominalHz:Number((120+hydp()*1100).toFixed(2)),pairSpacingHz:Number((.6+hydp()*2.2).toFixed(2)),durationS:6+Math.floor(hydp()*15)};
  for(const a of s.aux){const aux=stream(id,`aux:${a.id}`);a.fHz=a.kind==='hydp'?s.hydp.nominalHz:a.kind==='electrical'?a.fHz:Number((12+aux()*85).toFixed(2));}
+ // Wilson AC/DC bar: AC AUX (electrical/acPump/acvr) stable+discrete; DC (dcvr) unstable+discrete.
+ for(const a of s.aux){
+  if(a.kind==='electrical'||a.kind==='acPump'||a.kind==='acvr'){a.stability='stable';a.width='discrete';delete a.sigmaBins;}
+  else if(a.kind==='dcvr'){a.stability='unstable';a.width='discrete';delete a.sigmaBins;}
+ }
+ // Guarantee a DC teaching aux on diesel plants when none exists (seeded fictional Hz).
+ if(diesel&&!s.aux.some(a=>a.kind==='dcvr')){const d=stream(id,'dc-teach');s.aux.push({id:'fictional-dc-bus',kind:'dcvr',duty:'continuous',fHz:Number((22+d()*55).toFixed(2)),harmonics:[1,2],stability:'unstable',width:'discrete'});}
  return s;
 }
 /** Hash order, not catalog insertion order, assigns non-overlapping teaching bands.

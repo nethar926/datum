@@ -18,10 +18,13 @@ export function sourceLines(s:Signature):TonalLine[]{
  const lines=s.tonals??Array.from({length:6},(_,i)=>({family:i===0?'shaft':i===1?'blade':'motor',hz:i<2?(i===0?s.shaftHz:bladeRate(s)):s.tonalHz*(i-1),power:10**(-i*3/10)} as TonalLine));
  for(let i=0;i<lines.length;i++)tagLine(lines[i],i,s.lineProfiles?.[lines[i].family]);return lines;
 }
-/** Engine-owned live HYDP transient state (m3-events). Present only on contacts with scheduled hydp
- * transients; its presence reserves two fixed tonal slots (pair) so line topology never changes. */
-export interface HydpTransientState {offsetFrac:number;gain:number}
-export interface Signature {hydpTransient?:HydpTransientState;speedGated?:SpeedGated[];reactorOffline?:boolean; plantSpec?:VesselPlantSpec;propulsion?:PropulsionTruth; label: string; shafts?:number; electricalHz?:50|60; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; lineProfiles?:LineProfiles; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number }
+/** Seeded HYDP teaching shape: harmonic stack of the class frequency (not a fixed pair). */
+export interface HydpShape {/** Live harmonic orders 1..HYDP_MAX_ORDERS when on. */orders:number;/** Ambient drowns h1; higher orders remain. */drownFundamental:boolean;/** Tiny abrupt-edge fade (seconds). */fadeS:number}
+/** Engine-owned live HYDP state. Reserves HYDP_MAX_ORDERS fixed slots so topology never changes.
+ * offsetFrac kept at 0 (Wilson: no high→fixed curve; squally abrupt on/off). */
+export interface HydpTransientState {offsetFrac:number;gain:number;shape:HydpShape}
+/** Optional live scale on diesel ERPM (and coupled shaft) for engine-ramp knees; 1 = nominal. */
+export interface Signature {hydpTransient?:HydpTransientState;/** m3 diesel-dyn: 1 = nominal; engine-ramp lerps this. */plantRpmScale?:number;speedGated?:SpeedGated[];reactorOffline?:boolean; plantSpec?:VesselPlantSpec;propulsion?:PropulsionTruth; label: string; shafts?:number; electricalHz?:50|60; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; lineProfiles?:LineProfiles; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number }
 export const fictionalSignature: Signature = {label:'SSK A',shaftHz:2,blades:5,tonalHz:90,levelDb:125,modulation:.35};
 /** Fictional teaching curves only. Urick: machinery harmonics, propeller blade rate and cavitation.
  * Inception speed rises with hydrostatic pressure; this illustrative fit is NOT platform data. */

@@ -11,7 +11,7 @@ it('every sub has TPK and a validated nested propeller; truth precomputes propul
 });
 it('LOP is CFR x 27.75, strictly between H27 and H28, with 1-3 fractional-order EDAs per diesel class',()=>{
  const hz=edaFrequencyHz(2.5,27.75);expect(hz).toBe(69.375);expect(hz).toBeGreaterThan(27*2.5);expect(hz).toBeLessThan(28*2.5);
- for(const c of catalog.classes.filter(c=>c.plant==='diesel')){within(c.edas.length,[1,3]);expect(c.edas.some(e=>!Number.isInteger(e.cfrMultiple))).toBe(true);const s=deriveSignature(c,'base',{speedKn:5,depthM:5,mode:'SNORK'});for(const l of s.tonals!.filter(l=>l.lineFamily==='EDA')){const engine=s.propulsion!.engines[l.engineIndex!];expect(l.eda).toEqual({name:c.edas.find(e=>e.name===l.eda!.name)!.name,cfrMultiple:c.edas.find(e=>e.name===l.eda!.name)!.cfrMultiple});expect(l.fundamentalHz).toBe(edaFrequencyHz(engine.cfrHz,l.eda!.cfrMultiple));expect(l.hz).toBe(l.fundamentalHz!*l.harmonic!);}
+ for(const c of catalog.classes.filter(c=>c.plant==='diesel')){within(c.edas.length,[1,3]);expect(c.edas.some(e=>!Number.isInteger(e.cfrMultiple))).toBe(true);const s=deriveSignature(c,'base',{speedKn:5,depthM:5,mode:'SNORK'});for(const l of s.tonals!.filter(l=>l.lineFamily==='EDA')){const engine=s.propulsion!.engines[l.engineIndex!];expect(l.eda).toEqual({name:c.edas.find(e=>e.name===l.eda!.name)!.name,cfrMultiple:c.edas.find(e=>e.name===l.eda!.name)!.cfrMultiple});expect(l.fundamentalHz).toBeCloseTo(edaFrequencyHz(engine.cfrHz,l.eda!.cfrMultiple),12);expect(l.hz).toBeCloseTo(l.fundamentalHz!*l.harmonic!,10);}
   const refs=s.tonals!.filter(l=>l.eda).map(l=>l.eda);updateDerivedSignature(s,effectiveParams(c),6,5,'SNORK');s.tonals!.filter(l=>l.eda).forEach((l,i)=>expect(l.eda).toBe(refs[i]));
  }
 });

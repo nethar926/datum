@@ -9,7 +9,7 @@ const hull=(id:string)=>klass(id).hulls[0].id;
 /**
  * Curated ≤10-cut starter pack. Gram looks map to Wilson's fidelity notes; classifyingLines
  * carry harmonicOf / n / behaviour tags and stay truthful to catalog idKeys. All fictional.
- * Slip rate + full mode-switch propulsion ramps deferred (Lead).
+ * Full SNORK↔BATT mode-switch still deferred; engine-knee uses engine-ramp (RPM scale).
  */
 export const STARTER_PACK:CutStarterPack={
  packVersion:1,
@@ -18,11 +18,11 @@ export const STARTER_PACK:CutStarterPack={
   {
    v:1,modelVersion:CUT_MODEL_VERSION,id:'cut-brindleflux-snork',seed:0xC0710001,durationS:420,richness:'moderate',
    classId:'blue-brindleflux',variantId:'base',hullId:hull('blue-brindleflux'),mode:'SNORK',speedKn:12,depthM:12,
-   gramLooks:['engine-harmonics','harmonic-skip','eda-locked','propulsion-ramp','electrical-ac-dc','compendium-truth'],
+   gramLooks:['engine-harmonics','harmonic-skip','eda-locked','propulsion-ramp','engine-knee','electrical-ac-dc','compendium-truth'],
    classifyingLines:[
-    {lineFamily:'CFR',label:'Diesel firing rate (snorting)',n:1,behaviour:'stable',giveaway:false},
+    {lineFamily:'CFR',label:'Diesel firing rate (snorting); family knees together',n:1,behaviour:'kneeing',giveaway:false},
     {lineFamily:'CFR',label:'CFR 2nd harmonic drowned',n:2,harmonicOf:'CFR',behaviour:'skipped',giveaway:false},
-    {lineFamily:'EDA',label:'LOP EDA locked to CFR (×27.75), catalog ramp',n:1,harmonicOf:'CFR',behaviour:'ramping',giveaway:true},
+    {lineFamily:'EDA',label:'LOP EDA locked to CFR (×27.75); riseS + tracks knee',n:1,harmonicOf:'CFR',behaviour:'ramping',giveaway:true},
    ],
   },
   {
