@@ -10,7 +10,7 @@ import type {WaterColumnProfile} from './waterColumn.js';
 import {ambientLevel} from './ambientNoise.js';
 import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
 import {BEARING_NOISE_K,BEARING_SNR_FLOOR} from './lofar.js';
-import {RES_FRAME_S,RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand,type TileBand} from './res.js';
+import {priorityTileOrder,RES_FRAME_S,RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand,type TileBand} from './res.js';
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import type {SpeedGated} from './catalog/drivetrain.js';
@@ -32,7 +32,12 @@ export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:
  * selectTile + renderTile so the same line physics covers an arbitrary f0 tile window. */
 /** Late-read margin kept in the snapshot ring (s). */
 export const RING_LATE_MARGIN_S=8;
-interface SpectrumRing{n:number;p:Float32Array;d:Float32Array;t:Float64Array;head:number;count:number;last:number}
+interface SpectrumRing{n:number;p:Float32Array;d:Float32Array;t:Float64Array;head:number;count:number;last:number;prefill:boolean}
+/** FULLBAND: max tiles holding span history per stream (visible ±1 = the hot set). LRU eviction
+ * disposes the evicted tile's history; a re-prepared tile warms up from real records (no prefill)
+ * and emits unfilled rows until its history covers a full span, after which its rows are
+ * bit-identical to a never-evicted tile. The ONE place the cap is set. */
+export const FULLBAND_MAX_PREPARED_TILES=3;
 export class ResLofarGenerator {
   private waterColumn:WaterColumnProfile|undefined;
  /** Current output width (RES_BINS vernier, or TILE_BINS for a full-axis tile). */
@@ -55,7 +60,7 @@ export class ResLofarGenerator {
  private readonly halfWidth:Int32Array;private readonly clipped:Float64Array;
  private readonly p0:Float64Array;private readonly p1:Float64Array;private readonly p2:Float64Array;private readonly p3:Float64Array;
  /** Span averaging (engine path): per-frame records of the noise-free MODELLED power spectrum on the RES_FRAME_S grid (not waveform samples). */
- private vRing:SpectrumRing={n:0,p:new Float32Array(0),d:new Float32Array(0),t:new Float64Array(0),head:0,count:0,last:-Infinity};
+ private vRing:SpectrumRing={prefill:true,n:0,p:new Float32Array(0),d:new Float32Array(0),t:new Float64Array(0),head:0,count:0,last:-Infinity};
  private readonly tileRings=new Map<number,SpectrumRing>();private readonly tileEnvCache=new Map<number,{hw:Int32Array;amb:Float64Array;shape:Float64Array;abs:Float64Array;coh:Float64Array}>();private fullAxisTiles=0;private fullAxisTileBins=TILE_BINS;
  /** True when the last row was a real span average; false = explicit snapshot fallback (direct generate()/renderTile without history). */
  lastIntegrated=false;
@@ -90,8 +95,24 @@ export class ResLofarGenerator {
   this.applyWindow();this.allocRing();
  }
  /** Preallocate per-tile AR(1) buffers so renderTile stays allocation-free after setup. */
- prepareFullAxis(tileCount:number):void{
-  this.fullAxisTiles=tileCount;for(let i=0;i<tileCount;i++)if(!this.tileRings.has(i)){const keep=this.tileIndex,kb=this.bins;this.selectTile(i,this.fullAxisTileBins);this.tileRings.set(i,this.newRing(this.band.liveBins));this.selectTile(keep,kb);}
+ /** FULLBAND: make visible±1 the most-recently-used prepared tiles; evict LRU beyond the cap
+  * (history disposed). `initial` = stream start (history pre-filled with the start state). */
+ touchTiles(visibleTileIndex:number,initial=false):void{
+  if(this.fullAxisTiles<=0)return;const want=priorityTileOrder(visibleTileIndex,this.fullAxisTiles).slice(0,FULLBAND_MAX_PREPARED_TILES);
+  const keep=this.tileIndex,kb=this.bins;
+  for(let q=want.length-1;q>=0;q--){const i=want[q]!,r=this.tileRings.get(i);if(r){this.tileRings.delete(i);this.tileRings.set(i,r);continue;}
+   this.selectTile(i,this.fullAxisTileBins);this.tileRings.set(i,this.newRing(this.band.liveBins,initial,this.tileRingFrames()));}
+  while(this.tileRings.size>FULLBAND_MAX_PREPARED_TILES){const oldest=this.tileRings.keys().next().value as number;this.tileRings.delete(oldest);}
+  if(this.tileRings.size&&kb>0)this.selectTile(keep,kb);
+ }
+ /** True when tile history covers the whole span ending at tEnd (row may be rendered). */
+ tileReady(tileIndex:number,tEnd:number):boolean{const r=this.tileRings.get(tileIndex);if(!r||r.count===0)return false;const f=RES_FRAME_S,newest=r.t[(r.head-1+r.n)%r.n],oldest=r.t[(r.head-r.count+r.n)%r.n];return newest>=tEnd-1e-6&&oldest-f<=tEnd-this.spanS+1e-6;}
+ /** Prepared tile count and total history bytes for this generator (vernier + tiles). */
+ historyStats():{tiles:number;bytes:number}{let b=this.vRing.p.byteLength+this.vRing.d.byteLength+this.vRing.t.byteLength;for(const r of this.tileRings.values())b+=r.p.byteLength+r.d.byteLength+r.t.byteLength;return {tiles:this.tileRings.size,bytes:b};}
+ prepareFullAxis(tileCount:number,visibleTileIndex=0):void{
+  // FULLBAND keeps history per tile only; release the unused vernier ring.
+  this.vRing={prefill:true,n:0,p:new Float32Array(0),d:new Float32Array(0),t:new Float64Array(0),head:0,count:0,last:-Infinity};
+  this.fullAxisTiles=tileCount;this.touchTiles(visibleTileIndex,true);
   for(let i=0;i<tileCount;i++)if(!this.tileAr.has(i))this.tileAr.set(i,{zr:new Float64Array(this.capacity),zi:new Float64Array(this.capacity),lastRow:-1});
  }
  /** FULLBAND: point the live window at tile `tileIndex` without resetting the row counter. */
@@ -130,7 +151,7 @@ export class ResLofarGenerator {
   * Startup: the first record pre-fills the whole history with the state at that instant (the source
   * is treated as stationary before the stream existed), so early rows are full-span and deterministic. */
  sample(t:number):void{
-  if(this.fullAxisTiles>0){const keep=this.tileIndex,keepBins=this.bins;for(let k=0;k<this.fullAxisTiles;k++){const r=this.tileRings.get(k);if(!r)continue;this.selectTile(k,this.fullAxisTileBins);this.sampleInto(r,t);}this.selectTile(keep,keepBins);return;}
+  if(this.fullAxisTiles>0){const keep=this.tileIndex,keepBins=this.bins;for(const [k,r] of this.tileRings){this.selectTile(k,this.fullAxisTileBins);this.sampleInto(r,t);}this.selectTile(keep,keepBins);return;}
   this.sampleInto(this.vRing,t);
  }
  private sampleInto(r:SpectrumRing,t:number):void{
@@ -138,7 +159,7 @@ export class ResLofarGenerator {
   const cold=!Number.isFinite(r.last);let tk=cold?Math.floor(t/f+1e-9)*f:r.last+f;if(tk>t+1e-9)return;
   this.computeExpected();const P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower,difar=this.difar;
   const put=(tt:number)=>{const h=r.head,o=h*L;for(let i=0;i<L;i++)r.p[o+i]=P[i];if(difar){const d=3*o;for(let i=0;i<L;i++){r.d[d+3*i]=sE[i];r.d[d+3*i+1]=sN[i];r.d[d+3*i+2]=sP[i];}}r.t[h]=tt;r.head=(h+1)%r.n;r.count=Math.min(r.count+1,r.n);r.last=tt;};
-  if(cold)for(let j=r.n-1;j>0;j--)put(tk-j*f);
+  if(cold&&r.prefill)for(let j=r.n-1;j>0;j--)put(tk-j*f);
   for(;tk<=t+1e-9;tk+=f)put(tk);
  }
  /** Engine path: render the row whose analysis span ends at tEnd (simT stamp = END of span). */
@@ -149,7 +170,9 @@ export class ResLofarGenerator {
  get spanS():number{const p=this.params;return p.integrationS+(p.averages-1)*p.hopS;}
  /** Bounded history length (frames): span + late-read margin. */
  private ringFrames():number{return Math.ceil((this.spanS+RING_LATE_MARGIN_S)/RES_FRAME_S)+2;}
- private newRing(L:number):SpectrumRing{const n=this.ringFrames();return {n,p:new Float32Array(n*L),d:this.difar?new Float32Array(3*n*L):new Float32Array(0),t:new Float64Array(n),head:0,count:0,last:-Infinity};}
+ private newRing(L:number,prefill=true,frames=this.ringFrames()):SpectrumRing{const n=frames;return {prefill,n,p:new Float32Array(n*L),d:this.difar?new Float32Array(3*n*L):new Float32Array(0),t:new Float64Array(n),head:0,count:0,last:-Infinity};}
+ /** Tile history: span + one row period + 1 s (hot tiles render on their row tick; backfill tiles beyond the cap are not rendered). */
+ private tileRingFrames():number{return Math.ceil((this.spanS+this.params.rowPeriodS+1)/RES_FRAME_S)+2;}
  private allocRing():void{
   const L=this.band.liveBins,n=this.ringFrames(),r=this.vRing;
   if(r.n!==n||r.p.length!==n*L)this.vRing=this.newRing(L);else{r.head=0;r.count=0;r.last=-Infinity;}
@@ -221,7 +244,11 @@ export class ResLofarGenerator {
   const pw=this.power,rng=this.rng;
   if(this.params.averages===1){const a=HANN_75_AMPLITUDE_CORRELATION,b=Math.sqrt(1-a*a),h=Math.SQRT1_2;
    let zr=this.zr,zi=this.zi,cold=rowKey===0;
-   if(perTileAr){let st=this.tileAr.get(this.tileIndex);if(!st){st={zr:new Float64Array(this.capacity),zi:new Float64Array(this.capacity),lastRow:-1};this.tileAr.set(this.tileIndex,st);}cold=st.lastRow!==rowKey-1;zr=st.zr;zi=st.zi;st.lastRow=rowKey;}
+   if(perTileAr){let st=this.tileAr.get(this.tileIndex);if(!st){st={zr:new Float64Array(this.capacity),zi:new Float64Array(this.capacity),lastRow:-1};this.tileAr.set(this.tileIndex,st);}zr=st.zr;zi=st.zi;
+    // Rows skipped while the tile was unprepared/unfilled: fast-forward the AR(1) chain with the same
+    // per-row seeded draws so the noise is bit-identical to a tile that rendered every row.
+    if(st.lastRow<rowKey-1){for(let r=st.lastRow+1;r<rowKey;r++){rng.reset!((this.baseSeed+Math.imul(r,0x9e3779b9))>>>0);for(let i=0;i<L;i++){zr[i]=a*zr[i]+b*h*gaussian(rng);zi[i]=a*zi[i]+b*h*gaussian(rng);}}rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);cold=false;}
+    else cold=st.lastRow!==rowKey-1;st.lastRow=rowKey;}
    if(cold)for(let i=0;i<L;i++){zr[i]=h*gaussian(rng);zi[i]=h*gaussian(rng);}else for(let i=0;i<L;i++){zr[i]=a*zr[i]+b*h*gaussian(rng);zi[i]=a*zi[i]+b*h*gaussian(rng);}
    // Vernier path keeps zr/zi on the instance fields when not per-tile.
    if(!perTileAr){/* already wrote this.zr/zi */}else{/* tile map holds state */}

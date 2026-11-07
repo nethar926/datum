@@ -161,7 +161,7 @@ export class AcousticEngine {
     const {fLo,fHi}=win;if(!Number.isFinite(fLo)||!Number.isFinite(fHi)||!(fLo<fHi)||fLo<0||fHi>1e6)throw new Error('Invalid view window');
     const fa=sub.fullAxis,fBin=sub.config.fBin,centre=.5*(fLo+fHi);
     const visible=tileIndexForHz(centre,fBin,fa.tileBins,fa.tileCount);
-    fa.visibleTileIndex=visible;fa.viewFLo=fLo;fa.viewFHi=fHi;
+    fa.visibleTileIndex=visible;fa.viewFLo=fLo;fa.viewFHi=fHi;sub.res?.touchTiles(visible);
     // Reprioritise pending work: jobs for visible±1 become hot and jump ahead of backfill.
     if(fa.queue.length){
       const hotSet=new Set(priorityTileOrder(visible,fa.tileCount).slice(0,Math.min(3,fa.tileCount)));
@@ -190,7 +190,7 @@ export class AcousticEngine {
       if(visible===undefined)visible=old?.fullAxis?.visibleTileIndex??0;
       visible=Math.max(0,Math.min(tileCount-1,visible|0));
       const t0=tileBand(settings.res,visible,fmax,tileBins);
-      gen.prepareFullAxis(tileCount);gen.selectTile(visible,tileBins);
+      gen.prepareFullAxis(tileCount,visible);gen.selectTile(visible,tileBins);
       const viewFLo=old?.fullAxis?.viewFLo,viewFHi=old?.fullAxis?.viewFHi;
       const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:b.rfChannel,bins:tileBins,f0:0,fBin:p.fBin,rowRateHz:p.rowRateHz,dbFloor:settings.filter==='NB'?0:40,dbCeil:settings.filter==='NB'?30:110,res:settings.res,filter:settings.filter,bandHz:fmax,enbwHz:p.enbwHz,bandLimited:t0.bandLimited,liveBins:t0.liveBins,rowPhaseS:phase,fullAxis:true,tileBins,tileCount,visibleTileIndex:visible,...(viewFLo!==undefined&&viewFHi!==undefined?{viewFLo,viewFHi}:{})};
       const start=Math.floor((this.time-phase)/p.rowPeriodS+1e-9)*p.rowPeriodS+phase;
@@ -256,8 +256,11 @@ export class AcousticEngine {
     if(sub?.fullAxis&&sub.res){
       const fa=sub.fullAxis,job=fa.queue.shift()!;
       if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);sub.res.bearingRow.fill(NaN);fa.lastTile={tileIndex:job.tileIndex,tileBins:fa.tileBins,f0:job.tileIndex*fa.tileBins*sub.config.fBin,fBin:sub.config.fBin,liveBins:0,filled:false};return rowIndex;}
+      const tEnd=sub.start+(job.rowKey+1)/sub.config.rowRateHz;
+      // Tiles outside the prepared (capped) set, or still warming after re-prepare: unfilled stub, never a snapshot.
+      if(!sub.res.tileReady(job.tileIndex,tEnd)){out.fill(NaN,offset,offset+bins);sub.res.bearingRow.fill(NaN);fa.lastTile={tileIndex:job.tileIndex,tileBins:fa.tileBins,f0:job.tileIndex*fa.tileBins*sub.config.fBin,fBin:sub.config.fBin,liveBins:0,filled:false};return rowIndex;}
       const t=tileBand(sub.config.res!,job.tileIndex,this.scenario.fMax??this.scenario.fmax,fa.tileBins);
-      sub.res.renderTileAt(job.tileIndex,job.rowKey,sub.start+(job.rowKey+1)/sub.config.rowRateHz,out,offset,fa.tileBins);
+      sub.res.renderTileAt(job.tileIndex,job.rowKey,tEnd,out,offset,fa.tileBins);
       fa.lastTile={tileIndex:t.tileIndex,tileBins:t.tileBins,f0:t.f0,fBin:t.fBin,liveBins:t.liveBins,filled:true};
       // Mirror current tile on gramConfig so FE peeking config sees the last emitted slice.
       sub.config={...sub.config,f0:t.f0,liveBins:t.liveBins,bandLimited:t.bandLimited,simT:this.time};
