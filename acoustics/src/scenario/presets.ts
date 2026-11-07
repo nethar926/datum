@@ -10,6 +10,8 @@ import {effectiveParams} from '../catalog/schema.js';
 import {cavitationInceptionKn} from '../catalog/derive.js';
 import {planBehaviour,pickSubBehaviour,maneuverTransients,subBehaviourWeights,SUB_BEHAVIOURS,BEHAVIOUR_HORIZON_S,type SubBehaviour,type BehaviourLimits} from '../behaviours.js';
 import type {SubmarineClass,ClassParams,OperatingState} from '../catalog/schema.js';
+import {placeContactSpawn,spawnLevelDb} from '../spawnGeometry.js';
+import {deriveSignature} from '../catalog/derive.js';
 export type Difficulty='easy'|'regular'|'difficult';
 /** v1.1 plain operator-editable data, not a hidden difficulty switch. surfaceTraffic controls a seeded ship prefix and ambient shipping. */
 export interface ScenarioParams {reactorOffline?:boolean;subCount:number;rarityWeights:RarityWeights;opState:{speedKn:[number,number];depthM:[number,number];quietProb:number;cavitationAllowed:boolean};seaState:number;surfaceTraffic:number;cpaRangeKm:[number,number];buoyLifeMin:number;seed:number;/** m3-events: optional sub behaviour pick weights (defaults subBehaviourWeights). */behaviourWeights?:Record<SubBehaviour,number>}
@@ -47,14 +49,23 @@ export function generateScenario(params:ScenarioParams,seed=params.seed):Scenari
  for(let i=0;i<p.subCount;i++){const draw=randomizeSelection(select,p.rarityWeights),c=effectiveParams(draw.klass,draw.variantId),rng=mulberry32(deriveSeed(p.seed,`op-state:${i}`));
   const quiet=rng()<p.opState.quietProb;let speed=p.opState.speedKn[0]+rng()*(p.opState.speedKn[1]-p.opState.speedKn[0]);const depth=clamp(p.opState.depthM[0]+rng()*(p.opState.depthM[1]-p.opState.depthM[0]),c.depthM[0],c.depthM[1]);
   speed=Math.min(speed,c.maxSpeedKn);if(quiet)speed=Math.min(speed,c.quietSpeedKn);if(!p.opState.cavitationAllowed)speed=Math.min(speed,.95*cavitationInceptionKn(c,depth));
-  const op=chooseOperatingState(draw.klass,speed,depth,quiet,mulberry32(deriveSeed(p.seed,`static-mode:${i}`)),p.reactorOffline===true);speed=op.speedKn;const mode=op.mode,course=rng()*2*Math.PI,cpa=1000*(p.cpaRangeKm[0]+rng()*(p.cpaRangeKm[1]-p.cpaRangeKm[0])),v=knotsToMps(speed);
+  const op=chooseOperatingState(draw.klass,speed,depth,quiet,mulberry32(deriveSeed(p.seed,`static-mode:${i}`)),p.reactorOffline===true);speed=op.speedKn;const mode=op.mode,v=knotsToMps(speed);
   const brng=mulberry32(deriveSeed(p.seed,`behaviour:${i}`)),behaviour=pickSubBehaviour(brng,p.behaviourWeights??subBehaviourWeights),limits=subBehaviourLimits(draw.klass,c,op,p,quiet);
-  // Legs hold the original CPA geometry for the first 600 s (CPA time), then diverge.
-  const motion=planBehaviour({kind:behaviour,seed:Math.floor(brng()*4294967296),durationS:BEHAVIOUR_HORIZON_S,holdS:600,start:{course,speed:v,depth},limits}),transients:ContactTransient[]=maneuverTransients(motion,{},brng);
+  const course0=brng()*2*Math.PI;
+  // Legs hold geometry for the first 600 s, then diverge. Spawn placement overwrites leg 0 course/pos.
+  const motion=planBehaviour({kind:behaviour,seed:Math.floor(brng()*4294967296),durationS:BEHAVIOUR_HORIZON_S,holdS:600,start:{course:course0,speed:v,depth},limits}),transients:ContactTransient[]=maneuverTransients(motion,{},brng);
   // Lead: tactics for unflagged coupled plants stay inside the exposed coupled window (no rejected commands).
   const cw=commandSpeedWindowKn(draw.klass,mode);if(cw)for(const leg of motion){const k=mpsToKnots(leg.speed);leg.speed=knotsToMps(Math.min(cw.max*(1-1e-6),Math.max(cw.min*(1+1e-6),k)));}
   // Fictional diesel teaching: after CPA hold, a small ratio-locked engine-slowdown knee on SNORK/SURF.
   if(draw.klass.plant==='diesel'&&(mode==='SNORK'||mode==='SURF')){const kneeAt=720+Math.floor(brng()*180),toScale=.82+.06*brng();transients.push({at:kneeAt,kind:'engine-ramp',params:{durationS:35+Math.floor(brng()*25),fromScale:1,toScale:Number(toScale.toFixed(3))}});}
-  s.contacts.push({id:`fictional-${i+1}`,category:'subsurface',classificationTarget:true,behaviour,catalogRef:{classId:draw.classId,variantId:draw.variantId,hullId:draw.hullId},operatingMode:mode,reactorOffline:p.reactorOffline===true&&draw.klass.plant==='nuclear'&&draw.klass.aipCapable,x:-600*v*Math.sin(course)+cpa*Math.cos(course),y:-600*v*Math.cos(course)-cpa*Math.sin(course),depth,course,speed:v,motion,...(transients.length?{transients}:{})});
+  // Wilson spawn: sometimes beside the buoy, sometimes outside — fade-in ≤ 180 s via SNR/TL.
+  const sig=deriveSignature(draw.klass,draw.variantId,{speedKn:speed,depthM:depth,mode,reactorOffline:p.reactorOffline===true&&draw.klass.plant==='nuclear'&&draw.klass.aipCapable});
+  const levelDb=spawnLevelDb(sig,v,depth);
+  // Spawn SNR uses seaState + fixed moderate shipping so surfaceTraffic does not perturb sub draws.
+  const spawnEnv={seaState:s.environment.seaState,shipping:'moderate' as const,shippingDensity:.5,soundSpeed:s.environment.soundSpeed,spreading:s.environment.spreading,transition:s.environment.transition};
+  const place=placeContactSpawn({seed:p.seed,contactId:`fictional-${i+1}`,speed:v,depth,levelDb,env:spawnEnv,buoy:s.buoys[0],inside:rng()<.35});
+  // Re-seed behaviour start course/speed from placement; keep planned legs but rewrite leg 0.
+  if(motion[0]){motion[0]={...motion[0],course:place.course,speed:place.speed,depth:place.depth};}
+  s.contacts.push({id:`fictional-${i+1}`,category:'subsurface',classificationTarget:true,behaviour,catalogRef:{classId:draw.classId,variantId:draw.variantId,hullId:draw.hullId},operatingMode:mode,reactorOffline:p.reactorOffline===true&&draw.klass.plant==='nuclear'&&draw.klass.aipCapable,x:place.x,y:place.y,depth:place.depth,course:place.course,speed:place.speed,motion,...(transients.length?{transients}:{})});
  }s.classificationTargets=s.contacts.map(c=>c.id);s.surfacePool=createSurfacePool(p.seed,Math.min(18,250-s.contacts.length));const n=surfaceCount(p.surfaceTraffic,s.surfacePool.length);for(let i=0;i<n;i++){s.surfacePool[i].active=true;s.contacts.push(s.surfacePool[i]);}return loadScenario(s);
 }
