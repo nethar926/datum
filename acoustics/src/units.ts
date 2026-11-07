@@ -7,8 +7,10 @@ export const powerToDb = (power: number): number => 10 * Math.log10(Math.max(1e-
 export const amplitudeToDb = (a: number): number => 20 * Math.log10(Math.max(1e-15, Math.abs(a)));
 export const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
 
-/** Mackenzie (1981) JASA 70:807 published validity domain.
- * T −2…30 °C, S 25…40 ppt, D 0…8000 m. (Lead note said T 2–30; published lower bound is −2.) */
+/** K. V. Mackenzie, J. Acoust. Soc. Am. 70(3), 807–812 (1981) — validity domain we enforce:
+ * T −2…30 °C, S 25…40 ppt, D 0…8000 m.
+ * NPL guide (http://resource.npl.co.uk/acoustics/techguides/soundseawater/) lists T 2…30 / S 25…40;
+ * JASA abstract lists T −2…30 / S 30…40. */
 export const MACKENZIE_VALID={temperatureC:[-2,30] as const,salinityPsu:[25,40] as const,depthM:[0,8000] as const};
 
 export type MackenzieOutOfRange={temperature:boolean;salinity:boolean;depth:boolean;any:boolean};
@@ -21,8 +23,8 @@ export function mackenzieOutOfRange(T:number,S:number,D:number):MackenzieOutOfRa
  return {temperature,salinity,depth,any:temperature||salinity||depth};
 }
 
-/** Mackenzie (1981), JASA 70:807, nine-term equation. Inputs clamped to published domain
- * (never silently extrapolate). Output m/s — not an ocean profile solver. */
+/** Mackenzie nine-term sound-speed equation (JASA 70(3) 807–812, 1981). Inputs clamped to
+ * MACKENZIE_VALID (never silently extrapolate). Output m/s — not an ocean profile solver. */
 export function soundSpeed(T: number, S: number, D: number): number {
   T = clamp(T, MACKENZIE_VALID.temperatureC[0], MACKENZIE_VALID.temperatureC[1]);
   S = clamp(S, MACKENZIE_VALID.salinityPsu[0], MACKENZIE_VALID.salinityPsu[1]);

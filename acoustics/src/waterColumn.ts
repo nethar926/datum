@@ -3,12 +3,15 @@ import {clamp,soundSpeed,mackenzieOutOfRange,MACKENZIE_VALID,type MackenzieOutOf
 /** Default salinity (ppt / PSU) when a scenario omits it. Constant with depth — no S(z) profile. */
 export const DEFAULT_SALINITY_PSU=35;
 
-/** Bathythermograph + sound-speed profile on a shared depth axis (Mackenzie 1981).
+/** Bathythermograph + sound-speed profile on a shared depth axis.
+ * Citation: K. V. Mackenzie, J. Acoust. Soc. Am. 70(3), 807–812 (1981); NPL summary
+ * http://resource.npl.co.uk/acoustics/techguides/soundseawater/
  * Invented mixed-layer / thermocline shape for training; FE graphs the arrays.
  *
  * Salinity assumption: a single scalar `salinityPsu` (default 35 ppt), constant with depth.
- * No salinity profile is modeled. Mackenzie validity: T −2…30 °C, S 25…40 ppt, D 0…8000 m.
- * Out-of-range request inputs are clamped for the equation and flagged on `outOfRange`. */
+ * No salinity profile is modeled. Validity enforced: T −2…30 °C, S 25…40 ppt, D 0…8000 m.
+ * Out-of-range request inputs are clamped for the equation and flagged on `outOfRange`.
+ * FE must visibly mark clamped values in plots (see docs/water-column-fe.md). */
 export interface WaterColumnProfile {
   /** Depth samples (m), shallow → deep. */
   depthM:Float64Array;

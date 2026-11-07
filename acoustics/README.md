@@ -88,7 +88,7 @@ The default client worker URL targets built ESM `dist/worker.js`.
   300 m); buoy RF/depth/battery/state/health (`ok`|`fault`); strongest K≤8 DIFAR lines per buoy:
   `{buoyId,freqHz,brgDeg,quality}` (quality=SNR dB). Numeric IDs map `buoy-N`. Fixed-length truth contacts include active flags and source-line tags (see M3 below).
 - `error {message}` is a diagnostic extension. Wideband, azigram, DICASS,
-  VLAD remains reserved/rejected. BT/SSP water-column profiles are live on `scenario.waterColumn` (see docs/water-column-fe.md). DEMON streams are enabled as described below.
+  VLAD remains reserved/rejected. BT/SSP water-column profiles are live on `scenario.waterColumn` (FE handoff `docs/water-column-fe.md`: Mackenzie JASA 70(3) 807–812 (1981); NPL http://resource.npl.co.uk/acoustics/techguides/soundseawater/; mark clamps in plots). DEMON streams are enabled as described below.
 
 ## Scenario v1
 
@@ -139,7 +139,7 @@ not physically valid), bins 2..16384. Worker M1 is fixed to 1024 bins.
 Urick, *Principles of Underwater Sound*, 3e (1983); Kinsler/Frey et al., *Fundamentals of
 Acoustics*, 4e (2000); Jensen et al., *Computational Ocean Acoustics*, 2e (2011).
 Wenz, JASA 34 (1962), 1936–1956; Knudsen/Alford/Emling, J. Marine Research 7 (1948),
-410–429; Thorp, JASA 42 (1967), 270; Mackenzie, JASA 70 (1981), 807–812.
+410–429; Thorp, JASA 42 (1967), 270; Mackenzie, J. Acoust. Soc. Am. 70(3), 807–812 (1981) (NPL guide: http://resource.npl.co.uk/acoustics/techguides/soundseawater/).
 Public Mulberry32, Box–Muller (1958), Cooley–Tukey (1965) numerical algorithms.
 
 ## Catalog (M2)

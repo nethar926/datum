@@ -6,7 +6,8 @@ import {
 
 describe('BT buoy / SSP (Mackenzie)',()=>{
  it('paired BT/SSP share a depth axis; SSP matches Mackenzie check values',()=>{
-  // Mackenzie nine-term self-check (T=0,S=35,D=0 → constant term; T=25,S=35,D=1000 → ~1550.74)
+  // Arithmetic self-check of the nine-term formula (not a validity-domain claim).
+  // T=0,S=35,D=0 → constant term; T=25,S=35,D=1000 → ~1550.74 (inside stated validity).
   expect(soundSpeed(0,35,0)).toBeCloseTo(1448.96,5);
   expect(soundSpeed(25,35,1000)).toBeCloseTo(1550.744,2);
   const p=buildWaterColumn({surfaceTempC:18,deepTempC:8,salinityPsu:35,maxDepthM:400,samples:41});
@@ -37,6 +38,7 @@ describe('BT buoy / SSP (Mackenzie)',()=>{
  });
  it('flags and clamps out-of-range Mackenzie inputs; salinity default is constant 35 ppt',()=>{
   expect(DEFAULT_SALINITY_PSU).toBe(35);
+  // Stated validity: T −2…30 °C, S 25…40 ppt, D 0…8000 m (Mackenzie 1981 / NPL guide).
   expect(MACKENZIE_VALID.temperatureC).toEqual([-2,30]);
   expect(MACKENZIE_VALID.salinityPsu).toEqual([25,40]);
   expect(MACKENZIE_VALID.depthM).toEqual([0,8000]);
