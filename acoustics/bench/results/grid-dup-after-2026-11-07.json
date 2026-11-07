@@ -1,0 +1,335 @@
+{
+  "note": "4 buoys; ratios buoy-independent; last tick of last 4 s window; 12 s run",
+  "results": [
+    {
+      "sec": 12,
+      "res": 5,
+      "nC": 1,
+      "nBuoys": 4,
+      "tickSimT": 12,
+      "coreFastCalls": 48,
+      "contactBinEvals": 72784,
+      "uniqueExactGridTs": 48,
+      "uniqueExactContactBin": 72784,
+      "uniqueCentreGridTs": 40,
+      "uniqueCentreContactBin": 64592,
+      "multiFilterExactKeys": 0,
+      "crossLCentreKeys": 8,
+      "dupRatioExact": 1,
+      "dupRatioCentre": 1.126826851622492,
+      "byKind": {
+        "r2|L=1024|full=false|NB": 16,
+        "r4|L=1024|full=false|NB": 8,
+        "r5|L=1024|full=false|NB": 8,
+        "r7|L=1001|full=false|NB": 8,
+        "r5|L=4001|full=true|NB": 8
+      },
+      "crossLExamples": [
+        {
+          "k": "buoy-1|r5|f0=0|df=0.5|ts=10.25",
+          "Ls": [
+            1024,
+            4001
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r5|f0=0|df=0.5|ts=10.5",
+          "Ls": [
+            1024,
+            4001
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r5|f0=0|df=0.5|ts=10.75",
+          "Ls": [
+            1024,
+            4001
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r5|f0=0|df=0.5|ts=11",
+          "Ls": [
+            1024,
+            4001
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        }
+      ]
+    },
+    {
+      "sec": 12,
+      "res": 5,
+      "nC": 60,
+      "nBuoys": 4,
+      "tickSimT": 12,
+      "coreFastCalls": 48,
+      "contactBinEvals": 4367040,
+      "uniqueExactGridTs": 48,
+      "uniqueExactContactBin": 4367040,
+      "uniqueCentreGridTs": 40,
+      "uniqueCentreContactBin": 3875520,
+      "multiFilterExactKeys": 0,
+      "crossLCentreKeys": 8,
+      "dupRatioExact": 1,
+      "dupRatioCentre": 1.126826851622492,
+      "byKind": {
+        "r2|L=1024|full=false|NB": 16,
+        "r4|L=1024|full=false|NB": 8,
+        "r5|L=1024|full=false|NB": 8,
+        "r7|L=1001|full=false|NB": 8,
+        "r5|L=4001|full=true|NB": 8
+      },
+      "crossLExamples": [
+        {
+          "k": "buoy-1|r5|f0=0|df=0.5|ts=10.25",
+          "Ls": [
+            1024,
+            4001
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r5|f0=0|df=0.5|ts=10.5",
+          "Ls": [
+            1024,
+            4001
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r5|f0=0|df=0.5|ts=10.75",
+          "Ls": [
+            1024,
+            4001
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r5|f0=0|df=0.5|ts=11",
+          "Ls": [
+            1024,
+            4001
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        }
+      ]
+    },
+    {
+      "sec": 12,
+      "res": 2,
+      "nC": 1,
+      "nBuoys": 4,
+      "tickSimT": 12,
+      "coreFastCalls": 552,
+      "contactBinEvals": 2088840,
+      "uniqueExactGridTs": 552,
+      "uniqueExactContactBin": 2088840,
+      "uniqueCentreGridTs": 536,
+      "uniqueCentreContactBin": 2072456,
+      "multiFilterExactKeys": 0,
+      "crossLCentreKeys": 16,
+      "dupRatioExact": 1,
+      "dupRatioCentre": 1.0079055960657306,
+      "byKind": {
+        "r2|L=1024|full=false|NB": 16,
+        "r4|L=1024|full=false|NB": 8,
+        "r5|L=1024|full=false|NB": 8,
+        "r7|L=1001|full=false|NB": 8,
+        "r2|L=4096|full=true|NB": 448,
+        "r2|L=3329|full=true|NB": 64
+      },
+      "crossLExamples": [
+        {
+          "k": "buoy-1|r2|f0=0|df=0.0625|ts=8.25",
+          "Ls": [
+            1024,
+            4096
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r2|f0=0|df=0.0625|ts=8.5",
+          "Ls": [
+            1024,
+            4096
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r2|f0=0|df=0.0625|ts=8.75",
+          "Ls": [
+            1024,
+            4096
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r2|f0=0|df=0.0625|ts=9",
+          "Ls": [
+            1024,
+            4096
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        }
+      ]
+    },
+    {
+      "sec": 12,
+      "res": 2,
+      "nC": 60,
+      "nBuoys": 4,
+      "tickSimT": 12,
+      "coreFastCalls": 552,
+      "contactBinEvals": 125330400,
+      "uniqueExactGridTs": 552,
+      "uniqueExactContactBin": 125330400,
+      "uniqueCentreGridTs": 536,
+      "uniqueCentreContactBin": 124347360,
+      "multiFilterExactKeys": 0,
+      "crossLCentreKeys": 16,
+      "dupRatioExact": 1,
+      "dupRatioCentre": 1.0079055960657306,
+      "byKind": {
+        "r2|L=1024|full=false|NB": 16,
+        "r4|L=1024|full=false|NB": 8,
+        "r5|L=1024|full=false|NB": 8,
+        "r7|L=1001|full=false|NB": 8,
+        "r2|L=4096|full=true|NB": 448,
+        "r2|L=3329|full=true|NB": 64
+      },
+      "crossLExamples": [
+        {
+          "k": "buoy-1|r2|f0=0|df=0.0625|ts=8.25",
+          "Ls": [
+            1024,
+            4096
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r2|f0=0|df=0.0625|ts=8.5",
+          "Ls": [
+            1024,
+            4096
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r2|f0=0|df=0.0625|ts=8.75",
+          "Ls": [
+            1024,
+            4096
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        },
+        {
+          "k": "buoy-1|r2|f0=0|df=0.0625|ts=9",
+          "Ls": [
+            1024,
+            4096
+          ],
+          "filters": [
+            "NB"
+          ],
+          "fulls": [
+            false,
+            true
+          ]
+        }
+      ]
+    }
+  ]
+}

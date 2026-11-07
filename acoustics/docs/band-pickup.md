@@ -448,3 +448,23 @@ Tests: `test/spanCache.test.ts` (NB/BB bit-identical expected spectra + hit coun
 identity; vernier still on accumulators). Full suite must stay green; rows match the previous
 fast path bit-for-bit.
 
+**501/501 tests passed** on tip `8fc41b8` (was 498; +3 span-cache tests).
+
+### Short-screen bench (60 s, provisional manifest v1, 3 sequential uncontended reps)
+
+Compared to the post-DEMON / coarse-OFF baseline on the same harness (`5b83b3c`):
+
+| Case | before median %RT / tick ms | after (span reuse) median %RT [min–max] / tick ms | wall speedup |
+|---|---|---|---|
+| RES5 × 1 contact | 9.8% / 24.4 ms | 9.2% [9.2–9.5] / 23.0 ms | ~1.06× (noise) |
+| RES5 × 60 contacts | 50.8% / 127 ms | 49.3% [48.9–50.2] / 123.3 ms | ~1.03× (noise) |
+| RES2 × 1 contact | 38.1% / 95.3 ms | 27.2% [27.1–27.3] / 68.0 ms | **1.40×** |
+| RES2 × 60 contacts | 894.8% / 2237 ms | 457.4% [455.8–461.7] / 1143 ms | **1.96×** |
+
+Raw: `bench/results/span-reuse-seq-2026-11-07.jsonl`. Acoustics retained at end ≈ 35.5 MB
+(RES5×1) / 52.95 MB (RES2×60), including the fixed ~2.0 MB `SPAN_CACHE`. RES5 unchanged in
+exact-grid work (already deduped); RES2 matches the measured ~1.98× duplication removal.
+Residual centre-grid overlap and the `coreFast` bin loop remain the bottleneck; **WASM SIMD
+prototype is next** (Lead), with this reuse kept.
+
+
