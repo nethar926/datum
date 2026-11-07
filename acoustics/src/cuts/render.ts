@@ -22,6 +22,29 @@ export const CUT_BINS=2048;
 
 /** Build a minimal single-contact aviation scenario from a validated CutSeed.
  * Contacts carry baked `params` (no catalogRef) so plantSpec overlays (SSMA etc.) survive loadScenario. */
+
+/** Scenario-pack motion/transient overlays (static seeded; never continuous). */
+function applyScenarioOverlay(cut:CutSeed,motion:{at:number;course:number;speed:number;depth:number}[],transients:ContactTransient[],v:number,course:number,depth:number):void {
+ const kind=cut.scenario;if(!kind)return;
+ const DEG=Math.PI/180;
+ if(kind==='declutch'){ // slow below coupled window mid-cut
+  motion.push({at:180,course,speed:v*.25,depth});
+ }else if(kind==='swaths'||kind==='lloyd-maneuver'){
+  motion.push({at:120,course:course+35*DEG,speed:v,depth:depth+25});
+  motion.push({at:240,course:course-20*DEG,speed:v,depth:Math.max(20,depth-15)});
+  transients.push({at:120,kind:'swath',params:{durationS:1.2,loHz:50,hiHz:400}},{at:120,kind:'hydp',params:{durationS:1.5}},{at:240,kind:'swath',params:{durationS:.9,loHz:60,hiHz:350}});
+ }else if(kind==='lloyd-symmetric'||kind==='doppler-cpa'){
+  // straight constant-depth CPA: leave single leg (already set)
+ }else if(kind==='src-fade'){
+  motion.push({at:150,course,speed:v*1.8,depth}); // speed-up into SRC window
+ }else if(kind==='cavitation'){
+  motion.push({at:200,course,speed:Math.max(v,knotsToMps(cut.speedKn*1.05)),depth:0});
+ }else if(kind==='hydp-masked'){
+  transients.push({at:90,kind:'hydp',params:{durationS:2.5}});
+ }
+ void v;
+}
+
 export function scenarioFromCut(cut:CutSeed):ScenarioInput {
  validateCutSeed(cut);
  const {klass}=resolveReference({classId:cut.classId,variantId:cut.variantId,hullId:cut.hullId});
@@ -50,6 +73,7 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
  const transients:ContactTransient[]=[];
  if(wantsHydp){for(let k=0;k<hydpN;k++)transients.push({at:hydpAt+k*.4,kind:'hydp',params:{durationS:hydpDur}});}
  if(wantsKnee)transients.push({at:kneeAt,kind:'engine-ramp',params:{durationS:kneeDur,fromScale:1,toScale:kneeTo}});
+ applyScenarioOverlay(cut,motion,transients,v,course,cut.depthM);
  const scen:ScenarioInput={
   v:1,seed:cut.seed,mode:'aviation',bins:CUT_BINS,fmax:CUT_FMAX,fMax:CUT_FMAX,fBin:CUT_FMAX/(CUT_BINS-1),band:[0,CUT_FMAX],time:0,
   surfaceTraffic:traffic,

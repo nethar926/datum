@@ -56,6 +56,14 @@ export interface CutClassifyingLine {
   behaviour?:CutLineBehaviour;
 }
 
+/** 15-min scenario-pack kinds (Wilson procedural teaching cuts). */
+export const CUT_SCENARIO_KINDS=[
+ 'surfaced','snorting','battery','declutch','swaths','eda-rich','intermittent-aux',
+ 'limited-data','demon-only','hydp-masked','no-hydp','lloyd-symmetric','lloyd-maneuver',
+ 'src-fade','cavitation','doppler-cpa',
+] as const;
+export type CutScenarioKind=typeof CUT_SCENARIO_KINDS[number];
+
 /** Fixed seed for a short classification practice gram (CUT mode). Public physics only. */
 export interface CutSeed {
   v:1;
@@ -63,7 +71,7 @@ export interface CutSeed {
   modelVersion:string;
   id:string;
   seed:number;
-  /** Wall-clock-free sim duration of the cut (seconds), typically 300–600. */
+  /** Wall-clock-free sim duration of the cut (seconds); scenario pack uses 900. */
   durationS:number;
   richness:CutRichness;
   classId:string;
@@ -77,6 +85,15 @@ export interface CutSeed {
   classifyingLines:readonly CutClassifyingLine[];
   /** Optional teaching looks this seed is meant to exercise. */
   gramLooks?:readonly GramLookId[];
+  /** Optional scenario-pack kind (15-min static seeded cuts). */
+  scenario?:CutScenarioKind;
+}
+
+export interface CutScenarioPack {
+  packVersion:1;
+  modelVersion:string;
+  /** All cuts are durationS === 900 (15 min). */
+  cuts:readonly CutSeed[];
 }
 
 export interface CutLookalikePair {
