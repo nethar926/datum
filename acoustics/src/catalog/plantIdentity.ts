@@ -56,6 +56,11 @@ export function varyPlantIdentity(s:VesselPlantSpec,id:string):VesselPlantSpec {
  const SSMA_IDS=new Set(['blue-orbelune','green-fennelglint','red-emberbraid','red-gloamspiral','blue-vellumwake','red-frostwhorl','green-thistledrift']);
  if(SSMA_IDS.has(id)&&!s.aux.some(a=>a.kind==='ssma')){const sm=stream(id,'ssma-teach'),harmonicsOnly=sm()<.45;s.aux.push({id:'fictional-ssma',kind:'ssma',duty:'continuous',fHz:Number((48+sm()*40).toFixed(2)),harmonics:harmonicsOnly?[2,3]:[1,2],stability:'unstable',width:'discrete'});}
  for(const a of s.aux)if(a.kind==='ssma'){a.stability='unstable';a.width='discrete';delete a.sigmaBins;}
+ // Intermittent edge shapes + A/C compressor on a class subset (Wilson intermittent sources).
+ const edges:Array<'fade'|'abrupt'|'knee'>=['fade','abrupt','knee'];
+ for(const a of s.aux)if(a.duty==='intermittent'&&a.kind!=='hydp'){const e=stream(id,`edge:${a.id}`);a.edge=edges[Math.floor(e()*3)];}
+ const AC_IDS=new Set(['blue-brindleflux','green-morrowcoil','red-cinderlilt','red-sablequill','blue-quartzwhorl','green-opalweft']);
+ if(AC_IDS.has(id)&&!s.aux.some(a=>a.id==='fictional-ac-compressor')){const ac=stream(id,'ac-comp');s.aux.push({id:'fictional-ac-compressor',kind:'acPump',duty:'intermittent',fHz:Number((55+ac()*90).toFixed(2)),harmonics:ac()<.5?[1]:[1,2],stability:'stable',width:'discrete',dutyOnS:[40+Math.floor(ac()*40),90+Math.floor(ac()*50)] as [number,number],dutyOffS:[50+Math.floor(ac()*40),140+Math.floor(ac()*80)] as [number,number],edge:edges[Math.floor(ac()*3)]});}
  return s;
 }
 /** Hash order, not catalog insertion order, assigns non-overlapping teaching bands.

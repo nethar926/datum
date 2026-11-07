@@ -30,6 +30,22 @@ export function coupledErpmInBand(spec:VesselPlantSpec,shaftRpm:number,selected?
 const AIP_HZ={stirling:28,fuelcell:42,'closed-cycle':34} as const;
 const NO_GATES:readonly import('./drivetrain.js').SpeedGated[]=[];
 const NO_SRCS:readonly number[]=[];
+
+/** Deterministic intermittent on/off gain in [0,1]. Period = onS+offS; phase from seed.
+ * Edges: abrupt (~0.06 s), fade (2 s linear), knee (smoothstep over 5 s). */
+export function intermittentDutyGain(t:number,onS:number,offS:number,phaseS:number,edge:'fade'|'abrupt'|'knee'='abrupt'):number{
+ const period=Math.max(1e-6,onS+offS),tau=((t+phaseS)%period+period)%period;
+ if(tau>=onS){const u=tau-onS; // off half — falling edge then zero
+  if(edge==='abrupt'){const f=.06;return u<f?Math.max(0,1-u/f):0;}
+  if(edge==='fade'){const f=2;return u<f?Math.max(0,1-u/f):0;}
+  const f=5,x=Math.min(1,u/f),s=x*x*(3-2*x);return Math.max(0,1-s);
+ }
+ // on half — rising edge then one
+ if(edge==='abrupt'){const f=.06;return tau<f?tau/f:1;}
+ if(edge==='fade'){const f=2;return tau<f?tau/f:1;}
+ const f=5,x=Math.min(1,tau/f),s=x*x*(3-2*x);return s;
+}
+
 const DEFAULT_HARMONICS=[1,2,3] as const;
 /** Diesel CSR/CFR/EFR teaching orders (Urick/Ross machinery harmonics; invented powers). */
 export const ENGINE_HARMONICS=[1,2,3,4,5,6] as const;
@@ -125,7 +141,7 @@ export function updatePropulsion(s:Signature,fraction:number,mode:ModeInput):Pro
  if(mode==='AIP'){if(!spec.aip||((p.kind==='nuclearGR'||p.kind==='nuclearElectric')&&!s.reactorOffline))throw new Error('AIP backup requires capability and reactor-off for nuclear');for(const g of t.generators!){g.hz=AIP_HZ[spec.aip.kind];g.rpm=g.hz*60/2;}}
  t.tpkValid=!!spec.tpk&&(!spec.tpkMinKts||fraction*spec.maxPsrpm/spec.tpk+1e-9>=spec.tpkMinKts);t.propulsor.brHz=t.shafts[0].hz*s.blades;if(t.stages.length!==d.stages.length||t.ratio!==d.ratio)throw new Error('Reconfigure static mode before changing drivetrain');t.mode=mode as OperatingMode;if(t.aip)t.aip.active=mode==='AIP';let input=t.shafts[0].hz*d.ratio;for(const g of t.stages){g.meshHz=input*g.pinionTeeth;input/=g.ratio;}return t;
 }
-function put(s:Signature,i:number,family:TonalFamily,hz:number,power:number,harmonic:number,shaftIndex?:number,engineIndex?:number,profile?:LineProfile,reactorId?:string,operatorFamily?:'COOLANT'|'TG'|'VANE'|'HYDP'|'PRES'):void {
+function put(s:Signature,i:number,family:TonalFamily,hz:number,power:number,harmonic:number,shaftIndex?:number,engineIndex?:number,profile?:LineProfile,reactorId?:string,operatorFamily?:'COOLANT'|'TG'|'VANE'|'HYDP'|'PRES'|'INTERMITTENT'|'TRANSIENT'|'SWATH'|'GEAR'):void {
  let l=s.tonals![i];if(!l)l=s.tonals![i]={family,hz,power};if(family!=='eda')l.eda=undefined;l.reactorId=reactorId;l.family=family;l.hz=hz;l.power=power;l.harmonic=harmonic;l.shaftIndex=shaftIndex;l.engineIndex=engineIndex;l.engineId=engineIndex===undefined?undefined:s.propulsion!.engines[engineIndex].id;l.lineFamily=operatorFamily??(family==='shaft'?'PSR':family==='blade'?'BR':family==='electrical'?'GRID':family==='src'?'SRC':family==='motor'&&shaftIndex===0?'MSR':family==='crank'?'CSR':family==='cylinder'?'CFR':family==='diesel'?'EFR':family==='eda'?'EDA':family==='gear'?'MESH':family==='turbine'?'TURBINE':family==='pump'||family==='motor'?'AUX':undefined);const engine=engineIndex===undefined?undefined:s.propulsion!.engines[engineIndex];l.fundamentalHz=family==='shaft'?s.propulsion!.shafts[shaftIndex!].hz:family==='blade'?s.propulsion!.shafts[shaftIndex!].hz*s.blades:family==='motor'&&shaftIndex===0?s.propulsion!.motor!.msrHz:family==='crank'?engine!.csrHz:family==='cylinder'?engine!.cfrHz:family==='diesel'?engine!.efrHz:l.lineFamily?hz/harmonic:undefined;tagLine(l,i,profile??s.lineProfiles?.[family]);
 }
 /** Public rotation orders only (Urick/Ross); relative powers are invented. Fixed topology
@@ -141,12 +157,21 @@ export function writePlantTonals(s:Signature,mode:ModeInput,electricalHarmonics:
  if(mode!=='AIP'&&(p.kind==='nuclearGR'||p.kind==='nuclearElectric')){const n=p.kind==='nuclearGR'?t.shafts.length:1;for(let shaft=0;shaft<n;shaft++){const rpm=p.kind==='nuclearGR'?t.shafts[shaft].rpm*t.ratio:p.mainTurbines.maxRpm;for(let h=1;h<=3;h++)put(s,i++,'turbine',rpm/60*h,rpm>0?.04*p.mainTurbines.count/n/(h*h):0,h,shaft);for(let h=1;h<=3;h++)put(s,i++,'turbine',vanePassHz(rpm/60,p.mainTurbines.vaneCount)*h,rpm>0?.02*p.mainTurbines.count/n/(h*h):0,h,shaft,undefined,undefined,undefined,'VANE');}}
  for(let shaft=0;shaft<t.shafts.length;shaft++){const ratio=t.shafts[0].hz>0?t.shafts[shaft].hz/t.shafts[0].hz:1;for(const g of t.stages)for(let h=1;h<=3;h++)put(s,i++,'gear',g.meshHz*ratio*h,g.meshHz>0?.035/(h*h):0,h,shaft);}
  if(mode!=='AIP'&&('reactorSets' in p))for(const r of p.reactorSets)for(let h=1;h<=3;h++){put(s,i++,'pump',r.coolantPumpHz*h,.04/(h*h),h,undefined,undefined,undefined,r.id,'COOLANT');put(s,i++,'turbine',r.turboGenerator.rpm/60*h,.025/(h*h),h,undefined,undefined,undefined,r.id,'TG');}
- if(mode==='AIP'){for(let h=1;h<=2;h++)put(s,i++,'pump',AIP_HZ[spec.aip!.kind]*.5*h,.025/(h*h),h);}else for(const a of spec.aux)if(a.kind!=='hydp')for(const h of a.harmonics)put(s,i++,a.kind==='acPump'||a.kind==='ssma'?'pump':'motor',a.fHz*h,.025/(h*h),h,undefined,undefined,a);
+ if(mode==='AIP'){for(let h=1;h<=2;h++)put(s,i++,'pump',AIP_HZ[spec.aip!.kind]*.5*h,.025/(h*h),h);}else for(const a of spec.aux)if(a.kind!=='hydp')for(const h of a.harmonics){const intermittent=a.duty==='intermittent',on=a.dutyOnS?(a.dutyOnS[0]+a.dutyOnS[1])/2:60,off=a.dutyOffS?(a.dutyOffS[0]+a.dutyOffS[1])/2:90,phase=intermittent?((a.id.length*17+h*3)%97):0,gain=intermittent?intermittentDutyGain(s.dutyClockS??0,on,off,phase,a.edge??'abrupt'):1;put(s,i++,a.kind==='acPump'||a.kind==='ssma'?'pump':'motor',a.fHz*h,.025/(h*h)*gain,h,undefined,undefined,a,undefined,intermittent?'INTERMITTENT':undefined);}
  for(const w of s.speedGated??NO_GATES)if(w.kind==='SRC')for(let h=1;h<=2;h++)put(s,i++,'src',w.hz*h,.04*w.gain/(h*h),h);
  for(const rate of srcHzPerKn)put(s,i++,'src',speedKn*rate,speedKn>0?.06:0,1);
  if(spec.propResonance)i=writePropResonance(s,i,spec.propResonance,speedKn);
  if(s.hydpTransient&&spec.hydp)writeHydpBurst(s,i,spec.hydp,s.hydpTransient),i+=HYDP_MAX_ORDERS;
  s.tonals!.length=i;
+}
+
+/** Refresh INTERMITTENT aux line powers from Signature.dutyClockS (allocation-free). */
+export function applyIntermittentAuxPowers(s:Signature):void{
+ const spec=s.plantSpec,lines=s.tonals;if(!spec||!lines)return;const t=s.dutyClockS??0;
+ for(const a of spec.aux){if(a.duty!=='intermittent'||a.kind==='hydp'||!a.dutyOnS||!a.dutyOffS)continue;
+  const on=(a.dutyOnS[0]+a.dutyOnS[1])/2,off=(a.dutyOffS[0]+a.dutyOffS[1])/2;
+  for(const h of a.harmonics){const phase=(a.id.length*17+h*3)%97,gain=intermittentDutyGain(t,on,off,phase,a.edge??'abrupt'),hz=a.fHz*h,base=.025/(h*h);
+   for(const l of lines)if(l.lineFamily==='INTERMITTENT'&&l.harmonic===h&&Math.abs(l.hz-hz)<1e-6)l.power=base*gain;}}
 }
 /** Fixed HYDP harmonic-slot count (topology never changes). Seeded shape picks how many are live. */
 export const HYDP_MAX_ORDERS=4;
