@@ -44,4 +44,4 @@ export function runFullLoad(sec:number,res:number,nC:number){
  const wallS=(performance.now()-start)/1000;mem.push({at:'end',...memory()});ticks.sort((a,b)=>a-b);
  return {manifest:'provisional manifest v1',seconds:sec,contacts:nC,res,buoys:32,perBuoy:{bands:8,demon:2,fullband:2},logicalSet:SIM_STREAM_SET,counts,wallS,pctRealtime:100*wallS/sec,tickMs:{mean:ticks.reduce((a,b)=>a+b,0)/ticks.length,p95:ticks[Math.ceil(.95*ticks.length)-1],max:ticks.at(-1)},mem,spanCache:spanCacheEnabled()};
 }
-if(process.argv[2])console.log(JSON.stringify(runFullLoad(Number(process.argv[2]),Number(process.argv[3]),Number(process.argv[4]))));
+if(process.argv[2]&&/^\d+(\.\d+)?$/.test(process.argv[2]))console.log(JSON.stringify(runFullLoad(Number(process.argv[2]),Number(process.argv[3]),Number(process.argv[4]))));
