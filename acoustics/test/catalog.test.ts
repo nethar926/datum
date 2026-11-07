@@ -21,7 +21,7 @@ describe('public mechanism-derived fictional signatures',()=>{
 });
 
 it('truth/display labels strip leading Fictional while catalog class names keep it',()=>{
- expect(catalog.classes).toHaveLength(22);expect(surfaceTypes).toHaveLength(6);
+ expect(catalog.classes).toHaveLength(22);expect(surfaceTypes).toHaveLength(7);
  for(const c of catalog.classes){expect(c.name).toMatch(/^Fictional /);expect(displayName(c.name)).not.toMatch(/^fictional /i);expect(deriveSignature(c,'base',{speedKn:Math.min(5,c.params.maxSpeedKn),depthM:Math.min(50,c.params.depthM[1]),mode:'normal'}).label).not.toMatch(/^fictional /i);}
  for(const t of surfaceTypes){expect(t.name).toMatch(/^Fictional /);expect(displayName(t.name)).toBe(t.name.slice('Fictional '.length));}
  for(const c of createSurfacePool(7))expect(c.params.label).not.toMatch(/^fictional /i);
