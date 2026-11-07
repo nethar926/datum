@@ -16,7 +16,14 @@ import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import type {SpeedGated} from './catalog/drivetrain.js';
 /** Bytes of the shared render scratch (counted once per process). */
-export function sharedScratchBytes():number{let b=0;for(const a of Object.values(SH))b+=a.byteLength;return b;}
+export function sharedScratchBytes():number{let b=rowCacheBytes();for(const a of Object.values(SH))b+=a.byteLength;return b;}
+/** Exact reuse of a span-averaged spectrum between streams that share (buoy, RES, window, tEnd) —
+ * NB and BB of the same band. Two entries, fixed bytes (counted in sharedScratchBytes). The cached
+ * arrays are copies of the same float64 computation, so rows are bit-identical to recomputing. */
+const ROW_CACHE_ENTRIES=2;
+const ROW_CACHE=Array.from({length:ROW_CACHE_ENTRIES},()=>({key:'',L:0,P:new Float64Array(RES_BINS),E:new Float64Array(RES_BINS),N:new Float64Array(RES_BINS),S:new Float64Array(RES_BINS)}));
+let rowCacheNext=0,envEpoch=0;
+export function rowCacheBytes():number{let b=0;for(const c of ROW_CACHE)b+=c.P.byteLength*4;return b;}
 interface Trk{x:number;y:number;depth:number;course:number;speed:number}
 interface ResContact {contact:Contact;frequencies:Float64Array;powers:Float64Array;sigmaHz:Float64Array;gain:number;trk:Trk;act:boolean;srcDb:number;flowDb:number;flowFrac:number;cav:number;swG:Float64Array;swLo:Float64Array;swHi:Float64Array;swaths:{source:SpeedGated;loHz:number;hiHz:number;lo:number;hi:number}[]}
 export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:unknown}):ResGramSettings{
@@ -121,7 +128,7 @@ export class ResLofarGenerator {
  }
  private applySwathWindow():void{const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins;for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}}
  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
- setEnvironment(e:Environment):void{this.environment={...e};this.computeEnvironment();}
+ setEnvironment(e:Environment):void{envEpoch++;this.environment={...e};this.computeEnvironment();}
  private computeEnvironment():void{
   const e=this.environment;this.sigma=seaSurfaceSigma(e.seaState);const df=this.params.fBin,f0=this.band.f0,enbw=this.params.enbwHz,W=this.bins;
   for(let i=0;i<W;i++){const f=Math.max(df/2,f0+i*df),k=2*Math.PI*f/e.soundSpeed;this.coherenceExponent[i]=-2*k*k*this.sigma*this.sigma;this.absorptionExponent[i]=-thorp(f)*(Math.LN10/10);this.ambientBin[i]=i<this.band.liveBins?dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity))*enbw:NaN;this.shape[i]=1/(1+(f/400)**2);}
@@ -155,6 +162,15 @@ export class ResLofarGenerator {
   if(!(wsum>0))return false;const k=1/wsum;for(let i=0;i<L;i++)P[i]*=k;if(difar)for(let i=0;i<L;i++){E[i]*=k;N[i]*=k;S[i]*=k;}
   return true;
  }
+ private integrateCached(tEnd:number):boolean{
+  const L=this.band.liveBins;if(L>RES_BINS)return this.integrateHistory(tEnd);
+  const key=`${this.history?.uid??0}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${this.difar?1:0}|${this.history?.last}`;
+  for(const c of ROW_CACHE)if(c.key===key){SH.P.set(c.P.subarray(0,L));if(this.difar){SH.E.set(c.E.subarray(0,L));SH.N.set(c.N.subarray(0,L));SH.S.set(c.S.subarray(0,L));}return true;}
+  if(!this.integrateHistory(tEnd))return false;
+  const c=ROW_CACHE[rowCacheNext]!;rowCacheNext=(rowCacheNext+1)%ROW_CACHE_ENTRIES;c.key=key;c.L=L;c.P.set(SH.P.subarray(0,L));if(this.difar){c.E.set(SH.E.subarray(0,L));c.N.set(SH.N.subarray(0,L));c.S.set(SH.S.subarray(0,L));}
+  return true;
+ }
+ private historyBuoyKey():number{return this.history?this.history.buoyId(this.buoy):-1;}
  private loadLive():void{
   const b=this.buoy,bt=this.bt;bt.x=b.x;bt.y=b.y;bt.depth=b.depth;bt.course=b.course;bt.speed=b.speed;
   for(const it of this.contacts){const c=it.contact,p=c.params,t=it.trk;it.act=c.active!==false;t.x=c.x;t.y=c.y;t.depth=c.depth;t.course=c.course;t.speed=c.speed;
@@ -210,7 +226,7 @@ export class ResLofarGenerator {
   if(!Number.isInteger(offset)||offset<0||out.length<offset+W)throw new Error('Row size mismatch');
   this.rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
   this.computeExpected();
-  this.lastIntegrated=tEnd!==undefined&&this.integrateHistory(tEnd);if(!this.lastIntegrated)this.snapshotFallbacks++;
+  this.lastIntegrated=tEnd!==undefined&&(perTileAr?this.integrateHistory(tEnd):this.integrateCached(tEnd));if(!this.lastIntegrated)this.snapshotFallbacks++;
   const enbw=this.params.enbwHz,L=this.band.liveBins,difar=this.difar,P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
   // Noise: K=1 → exact AR(1) on complex amplitudes (correlated rows); K>1 → unit-mean χ²_ν gamma.
   const pw=this.power,rng=this.rng;

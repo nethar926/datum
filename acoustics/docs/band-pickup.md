@@ -40,7 +40,13 @@ FULLBAND tiles use the same averaging, with each tile's RES T and K. Any tile ca
 
 ## Startup, seek, history
 
-- **Startup:** history starts when the first RES stream opens, pre-filled with the state at that instant (the source is treated as stationary before it). Streams opened later see the real past state, up to the window length. Early rows are full-span and deterministic.
+- **Startup:** history starts when the first RES stream opens, at t0. For t < t0 the history is **back-extrapolated, not frozen**. This is a documented assumption (`stateHistory.ts`):
+  - **Kinematics:** contact and buoy speed, heading and depth run back at their t0 rates, taken from the first two real frames t0 and t0 + 0.25 s. Position is stepped back by reverse Euler along the extrapolated track.
+  - **Steady sources carried back:** tonal lines at their t0 frequency and power, flow and cavitation broadband, and source level re-evaluated at the extrapolated speed and depth. Ambient is always present.
+  - **Events zeroed:** HYDP, INTERMITTENT, TRANSIENT and SWATH lines and every swath contribute **zero** before t0, because their pre-t0 state is unknown. A burst already on at t0 therefore shows no energy before its true onset.
+  - **Rows before t0 + 0.25 s:** these fall back (rare; never on cut/live paths).
+  - Streams opened after t0 see the real recorded past, up to 40 s.
+  - Tests are in `test/startupPrefill.test.ts`. Rows whose span starts after the history start are bit-identical to d1acdc0.
 - **Seek/replay:** seek replays from t=0 on the 0.25 s grid. Rows match continuous play bit-for-bit for frame-aligned seek targets. For an off-grid target (e.g. 17.6 s) the split kinematic step rounds differently in floating point; the worst measured difference is 1.2e-5 dB (one float32 ulp). The same split happens in continuous play with off-grid tick sizes.
 - **Paused scroll-back:** rows that have already been emitted are FE-owned copies, and later engine history never touches them.
 - **Bounded:** one engine-wide ring of `HISTORY_FRAMES` = ceil((32 s longest span + 8 s late margin)/0.25) + 2 = 162 frames. Its size depends on the number of contacts and lines, not on the number of streams or tiles. Render scratch is shared by all generators. Each stream retains only its band tables, its output and bearing row, and AR(1) state (FULLBAND RES1–3 only, per tile).
