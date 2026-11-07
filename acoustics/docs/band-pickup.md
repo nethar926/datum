@@ -87,6 +87,29 @@ Why low bands "lag": a row is stamped at the end of its averaged span (window pl
 
 FE: draw each row at its `simT`, with no shift. Use `rowRateHz`/`fBin` from `gramConfig` (they now differ per band). Don't add display delays. `resForBand(id)` is exported for live subscribes so they match cuts.
 
+## Fast row path (default) vs reference path
+
+`setResRowPath('fast'|'reference')` (resGram.ts). The reference path is the original exact per-row re-evaluation; it is kept for tests. The fast path keeps the same model, frames and Hann² weights. Only the floating-point evaluation changes, so rows are **not** bit-identical to d1acdc0/2b56520 (allowed by the Lead/FE decision).
+
+- **Sliding Welch accumulators:** vernier bands, and FULLBAND streams with ≤ 2 tiles (RES5 default = 1 tile). Each 0.25 s frame's modelled spectrum is evaluated **once per (buoy, band/tile)**, not once per row. It is added with its Hann² weight to every open row whose span contains it. Open rows = ceil(span / row period) + 1 (ELF 5, VLF 4, LF 3, MF 3). A row therefore costs O(bins × contacts) per new frame instead of O(bins × contacts × frames in span). The 0.25 s state frame is the model's time resolution, so one evaluation per frame is the minimum. NB and BB of the same band share one accumulator. Sums are Float32 (P, E, N; DIFAR S = P − ambient). Accumulators are allocated at subscribe/configure (the row path allocates nothing), counted in `retainedBytes().scratch` and released on unsubscribe.
+- **FULLBAND with > 2 tiles (RES1–4):** to stay inside 50 MB, each tile-row is a direct sum over the frames in its span using the fast spectrum kernel. Accumulators for all 8 RES2 tiles at 32 buoys would need ≈ 63 MB. This is a static rule (by tile count), so it does not depend on what is visible.
+- **Fast spectrum kernel:** the per-bin `exp` for absorption and Lloyd's-mirror coherence is replaced by a recurrence over 32-bin chunks. The exponent is the quadratic through each chunk's first, middle and last bins. That is exact for the f² coherence exponent; for the smooth Thorp absorption exponent the residual is its third difference. Band tables (ambient, shape, exponents, BB half-widths) depend on band and environment but not on the buoy, so they are shared (LRU, ≤ 64 entries, counted).
+- **Determinism:** each row is the same frames, added in ascending frame order from the same per-frame spectra, whether the row was reached by continuous play, seek, replay or a reset. Runs, seek and replay are identical (`test/replayConsistency.test.ts`, `test/startupPrefill.test.ts`, the pane/pan tests).
+- **Error vs reference** (`test/fastPath.test.ts`, noise-free expected spectrum of every emitted row, seaState 3 so coherence is exercised, DIFAR). The bound asserted is ≤ 0.01 dB max and ≤ 0.001 dB mean.
+
+| Case | ELF max / mean dB | VLF | LF | MF | FULLBAND |
+|---|---|---|---|---|---|
+| 3 contacts, FULLBAND RES5 (accumulators) | 2.5e-6 / 4.5e-7 | 1.4e-6 / 2.6e-7 | 1.1e-6 / 2.2e-7 | 2.3e-6 / 3.5e-7 | 1.2e-6 / 2.2e-7 |
+| 3 contacts, FULLBAND RES2 (direct) | same | same | same | same | 6.0e-11 / 7.9e-12 |
+| 60 contacts, FULLBAND RES5 | 2.5e-6 / 4.6e-7 | 1.2e-6 / 2.6e-7 | 1.2e-6 / 2.5e-7 | 1.9e-5 / 3.2e-6 | 1.2e-6 / 2.3e-7 |
+
+  Why 0.01 dB holds with margin:
+  - **Float32 sums:** at most 64 positive Hann²-weighted adds per row, so the relative error is ≲ 64 · 2⁻²⁴ ≈ 4e-6 (≈ 2e-5 dB).
+  - **Chunk recurrence:** exact for coherence; the absorption residual is < 1e-6 dB at 20 km. Recurrence rounding is ≤ 32 ulp.
+  - **Measured worst:** 1.9e-5 dB.
+
+  Seed-777 edge 10/50/90 % rise and fall times differ from the reference by ≤ 1.7e-6 s in every band; the test asserts at most one hop.
+
 ## CPU and memory (e835cfe, Node, single thread, 32 buoys × 16 band streams + 1 panned FULLBAND each)
 
 | Run | Wall / 900 s | % real time | ms/tick mean / p95 / max | RSS start / mid / end (MB) | Heap start / mid / end (MB) | Acoustics retained |
