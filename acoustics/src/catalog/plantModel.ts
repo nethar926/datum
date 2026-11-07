@@ -6,6 +6,21 @@ export type DieselRichness='sparse'|'partial'|'rich';
 interface State {spec:VesselPlantSpec;factors:Float64Array;selected:Uint8Array;truth:PropulsionTruth;bright: {efr:number;csr:number;cfr:number}[];richness:DieselRichness}
 const states=new WeakMap<Signature,State>();
 function enginesEnabled(p:Plant,mode:OperatingMode):boolean{return p.kind==='dieselDirect'?(mode==='SNORK'||mode==='SURF'||mode==='D/E'):mode!=='BATT'&&mode!=='AIP';}
+/** Coupled D/D & GR speed window from each engine's own erpm band and fixed R:R (no silent clamp).
+ * speedKn = shaftRpm / tpk; shaftRpm = erpm / ratio (D/D ratio = 1). */
+export function coupledSpeedWindowKn(spec:VesselPlantSpec):{min:number;max:number}|undefined {
+ const p=spec.machinery;if(p.kind!=='dieselDirect'&&p.kind!=='dieselGR')return undefined;
+ const ratio=p.drivetrain!.ratio,tpk=spec.tpk??0;if(!(tpk>0))return undefined;
+ let lo=0,hi=Infinity;for(const e of p.engines){lo=Math.max(lo,e.erpm.obsMin/(ratio*tpk));hi=Math.min(hi,e.erpm.obsMax/(ratio*tpk));}
+ if(!(hi>=lo))return undefined;return {min:lo,max:hi};
+}
+/** True when commanded shaft RPM × fixed R:R sits inside every selected engine's own band. */
+export function coupledErpmInBand(spec:VesselPlantSpec,shaftRpm:number,selected?:Uint8Array):boolean {
+ const p=spec.machinery;if(p.kind!=='dieselDirect'&&p.kind!=='dieselGR')return false;
+ const ratio=p.drivetrain!.ratio;
+ for(let i=0;i<p.engines.length;i++){if(selected&&!selected[i])continue;const erpm=shaftRpm*ratio,e=p.engines[i].erpm;if(erpm<e.obsMin-1e-9||erpm>e.obsMax+1e-9)return false;}
+ return p.engines.length>0;
+}
 const AIP_HZ={stirling:28,fuelcell:42,'closed-cycle':34} as const;
 const NO_GATES:readonly import('./drivetrain.js').SpeedGated[]=[];
 const NO_SRCS:readonly number[]=[];
@@ -41,7 +56,7 @@ export function configurePropulsion(s:Signature,seed=0,contactId='catalog',mode:
  for(let i=0;i<engines.length;i++){selected[i]=p.kind==='dieselDirect'||rng()<.65?1:0;count+=selected[i];}if(engines.length&&!count)selected[Math.floor(rng()*engines.length)]=1;
  factors[0]=1;for(let i=1;i<factors.length;i++){const r=mulberry32(deriveSeed(seed,`${contactId}:shaft:${i}`)),delta=(spec.shaftMismatchPct[0]+r()*(spec.shaftMismatchPct[1]-spec.shaftMismatchPct[0]))/100;factors[i]=1+(r()<.5?-delta:delta);}
  const bright=engines.map(e=>pickDieselBrightness(seed,contactId,e.id)),richness=pickDieselRichness(seed,contactId);
- const truth:PropulsionTruth={kind:p.kind,tpk:spec.tpk??0,tpkValid:false,...(spec.tpkMinKts?{tpkMinKts:spec.tpkMinKts}:{}),propulsor:{shafts:spec.shafts,blades:s.blades,bladeType:spec.propeller?.type??'flat',brHz:0},...(spec.emergencyPropulsor?{emergencyPropulsor:{active:false,rpm:0,hz:0,blades:spec.emergencyPropulsor.blades}}:{}),mode:mode as OperatingMode,drivetrainCode:drivetrainCode(p),drivetrainLabel:drivetrainLabel(p),...(spec.aip?{aip:{kind:spec.aip.kind,active:mode==='AIP'}}:{}),ratio:d.ratio,ratioLabel:d.ratioLabel,engines:engines.map(e=>({id:e.id,stroke:e.stroke,cylinders:e.cylinders,erpm:0,running:false,csrHz:0,cfrHz:0,efrHz:0})),stages:d.stages.map(g=>({...g,ratio:g.bullTeeth/g.pinionTeeth,meshHz:0})),shafts:Array.from({length:spec.shafts},()=>({rpm:0,hz:0,coupled:false})),generators:Array.from({length:diesel?(p.kind==='dieselElectric'?engines.length:1):('turbineGenerators' in p?p.turbineGenerators.count:0)},()=>({rpm:0,hz:electrical})),...(p.motor?{motor:{rpm:0,shaftHz:0,slots:spec.motorSlots??0,msrHz:0}}:{})};
+ const truth:PropulsionTruth={kind:p.kind,tpk:spec.tpk??0,tpkValid:false,...(spec.tpkMinKts?{tpkMinKts:spec.tpkMinKts}:{}),propulsor:{shafts:spec.shafts,blades:s.blades,bladeType:spec.propeller?.type??'flat',brHz:0},...(spec.emergencyPropulsor?{emergencyPropulsor:{active:false,rpm:0,hz:0,blades:spec.emergencyPropulsor.blades}}:{}),mode:mode as OperatingMode,drivetrainCode:drivetrainCode(p),drivetrainLabel:drivetrainLabel(p),...(spec.aip?{aip:{kind:spec.aip.kind,active:mode==='AIP'}}:{}),ratio:d.ratio,ratioLabel:d.ratioLabel,coupledSpeedKn:coupledSpeedWindowKn(spec),engines:engines.map(e=>({id:e.id,stroke:e.stroke,cylinders:e.cylinders,erpm:0,running:false,csrHz:0,cfrHz:0,efrHz:0})),stages:d.stages.map(g=>({...g,ratio:g.bullTeeth/g.pinionTeeth,meshHz:0})),shafts:Array.from({length:spec.shafts},()=>({rpm:0,hz:0,coupled:false})),generators:Array.from({length:diesel?(p.kind==='dieselElectric'?engines.length:1):('turbineGenerators' in p?p.turbineGenerators.count:0)},()=>({rpm:0,hz:electrical})),...(p.motor?{motor:{rpm:0,shaftHz:0,slots:spec.motorSlots??0,msrHz:0}}:{})};
  states.set(s,{spec,factors,selected,truth,bright,richness});s.propulsion=truth;return truth;
 }
 /** Fill the preallocated nested truth in Hz/RPM. D/E generator RPM is independent of speed.
@@ -49,17 +64,40 @@ export function configurePropulsion(s:Signature,seed=0,contactId='catalog',mode:
 export function updatePropulsion(s:Signature,fraction:number,mode:ModeInput):PropulsionTruth {
  mode=normalizeMode(mode,s.plantSpec?.machinery.kind);
  let state=states.get(s);if(!state){configurePropulsion(s,0,'catalog',mode);state=states.get(s);}if(!state)return s.propulsion!;
- const {spec,truth:t,factors,selected}=state,p=spec.machinery,d=shaftDrivetrain(p,mode),hz=spec.maxPsrpm/60*Math.max(0,Math.min(1,fraction)),electrical=s.electricalHz??60;
+ const {spec,truth:t,factors,selected}=state,p=spec.machinery,d=shaftDrivetrain(p,mode),electrical=s.electricalHz??60;
  const adjusted=fraction>0&&spec.tpk&&spec.tpkMinKts?Math.max(fraction,spec.tpk*spec.tpkMinKts/spec.maxPsrpm):fraction;
  const rpmScale=Number.isFinite(s.plantRpmScale)?Math.max(0,s.plantRpmScale!):1;
- for(let i=0;i<t.shafts.length;i++){const shaft=t.shafts[i];shaft.rpm=spec.maxPsrpm*Math.max(0,Math.min(1,adjusted))*factors[i];shaft.hz=shaft.rpm/60;shaft.coupled=(p.kind==='dieselDirect'||p.kind==='dieselGR')?enginesEnabled(p,mode)&&mode!=='D/E':p.kind==='nuclearGR'&&mode!=='AIP';}
+ // Shaft RPM always follows commanded speed (TPK). Coupling never silently clamps PSR or ERPM.
+ for(let i=0;i<t.shafts.length;i++){const shaft=t.shafts[i];shaft.rpm=spec.maxPsrpm*Math.max(0,Math.min(1,adjusted))*factors[i];shaft.hz=shaft.rpm/60;shaft.coupled=false;}
+ const wantClutch=(p.kind==='dieselDirect'||p.kind==='dieselGR')&&enginesEnabled(p,mode)&&mode!=='D/E';
+ // Wilson/Lead: while coupled, R:R is fixed and ERPM must sit in each engine's own band. Outside the
+ // band with a battery/motor → deterministic declutch (engine lines drop, shaft on motor). No motor →
+ // same acoustic result plus declutched flag (scenario should stay inside coupledSpeedKn).
+ const refShaft=t.shafts[0]?.rpm??0;
+ const inBand=wantClutch&&coupledErpmInBand(spec,refShaft,selected);
+ const declutched=wantClutch&&!inBand;
+ t.declutched=declutched||undefined;t.coupledSpeedKn=coupledSpeedWindowKn(spec);
+ if(wantClutch&&inBand)for(const shaft of t.shafts)shaft.coupled=true;
+ else if(p.kind==='nuclearGR'&&mode!=='AIP')for(const shaft of t.shafts)shaft.coupled=true;
  if(p.kind==='dieselDirect'||p.kind==='dieselGR'||p.kind==='dieselElectric'){
-  const enabled=enginesEnabled(p,mode);for(let i=0;i<t.engines.length;i++){const e=t.engines[i];e.running=enabled&&selected[i]!==0&&(p.kind==='dieselElectric'||mode==='D/E'||hz>0);e.erpm=e.running?(p.kind==='dieselElectric'||mode==='D/E'?p.engines[i].erpm.normal:(p.kind==='dieselDirect'?t.shafts[i%t.shafts.length].rpm:t.shafts[0].rpm*d.ratio))*rpmScale:0;e.csrHz=e.erpm/60;e.cfrHz=e.csrHz/(e.stroke===4?2:1);e.efrHz=firingRateHz(e,e.erpm);}
-  // Coupled D/D / GR: shaft follows the same engine-ramp scale so CSR≡PSR stays exact through a knee.
+  const enabled=enginesEnabled(p,mode);for(let i=0;i<t.engines.length;i++){
+   const e=t.engines[i],sheet=p.engines[i];
+   // D/E (and D/E-mode): generator ERPM is bus-locked / independent of shaft speed.
+   // Coupled D/D & GR: ERPM = shaft×R:R exactly (no clamp). Declutched: engines stop.
+   const electricLike=p.kind==='dieselElectric'||mode==='D/E';
+   const coupledRun=wantClutch&&inBand&&selected[i]!==0&&refShaft>0;
+   e.running=coupledRun||(enabled&&selected[i]!==0&&electricLike);
+   if(electricLike)e.erpm=e.running?sheet.erpm.normal*rpmScale:0;
+   else if(coupledRun)e.erpm=(p.kind==='dieselDirect'?t.shafts[i%t.shafts.length].rpm:t.shafts[0].rpm*d.ratio)*rpmScale;
+   else e.erpm=0;
+   e.csrHz=e.erpm/60;e.cfrHz=e.csrHz/(e.stroke===4?2:1);e.efrHz=firingRateHz(e,e.erpm);
+  }
+  // Coupled ramp: scale shaft with plantRpmScale so CSR≡PSR×R:R holds through a knee.
   if(rpmScale!==1)for(let i=0;i<t.shafts.length;i++){const shaft=t.shafts[i];if(!shaft.coupled)continue;shaft.rpm*=rpmScale;shaft.hz=shaft.rpm/60;}
   for(let i=0;i<t.generators!.length;i++){const g=t.generators![i];g.rpm=p.kind==='dieselElectric'?t.engines[i].erpm:electrical*60/2;g.hz=g.rpm/60*(p.kind==='dieselElectric'?p.generator!.polePairs:2);}
  }else if('turbineGenerators' in p)for(let i=0;i<t.generators!.length;i++){const g=t.generators![i],r=p.reactorSets[i]?.turboGenerator??p.turbineGenerators;g.rpm=r.rpm;g.hz=g.rpm/60*r.polePairs;}
- if(t.motor){t.motor.rpm=(p.kind==='dieselDirect'||p.kind==='dieselGR')&&enginesEnabled(p,mode)&&mode!=='D/E'?0:t.shafts[0].rpm*p.motor!.drivetrain.ratio;t.motor.shaftHz=t.motor.rpm/60;t.motor.msrHz=t.motor.shaftHz*t.motor.slots;}
+ // Motor drives whenever shafts are not engine-coupled (BATT, AIP, D/E electric, or auto-declutch).
+ if(t.motor){const engineCoupled=t.shafts.some(s=>s.coupled)&&(p.kind==='dieselDirect'||p.kind==='dieselGR');t.motor.rpm=engineCoupled?0:t.shafts[0].rpm*p.motor!.drivetrain.ratio;t.motor.shaftHz=t.motor.rpm/60;t.motor.msrHz=t.motor.shaftHz*t.motor.slots;}
  if(mode==='AIP'){if(!spec.aip||((p.kind==='nuclearGR'||p.kind==='nuclearElectric')&&!s.reactorOffline))throw new Error('AIP backup requires capability and reactor-off for nuclear');for(const g of t.generators!){g.hz=AIP_HZ[spec.aip.kind];g.rpm=g.hz*60/2;}}
  t.tpkValid=!!spec.tpk&&(!spec.tpkMinKts||fraction*spec.maxPsrpm/spec.tpk+1e-9>=spec.tpkMinKts);t.propulsor.brHz=t.shafts[0].hz*s.blades;if(t.stages.length!==d.stages.length||t.ratio!==d.ratio)throw new Error('Reconfigure static mode before changing drivetrain');t.mode=mode as OperatingMode;if(t.aip)t.aip.active=mode==='AIP';let input=t.shafts[0].hz*d.ratio;for(const g of t.stages){g.meshHz=input*g.pinionTeeth;input/=g.ratio;}return t;
 }

@@ -31,6 +31,7 @@ export * from './lineModel.js';
 export * from './lineKernel.js';
 export * from './catalog/drivetrain.js';
 export * from './catalog/plants.js';
+export * from './catalog/plantIdentity.js';
 export * from './catalog/plantModel.js';
 export * from './catalog/nations.js';
 export * from './catalog/idKeys.js';

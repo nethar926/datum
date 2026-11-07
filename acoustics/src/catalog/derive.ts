@@ -39,7 +39,7 @@ export function updateDerivedSignature(out:Signature,p:ClassParams,speedKn:numbe
  for(const h of p.electricalHarmonics)tone(out,i++,'electrical',p.electricalHz*h,.04/(h*h));
  if(p.propulsion==='dieselElectric'||p.propulsion==='nuclearElectric')for(let h=1;h<=2;h++)tone(out,i++,'motor',shaft*12*h,speed>0?.05/h:0);
  const diesel=(p.propulsion==='dieselDirect'||p.propulsion==='dieselGearReduction'||mode==='SNORK')&&mode!=='BATT'&&mode!=='AIP';
- if(diesel){const rpm=p.propulsion==='dieselElectric'?p.dieselRpm:shaft*60*p.reductionRatio;for(let h=1;h<=2;h++)tone(out,i++,'diesel',rpm/60*p.dieselCylinders/2*h,rpm>0?.15/h:0);}
+ if(diesel){const rpm=p.propulsion==='dieselElectric'?p.erpmMax:shaft*60*p.reductionRatio;for(let h=1;h<=2;h++)tone(out,i++,'diesel',rpm/60*p.dieselCylinders/2*h,rpm>0?.15/h:0);}
  for(const a of p.aux)for(const h of a.harmonics)tone(out,i++,a.kind==='pump'?'pump':'motor',(a.basis==='electrical'?p.electricalHz:1)*a.rate*h,.025/(h*h),a.stability&&a.width?a as LineProfile:undefined);
  out.tonals!.length=i;
 }

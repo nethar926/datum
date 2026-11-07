@@ -9,12 +9,12 @@ import {planBehaviour,pickSurfaceBehaviour,BEHAVIOUR_HORIZON_S} from '../behavio
 /** Fixed invented ship templates, not measured signatures. Offsets above a fictional 120 dB
  * reference sub: +12/+18/+20/+16/+26/+28 dB. Urick/Ross: shaft/blade/diesel/broadband mechanisms. */
 const templates=[
- {id:'fishing-trawler',name:'Fictional Flaxfloat',shafts:[1,2],maxRpm:220,maxSpeedKn:12,offsetDb:12},
- {id:'coastal-freighter',name:'Fictional Mossbarge',shafts:[1,2],maxRpm:180,maxSpeedKn:16,offsetDb:18},
- {id:'ferry',name:'Fictional Prismhopper',shafts:[2,3],maxRpm:240,maxSpeedKn:24,offsetDb:20},
- {id:'tug',name:'Fictional Tumblekeel',shafts:[1,3],maxRpm:210,maxSpeedKn:11,offsetDb:16},
- {id:'bulk-carrier',name:'Fictional Thistlehaul',shafts:[1,2],maxRpm:150,maxSpeedKn:15,offsetDb:26},
- {id:'tanker',name:'Fictional Opalhold',shafts:[1,2],maxRpm:160,maxSpeedKn:16,offsetDb:28},
+ {id:'fishing-trawler',name:'Fictional Flaxfloat',shafts:[1,2],maxRpm:420,maxSpeedKn:12,offsetDb:12},
+ {id:'coastal-freighter',name:'Fictional Mossbarge',shafts:[1,2],maxRpm:380,maxSpeedKn:16,offsetDb:18},
+ {id:'ferry',name:'Fictional Prismhopper',shafts:[2,3],maxRpm:500,maxSpeedKn:24,offsetDb:20},
+ {id:'tug',name:'Fictional Tumblekeel',shafts:[1,3],maxRpm:450,maxSpeedKn:11,offsetDb:16},
+ {id:'bulk-carrier',name:'Fictional Thistlehaul',shafts:[1,2],maxRpm:360,maxSpeedKn:15,offsetDb:26},
+ {id:'tanker',name:'Fictional Opalhold',shafts:[1,2],maxRpm:400,maxSpeedKn:16,offsetDb:28},
 ] as const;
 export const surfaceTypes=templates.map((t,i)=>({...t,plantSpec:surfaceVesselPlant(t.id,t.maxRpm,t.shafts[0],60,[0,2,3].includes(i))}));
 export const SURFACE_POOL_SIZE=18;

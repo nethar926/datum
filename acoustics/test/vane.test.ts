@@ -40,8 +40,7 @@ it('validation rejects a missing or non-integer turbine vaneCount',()=>{
  expect(()=>validateVesselPlant(spec as never,c.params.electricalHz)).not.toThrow();
  for(const bad of [undefined,24.5,0,500]){const s=structuredClone(spec);(s.machinery as {mainTurbines:{vaneCount?:number}}).mainTurbines.vaneCount=bad;expect(()=>validateVesselPlant(s as never,c.params.electricalHz)).toThrow();}
 });
-it('diesel TPK outlier softened: every diesel class sits in the ~8-13 TPK band (Mistacorn 150 rpm / 12 kn)',()=>{
- for(const c of diesel){within(c.tpk,[8,13]);expect(c.tpk).toBeCloseTo(c.maxPsrpm/c.params.maxSpeedKn,12);}
- const m=catalog.classes.find(c=>c.id==='red-dorhan-mistacorn')!;expect(m.maxPsrpm).toBe(150);expect(m.params.maxSpeedKn).toBe(12);expect(m.tpk).toBeCloseTo(12.5,12);
- for(const c of nuclear)within(c.tpk,[5,7]);
+it('TPK equals maxPsrpm/maxSpeedKn; high-PSR Mistacorn outlier keeps speed=rpm/TPK',()=>{
+ for(const c of catalog.classes)expect(c.tpk).toBeCloseTo(c.maxPsrpm/c.params.maxSpeedKn,12);
+ const m=catalog.classes.find(c=>c.id==='red-dorhan-mistacorn')!;expect(m.maxPsrpm).toBe(900);expect(m.params.maxSpeedKn).toBe(12);expect(m.tpk).toBeCloseTo(75,12);
 });

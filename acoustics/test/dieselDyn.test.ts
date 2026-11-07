@@ -4,7 +4,7 @@ import {
  DIESEL_BRIGHTNESS_PROFILES,pickDieselBrightness,pickDieselRichness,dieselHarmonicGain,
  AcousticEngine,dieselDynScenario,exampleScenarios,loadScenario,cpaScenario,knotsToMps,
  getCutSeed,renderCut,generateScenario,presetToParams,pickHydpShape,HYDP_MAX_ORDERS,HYDP_POWER,
- LineWander,configurePropulsion,
+ LineWander,configurePropulsion,coupledSpeedWindowKn,
 } from '../src/index.js';
 
 describe('richer fictional diesel engine families',()=>{
@@ -12,8 +12,9 @@ describe('richer fictional diesel engine families',()=>{
   expect(ENGINE_HARMONICS).toEqual([1,2,3,4,5,6]);
   expect(DIESEL_BRIGHTNESS_PROFILES.length).toBeGreaterThanOrEqual(4);
   for(const c of catalog.classes.filter(c=>c.plant==='diesel')){
-   const s=deriveSignature(c,'base',{speedKn:8,depthM:10,mode:'SNORK'});
-   configurePropulsion(s,7,c.id,'SNORK');updateDerivedSignature(s,effectiveParams(c),8,10,'SNORK');
+   const win=coupledSpeedWindowKn(c),speedKn=win?Math.min(c.params.maxSpeedKn,Math.max(8,win.min+.05)):8;
+   const s=deriveSignature(c,'base',{speedKn,depthM:10,mode:'SNORK'});
+   configurePropulsion(s,7,c.id,'SNORK');updateDerivedSignature(s,effectiveParams(c),speedKn,10,'SNORK');
    for(const fam of ['CSR','CFR','EFR'] as const){
     const lines=s.tonals!.filter(l=>l.lineFamily===fam);
     expect(new Set(lines.map(l=>l.harmonic))).toEqual(new Set(ENGINE_HARMONICS));

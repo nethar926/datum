@@ -2,11 +2,37 @@ import {deriveSeed,mulberry32} from '../prng.js';
 import {makeDrivetrain,type Drivetrain,type VesselPlantSpec} from './drivetrain.js';
 const stream=(id:string,feature:string)=>mulberry32(deriveSeed(0x51d3a97,`${id}:${feature}`));
 const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a;
+/** Wilson (2026-11-06): PSR typically 2–7 Hz; overall teaching envelope 1–17 Hz. */
+export const PSR_TYPICAL_LO_HZ=2;
+export const PSR_TYPICAL_HI_HZ=7;
+export const PSR_ENVELOPE_LO_HZ=1;
+export const PSR_ENVELOPE_HI_HZ=17;
+/** Most class max shaft RPM ≤ this (~9.2 Hz); 1–2 outliers may reach 600–1020. */
+export const PSR_TYPICAL_MAX_RPM=550;
+export const PSR_OUTLIER_MAX_RPM=1020;
+/** Documented high-PSR outliers (maxShaftRpm). */
+export const PSR_OUTLIER_MAX_SHAFT_RPM:Readonly<Record<string,number>>={
+ 'red-dorhan-mistacorn':900,
+ 'red-lanternmoss':720,
+};
+/** Wilson (2026-11-06): diesel ERPM teaching envelope. */
+export const ERPM_ENVELOPE_LO=150;
+export const ERPM_ENVELOPE_HI=2000;
 /** Configuration only. Independent ID-keyed streams never consume scenario/hull PRNG draws. */
 export function varyPlantIdentity(s:VesselPlantSpec,id:string):VesselPlantSpec {
  const p=s.machinery,diesel='engines' in p;
- const gear=(d:Drivetrain,key:string)=>{if(d.kind==='direct')return;const rng=stream(id,key),stages=d.stages.map((_,i)=>{const pinionTeeth=17+Math.floor(rng()*13);let bullTeeth=Math.round(pinionTeeth*(2.5+rng()*(key==='turbine'&&i===1?2.5:1.2)));while(gcd(pinionTeeth,bullTeeth)!==1)bullTeeth++;return {pinionTeeth,bullTeeth};});Object.assign(d,makeDrivetrain(d.kind,stages));};
- if(diesel){if(p.drivetrain)gear(p.drivetrain,'engine-gear');if(p.kind!=='dieselElectric')for(const e of p.engines){e.erpm.obsMax=s.maxPsrpm*p.drivetrain!.ratio;e.erpm.obsMin=e.erpm.obsMax*.15;e.erpm.normal=e.erpm.obsMax*.7;}}
+ // Cap diesel GR ratio so ERPM = shaft×ratio stays inside the 150–2000 teaching envelope.
+ const maxEngineRatio=Math.max(2.2,Math.min(4.6,ERPM_ENVELOPE_HI/Math.max(1,s.maxPsrpm)));
+ const gear=(d:Drivetrain,key:string)=>{if(d.kind==='direct')return;const rng=stream(id,key),stages=d.stages.map((_,i)=>{const pinionTeeth=17+Math.floor(rng()*13);const span=key==='turbine'&&i===1?2.5:key==='engine-gear'?Math.min(1.2,Math.max(.4,maxEngineRatio-2.5)):1.2;let bullTeeth=Math.round(pinionTeeth*(2.5+rng()*span));while(gcd(pinionTeeth,bullTeeth)!==1)bullTeeth++;return {pinionTeeth,bullTeeth};});Object.assign(d,makeDrivetrain(d.kind,stages));};
+ if(diesel){if(p.drivetrain)gear(p.drivetrain,'engine-gear');if(p.kind!=='dieselElectric')for(const e of p.engines){
+  // Coupled plants: live ERPM tracks shaft×ratio. Keep the catalog obsMin floor; obsMax follows physics.
+  const coupledMax=s.maxPsrpm*p.drivetrain!.ratio;
+  e.erpm.obsMax=Math.min(ERPM_ENVELOPE_HI,Math.max(e.erpm.obsMax,coupledMax));
+  // Prefer exact coupling match when within envelope.
+  if(coupledMax<=ERPM_ENVELOPE_HI)e.erpm.obsMax=coupledMax;
+  e.erpm.obsMin=Math.min(e.erpm.obsMax*.95,Math.max(ERPM_ENVELOPE_LO,e.erpm.obsMin));
+  e.erpm.normal=Math.min(e.erpm.obsMax,Math.max(e.erpm.obsMin,e.erpm.obsMax*.7));
+ }}
  else {gear(p.mainTurbines.drivetrain,'turbine');if(p.kind==='nuclearGR')p.mainTurbines.maxRpm=s.maxPsrpm*p.mainTurbines.drivetrain.ratio;}
  if(p.motor){gear(p.motor.drivetrain,'motor-gear');p.motor.maxRpm=s.maxPsrpm*p.motor.drivetrain.ratio;}
  const rng=stream(id,'eda'),names=['LOP','Cooling pump','Fuel transfer','Lube scavenger','Freshwater pump','Ventilation drive'];

@@ -27,6 +27,10 @@ export interface HydpSpec {nominalHz:number;pairSpacingHz:number;durationS:numbe
 export interface VesselPlantSpec {propeller?:PropellerSpec;hydp?:HydpSpec;tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
 export interface PropulsionTruth {
  kind:Plant['kind']|'unspecified';tpk:number;tpkValid:boolean;tpkMinKts?:number;propulsor:{shafts:number;blades:number;bladeType:PropellerSpec['type'];brHz:number};emergencyPropulsor?:{active:boolean;rpm:number;hz:number;blades:number};mode:OperatingMode;drivetrainCode:DrivetrainCode|'unspecified';drivetrainLabel:string;aip?:{kind:AipSpec['kind'];active:boolean};ratio:number;ratioLabel:string;
+ /** Speed window where PSR×R:R sits inside every engine's own erpmMin–erpmMax (coupled D/D & GR). */
+ coupledSpeedKn?:{min:number;max:number};
+ /** True when a clutched mode was requested but PSR×R:R left the engine band (motor declutch or invalid). */
+ declutched?:boolean;
  engines:{id:string;stroke:2|4;cylinders:number;erpm:number;running:boolean;csrHz:number;cfrHz:number;efrHz:number}[];
  stages:{pinionTeeth:number;bullTeeth:number;ratio:number;meshHz:number}[];
  shafts:{rpm:number;hz:number;coupled:boolean}[];motor?:{rpm:number;shaftHz:number;slots:number;msrHz:number};generators?:{rpm:number;hz:number}[];
@@ -50,13 +54,13 @@ export function vanePassHz(rotorHz:number,vaneCount:number):number{return rotorH
 export function meshRates(d:Drivetrain,inputHz:number,out:Float64Array|Float32Array):typeof out {if(out.length<d.stages.length)throw new RangeError('Short mesh buffer');let hz=inputHz;for(let i=0;i<d.stages.length;i++){out[i]=hz*d.stages[i].pinionTeeth;hz/=d.stages[i].bullTeeth/d.stages[i].pinionTeeth;}return out;}
 export function shaftDrivetrain(p:Plant,mode?:ModeInput):Drivetrain {if((mode==='BATT'||mode==='AIP'||mode==='D/E')&&p.motor)return p.motor.drivetrain;return p.kind==='dieselElectric'||p.kind==='nuclearElectric'?p.motor!.drivetrain:'mainTurbines' in p?p.mainTurbines.drivetrain:p.drivetrain!;}
 export function validateVesselPlant(s:VesselPlantSpec,electricalHz:50|60):void {
- if(!s||!finite(s.maxPsrpm,20,600)||!Number.isInteger(s.shafts)||!finite(s.shafts,1,3)||!Array.isArray(s.shaftMismatchPct)||s.shaftMismatchPct.length!==2||!finite(s.shaftMismatchPct[0],0,2)||!finite(s.shaftMismatchPct[1],s.shaftMismatchPct[0],2))throw new Error('Invalid vessel shaft envelope');
+ if(!s||!finite(s.maxPsrpm,20,1200)||!Number.isInteger(s.shafts)||!finite(s.shafts,1,3)||!Array.isArray(s.shaftMismatchPct)||s.shaftMismatchPct.length!==2||!finite(s.shaftMismatchPct[0],0,2)||!finite(s.shaftMismatchPct[1],s.shaftMismatchPct[0],2))throw new Error('Invalid vessel shaft envelope');
  if(s.aip&&(!['stirling','fuelcell','closed-cycle'].includes(s.aip.kind)||!finite(s.aip.powerKw,1,1000)||!finite(s.aip.maxSpeedKts,1,8)||!finite(s.aip.enduranceDays,.1,90)))throw new Error('Invalid AIP backup');
  if(s.speedWindows)for(const w of s.speedWindows)if(!w||!w.name||!Array.isArray(w.speedKts)||w.speedKts.length!==2||!finite(w.speedKts[0],0,45)||!finite(w.speedKts[1],w.speedKts[0],45)||(w.kind==='SRC'?(!finite(w.hz,.01,1e5)||(w.hzPerKnot!==undefined&&!finite(w.hzPerKnot,.01,100))):w.kind!=='SWATH'||!finite(w.loHz,0,1e5)||!finite(w.hiHz,w.loHz+1e-6,1e5)))throw new Error('Invalid speed window');
  const p=s.machinery;if(!p||!['dieselDirect','dieselGR','dieselElectric','nuclearGR','nuclearElectric'].includes(p.kind))throw new Error('Invalid plant');let rated=0;
  if(p.kind==='dieselDirect'||p.kind==='dieselGR'||p.kind==='dieselElectric'){
   if(!Array.isArray(p.engines)||!p.engines.length||p.engines.length>6||new Set(p.engines.map(e=>e?.id)).size!==p.engines.length)throw new Error('Invalid engine list');
-  for(const e of p.engines){if(!e||typeof e.id!=='string'||!e.id||(e.stroke!==2&&e.stroke!==4)||(e.stroke===2?e.cylinders!==6:![6,8,10,12,16].includes(e.cylinders))||!e.erpm||!finite(e.erpm.obsMin,0,6000)||!finite(e.erpm.obsMax,30,6000)||!finite(e.erpm.normal,e.erpm.obsMin,e.erpm.obsMax)||e.erpm.obsMin>=e.erpm.obsMax)throw new Error('Invalid engine stroke/cylinder/ERPM sheet');}
+  for(const e of p.engines){if(!e||typeof e.id!=='string'||!e.id||(e.stroke!==2&&e.stroke!==4)||(e.stroke===2?e.cylinders!==6:![6,8,10,12,16].includes(e.cylinders))||!e.erpm||!finite(e.erpm.obsMin,0,2000)||!finite(e.erpm.obsMax,30,2000)||!finite(e.erpm.normal,e.erpm.obsMin,e.erpm.obsMax)||e.erpm.obsMin>=e.erpm.obsMax)throw new Error('Invalid engine stroke/cylinder/ERPM sheet');}
   
   if(p.kind==='dieselElectric'){
    if(p.drivetrain!==undefined)throw new Error('D/E engines are not shaft-coupled');
