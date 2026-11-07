@@ -88,7 +88,7 @@ The default client worker URL targets built ESM `dist/worker.js`.
   300 m); buoy RF/depth/battery/state/health (`ok`|`fault`); strongest K≤8 DIFAR lines per buoy:
   `{buoyId,freqHz,brgDeg,quality}` (quality=SNR dB). Numeric IDs map `buoy-N`. Fixed-length truth contacts include active flags and source-line tags (see M3 below).
 - `error {message}` is a diagnostic extension. Wideband, azigram, DICASS,
-  VLAD, BT/SSP are reserved/rejected, not implemented. DEMON streams are enabled as described below.
+  VLAD remains reserved/rejected. BT/SSP water-column profiles are live on `scenario.waterColumn` (see docs/water-column-fe.md). DEMON streams are enabled as described below.
 
 ## Scenario v1
 
