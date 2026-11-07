@@ -1,3 +1,4 @@
+import {attachWaterColumn,buildWaterColumn} from '../waterColumn.js';
 import {commandSpeedWindowKn} from '../catalog/plantModel.js';
 import {chooseOperatingState} from '../catalog/operations.js';
 import {createSurfacePool,surfaceCount} from '../catalog/surface.js';
@@ -41,6 +42,8 @@ export function generateScenario(params:ScenarioParams,seed=params.seed):Scenari
  const p=clampParams({...params,seed}),s:ScenarioInput={...cpaScenario(),seed:p.seed,contacts:[]},select=mulberry32(deriveSeed(p.seed,'catalog-selection'));
  s.reactorOffline=p.reactorOffline;s.fMax=s.fmax;s.fBin=s.fmax/(s.bins-1);s.band=[0,s.fmax];s.surfaceTraffic=p.surfaceTraffic;
  s.environment.shippingDensity=p.surfaceTraffic;s.environment.seaState=p.seaState;s.environment.shipping=p.surfaceTraffic<.33?'light':p.surfaceTraffic<.67?'moderate':'heavy';s.buoys[0].life=p.buoyLifeMin*60;
+ const surfT=12+((p.seed>>>3)%10),sal=34+((p.seed>>>7)%3)*.5;s.environment.temperatureC=surfT;s.environment.salinityPsu=sal;
+ s.waterColumn=attachWaterColumn(s.environment,buildWaterColumn({surfaceTempC:surfT,deepTempC:surfT-6-((p.seed>>>5)%5),salinityPsu:sal,maxDepthM:Math.max(300,p.opState.depthM[1]*1.5)}));
  for(let i=0;i<p.subCount;i++){const draw=randomizeSelection(select,p.rarityWeights),c=effectiveParams(draw.klass,draw.variantId),rng=mulberry32(deriveSeed(p.seed,`op-state:${i}`));
   const quiet=rng()<p.opState.quietProb;let speed=p.opState.speedKn[0]+rng()*(p.opState.speedKn[1]-p.opState.speedKn[0]);const depth=clamp(p.opState.depthM[0]+rng()*(p.opState.depthM[1]-p.opState.depthM[0]),c.depthM[0],c.depthM[1]);
   speed=Math.min(speed,c.maxSpeedKn);if(quiet)speed=Math.min(speed,c.quietSpeedKn);if(!p.opState.cavitationAllowed)speed=Math.min(speed,.95*cavitationInceptionKn(c,depth));

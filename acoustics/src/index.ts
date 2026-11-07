@@ -41,3 +41,4 @@ export * from './patterns.js';
 export * from './behaviours.js';
 
 export * from './cuts/index.js';
+export * from './waterColumn.js';
