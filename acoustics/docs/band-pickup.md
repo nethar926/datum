@@ -85,3 +85,16 @@ In every band, 50 % falls at span/2. There is no response before the edge and th
 Why low bands "lag": a row is stamped at the end of its averaged span (window plus overlapped segments), so a step at t reaches 50% at t + span/2 and full level at t + span. Spans are ELF 16 s, VLF 5 s, LF 3.5 s, MF 2.375 s (measured edges in the table below). That is the Δf·T≈1 time–frequency tradeoff (Urick, *Principles of Underwater Sound*, ch. 12; Lyons, *Understanding DSP*, zoom FFT; Harris 1978 for Hann/overlap). Narrow bins also gain SNR on tonals (+3 dB per halving of Δf), so a weak VLF line can appear *sooner* than in LF. Leading or lagging is a tendency, not a rule.
 
 FE: draw each row at its `simT`, with no shift. Use `rowRateHz`/`fBin` from `gramConfig` (they now differ per band). Don't add display delays. `resForBand(id)` is exported for live subscribes so they match cuts.
+
+## CPU and memory (e835cfe, Node, single thread, 32 buoys × 16 band streams + 1 panned FULLBAND each)
+
+| Run | Wall / 900 s | % real time | ms/tick mean / p95 / max | RSS start / mid / end (MB) | Heap start / mid / end (MB) | Acoustics retained |
+|---|---|---|---|---|---|---|
+| RES5, 1 contact | 79.7 s | 8.9 % | 22.1 / 27.3 / 59.8 | 127 / 152 / 154 | 20.9 / 22.5 / 30.7 | 27.7 MB |
+| RES2, 1 contact | 404.9 s | 45 % | 112.5 / 120.5 / 6583* | 142 / 169 / 205 | 22.5 / 30.5 / 52.5 | 44.5 MB |
+| RES5, 60 contacts (30 s run) | — | 201 % | 502 / 523 / 573 | 179 / 273 / 273 | 58 / 102 / 100 | 28.6 MB |
+| RES2, 60 contacts (30 s run, contended) | — | 1531 % | 3827 / 3926 / 4165 | 195 / 292 / 292 | 59 / 95 / 96 | 45.4 MB |
+
+\* A single stall while the test suite ran on the same machine; p95 is representative.
+
+Targets: RES5 ≤ 10 % is met at 1 contact. RES2 ≤ 25 % is **not met** (45 %), and 60 contacts is far over at both RES. Each row re-evaluates the modelled spectrum for every snapshot in its span. That costs O(bins × active contacts × frames in span), and RES2 FULLBAND (8 tiles × 4096 bins × 64 frames per row) dominates. Exact per-snapshot caches or incremental Welch sums would need well over 50 MB at 32 buoys (≈ 6 MB per RES2 tile) or a changed summation order (not bit-identical). Only the bounded NB/BB row reuse (64 KB) is implemented.
