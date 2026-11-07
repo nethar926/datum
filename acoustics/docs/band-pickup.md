@@ -55,7 +55,7 @@ FULLBAND tiles use the same averaging, with each tile's RES T and K. Any tile ca
 
 ## Memory (acoustics side only; FE row history is separate)
 
-`engine.retainedBytes()` reports `{history, scratch, streams, total, perStream}`. Measured at 32 buoys (the supported field size, docs/data-contract.md) × (16 band streams + 1 FULLBAND panned every 3 s): over 900 s the total was flat at every 30 s sample, with 0 fallbacks and 0 unfilled tiles:
+`engine.retainedBytes()` reports `{history, scratch, streams, total, perStream}`. Measured at 32 buoys (the supported field size, docs/data-contract.md) × (8 band streams + 1 FULLBAND panned every 3 s): over 900 s the total was flat at every 30 s sample, with 0 fallbacks and 0 unfilled tiles:
 
 - **FULLBAND RES2 (8 tiles, panned):** 44.4 MB total = state history 3.56 MB + shared scratch 0.49 MB + streams 40.4 MB. Per stream that is 60 KB for a band stream and 752 KB for a FULLBAND stream (mostly per-tile AR(1) state).
 - **FULLBAND RES5 (default):** 27.6 MB total.
@@ -110,7 +110,7 @@ FE: draw each row at its `simT`, with no shift. Use `rowRateHz`/`fBin` from `gra
 
   Seed-777 edge 10/50/90 % rise and fall times differ from the reference by ≤ 1.7e-6 s in every band; the test asserts at most one hop.
 
-## CPU and memory (e835cfe, Node, single thread, 32 buoys × 16 band streams + 1 panned FULLBAND each)
+## CPU and memory (e835cfe, Node, single thread, 32 buoys × 8 band streams + 1 panned FULLBAND each)
 
 | Run | Wall / 900 s | % real time | ms/tick mean / p95 / max | RSS start / mid / end (MB) | Heap start / mid / end (MB) | Acoustics retained |
 |---|---|---|---|---|---|---|
@@ -146,7 +146,7 @@ Worst absolute timing difference: 1.6834 microseconds (SRC ELF), far below one h
 
 ### Sequential benchmark matrix
 
-Existing standalone pan harness (`/workspace/fastpath-logs/measure.ts`, copied from the prior measurement harness), fast path default, single process, seed 303. Each of 32 buoys has 16 NB/BB band streams plus its own FULLBAND stream; all tiles collect, including off-screen. FULLBAND pans every 3 s when multiple tiles exist. Every due row is drained. Thus this is **32 FULLBAND streams**, not a one-visible-pane computation shortcut. RES5 has one tile; RES2 has eight. No warm-up excluded. Each matrix case ran in a separate process, sequentially, after tests completed; no competing acoustics benchmark/test job ran.
+Existing standalone pan harness (`/workspace/fastpath-logs/measure.ts`, copied from the prior measurement harness), fast path default, single process, seed 303. Each of 32 buoys has 8 NB/BB band streams plus its own FULLBAND stream; all tiles collect, including off-screen. FULLBAND pans every 3 s when multiple tiles exist. Every due row is drained. Thus this is **32 FULLBAND streams**, not a one-visible-pane computation shortcut. RES5 has one tile; RES2 has eight. No warm-up excluded. Each matrix case ran in a separate process, sequentially, after tests completed; no competing acoustics benchmark/test job ran.
 
 **Host caveat:** the shared box was not literally idle: existing trading services and infrastructure remained running. They were not stopped or modified. These are shared-host observations, not an exclusive-machine certification. Process snapshot and all raw logs are in `/workspace/fastpath-logs/`.
 
@@ -163,3 +163,81 @@ All memory columns below are **MiB (2^20 bytes)**, not decimal MB. RSS/heap incl
 **Targets:** 1-contact RES5 passes ≤10% (4.0%), and RES2 passes ≤25% (18.2%). 60 contacts still fail CPU at both resolutions: RES5 31.9% over 900 s and RES2 445.5% over 120 s. RES2 900 s was not run: the measured rate predicts about 4010 s (67 min), above the ~15-minute limit. RES5 900 s was feasible and completed in 287.5 s.
 
 Accounted acoustic memory passes 50 MB even in decimal units: maximum sampled total 25,681,376 bytes (24.49 MiB, 60-contact RES2), flat from midpoint to end. This is **not** a total-process 50 MB pass: RSS/heap exceed that limit. FE's 15-minute display history and GPU allocation still need a combined budget/frame-cost review; these results do not clear the release hold. Retained history is not evicted, no visibility-dependent collection was introduced, and no workers/SIMD were added. Everything remains local, unpushed and held.
+
+## Spectrum-kernel profile on 673183a (2026-11-07, ET; proposals only)
+
+**Harness correction:** the previous standalone harness actually had 4 bands × NB/BB = **8**, not 16 band subscriptions per buoy. The prior benchmark headings overstated that count; their numbers remain measurements of 8. For this profile, `profile-measure.ts` explicitly subscribes **16** (two identical subscriptions per band/filter) plus **one FULLBAND per buoy**, across 32 buoys. These are 16 actual streams but 8 unique band/filter configurations, sharing deterministic acoustic sums as designed. All tiles collect, with panning every 3 s; no one-visible-pane shortcut.
+
+Six sequential detached `node --cpu-prof --import tsx ... 60 RES 60` runs: three at each RES, 60 simulated seconds each, 0.25 s ticks, seed 303, no excluded warm-up. Existing benchmark scenario has 60 fictional contacts with **one discrete motor line each**, not a rich harmonic catalog. No workers or optimization implemented. Raw profiles/logs and reproducible harnesses: `/workspace/fastpath-logs/profile-*`. The initial 8-stream profile attempt was stopped, archived under `initial-8-stream/`, and excluded.
+
+All entries are **median [min–max] across three runs**, not confidence intervals. Shared-host contention can move results in either direction; narrow repeat spread does not certify uncontended performance. Profiling itself also adds overhead.
+
+| Profile-enabled timing | RES5 | RES2 |
+|---|---|---|
+| Wall s | 21.20 [21.00–21.30] | 265.50 [263.70–265.80] |
+| % real time | 35.30 [35.00–35.50] | 442.60 [439.50–443.10] |
+| Tick mean ms | 88.15 [87.37–88.81] | 1106.44 [1098.75–1107.62] |
+| Tick p95 ms | 113.92 [110.00–114.27] | 1157.08 [1155.59–1166.32] |
+| Tick max ms | 251.67 [249.73–265.74] | 1300.75 [1283.32–1302.63] |
+
+### Sampled top self-time functions
+
+Percent of all sampled process time, weighted by profiler time deltas (including startup/runtime). Inlining can attribute callees to `coreFast`; these are not isolated function microbenchmarks. `gaussian` below is PRNG noise, **not** the diffuse-line deposit kernel.
+
+| Function | RES5 self % | RES2 self % |
+|---|---|---|
+| coreFast [resGram.ts] | 78.302 [77.979–78.512] | 95.429 [95.301–95.502] |
+| render [resGram.ts] | 4.403 [4.198–4.511] | 0.628 [0.612–0.644] |
+| gaussian [prng.ts] | 3.973 [3.964–4.107] | 0.837 [0.823–0.848] |
+| gammaUnit [res.ts] | 2.256 [2.198–2.292] | 0.132 [0.125–0.135] |
+| integrateAccum [resGram.ts] | 2.236 [2.215–2.245] | 0.121 [0.120–0.130] |
+| integrateHistory [resGram.ts] | 0.000 [0.000–0.000] | 0.493 [0.491–0.516] |
+| geometry [kinematics.ts] | 1.151 [1.122–1.229] | 0.732 [0.717–0.808] |
+| loadFrame [resGram.ts] | 0.943 [0.879–1.037] | 0.441 [0.409–0.452] |
+| exactGain [lloydsMirror.ts] | 0.611 [0.594–0.617] | 0.088 [0.080–0.089] |
+| depositHannLine [lineKernel.ts] | 0.377 [0.334–0.407] | 0.053 [0.051–0.059] |
+
+### Component diagnostic (separate, instrumented)
+
+Three additional **12 s** runs per RES on a copy of the source in `diagnostic-src/`, with per-contact/chunk probes, method-exclusive timers and exact loop counters. Production source was untouched. Timers/counters substantially perturb this hot loop: these **ms/tick are diagnostic costs, not production performance**, and their percentages must not be substituted into an exact speed-up prediction. Each row below combines FULLBAND and band streams unless stated otherwise.
+
+| Diagnostic ms / 0.25 s tick | RES5 | RES2 |
+|---|---|---|
+| Per-contact geometry / level / scalar TL setup | 3.83 [3.81–3.90] | 25.37 [24.68–25.59] |
+| Per-line check, Doppler, TL, gain and Hann deposit | 2.98 [2.96–3.06] | 9.20 [8.88–9.24] |
+| Per-bin broadband + fused absorption/coherence / Lloyd gain | 190.99 [190.33–192.07] | 2495.03 [2484.94–2536.52] |
+| Ambient initialization | 0.31 [0.30–0.31] | 3.74 [3.72–3.82] |
+| Propagation recurrence setup (subset of broadband row) | 50.68 [50.21–50.74] | 651.19 [650.41–662.59] |
+| Fused bin arithmetic (subset of broadband row) | 83.25 [82.65–83.74] | 1085.50 [1084.21–1119.93] |
+| Per-stream Welch accumulation, exclusive | 2.67 [2.63–2.76] | 8.67 [8.48–8.79] |
+| Frame loading, exclusive | 1.35 [1.31–1.46] | 7.70 [7.47–7.78] |
+| FULLBAND rendering, inclusive | 91.70 [90.91–91.72] | 2461.46 [2452.61–2501.76] |
+| Band rendering, inclusive | 125.53 [125.43–126.28] | 128.36 [127.60–131.91] |
+
+TL is **not an independent additive category**: scalar spreading/geometry is in per-contact setup, Thorp/coherence recurrence is a broadband subset, Lloyd phase/gain is fused into bin arithmetic, and tonal TL is inside the line row. This avoids double-counting or claiming a source-level split that the fused kernel does not expose. Empty-swath-loop and probe overhead are residuals. FULLBAND share of inclusive rendering: RES5 42.07 [42.02–42.22]% / RES2 95.03 [94.99–95.07]%.
+
+### Exact work counters (per tick, averaged over 12 s including startup)
+
+Counters matched across all three repeats; min = median = max. “Dense line×bin” is the hypothetical Cartesian work, **not work the kernel executes**. Actual line evaluation/deposition visits are four-tap discrete Hann work; no Gaussian line calls occurred.
+
+| Work per tick | RES5 FULLBAND | RES5 bands | RES2 FULLBAND | RES2 bands |
+|---|---|---|---|---|
+| Spectrum kernel calls | 36.00 | 173.33 | 1,024.00 | 173.33 |
+| Contact / line checks | 2,160.00 | 10,400.00 | 61,440.00 | 10,400.00 |
+| Accepted line checks | 2,160.00 | 8,105.42 | 7,680.00 | 8,105.42 |
+| Broadband contact×bins | 8,642,160.00 | 10,603,600.00 | 245,767,680.00 | 10,603,600.00 |
+| Hypothetical dense line×bins | 8,642,160.00 | 10,603,600.00 | 245,767,680.00 | 10,603,600.00 |
+| Actual line-bin evaluations / deposits | 8,640.00 | 32,393.42 | 30,720.00 | 32,393.42 |
+| Deposits outside approx −3 dB width | 5,713.48 | 20,415.69 | 19,954.96 | 20,415.69 |
+
+Outside the **implemented significant support** (Hann |offset| < 2 bins), actual line-bin evaluations are **zero**. Within that support, RES5 63.68 [63.68–63.68]% / RES2 63.97 [63.97–63.97]% of deposited bins lie outside the approximate −3 dB core (Hann half-width 0.72 bins). These are intentional main-lobe skirts, not avoidable dense-loop waste. The finite-support line path already rejects out-of-band lines; further tonal bandwidth clipping is not the useful first target here.
+
+### One proposed optimization, not implemented
+
+**First choice: increase the fast broadband propagation recurrence chunk from 32 to 128 bins, with a conservative absorption-curvature error guard falling back to 32.** This targets the dominant broadband kernel without changing frames, time weights, event timing, collection policy, retained history or threading. It cuts chunk setup / exponent evaluations toward one quarter; coherence's quadratic exponent remains exact, while the Thorp absorption quadratic approximation needs the guard. Preserve the existing first-bin special case and per-bin phase recurrence. Estimated overall gain **1.1–1.3×** (rough hypothesis, not a measured result; no claim it meets either 60-contact CPU target). Instrumented recurrence work is material, but timer overhead prevents a reliable Amdahl estimate from those numbers alone.
+
+Accuracy risk: the absorption interpolation residual grows roughly with chunk width cubed, and cancellation near interference minima can amplify relative errors. Require the existing max ≤0.01 dB / mean ≤0.001 dB reference limits plus long-range, low-frequency, rough-sea, tile-boundary and near-null coverage, all event-edge / seek / replay / startup tests, and fresh 3× timings. Determinism risk is low if chunk choice/guard depends only on frequency grid, environment and the same recorded geometry—not visibility, cache pressure or wall time. Repeated rows must remain deterministic; old summation bit identity is not required.
+
+**Runner-up:** a bounded per-(history frame, buoy, contact, environment epoch) memo of geometry and scalar spreading/propagation setup, shared across bands/tiles. No spectra retained and no history evicted. Estimated **1.01–1.03×** overall because setup is small versus broadband arithmetic. Low numerical risk (reuse identical inputs/results), but stale-key/invalidation and extra retained-memory accounting need explicit tests; benchmark and FE combined-budget review before acceptance. Do not combine it with the first experiment.
+
+Only this note changes the repository. No optimization, workers, push or release approval; held pending the Lead and FE review.
