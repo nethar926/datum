@@ -69,6 +69,7 @@ export class LofarGenerator {
       const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
       for(let i=0;i<this.bins;i++){const coherent=q*(this.sigma===0?1:Math.exp(this.coherenceExponent[i]*grazing2)),gain=Math.max(0,1+coherent*coherent-2*coherent*cp);const contrib=(broadband*gain+flow)*this.shape[i]*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;}
       for(const w of item.swaths)if(w.source.gain>0)for(let i=w.lo;i<=w.hi;i++){const contrib=level*.0003*w.source.gain*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}
+      const sb=c.params.stateBroadband;if(sb){for(const band of [sb.snort,sb.waveSlap]){if(!band.active||!(band.level>0))continue;const lo=Math.max(0,Math.floor((band.loHz-this.f0)/df)),hi=Math.min(this.bins-1,Math.ceil((band.hiHz-this.f0)/df));for(let i=lo;i<=hi;i++){const contrib=level*.00025*band.level*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}}}
       for(let k=0;k<item.frequencies.length;k++){
         const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-this.f0)/df;
         if(bin<0||bin>this.bins-1)continue;
