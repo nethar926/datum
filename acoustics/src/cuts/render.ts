@@ -9,7 +9,7 @@ import {validateCutSeed} from './validate.js';
 import {bakeFidelityParams,applyRuntimeFidelity,looksOf} from './fidelity.js';
 import type {CutSeed} from './types.js';
 import {attachWaterColumn,buildWaterColumn} from '../waterColumn.js';
-import {SIM_STREAM_SET,parseLofarStreamId,vernierHzForBand,BoundedStreamHistory,CUT_HISTORY_ROWS_900S,type SimStreamId} from '../streamSet.js';
+import {SIM_STREAM_SET,parseLofarStreamId,vernierHzForBand,resForBand,BoundedStreamHistory,CUT_HISTORY_ROWS_900S,type SimStreamId} from '../streamSet.js';
 import {LloydPassTracker,type LloydPassTruth} from '../lloydPass.js';
 import {estimateConvergenceZone,type ConvergenceZoneEstimate} from '../convergenceZone.js';
 import {geometry,createGeometry} from '../kinematics.js';
@@ -171,7 +171,7 @@ export class CutSession {
   const parsed=parseLofarStreamId(id);
   if(parsed){
    // RES NB/BB vernier centred in the named band (bandPreset+res are exclusive on subscribe).
-   const cfg=this.engine.subscribe({channel:1,kind:'lofar',res:5,filter:parsed.filter,vernierHz:vernierHzForBand(parsed.bandPreset)});
+   const cfg=this.engine.subscribe({channel:1,kind:'lofar',res:resForBand(parsed.bandPreset),filter:parsed.filter,vernierHz:vernierHzForBand(parsed.bandPreset)});
    this.openStreams.set(id,cfg.streamId);return cfg.streamId;
   }
   return null;

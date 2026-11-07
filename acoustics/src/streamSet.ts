@@ -1,4 +1,4 @@
-import type {LofarBandPresetId,GramFilter} from './protocol.js';
+import type {LofarBandPresetId,GramFilter,ResLevel} from './protocol.js';
 import {LOFAR_BAND_PRESETS} from './bands.js';
 
 /**
@@ -33,6 +33,17 @@ export function cutStreamSet():readonly SimStreamId[]{return SIM_STREAM_SET;}
 export function vernierHzForBand(id:LofarBandPresetId):number {
   const p=LOFAR_BAND_PRESETS.find(x=>x.id===id);if(!p)throw new Error(`Unknown band ${id}`);
   return .5*(p.band[0]+p.band[1]);
+}
+
+/** Per-band analysis resolution: the finest RES whose 1024-bin zoom band B=1024·Δf covers the
+ * preset width (ELF 50 Hz→RES2, VLF 200→RES4, LF 500→RES5, MF 2000→RES7). Integration T=1/Δf, so
+ * ELF/VLF integrate longer (16 s / 4 s) than LF/MF (2 s / 0.5 s): the classic time–frequency
+ * resolution tradeoff (Δf·T≈1; Urick, Principles of Underwater Sound, ch. 12; Lyons, Understanding
+ * DSP, zoom FFT). Any later low-band pickup comes from this window/averaging only — there is no
+ * per-band time offset anywhere; all bands share one sim time axis. */
+export function resForBand(id:LofarBandPresetId):ResLevel {
+  const p=LOFAR_BAND_PRESETS.find(x=>x.id===id);if(!p)throw new Error(`Unknown band ${id}`);
+  const w=p.band[1]-p.band[0];for(let r=1;r<=9;r++)if(1024*.03125*2**(r-1)>=w)return r as ResLevel;return 9 as ResLevel;
 }
 
 /** Parse `lofar/LF/NB` → {bandPreset,filter}; other ids → null. */
