@@ -5,7 +5,7 @@ const coupled=catalog.classes.filter(c=>c.machinery.kind==='dieselDirect'||c.mac
 /** Band rule: every running engine inside its own band, or declutched (flagged only), or shaft stopped. */
 function checkBand(c:SubmarineClass,s:Signature):'band'|'declutched'|'stopped'|'idle'{
  const t=s.propulsion!,p=c.machinery as Extract<SubmarineClass['machinery'],{engines:unknown}>;
- if(t.declutched){expect(c.declutchToMotor).toBe(true);expect(t.engines.every(e=>!e.running)).toBe(true);return 'declutched';}
+ if(t.declutched){expect(c.declutchToMotor).toBe(true);expect(t.engines.some(e=>e.running)).toBe(true);for(const e of t.engines.filter(e=>e.running)){const b=p.engines.find(x=>x.id===e.id)!.erpm;expect(e.erpm).toBeGreaterThanOrEqual(b.obsMin-1e-6);expect(e.erpm).toBeLessThanOrEqual(b.obsMax+1e-6);}return 'declutched';}
  if(t.shafts[0].rpm<=0){expect(t.engines.every(e=>!e.running)).toBe(true);return 'stopped';}
  let any=false;for(const e of t.engines){if(!e.running)continue;any=true;const b=p.engines.find(x=>x.id===e.id)!.erpm;expect(e.erpm).toBeGreaterThanOrEqual(b.obsMin-1e-6);expect(e.erpm).toBeLessThanOrEqual(b.obsMax+1e-6);}
  return any?'band':'idle';

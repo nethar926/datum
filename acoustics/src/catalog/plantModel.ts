@@ -95,7 +95,8 @@ export function updatePropulsion(s:Signature,fraction:number,mode:ModeInput):Pro
  const wantClutch=(p.kind==='dieselDirect'||p.kind==='dieselGR')&&enginesEnabled(p,mode)&&mode!=='D/E';
  // Wilson/Lead: while coupled, R:R is fixed and ERPM must sit in each engine's own band.
  // declutchToMotor (explicit per-class flag, geared + propulsion motor only): out-of-band → deterministic
- // declutch (engine lines drop, shaft on motor). Unflagged: the command is REJECTED — the previous valid
+ // declutch (shaft on motor; diesel keeps running at band-valid charging ERPM so EDAs follow the
+ // engine, not the clutch). Unflagged: the command is REJECTED — the previous valid
  // coupled command is held (first-ever command with no history: nearest edge of coupledSpeedKn) and
  // commandStatus='rejected'. Shaft stop (0 RPM) is always valid (engines simply stop).
  let inBand=wantClutch&&coupledErpmInBand(spec,t.shafts[0]?.rpm??0,selected);
@@ -123,12 +124,17 @@ export function updatePropulsion(s:Signature,fraction:number,mode:ModeInput):Pro
   const enabled=enginesEnabled(p,mode);for(let i=0;i<t.engines.length;i++){
    const e=t.engines[i],sheet=p.engines[i];
    // D/E (and D/E-mode): generator ERPM is bus-locked / independent of shaft speed.
-   // Coupled D/D & GR: ERPM = shaft×R:R exactly (no clamp). Declutched: engines stop.
+   // Coupled D/D & GR: ERPM = shaft×R:R exactly (no clamp).
+   // Declutch-to-motor (flagged GR, SNORK/SURF): shaft on motor; diesel keeps charging at
+   // sheet.erpm.normal (band-valid, deterministic). EDAs/CSR/CFR/EFR follow engine CFR, not PSR.
+   // Engines silent only when the mode disables them (BATT/AIP) or no charging path.
    const electricLike=p.kind==='dieselElectric'||mode==='D/E';
    const coupledRun=wantClutch&&inBand&&selected[i]!==0&&refShaft>0;
-   e.running=coupledRun||(enabled&&selected[i]!==0&&electricLike);
+   const declutchCharge=!!declutched&&enabled&&selected[i]!==0;
+   e.running=coupledRun||(enabled&&selected[i]!==0&&electricLike)||declutchCharge;
    if(electricLike)e.erpm=e.running?sheet.erpm.normal*rpmScale:0;
    else if(coupledRun)e.erpm=(p.kind==='dieselDirect'?t.shafts[i%t.shafts.length].rpm:t.shafts[0].rpm*d.ratio)*kneeScale;
+   else if(declutchCharge)e.erpm=sheet.erpm.normal*rpmScale;
    else e.erpm=0;
    e.csrHz=e.erpm/60;e.cfrHz=e.csrHz/(e.stroke===4?2:1);e.efrHz=firingRateHz(e,e.erpm);
   }

@@ -132,9 +132,10 @@ describe('ERPM bands and coupling (Wilson / Lead)',()=>{
       for(const e of t.engines.filter(e=>e.running)){const sheet=p.engines.find(x=>x.id===e.id)!;expect(e.erpm).toBeGreaterThanOrEqual(sheet.erpm.obsMin-1e-6);expect(e.erpm).toBeLessThanOrEqual(sheet.erpm.obsMax+1e-6);}
       continue;
      }
-     // Flagged declutchToMotor: engine lines drop, shaft still turns (CPP may floor rpm via tpkMinKts).
+     // Flagged declutchToMotor: shaft on motor; diesel keeps charging at band-valid ERPM.
      expect(t.declutched).toBe(true);expect(t.shafts[0].coupled).toBe(false);
-     expect(t.engines.every(e=>!e.running&&e.erpm===0)).toBe(true);
+     expect(t.engines.some(e=>e.running&&e.erpm>0)).toBe(true);
+     for(const e of t.engines.filter(e=>e.running)){const sheet=p.engines.find(x=>x.id===e.id)!;expect(e.erpm).toBeCloseTo(sheet.erpm.normal,8);}
      expect(t.shafts[0].rpm).toBeGreaterThan(0);expect(t.motor!.rpm).toBeGreaterThan(0);
     }
    }
