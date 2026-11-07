@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {
  catalog,deriveSignature,updateDerivedSignature,effectiveParams,configurePropulsion,
- coupledSpeedWindowKn,
+ coupledSpeedWindowKn,writePlantTonals,
 } from '../src/index.js';
 
 /** Lead: shaft imbalance = live PSR; gear mesh = live plant rates (R:R / declutch / BATT).
@@ -22,17 +22,14 @@ describe('SRC / gear / imbalance plant-rate lock',()=>{
     let input=t.shafts[0].hz*t.ratio;
     for(const stage of t.stages){
      expect(stage.meshHz).toBeCloseTo(input*stage.pinionTeeth,10);
-     const meshLines=s.tonals!.filter(x=>x.lineFamily==='MESH'&&x.harmonic===1&&Math.abs(x.hz-stage.meshHz)<1e-6);
      // twin-shaft may scale mesh by shaft ratio; at least one line tracks stage.meshHz on shaft 0
      expect(s.tonals!.some(x=>x.lineFamily==='MESH'&&x.harmonic===1&&Math.abs(x.hz-stage.meshHz)<1e-4)).toBe(true);
      input/=stage.ratio;
-     void meshLines;
     }
    }
   }
  });
  it('on BATT and when declutched, PSR/MESH still follow live shaft/plant rates (no second speed formula)',()=>{
-  // BATT diesel-electric
   const del=catalog.classes.find(c=>c.machinery.kind==='dieselElectric')!;
   const s=deriveSignature(del,'base',{speedKn:5,depthM:40,mode:'BATT'});
   configurePropulsion(s,3,del.id,'BATT');updateDerivedSignature(s,effectiveParams(del),5,40,'BATT');
@@ -41,7 +38,6 @@ describe('SRC / gear / imbalance plant-rate lock',()=>{
   expect(s.tonals!.find(l=>l.lineFamily==='PSR'&&l.harmonic===1)!.hz).toBeCloseTo(t.shafts[0].hz,10);
   if(t.stages.length)expect(t.stages[0].meshHz).toBeCloseTo(t.shafts[0].hz*t.ratio*t.stages[0].pinionTeeth,10);
 
-  // Declutch: morrowcoil below coupled window → motor (Lead plant-rate lock)
   const flagged=catalog.classes.find(c=>c.id==='green-morrowcoil')!;
   const w=coupledSpeedWindowKn(flagged)!;
   const inKn=(w.min+Math.min(w.max,flagged.params.maxSpeedKn))/2;
@@ -67,8 +63,42 @@ describe('SRC / gear / imbalance plant-rate lock',()=>{
   const gateHi=hi.speedGated!.find(g=>g.name===w.name)!;
   expect(gateHi.active).toBe(true);expect(gateHi.kind).toBe('SRC');
   if(gateHi.kind==='SRC'&&w.kind==='SRC'&&w.hzPerKnot)expect(gateHi.hz).toBeCloseTo(w.hzPerKnot*mid,6);
-  // Flow noise is spectrum level only
   expect(hi.flowNoiseDb).toBeTypeOf('number');
   expect(hi.tonals!.every(l=>l.lineFamily!=='SRC'||l.family==='src')).toBe(true);
+ });
+ it('speed-window SRC is sole emitter when present; legacy srcHzPerKn is fallback-only; no duplicate Hz',()=>{
+  // Pre-fix: every class had BOTH paths → 4 powered SRC lines (window h=1,2 + 2 legacy rates).
+  for(const c of catalog.classes){
+   expect(c.speedWindows?.some(w=>w.kind==='SRC')).toBe(true);
+   const mode=c.plant==='nuclear'?'NUC' as const:'SNORK' as const;
+   const w=c.speedWindows!.find(x=>x.kind==='SRC')!;
+   const mid=(w.speedKts[0]+w.speedKts[1])/2,speed=Math.min(c.params.maxSpeedKn,Math.max(w.speedKts[0]+.05,mid));
+   const s=deriveSignature(c,'base',{speedKn:speed,depthM:50,mode});
+   configurePropulsion(s,2,c.id,mode);updateDerivedSignature(s,effectiveParams(c),speed,50,mode);
+   const powered=s.tonals!.filter(l=>l.lineFamily==='SRC'&&l.power>0);
+   const keys=powered.map(l=>l.hz.toFixed(6));
+   expect(new Set(keys).size).toBe(keys.length);
+   for(const rate of c.params.srcHzPerKn){
+    const legacy=speed*rate,windowHit=(s.speedGated??[]).some(g=>g.kind==='SRC'&&g.gain>0&&(Math.abs(g.hz-legacy)<1e-6||Math.abs(g.hz*2-legacy)<1e-6));
+    if(!windowHit)expect(powered.some(l=>Math.abs(l.hz-legacy)<1e-6)).toBe(false);
+   }
+   const gate=s.speedGated!.find(g=>g.name===w.name)!;
+   if(gate.kind==='SRC'&&gate.gain>0){
+    expect(powered.some(l=>l.harmonic===1&&Math.abs(l.hz-gate.hz)<1e-6)).toBe(true);
+    expect(powered.filter(l=>l.harmonic===1).length).toBe((s.speedGated??[]).filter(g=>g.kind==='SRC'&&g.gain>0).length);
+   }
+  }
+  // Fallback: strip window SRC → legacy rates emit once each
+  const c=catalog.classes[0]!,mode=c.plant==='nuclear'?'NUC' as const:'SNORK' as const,speed=5;
+  const s=deriveSignature(c,'base',{speedKn:speed,depthM:40,mode});
+  configurePropulsion(s,4,c.id,mode);updateDerivedSignature(s,effectiveParams(c),speed,40,mode);
+  const windows=s.plantSpec!.speedWindows;s.plantSpec!.speedWindows=windows?.filter(w=>w.kind!=='SRC');
+  s.speedGated=(s.speedGated??[]).filter(g=>g.kind!=='SRC');
+  writePlantTonals(s,mode,c.params.electricalHarmonics,c.params.srcHzPerKn,speed);
+  if(windows)s.plantSpec!.speedWindows=windows;
+  const legacyLines=s.tonals!.filter(l=>l.lineFamily==='SRC'&&l.power>0&&l.harmonic===1);
+  expect(legacyLines.length).toBe(c.params.srcHzPerKn.length);
+  for(const rate of c.params.srcHzPerKn)expect(legacyLines.some(l=>Math.abs(l.hz-speed*rate)<1e-6)).toBe(true);
+  expect(new Set(legacyLines.map(l=>l.hz.toFixed(6))).size).toBe(legacyLines.length);
  });
 });

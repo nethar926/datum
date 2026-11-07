@@ -159,8 +159,11 @@ export function writePlantTonals(s:Signature,mode:ModeInput,electricalHarmonics:
  for(let shaft=0;shaft<t.shafts.length;shaft++){const ratio=t.shafts[0].hz>0?t.shafts[shaft].hz/t.shafts[0].hz:1;for(const g of t.stages)for(let h=1;h<=3;h++)put(s,i++,'gear',g.meshHz*ratio*h,g.meshHz>0?.035/(h*h):0,h,shaft);}
  if(mode!=='AIP'&&('reactorSets' in p))for(const r of p.reactorSets)for(let h=1;h<=3;h++){put(s,i++,'pump',r.coolantPumpHz*h,.04/(h*h),h,undefined,undefined,undefined,r.id,'COOLANT');put(s,i++,'turbine',r.turboGenerator.rpm/60*h,.025/(h*h),h,undefined,undefined,undefined,r.id,'TG');}
  if(mode==='AIP'){for(let h=1;h<=2;h++)put(s,i++,'pump',AIP_HZ[spec.aip!.kind]*.5*h,.025/(h*h),h);}else for(const a of spec.aux)if(a.kind!=='hydp')for(const h of a.harmonics){const intermittent=a.duty==='intermittent',on=a.dutyOnS?(a.dutyOnS[0]+a.dutyOnS[1])/2:60,off=a.dutyOffS?(a.dutyOffS[0]+a.dutyOffS[1])/2:90,phase=intermittent?((a.id.length*17+h*3)%97):0,gain=intermittent?intermittentDutyGain(s.dutyClockS??0,on,off,phase,a.edge??'abrupt'):1;put(s,i++,a.kind==='acPump'||a.kind==='ssma'?'pump':'motor',a.fHz*h,.025/(h*h)*gain,h,undefined,undefined,a,undefined,intermittent?'INTERMITTENT':undefined);}
- for(const w of s.speedGated??NO_GATES)if(w.kind==='SRC')for(let h=1;h<=2;h++)put(s,i++,'src',w.hz*h,.04*w.gain/(h*h),h);
- for(const rate of srcHzPerKn)put(s,i++,'src',speedKn*rate,speedKn>0?.06:0,1);
+ // Lead: speed-window SRC is the source of truth. Legacy srcHzPerKn is a fallback only when
+ // this plant has no speedWindows SRC (avoids dual emission of the same component family).
+ const gates=s.speedGated??NO_GATES,hasWindowSrc=gates.some(w=>w.kind==='SRC')||!!spec.speedWindows?.some(w=>w.kind==='SRC');
+ for(const w of gates)if(w.kind==='SRC')for(let h=1;h<=2;h++)put(s,i++,'src',w.hz*h,.04*w.gain/(h*h),h);
+ if(!hasWindowSrc)for(const rate of srcHzPerKn)put(s,i++,'src',speedKn*rate,speedKn>0?.06:0,1);
  if(spec.propResonance)i=writePropResonance(s,i,spec.propResonance,speedKn);
  if(s.hydpTransient&&spec.hydp)writeHydpBurst(s,i,spec.hydp,s.hydpTransient),i+=HYDP_MAX_ORDERS;
  // Fixed TRANSIENT slots (class-specific unintentional); power filled by engine while armed.
