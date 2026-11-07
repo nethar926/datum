@@ -21,7 +21,7 @@ describe('richer fictional diesel engine families',()=>{
     expect(lines.some(l=>l.power>0)).toBe(true);
    }
    expect(c.edas.length).toBeGreaterThanOrEqual(2);
-   expect(c.edas.every(e=>e.harmonics.includes(3))).toBe(true);
+   expect(c.edas.every(e=>e.harmonics.length<=5&&e.harmonics.every(h=>h>=1&&h<=5))).toBe(true);
   }
  });
  it('brightness profiles vary and EFR>CSR>CFR is common but not always',()=>{
