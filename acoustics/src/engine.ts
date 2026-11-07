@@ -191,7 +191,7 @@ export class AcousticEngine {
     // Recreate generator when capacity must change (vernier 1024 ↔ FULLBAND 4096).
     const needCap=fullAxis?TILE_BINS:RES_BINS;
     let gen=old?.res;
-    if(!gen||gen.capacity!==needCap){gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);gen.setWaterColumn?.(s.waterColumn);gen.setHistory(this.history);}
+    if(!gen||gen.capacity!==needCap){gen?.dispose();gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);gen.setWaterColumn?.(s.waterColumn);gen.setHistory(this.history);}
     // History starts with the first RES stream (pre-filled with the state at that instant).
     if(!this.historyOn){this.historyOn=true;this.history.record(this.time);}
     else gen.configure(settings);
@@ -226,7 +226,7 @@ export class AcousticEngine {
     }
   }
   unsubscribe(streamId:number):void{
-    const sub=this.subscriptions.get(streamId);if(sub?.bandKey){const entry=this.lofarBandCache.get(sub.bandKey);if(entry&&--entry.refs<=0)this.lofarBandCache.delete(sub.bandKey);}
+    const sub=this.subscriptions.get(streamId);sub?.res?.dispose();if(sub?.bandKey){const entry=this.lofarBandCache.get(sub.bandKey);if(entry&&--entry.refs<=0)this.lofarBandCache.delete(sub.bandKey);}
     this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);
   }
   /** Active subscribed legacy-LOFAR buoy×band pairs (one entry per stream). Unused combinations

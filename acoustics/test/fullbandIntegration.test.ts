@@ -1,4 +1,5 @@
 import {describe,it,expect} from 'vitest';
+import {resRowPath} from '../src/resGram.js';
 import {AcousticEngine,WorkerRuntime,cpaScenario,fictionalSignature,resParams,RES_FRAME_S,ResLofarGenerator} from '../src/index.js';
 import {SCENARIO_CUTS,renderCut,SIM_STREAM_SET} from '../src/cuts/index.js';
 import {measureEdges} from './bandEdges.test.js';
@@ -20,7 +21,7 @@ describe('FULLBAND integration parity',()=>{
     while(e.rowsReady(v.streamId)>0){const k=vs.read;e.writeRow(v.streamId,out);vRows.set(k,{f0:vs.res.f0,x:Float64Array.from(vs.res.expected.subarray(0,vs.res.liveBins))});expect(vs.res.lastIntegrated).toBe(true);}
     while(e.rowsReady(f.streamId)>0){const job=fs.fullAxis.queue[0];e.writeRow(f.streamId,out);expect(fs.res.lastIntegrated).toBe(true);const vr=vRows.get(job.rowKey);if(!vr)continue;
      const g=fs.res;for(let i=0;i<vr.x.length;i++){const j=Math.round((vr.f0+i*df-g.f0)/df);if(j<0||j>=g.liveBins)continue;const a=vr.x[i],b=g.expected[j];max=Math.max(max,Math.abs(a-b)/Math.max(a,b));n++;}}}
-   expect(n).toBeGreaterThan(1000);expect(max).toBeLessThan(1e-9);worst[res]=max;
+   expect(n).toBeGreaterThan(1000);expect(max).toBeLessThan(resRowPath()==="reference"?1e-9:1e-5);worst[res]=max;
   }
   console.log('parity worst rel',JSON.stringify(worst));
  },60000);
