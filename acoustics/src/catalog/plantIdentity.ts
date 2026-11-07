@@ -61,6 +61,9 @@ export function varyPlantIdentity(s:VesselPlantSpec,id:string):VesselPlantSpec {
  for(const a of s.aux)if(a.duty==='intermittent'&&a.kind!=='hydp'){const e=stream(id,`edge:${a.id}`);a.edge=edges[Math.floor(e()*3)];}
  const AC_IDS=new Set(['blue-brindleflux','green-morrowcoil','red-cinderlilt','red-sablequill','blue-quartzwhorl','green-opalweft']);
  if(AC_IDS.has(id)&&!s.aux.some(a=>a.id==='fictional-ac-compressor')){const ac=stream(id,'ac-comp');s.aux.push({id:'fictional-ac-compressor',kind:'acPump',duty:'intermittent',fHz:Number((55+ac()*90).toFixed(2)),harmonics:ac()<.5?[1]:[1,2],stability:'stable',width:'discrete',dutyOnS:[40+Math.floor(ac()*40),90+Math.floor(ac()*50)] as [number,number],dutyOffS:[50+Math.floor(ac()*40),140+Math.floor(ac()*80)] as [number,number],edge:edges[Math.floor(ac()*3)]});}
+ // Class-specific narrowband unintentional transients (subset) — classification clues.
+ const TR_IDS=new Set(['blue-brindleflux','green-thistledrift','red-velvetshoal','red-lanternmoss','blue-orbelune']);
+ if(TR_IDS.has(id)){const tr=stream(id,'class-transient');s.classTransients=[{id:'fictional-tool-drop',name:'Dropped tool',hz:Number((180+tr()*220).toFixed(2)),harmonics:tr()<.6?[1]:[1,2],durationS:Number((.4+tr()*1.2).toFixed(2))}];}
  return s;
 }
 /** Hash order, not catalog insertion order, assigns non-overlapping teaching bands.

@@ -42,8 +42,10 @@ describe('behaviour planner',()=>{
  });
  it('manoeuvre transients trigger on turns ≥10° or depth changes ≥5 m only',()=>{
   const legs:MotionLeg[]=[{at:0,course:0,speed:4,depth:100},{at:60,course:5*DEG,speed:4,depth:100},{at:120,course:20*DEG,speed:4,depth:100},{at:200,course:20*DEG,speed:2,depth:130},{at:300,course:2*Math.PI-1*DEG,speed:2,depth:130}];
-  expect(maneuverTransients(legs).map(t=>t.at)).toEqual([120,200,300]);expect(maneuverTransients(legs,{courseDeg:3,depthM:50}).map(t=>t.at)).toEqual([60,120,300]);
-  const seeded=maneuverTransients(legs,{},mulberry32(9));expect(seeded.length).toBeGreaterThanOrEqual(3);expect(seeded.every(t=>t.kind==='hydp')).toBe(true);
+  const hydpAt=(list:ReturnType<typeof maneuverTransients>)=>list.filter(t=>t.kind==='hydp').map(t=>t.at);
+  expect(hydpAt(maneuverTransients(legs))).toEqual([120,200,300]);expect(hydpAt(maneuverTransients(legs,{courseDeg:3,depthM:50}))).toEqual([60,120,300]);
+  expect(maneuverTransients(legs).filter(t=>t.kind==='swath').map(t=>t.at)).toEqual([120,200,300]);
+  const seeded=maneuverTransients(legs,{},mulberry32(9));expect(seeded.length).toBeGreaterThanOrEqual(3);expect(seeded.some(t=>t.kind==='hydp')&&seeded.some(t=>t.kind==='swath')).toBe(true);
  });
 });
 describe('generation wiring',()=>{
@@ -53,7 +55,7 @@ describe('generation wiring',()=>{
    for(const c of s.contacts.filter(c=>c.category!=='surface')){seen.add(c.behaviour!);expect(SUB_BEHAVIOURS).toContain(c.behaviour);expect(c.motion.length).toBeGreaterThanOrEqual(2);expect(c.motion[0]).toEqual({at:0,course:c.course,speed:c.speed,depth:c.depth});expect(c.motion[1].at).toBeGreaterThanOrEqual(600);expect(c.motion.at(-1)!.at).toBeLessThan(H);
     if(d==='difficult')for(const l of c.motion)expect(l.depth).toBeGreaterThanOrEqual(Math.min(c.depth,120));
     if(c.transients?.some(t=>t.kind==='hydp')){withHydp++;expect(c.transients.filter(t=>t.kind==='hydp').every(t=>c.motion.some(l=>t.at>=l.at&&t.at<=l.at+3))).toBe(true);}
-    expect((c.transients??[]).every(t=>t.kind==='hydp'||t.kind==='engine-ramp')).toBe(true);}
+    expect((c.transients??[]).every(t=>t.kind==='hydp'||t.kind==='engine-ramp'||t.kind==='swath'||t.kind==='transient')).toBe(true);}
    expect(()=>loadScenario(JSON.parse(JSON.stringify(s)))).not.toThrow();}
   expect([...seen].sort()).toEqual([...SUB_BEHAVIOURS].sort());expect(withHydp).toBeGreaterThan(100);
  });

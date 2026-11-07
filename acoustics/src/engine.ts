@@ -35,6 +35,10 @@ export class AcousticEngine {
   private readonly hydpStates:{contact:Contact;spec:HydpSpec;index:number;at:Float64Array;durationS:Float64Array}[]=[];
   /** m3 diesel-dyn: ratio-locked engine RPM knees (plantRpmScale lerp). */
   private readonly engineRampStates:{contact:Contact;catalog?:ClassParams;baseFraction:number;at:Float64Array;durationS:Float64Array;fromScale:Float64Array;toScale:Float64Array;lastScale:number}[]=[];
+  /** Short broadband swath flashes (Wilson). */
+  private readonly swathStates:{contact:Contact;at:Float64Array;durationS:Float64Array;loHz:Float64Array;hiHz:Float64Array}[]=[];
+  /** Class-specific narrowband TRANSIENT arm windows. */
+  private readonly narrowTransientStates:{contact:Contact;index:number;hz:number;harmonics:number;at:Float64Array;durationS:Float64Array}[]=[];
   /** m3-events: pool ships whose leg speed changes refresh their fictional signature in place. */
   private readonly surfaceStates:{contact:Contact;type:string;speed:number}[]=[];
   private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator;res?:ResLofarGenerator;bandKey?:string;fullAxis?:{tileBins:number;tileCount:number;visibleTileIndex:number;viewFLo?:number;viewFHi?:number;scheduled:number;queue:{tileIndex:number;rowKey:number;hot:boolean;filled:boolean}[];lastTile:{tileIndex:number;tileBins:number;f0:number;fBin:number;liveBins:number;filled:boolean}}}>();
@@ -55,8 +59,13 @@ export class AcousticEngine {
     for(const c of this.allContacts){if(c.surface&&!c.catalogRef&&c.params.plantSpec&&c.motion.length>1){this.surfaceStates.push({contact:c,type:c.surface.type,speed:c.speed});}
       const spec=c.params.plantSpec?.hydp;if(c.params.hydpTransient&&spec){const list=c.transients!.filter(x=>x.kind==='hydp').sort((a,b)=>a.at-b.at);
       this.hydpStates.push({contact:c,spec,index:c.params.tonals!.findIndex(l=>l.lineFamily==='HYDP'),at:Float64Array.from(list,x=>x.at),durationS:Float64Array.from(list,x=>typeof x.params.durationS==='number'?x.params.durationS:spec.durationS)});}
-      const ramps=(c.transients??[]).filter(x=>x.kind==='engine-ramp').sort((a,b)=>a.at-b.at);if(ramps.length&&c.params.plantSpec){const cat=this.catalogStates.find(s=>s.contact===c)?.params;const baseFraction=Math.max(0,c.params.shaftHz*60/c.params.plantSpec.maxPsrpm);this.engineRampStates.push({contact:c,catalog:cat,baseFraction,at:Float64Array.from(ramps,x=>x.at),durationS:Float64Array.from(ramps,x=>Number(x.params.durationS)),fromScale:Float64Array.from(ramps,x=>typeof x.params.fromScale==='number'?x.params.fromScale:1),toScale:Float64Array.from(ramps,x=>Number(x.params.toScale)),lastScale:NaN});c.params.plantRpmScale=1;}}
-    for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(true);
+      const ramps=(c.transients??[]).filter(x=>x.kind==='engine-ramp').sort((a,b)=>a.at-b.at);if(ramps.length&&c.params.plantSpec){const cat=this.catalogStates.find(s=>s.contact===c)?.params;const baseFraction=Math.max(0,c.params.shaftHz*60/c.params.plantSpec.maxPsrpm);this.engineRampStates.push({contact:c,catalog:cat,baseFraction,at:Float64Array.from(ramps,x=>x.at),durationS:Float64Array.from(ramps,x=>Number(x.params.durationS)),fromScale:Float64Array.from(ramps,x=>typeof x.params.fromScale==='number'?x.params.fromScale:1),toScale:Float64Array.from(ramps,x=>Number(x.params.toScale)),lastScale:NaN});c.params.plantRpmScale=1;}
+      const swaths=(c.transients??[]).filter(x=>x.kind==='swath').sort((a,b)=>a.at-b.at);if(swaths.length){c.params.eventSwaths=swaths.map((x,i)=>({name:`SWATH-EVT-${i+1}`,kind:'SWATH' as const,loHz:Number(x.params.loHz),hiHz:Number(x.params.hiHz),active:false,gain:0}));this.swathStates.push({contact:c,at:Float64Array.from(swaths,x=>x.at),durationS:Float64Array.from(swaths,x=>Number(x.params.durationS)),loHz:Float64Array.from(swaths,x=>Number(x.params.loHz)),hiHz:Float64Array.from(swaths,x=>Number(x.params.hiHz))});}
+      // Arm class-specific TRANSIENT slots from scheduled 'transient' events (or auto-seed one from sheet).
+      const narrow=(c.transients??[]).filter(x=>x.kind==='transient').sort((a,b)=>a.at-b.at);const sheet=c.params.plantSpec?.classTransients??[];
+      if(sheet.length){const idx=c.params.tonals!.findIndex(l=>l.lineFamily==='TRANSIENT');if(idx>=0){const events=narrow.length?narrow:[{at:90,kind:'transient' as const,params:{durationS:sheet[0].durationS,hz:sheet[0].hz,harmonics:sheet[0].harmonics.length}}];this.narrowTransientStates.push({contact:c,index:idx,hz:sheet[0].hz,harmonics:sheet[0].harmonics.length,at:Float64Array.from(events,x=>x.at),durationS:Float64Array.from(events,x=>Number(x.params.durationS))});}}
+    }
+    for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(true);this.updateSwaths();this.updateNarrowTransients();
     this.truthState={contacts:this.allContacts.map((c,i)=>({speedGated:c.params.speedGated??[],id:i+1,sourceId:c.id,label:c.catalogRef?`${c.params.label} ${resolveReference(c.catalogRef).klass.hulls.find(h=>h.id===c.catalogRef!.hullId)?.number??c.id}`:`${c.params.label} ${c.id}`,propulsion:c.params.propulsion!,spdKts:mpsToKnots(c.speed),active:c.active!==false,category:c.category??'subsurface',...(c.behaviour?{behaviour:c.behaviour}:{}),classificationTarget:c.category!=='surface'&&c.classificationTarget!==false,x:c.x,y:c.y,depthM:c.depth,crsDeg:c.course*180/Math.PI,spdMps:c.speed,lines:c.lines!.map(l=>({eda:l.eda,reactorId:l.reactorId,lineFamily:l.lineFamily,fundamentalHz:l.fundamentalHz,harmonic:l.harmonic,engineId:l.engineId,shaftIndex:l.shaftIndex,id:l.id!,family:l.family,f0Hz:l.hz,freqHz:l.frequencyHz??l.hz,power:l.power,stability:l.stability!,width:l.width!,sigmaBins:l.sigmaBins??0}))}))};this.tacticalState.truth=this.truthState;
     this.generators=s.buoys.map(b=>new LofarGenerator(b,this.allContacts,s.bins,s.band?.[1]??s.fMax??s.fmax,s.seed,s.environment,s.band?.[0]??0));
     s.buoys.forEach((_,i)=>{this.streams.set(i+1,i);this.legacyIndices.set(i+1,0);});
@@ -303,7 +312,7 @@ export class AcousticEngine {
     for(const c of this.allContacts){let t=from;for(const leg of c.motion)if(leg.at>from&&leg.at<=s.time){advance(c,leg.at-t);c.course=leg.course;c.speed=leg.speed;c.depth=leg.depth;t=leg.at;}advance(c,s.time-t);}
     for(const state of this.catalogStates){const c=state.contact;if(c.speed!==state.speed||c.depth!==state.depth){updateDerivedSignature(c.params,state.params,mpsToKnots(c.speed),c.depth,c.operatingMode??'normal');state.speed=c.speed;state.depth=c.depth;}}
     for(const state of this.surfaceStates){const c=state.contact;if(c.speed!==state.speed){refreshSurfaceSignature(c.params,state.type,mpsToKnots(c.speed));state.speed=c.speed;}}
-    for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(false);
+    for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(false);this.updateSwaths();this.updateNarrowTransients();
     for(const w of this.lineWanders)w.advance(dt);
     for(let i=0;i<s.buoys.length;i++){
       const b=s.buoys[i],r=this.rows[i];advance(b,dt);r.alive=isFeeding(b,s.time);r.depth=b.depth;r.rfChannel=b.rfChannel;
@@ -325,6 +334,12 @@ export class AcousticEngine {
     // Keep Signature.shaftHz aligned with scaled coupled shafts for LOFAR/DEMON consumers.
     if(c.params.propulsion?.shafts[0]){c.params.shaftHz=c.params.propulsion.shafts[0].hz;c.params.tonalHz=Math.max(.01,c.params.shaftHz*c.params.blades);}
   }}
+
+  /** Short broadband swath flashes: gain=1 inside [at, at+duration), else 0. */
+  private updateSwaths():void{const t=this.scenario.time;for(const s of this.swathStates){const list=s.contact.params.eventSwaths!;for(let i=0;i<s.at.length;i++){const on=t>=s.at[i]&&t<s.at[i]+s.durationS[i];list[i].active=on;list[i].gain=on?1:0;list[i].loHz=s.loHz[i];list[i].hiHz=s.hiHz[i];}}}
+  /** Class-specific TRANSIENT lines: power while armed. */
+  private updateNarrowTransients():void{const t=this.scenario.time;for(const n of this.narrowTransientStates){let gain=0;for(let k=n.at.length-1;k>=0;k--){if(n.at[k]>t)continue;if(t<n.at[k]+n.durationS[k])gain=1;break;}
+   const lines=n.contact.params.tonals!;for(let h=0;h<n.harmonics;h++){const l=lines[n.index+h];if(!l||l.lineFamily!=='TRANSIENT')continue;l.power=gain*.08/((h+1)*(h+1));}}}
   step(dt:number):readonly BuoyRow[]{
     for(const r of this.rows)if(r.row.length!==this.scenario.bins)throw new Error('Missing row buffer');
     this.advance(dt);for(let i=0;i<this.rows.length;i++){const r=this.rows[i];if(r.alive){this.generators[i].generate(r.row);r.bearing=r.type==='difar'?this.generators[i].bearing:null;}else r.row.fill(NaN);}return this.rows;

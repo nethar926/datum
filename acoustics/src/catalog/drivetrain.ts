@@ -25,6 +25,8 @@ export type SpeedWindowSpec={name:string;kind:'SRC';speedKts:[number,number];hz:
 export type SpeedGated={name:string;kind:'SRC';hz:number;active:boolean;gain:number}|{name:string;kind:'SWATH';loHz:number;hiHz:number;active:boolean;gain:number};
 export interface PropellerSpec {shafts:number;blades:number;type:'flat'|'skewed'|'cpp'}
 export interface HydpSpec {nominalHz:number;pairSpacingHz:number;durationS:number}
+/** Class-specific unintentional narrowband transient (Wilson). */
+export interface ClassTransientSpec {id:string;name:string;hz:number;harmonics:number[];durationS:number}
 /** PRES (prop resonance), fictional. FREQUENCIES are always shaft-synchronous: line n sits at n·PSR for every
  * integer n in [nCentre−halfWidth, nCentre+halfWidth] (Wilson: resonance shares PSR spacing, ∝ PSR).
  * The AMPLITUDE ENVELOPE is a separate weight defined in PSR orders (raised cosine about nCentre), so the
@@ -32,7 +34,7 @@ export interface HydpSpec {nominalHz:number;pairSpacingHz:number;durationS:numbe
  * envelope peak relative to the PSR h=1 line. Optional [onsetKn, offsetKn] speed band with ~0.5 kn edges.
  * No physics-side merging: each shaft emits its own n·PSR lines; each stream's FFT bin decides doublets. */
 export interface PropResonanceSpec {nCentre:number;halfWidth:number;levelDb:number;onsetKn?:number;offsetKn?:number;stability:LineStability}
-export interface VesselPlantSpec {propResonance?:PropResonanceSpec;/** Geared diesel with a clutch-shift onto its propulsion motor: an out-of-band coupled command auto-declutches. Unflagged coupled plants reject such commands. */declutchToMotor?:boolean;propeller?:PropellerSpec;hydp?:HydpSpec;tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
+export interface VesselPlantSpec {classTransients?:ClassTransientSpec[];propResonance?:PropResonanceSpec;/** Geared diesel with a clutch-shift onto its propulsion motor: an out-of-band coupled command auto-declutches. Unflagged coupled plants reject such commands. */declutchToMotor?:boolean;propeller?:PropellerSpec;hydp?:HydpSpec;tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
 export interface PropulsionTruth {
  kind:Plant['kind']|'unspecified';tpk:number;tpkValid:boolean;tpkMinKts?:number;propulsor:{shafts:number;blades:number;bladeType:PropellerSpec['type'];brHz:number};emergencyPropulsor?:{active:boolean;rpm:number;hz:number;blades:number};mode:OperatingMode;drivetrainCode:DrivetrainCode|'unspecified';drivetrainLabel:string;aip?:{kind:AipSpec['kind'];active:boolean};ratio:number;ratioLabel:string;
  /** Speed window where PSR×R:R sits inside every engine's own erpmMin–erpmMax (coupled D/D & GR). */
@@ -88,6 +90,7 @@ export function validateVesselPlant(s:VesselPlantSpec,electricalHz:50|60):void {
  if(s.emergencyPropulsor&&(!finite(s.emergencyPropulsor.maxRpm,20,600)||!Number.isInteger(s.emergencyPropulsor.blades)||!finite(s.emergencyPropulsor.blades,2,8)||!finite(s.emergencyPropulsor.maxSpeedKts,1,5)))throw new Error('Invalid emergency propulsor');
  if(p.motor){if(s.motorSlots!==undefined&&(!Number.isInteger(s.motorSlots)||!finite(s.motorSlots,48,200)))throw new Error('Invalid motor slots');if(!finite(p.motor.maxRpm,20,12000))throw new Error('Invalid motor RPM');validateDrivetrain(p.motor.drivetrain);}
  if(Math.abs(rated/s.maxPsrpm-1)>.02)throw new Error('Plant/shaft max RPM mismatch');
+ if(s.classTransients){if(!Array.isArray(s.classTransients)||s.classTransients.length>4)throw new Error('Invalid classTransients');for(const tr of s.classTransients)if(!tr||typeof tr.id!=='string'||!tr.id||typeof tr.name!=='string'||!tr.name||!finite(tr.hz,.1,1e5)||!Array.isArray(tr.harmonics)||!tr.harmonics.length||tr.harmonics.length>5||!tr.harmonics.every(h=>Number.isInteger(h)&&h>0&&h<=5)||!finite(tr.durationS,.05,30))throw new Error('Invalid class transient');}
  if(s.hydp&&(!finite(s.hydp.nominalHz,.1,1e5)||!finite(s.hydp.pairSpacingHz,.001,100)||!finite(s.hydp.durationS,.01,3600)))throw new Error('Invalid HYDP metadata');
  if(!Array.isArray(s.edas)||new Set(s.edas.map(e=>e?.id)).size!==s.edas.length||!Array.isArray(s.aux)||new Set(s.aux.map(a=>a?.id)).size!==s.aux.length)throw new Error('Invalid EDA/aux list');
  /** Aux keeps ≥1 harmonic; EDA allows 0–5 (Wilson: fleet median 1–2, per-component). */

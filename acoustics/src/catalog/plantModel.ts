@@ -162,6 +162,8 @@ export function writePlantTonals(s:Signature,mode:ModeInput,electricalHarmonics:
  for(const rate of srcHzPerKn)put(s,i++,'src',speedKn*rate,speedKn>0?.06:0,1);
  if(spec.propResonance)i=writePropResonance(s,i,spec.propResonance,speedKn);
  if(s.hydpTransient&&spec.hydp)writeHydpBurst(s,i,spec.hydp,s.hydpTransient),i+=HYDP_MAX_ORDERS;
+ // Fixed TRANSIENT slots (class-specific unintentional); power filled by engine while armed.
+ if(spec.classTransients)for(const tr of spec.classTransients)for(const h of tr.harmonics)put(s,i++,'pump',tr.hz*h,0,h,undefined,undefined,{stability:'unstable',width:'diffuse',sigmaBins:2},undefined,'TRANSIENT');
  s.tonals!.length=i;
 }
 
