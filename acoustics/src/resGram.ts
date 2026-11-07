@@ -25,6 +25,28 @@ export type ResRowPath='fast'|'reference';
 let ROW_PATH:ResRowPath='fast';
 export function setResRowPath(p:ResRowPath):void{ROW_PATH=p;ACCUMS.clear();}
 export function resRowPath():ResRowPath{return ROW_PATH;}
+/** PROTOTYPE APPROXIMATION (Lead-approved for evaluation, NOT shipping; default OFF). When on, the
+ * fast kernel evaluates the SMOOTH per-contact broadband envelope (source shape × Thorp absorption,
+ * flow noise, and the slowly varying Lloyd's-mirror reflection amplitude q·exp(−2k²σ²sin²θ)) only at
+ * coarse nodes (≤1/48 octave and ≤32 output bins apart) and interpolates linearly in power to the
+ * output bins. The oscillatory Lloyd's-mirror phase term cos(kΔ) is still evaluated at EVERY output
+ * bin, and the interference is split exactly as gain=(1−c)²+2c(1−cos kΔ) so the interpolated
+ * envelope multiplies the fine-grid factor (the combined spectrum is never treated as smooth; nulls
+ * stay at the exact fine-grid frequencies). Ambient is already a per-bin table (exact); spreading
+ * and CZ gain are per-contact scalars (exact); tonals and swaths are exact. Reference path and
+ * the flag-off fast path are unchanged. */
+let COARSE_BB=false;
+export function setCoarseBroadband(on:boolean):void{COARSE_BB=on;ACCUMS.clear();envEpoch++;}
+export function coarseBroadband():boolean{return COARSE_BB;}
+/** Coarse node spacing: 1/48 octave (relative step 2^(1/48)−1), clamped to [1,32] bins. */
+export const COARSE_REL_STEP=2**(1/48)-1,COARSE_MAX_BINS=32;
+const NODES=new Map<string,Int32Array>();
+function coarseNodes(f0:number,df:number,L:number):Int32Array{
+ const key=`${f0}|${df}|${L}`;let n=NODES.get(key);if(n)return n;const a:number[]=[0];
+ for(let i=0;i<L-1;){const f=f0+i*df,st=Math.max(1,Math.min(COARSE_MAX_BINS,Math.floor(f*COARSE_REL_STEP/df)));i=Math.min(L-1,i+st);a.push(i);}
+ n=Int32Array.from(a);NODES.set(key,n);if(NODES.size>64)NODES.delete(NODES.keys().next().value!);return n;
+}
+const CS={P:new Float64Array(TILE_BINS+1),E:new Float64Array(TILE_BINS+1),N:new Float64Array(TILE_BINS+1)};
 /** FULLBAND streams with at most this many tiles use accumulators (memory-bounded static rule). */
 export const ACCUM_MAX_TILES=2;
 /** Band tables (ambient, shape, absorption/coherence exponents, BB half-widths) depend only on
@@ -236,7 +258,7 @@ export class ResLofarGenerator {
   if(newest<tEnd-1e-6||oldest-f>tEnd-span+1e-6)return false;
   const p=this.params,rpF=Math.max(1,Math.round(p.rowPeriodS/f)),spanF=Math.ceil(span/f-1e-9),R=Math.ceil(spanF/rpF),slots=R+1,L=this.band.liveBins,q=this.difar?3:1;
   const A=this.accumFor(this.band.f0,L);
-  const ver=`${this.tablesKey}|${envEpoch}`;if(A.ver!==ver){A.reset();A.ver=ver;}
+  const ver=`${this.tablesKey}|${envEpoch}|${COARSE_BB?1:0}`;if(A.ver!==ver){A.reset();A.ver=ver;}
   const slotOf=(x:number)=>((Math.round(x/rpF)%slots)+slots)%slots,s=slotOf(e);
   if(!(A.rowE[s]===e&&A.done[s]===1)){
    const open=(x:number)=>{const k=slotOf(x);if(A.rowE[k]===x)return;A.rowE[k]=x;A.done[k]=0;A.wsum[k]=0;A.acc.fill(0,k*q*L,(k+1)*q*L);};
@@ -261,6 +283,7 @@ export class ResLofarGenerator {
   * rational absorption exponent the residual is its third difference. 3 exp per chunk instead of
   * one per bin. */
  private coreFast(P:Float64Array,sE:Float64Array,sN:Float64Array,sP:Float64Array):void{
+  if(COARSE_BB){this.coreCoarse(P,sE,sN,sP);return;}
   const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,bt=this.bt,AB=SH.ab,se=this.shapeEnbw,amb=this.ambientBin,coh=this.sigma!==0;
   for(let i=0;i<L;i++)P[i]=amb[i]!;if(difar){sE.fill(0,0,L);sN.fill(0,0,L);sP.fill(0,0,L);}
   for(let j=0;j<this.contacts.length;j++){
@@ -294,6 +317,47 @@ export class ResLofarGenerator {
     if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
    }
   }
+ }
+
+ /** PROTOTYPE (flag COARSE_BB): coreFast with the smooth broadband envelope on coarse nodes — see
+  * setCoarseBroadband. Contacts with swaths use the exact chunked loop (they need per-bin absorption). */
+ private coreCoarse(P:Float64Array,sE:Float64Array,sN:Float64Array,sP:Float64Array):void{
+  const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,bt=this.bt,AB=SH.ab,se=this.shapeEnbw,amb=this.ambientBin,coh=this.sigma!==0;
+  const nd=coarseNodes(f0,df,L),M=nd.length,CP=CS.P,CEs=CS.E,CNs=CS.N;
+  for(let i=0;i<L;i++)P[i]=amb[i]!;if(difar){sE.fill(0,0,L);sN.fill(0,0,L);sP.fill(0,0,L);}
+  CP.fill(0,0,M);if(difar){CEs.fill(0,0,M);CNs.fill(0,0,M);}
+  const AE=this.absorptionExponent,CE=this.coherenceExponent,OA=SH.p3;
+  for(let j=0;j<this.contacts.length;j++){
+   const item=this.contacts[j]!,c=item.trk;if(!item.act)continue;const g=geometry(c,bt,this.g);
+   const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
+   const prop=e.propagation,czOn=prop?.czEnabled===true;
+   const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
+   const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const flow=Number.isNaN(item.flowDb)?0:dbToPower(item.flowDb)*(g.range<=1?1:spread*item.flowFrac);
+   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,c.depth+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+bt.depth)/imageRange)**2:0;
+   const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
+   const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing),keep=item.swaths.length>0;
+   // Smooth envelope at nodes: S=(b(1−c)²+flow)·env (summed over contacts), O=2bc·env (per contact).
+   for(let k=0;k<M;k++){const i=nd[k]!,env=se[i]!*Math.exp(AE[i]!*km),cc=q*(coh?Math.exp(CE[i]!*grazing2):1),sm=(broadband*(1-cc)*(1-cc)+flow)*env;
+    CP[k]+=sm;if(difar){CEs[k]+=sm*sinB;CNs[k]+=sm*cosB;}OA[k]=2*broadband*cc*env;}
+   // Fine grid: exact cos(kΔ) recurrence at every output bin × interpolated amplitude.
+   let i=0;for(let k=0;k<M-1||(k===0&&M===1);k++){const a=nd[k]!,b=M===1?a:nd[k+1]!,last=k>=M-2,n=b-a,oa=OA[k]!,d=n>0?(OA[k+1]!-oa)/n:0,end=last?b+1:b;
+    if(difar)for(let m=0;i<end;i++,m++){const o=(oa+m*d)*(1-cp);P[i]+=o;sE[i]+=o*sinB;sN[i]+=o*cosB;const nx=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=nx;}
+    else for(let m=0;i<end;i++,m++){P[i]+=(oa+m*d)*(1-cp);const nx=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=nx;}
+    if(M===1)break;}
+   if(keep){for(let i=0;i<L;i++)AB[i]=Math.exp(AE[i]!*km);
+    for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df)),lv=level*.0003*gs*enbw;for(let i=lo;i<=hi;i++){const contrib=lv*AB[i]!;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}}
+   for(let k=0;k<item.frequencies.length;k++){
+    const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
+    if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
+    const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,bt.depth,e.soundSpeed,this.sigma);
+    if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
+   }
+  }
+  // Interpolate the contact-summed smooth envelope (linear in power) onto the output bins.
+  for(let k=0;k<M;k++){const a=nd[k]!,b=k<M-1?nd[k+1]!:a+1,n=b-a,v=CP[k]!,d=k<M-1?(CP[k+1]!-v)/n:0;for(let m=0;m<n;m++)P[a+m]+=v+m*d;
+   if(difar){const ve=CEs[k]!,de=k<M-1?(CEs[k+1]!-ve)/n:0,vn=CNs[k]!,dn=k<M-1?(CNs[k+1]!-vn)/n:0;for(let m=0;m<n;m++){sE[a+m]+=ve+m*de;sN[a+m]+=vn+m*dn;}}}
  }
  private historyBuoyKey():number{return this.history?this.history.buoyId(this.buoy):-1;}
  private loadLive():void{
