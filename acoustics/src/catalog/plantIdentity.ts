@@ -42,8 +42,11 @@ export function varyPlantIdentity(s:VesselPlantSpec,id:string):VesselPlantSpec {
  const pickEdaHarmonics=():number[]=>{const u=rng();const n=u<.08?0:u<.40?1:u<.78?2:u<.90?3:u<.97?4:5;return Array.from({length:n},(_,h)=>h+1);};
  s.edas=diesel?Array.from({length:2+Math.floor(rng()*2)},(_,i)=>{const example=id==='blue-brindleflux'&&i===0,cfrMultiple=example?27.75:3+Math.floor(rng()*41)+[.25,.5,.75][Math.floor(rng()*3)],name=example?'LOP':names[i];let harmonics=example?[1,2]:pickEdaHarmonics();if(i===0&&!harmonics.length)harmonics=[1];return {id:`fictional-eda-${i}`,name,cfrMultiple,perCrankRev:cfrMultiple*(p.engines[0].stroke===4?.5:1),harmonics,ramp:{riseS:3,fallS:2}};}):[];
  const motor=stream(id,'slots');delete s.motorSlots;if(diesel&&p.motor&&(id==='blue-orbelune'||motor()<.55))s.motorSlots=id==='blue-orbelune'?124:48+Math.floor(motor()*153);
- const hydp=stream(id,'hydraulics');s.hydp={nominalHz:Number((120+hydp()*1100).toFixed(2)),pairSpacingHz:Number((.6+hydp()*2.2).toFixed(2)),durationS:6+Math.floor(hydp()*15)};
- for(const a of s.aux){const aux=stream(id,`aux:${a.id}`);a.fHz=a.kind==='hydp'?s.hydp.nominalHz:a.kind==='electrical'?a.fHz:Number((12+aux()*85).toFixed(2));}
+ // Wilson: HYDP optional — remove from ~1/3 of classes (mix diesel+nuclear). Lookalike HYDP pairs kept.
+ const NO_HYDP=new Set(['green-fennelglint','green-opalweft','red-cinderlilt','green-russetwake','red-marigoldrift','blue-quartzwhorl','red-ivorycoil','green-thistledrift']);
+ const hydp=stream(id,'hydraulics');
+ if(NO_HYDP.has(id)){delete s.hydp;for(const a of s.aux){if(a.kind==='hydp'){/* drop hydp aux rows for no-HYDP classes */}const aux=stream(id,`aux:${a.id}`);if(a.kind!=='hydp')a.fHz=a.kind==='electrical'?a.fHz:Number((12+aux()*85).toFixed(2));}s.aux=s.aux.filter(a=>a.kind!=='hydp');}
+ else {s.hydp={nominalHz:Number((120+hydp()*1100).toFixed(2)),pairSpacingHz:Number((.6+hydp()*2.2).toFixed(2)),durationS:6+Math.floor(hydp()*15)};for(const a of s.aux){const aux=stream(id,`aux:${a.id}`);a.fHz=a.kind==='hydp'?s.hydp.nominalHz:a.kind==='electrical'?a.fHz:Number((12+aux()*85).toFixed(2));}}
  // Wilson AC/DC bar: AC AUX (electrical/acPump/acvr) stable+discrete; DC (dcvr) unstable+discrete.
  for(const a of s.aux){
   if(a.kind==='electrical'||a.kind==='acPump'||a.kind==='acvr'){a.stability='stable';a.width='discrete';delete a.sigmaBins;}
