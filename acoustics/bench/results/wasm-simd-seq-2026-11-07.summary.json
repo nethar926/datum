@@ -1,0 +1,198 @@
+{
+  "js_RES2_c1": {
+    "n": 3,
+    "pctRT": {
+      "median": 26.085474410000003,
+      "min": 26.063781271666663,
+      "max": 26.662291928333335
+    },
+    "tickMs": {
+      "median": 65.19809383750001,
+      "min": 65.14476246250003,
+      "max": 66.63480418333334
+    },
+    "kernelMs_median": 0,
+    "copyInMs_median": 0,
+    "copyOutMs_median": 0,
+    "instantiateMs": 0,
+    "linearMemoryBytes": 0,
+    "acousticEndMB": [
+      44.57,
+      44.57,
+      44.57
+    ],
+    "calls": 0
+  },
+  "js_RES2_c60": {
+    "n": 3,
+    "pctRT": {
+      "median": 468.23005249999994,
+      "min": 448.5867841433332,
+      "max": 529.6376715616666
+    },
+    "tickMs": {
+      "median": 1170.543802375001,
+      "min": 1121.417111000001,
+      "max": 1324.0627853625015
+    },
+    "kernelMs_median": 0,
+    "copyInMs_median": 0,
+    "copyOutMs_median": 0,
+    "instantiateMs": 0,
+    "linearMemoryBytes": 0,
+    "acousticEndMB": [
+      46.48,
+      46.48,
+      46.48
+    ],
+    "calls": 0
+  },
+  "js_RES5_c1": {
+    "n": 3,
+    "pctRT": {
+      "median": 9.534383441666668,
+      "min": 9.240533241666665,
+      "max": 9.861196496666668
+    },
+    "tickMs": {
+      "median": 23.817138083333308,
+      "min": 23.058553025,
+      "max": 24.636987454166633
+    },
+    "kernelMs_median": 0,
+    "copyInMs_median": 0,
+    "copyOutMs_median": 0,
+    "instantiateMs": 0,
+    "linearMemoryBytes": 0,
+    "acousticEndMB": [
+      29.04,
+      29.04,
+      29.04
+    ],
+    "calls": 0
+  },
+  "js_RES5_c60": {
+    "n": 3,
+    "pctRT": {
+      "median": 48.29803341,
+      "min": 47.89467423333333,
+      "max": 48.51756168166666
+    },
+    "tickMs": {
+      "median": 120.69285187916674,
+      "min": 119.71605025000002,
+      "max": 121.27340426666667
+    },
+    "kernelMs_median": 0,
+    "copyInMs_median": 0,
+    "copyOutMs_median": 0,
+    "instantiateMs": 0,
+    "linearMemoryBytes": 0,
+    "acousticEndMB": [
+      30.95,
+      30.95,
+      30.95
+    ],
+    "calls": 0
+  },
+  "wasm_RES2_c1": {
+    "n": 3,
+    "pctRT": {
+      "median": 30.952775069999998,
+      "min": 30.77110486666667,
+      "max": 32.79334174666666
+    },
+    "tickMs": {
+      "median": 77.36186132916663,
+      "min": 76.90929714166667,
+      "max": 81.96715366250014
+    },
+    "kernelMs_median": 5518.635153999841,
+    "copyInMs_median": 28.903176000027827,
+    "copyOutMs_median": 533.404857999449,
+    "instantiateMs": 3.0697509999999966,
+    "linearMemoryBytes": 262144,
+    "acousticEndMB": [
+      44.57,
+      44.57,
+      44.57
+    ],
+    "calls": 278656
+  },
+  "wasm_RES2_c60": {
+    "n": 3,
+    "pctRT": {
+      "median": 674.8236805066666,
+      "min": 593.3316688866668,
+      "max": 683.4765583683334
+    },
+    "tickMs": {
+      "median": 1687.0143145374998,
+      "min": 1483.302660387499,
+      "max": 1708.6486299416642
+    },
+    "kernelMs_median": 349487.8103140507,
+    "copyInMs_median": 72.10546900200075,
+    "copyOutMs_median": 729.1676750114907,
+    "instantiateMs": 2.8173269999999917,
+    "linearMemoryBytes": 262144,
+    "acousticEndMB": [
+      46.48,
+      46.48,
+      46.48
+    ],
+    "calls": 16719360
+  },
+  "wasm_RES5_c1": {
+    "n": 3,
+    "pctRT": {
+      "median": 9.625753276666666,
+      "min": 9.620910156666667,
+      "max": 9.774108973333334
+    },
+    "tickMs": {
+      "median": 24.050780570833336,
+      "min": 24.0385354,
+      "max": 24.420667920833317
+    },
+    "kernelMs_median": 356.9115679999452,
+    "copyInMs_median": 11.031220999995185,
+    "copyOutMs_median": 38.489259999977435,
+    "instantiateMs": 3.329428000000007,
+    "linearMemoryBytes": 262144,
+    "acousticEndMB": [
+      29.04,
+      29.04,
+      29.04
+    ],
+    "calls": 40768
+  },
+  "wasm_RES5_c60": {
+    "n": 3,
+    "pctRT": {
+      "median": 58.284137253333334,
+      "min": 58.04337908666668,
+      "max": 59.83482990500001
+    },
+    "tickMs": {
+      "median": 145.69081367499996,
+      "min": 145.08968366666676,
+      "max": 149.56543551250004
+    },
+    "kernelMs_median": 20932.39563200118,
+    "copyInMs_median": 15.993553999867459,
+    "copyOutMs_median": 41.63779599979199,
+    "instantiateMs": 3.572258000000005,
+    "linearMemoryBytes": 262144,
+    "acousticEndMB": [
+      30.95,
+      30.95,
+      30.95
+    ],
+    "calls": 2446080
+  },
+  "speedup_js_div_wasm_RES5_c1": 0.991,
+  "speedup_js_div_wasm_RES5_c60": 0.829,
+  "speedup_js_div_wasm_RES2_c1": 0.843,
+  "speedup_js_div_wasm_RES2_c60": 0.694
+}

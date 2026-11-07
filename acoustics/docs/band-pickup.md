@@ -527,3 +527,62 @@ accumulators). RES2 FULLBAND integrateHistory path is where SPAN_CACHE pays off 
 `test/spanCacheSafety.test.ts`: fixed `SPAN_CACHE_ENTRIES=8` after 120 s run; seek/replay
 bit-identical to cold cache; `setEnvironment` prevents stale hits; `setSpanCache(false)` matches
 cold ON bit-for-bit; eviction leaves retained Float32 row copies untouched.
+
+## WASM SIMD broadband + Lloyd hot-loop prototype (Lead 2026-11-07)
+
+**Status:** prototype, `setResKernel('wasm')`, **default OFF** (`'js'`). Scalar reference path and JS
+fast path unchanged. SPAN_CACHE remains. No workers, no workload reduction, no new approximation.
+
+### Toolchain / loading
+- Hand-written WAT (`acoustics/src/wasm/broadband_lloyd.wat`) compiled with **wabt** `wat2wasm`
+  (`npm run build:wasm` → `broadband_lloyd.wasm` + inline base64 `broadband_lloyd_b64.ts`).
+- App loads via **inline base64** import (Vite alias `@acoustics` → `acoustics/src`; no asset plugin).
+- Feature detect: `WebAssembly.validate` on a tiny `f64x2.splat` module; instantiate failure → JS fallback.
+
+### Numerics
+- **f64** throughout (f32 not used; matches fast-path tolerances with margin — measured max Δ = 0 dB vs JS fast on the RES5 matrix).
+- Deterministic `exp` (range-reduced Taylor) and `cos`/`sin` (minimax on reduced argument) inside wasm;
+  chunked-exp and Lloyd phase recurrences are multiply-only after init. Documented for audit.
+- Lloyd gain uses **f64x2** lanes `(coherent², 2·coherent·cp)`; phase/exp recurrences stay serial
+  (data-dependent). Fine-bin LM phase preserved (no coarse grid).
+
+### Memory / transfer
+- Wasm linear memory reused across ticks (band tables + P/E/N/AB). Tables re-uploaded only on
+  `tablesKey` change. Copy-in / kernel / copy-out timed via `wasmKernelStats()`.
+- Counted in acoustic budget with SPAN_CACHE; see short-screen tables below.
+
+
+### Accuracy (wasm vs JS fast path)
+`test/wasmKernel.test.ts` RES5 bands+FULLBAND expected-spectrum matrix: **max Δ = 0 dB**, mean 0,
+n=44,492 bins, 702 kernel calls. Feature-detect + JS fallback covered; play→seek→replay
+bit-identical under wasm kernel. Default remains `'js'`.
+
+### Short-screen SIMD vs JS (manifest v1, SPAN_CACHE ON, 3 sequential reps)
+
+Raw: `bench/results/wasm-simd-seq-2026-11-07.jsonl`. Speedup = JS_pctRT ÷ WASM_pctRT (>1 means wasm faster).
+
+| Case | JS median %RT / tick ms | WASM median %RT / tick ms | speedup |
+|---|---|---|---|
+| RES5 × 1 | 9.53% / 23.8 ms | 9.63% / 24.1 ms | 0.99× |
+| RES5 × 60 | 48.30% / 120.7 ms | 58.28% / 145.7 ms | 0.83× |
+| RES2 × 1 | 26.09% / 65.2 ms | 30.95% / 77.4 ms | 0.84× |
+| RES2 × 60 | 468.2% / 1171 ms | 674.8% / 1687 ms | 0.69× |
+
+Wasm is **slower** than the tuned JS fast path on this host (Node). Cumulative timings at RES2×60
+(median over 3 reps, whole 60 s screen):
+
+| Metric | RES5×1 | RES5×60 | RES2×1 | RES2×60 |
+|---|---|---|---|---|
+| kernelMs | 357 | 20,932 | 5,519 | 349,488 |
+| copyInMs | 11 | 16 | 29 | 72 |
+| copyOutMs | 38 | 42 | 533 | 729 |
+| instantiateMs | ~3.3 | ~3.6 | ~3.1 | ~2.8 |
+| wasm linearMemory | 256 KiB | 256 KiB | 256 KiB | 256 KiB |
+| acousticEndMB | 29.04 | 30.95 | 44.57 | **46.48** |
+
+Prototype kept default-OFF. Hot loop is f64x2-lane limited; copy-out and serial phase/exp
+recurrence dominate. Further SIMD win needs either f32 (tolerance-gated) or a redesign of the
+recurrence so more of the bin loop vectorises — out of scope for this prototype.
+
+Acoustic total at RES2×60 remains **46.48 MB ≤ 50 MB** (same SPAN_CACHE budget; wasm linear
+memory is 0.25 MB and not double-counted into retainedBytes).
