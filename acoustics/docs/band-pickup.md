@@ -397,3 +397,54 @@ Cross-stream sharing on one buoy is real but small. It does **not** replace a ke
 for the RES2 full-load gap; it is the right next step only as a low-risk exact refactor
 before any new approximation or workers.
 
+## Exact per-grid spectrum reuse (Lead 2026-11-07; before WASM SIMD)
+
+Measured under provisional manifest v1 (12 streams/buoy: 8 band + 2 DEMON + 2 FULLBAND) on tip
+before this change. Instrumentation counted every `coreFast` call and its contact×bin work on the
+last tick of a 12 s run (4 buoys; ratios are buoy-independent).
+
+### What e835cfe's 2-entry ROW_CACHE actually covers
+
+`ROW_CACHE` (2 × RES_BINS) is used only on the **reference** path (`integrateCached`). The
+default **fast** path does not consult it. Vernier NB/BB of the same band already share work via
+sliding Welch accumulators keyed by `(history, buoy, RES, f0, liveBins, difar)` — one `coreFast`
+per new frame, folded once; the second filter hits `done` and skips. FULLBAND with
+`tileCount ≤ ACCUM_MAX_TILES` (RES5 = 1 tile) uses the same accumulator sharing for NB/BB.
+
+FULLBAND with `tileCount > ACCUM_MAX_TILES` (RES2 = 8 tiles) takes `integrateHistory(fast)` and
+**did not** share: NB and BB each recomputed the identical pre-filter spectrum for every
+`(buoy, RES, f0, L, tEnd)`.
+
+Bin-centre overlap (same `f0`+`Δf`, different `L`): LF RES5 (L=1024) vs FULLBAND RES5 tile0
+(L=4001), and ELF RES2 (L=1024) vs FULLBAND RES2 tile0 (L=4096). Accumulators key on `L`, so
+these were not shared. With band-first drain order the longer grid is computed second and cannot
+reuse a shorter prefix without computing `max L` up front — left as residual.
+
+### Duplication counts (contact×bin / tick, 4 buoys; ×8 ≈ 32-buoy load)
+
+| Case | coreFast calls | contact×bin evals | unique exact (grid,ts) | unique centre (f0+Δf,ts) | dup exact | dup centre | multi-filter exact keys |
+|---|---|---|---|---|---|---|---|
+| RES5 × 1 / 60 | 48 | 72,784 / 4,367,040 | = evals | 64,592 / 3,875,520 | **1.00** | 1.127 | 0 |
+| RES2 × 1 / 60 (before) | 1,064 | 4,136,904 / 248,214,240 | ~½ of evals | ~½ | **1.980** | 1.996 | 512 |
+| RES2 × 1 / 60 (after) | 552 | 2,088,840 / 125,330,400 | = evals | ≈ evals | **1.00** | 1.008 | 0 |
+
+RES5 was already exact-deduped for NB/BB. RES2 FULLBAND NB/BB was almost a full extra pass
+(~1.98×). Residual centre-grid overlap after the fix is ~0.8 % at RES2 (ELF↔tile0) and
+~12.7 % at RES5 (LF↔FULLBAND); not addressed here (would need max-L fold into a shared
+accumulator / frame cache with band-first drain).
+
+### Implementation
+
+`SPAN_CACHE` in `resGram.ts`: 16 entries × TILE_BINS float64 × (P,E,N,S) ≈ 2.0 MB fixed, counted
+in `sharedScratchBytes()`. On the fast `integrateHistory` path the finished span average is
+stored under
+`(history, buoy, RES, f0, L, tEnd, envEpoch, difar, coarse, history.last)`. A second stream with
+bit-identical inputs (FULLBAND BB after NB for the same tile) copies the cached arrays —
+**bit-identical** to recomputing. Cleared on environment change / coarse-flag toggle.
+`spanCacheStats()` / `resetSpanCacheStats()` expose hits/misses for tests. Default **ON** (exact
+reuse, not an approximation; no flag). Accumulators and the reference `ROW_CACHE` are unchanged.
+
+Tests: `test/spanCache.test.ts` (NB/BB bit-identical expected spectra + hit counts; fresh-run
+identity; vernier still on accumulators). Full suite must stay green; rows match the previous
+fast path bit-for-bit.
+

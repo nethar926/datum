@@ -16,7 +16,7 @@ import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import type {SpeedGated} from './catalog/drivetrain.js';
 /** Bytes of the shared render scratch (counted once per process). */
-export function sharedScratchBytes():number{let b=rowCacheBytes()+tableBytes()+accumBytes();for(const a of Object.values(SH))b+=a.byteLength;return b;}
+export function sharedScratchBytes():number{let b=rowCacheBytes()+spanCacheBytes()+tableBytes()+accumBytes();for(const a of Object.values(SH))b+=a.byteLength;return b;}
 /** Row path. 'fast' (default): per-frame spectra evaluated once per band and folded into sliding
  * per-row Welch accumulators (vernier bands and FULLBAND streams with ≤2 tiles), or a direct span
  * sum with the fast spectrum kernel (FULLBAND with more tiles). 'reference': the original exact
@@ -36,7 +36,7 @@ export function resRowPath():ResRowPath{return ROW_PATH;}
  * and CZ gain are per-contact scalars (exact); tonals and swaths are exact. Reference path and
  * the flag-off fast path are unchanged. */
 let COARSE_BB=false;
-export function setCoarseBroadband(on:boolean):void{COARSE_BB=on;ACCUMS.clear();envEpoch++;}
+export function setCoarseBroadband(on:boolean):void{COARSE_BB=on;ACCUMS.clear();clearSpanCache();envEpoch++;}
 export function coarseBroadband():boolean{return COARSE_BB;}
 /** Coarse node spacing: 1/48 octave (relative step 2^(1/48)−1), clamped to [1,32] bins. */
 export const COARSE_REL_STEP=2**(1/48)-1,COARSE_MAX_BINS=32;
@@ -66,12 +66,25 @@ const ACCUMS=new Map<string,RowAccum>();
 function accumBytes():number{let b=0;for(const a of ACCUMS.values())b+=a.bytes;return b;}
 export function accumCount():number{return ACCUMS.size;}
 /** Exact reuse of a span-averaged spectrum between streams that share (buoy, RES, window, tEnd) —
- * NB and BB of the same band. Two entries, fixed bytes (counted in sharedScratchBytes). The cached
- * arrays are copies of the same float64 computation, so rows are bit-identical to recomputing. */
+ * NB and BB of the same vernier band. Two entries of RES_BINS (reference path only; counted in
+ * sharedScratchBytes). The cached arrays are copies of the same float64 computation, so rows are
+ * bit-identical to recomputing. */
 const ROW_CACHE_ENTRIES=2;
 const ROW_CACHE=Array.from({length:ROW_CACHE_ENTRIES},()=>({key:'',L:0,P:new Float64Array(RES_BINS),E:new Float64Array(RES_BINS),N:new Float64Array(RES_BINS),S:new Float64Array(RES_BINS)}));
 let rowCacheNext=0,envEpoch=0;
 export function rowCacheBytes():number{let b=0;for(const c of ROW_CACHE)b+=c.P.byteLength*4;return b;}
+/** Exact reuse of a span-averaged spectrum for the fast integrateHistory path (FULLBAND with
+ * >ACCUM_MAX_TILES tiles, where sliding accumulators are not used). NB and BB of the same
+ * (buoy, RES, f0, liveBins, tEnd) share one entry — the pre-filter modelled spectrum is
+ * bit-identical across filters. Sized for ≥8 RES2 tiles so a buoy's NB drain leaves hits for BB.
+ * Fixed bytes, counted in sharedScratchBytes. Default ON (exact reuse, not an approximation). */
+const SPAN_CACHE_ENTRIES=16;
+const SPAN_CACHE=Array.from({length:SPAN_CACHE_ENTRIES},()=>({key:'',L:0,P:new Float64Array(TILE_BINS),E:new Float64Array(TILE_BINS),N:new Float64Array(TILE_BINS),S:new Float64Array(TILE_BINS)}));
+let spanCacheNext=0,spanCacheHits=0,spanCacheMisses=0;
+export function spanCacheBytes():number{let b=0;for(const c of SPAN_CACHE)b+=c.P.byteLength*4;return b;}
+export function spanCacheStats():{hits:number;misses:number;entries:number}{return {hits:spanCacheHits,misses:spanCacheMisses,entries:SPAN_CACHE_ENTRIES};}
+export function resetSpanCacheStats():void{spanCacheHits=0;spanCacheMisses=0;}
+function clearSpanCache():void{for(const c of SPAN_CACHE)c.key='';spanCacheNext=0;}
 interface Trk{x:number;y:number;depth:number;course:number;speed:number}
 interface ResContact {contact:Contact;frequencies:Float64Array;powers:Float64Array;sigmaHz:Float64Array;gain:number;trk:Trk;act:boolean;srcDb:number;flowDb:number;flowFrac:number;cav:number;swG:Float64Array;swLo:Float64Array;swHi:Float64Array;swaths:{source:SpeedGated;loHz:number;hiHz:number;lo:number;hi:number}[]}
 export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:unknown}):ResGramSettings{
@@ -189,7 +202,7 @@ export class ResLofarGenerator {
  }
  private applySwathWindow():void{const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins;for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}}
  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
- setEnvironment(e:Environment):void{envEpoch++;this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);this.tileTables.clear();this.useTables();}
+ setEnvironment(e:Environment):void{envEpoch++;clearSpanCache();this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);this.tileTables.clear();this.useTables();}
  /** Release shared accumulators (engine calls on unsubscribe / generator replacement). */
  dispose():void{this.releaseAccum();}
  /** Acquire (allocate on first use) the shared accumulator for (history, buoy, RES, f0, L). Called at
@@ -223,16 +236,25 @@ export class ResLofarGenerator {
   return w;
  }
  /** Welch-weighted average of the modelled spectrum re-evaluated at every recorded frame in the
-  * span → expected/signal*. False (snapshot fallback) when history does not cover the span. */
+  * span → expected/signal*. False (snapshot fallback) when history does not cover the span.
+  * When fast=true, the finished span average is stored in SPAN_CACHE so a second stream with the
+  * same (buoy, RES, f0, L, tEnd) — typically FULLBAND BB after NB — reuses it bit-identically. */
  private integrateHistory(tEnd:number,fast=false):boolean{
   const h=this.history;if(!h||h.count===0)return false;const f=RES_FRAME_S,span=this.spanS,newest=h.t[h.slot(0)]!,oldest=h.t[h.slot(h.count-1)]!;
   if(newest<tEnd-1e-6||oldest-f>tEnd-span+1e-6)return false;
-  const L=this.band.liveBins,P=SH.P,E=SH.E,N=SH.N,S=SH.S,FP=SH.FP,FE=SH.FE,FN=SH.FN,FS=SH.FS,difar=this.difar;let wsum=0;
+  const L=this.band.liveBins,difar=this.difar;
+  let spanKey='';
+  if(fast){
+   spanKey=`${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${h.last}`;
+   for(const c of SPAN_CACHE)if(c.key===spanKey){SH.P.set(c.P.subarray(0,L));if(difar){SH.E.set(c.E.subarray(0,L));SH.N.set(c.N.subarray(0,L));SH.S.set(c.S.subarray(0,L));}spanCacheHits++;return true;}
+  }
+  const P=SH.P,E=SH.E,N=SH.N,S=SH.S,FP=SH.FP,FE=SH.FE,FN=SH.FN,FS=SH.FS;let wsum=0;
   P.fill(0,0,L);if(difar){E.fill(0,0,L);N.fill(0,0,L);S.fill(0,0,L);}
   for(let c=0;c<h.count;c++){const sl=h.slot(c),ts=h.t[sl]!;if(ts<=tEnd-span-1e-9)break;if(ts>tEnd+f)continue;const w=this.frameWeight(ts,tEnd);if(!(w>0))continue;
    this.loadFrame(sl);if(fast){this.coreFast(FP,FE,FN,FS);if(difar)for(let i=0;i<L;i++){P[i]+=w*FP[i]!;E[i]+=w*FE[i]!;N[i]+=w*FN[i]!;}else for(let i=0;i<L;i++)P[i]+=w*FP[i]!;}
    else{this.core(FP,FE,FN,FS);for(let i=0;i<L;i++)P[i]+=w*FP[i]!;if(difar)for(let i=0;i<L;i++){E[i]+=w*FE[i]!;N[i]+=w*FN[i]!;S[i]+=w*FS[i]!;}}wsum+=w;}
   if(!(wsum>0))return false;const k=1/wsum,amb=this.ambientBin;for(let i=0;i<L;i++)P[i]*=k;if(difar){if(fast)for(let i=0;i<L;i++){E[i]*=k;N[i]*=k;S[i]=Math.max(0,P[i]!-amb[i]!);}else for(let i=0;i<L;i++){E[i]*=k;N[i]*=k;S[i]*=k;}}
+  if(fast){const c=SPAN_CACHE[spanCacheNext]!;spanCacheNext=(spanCacheNext+1)%SPAN_CACHE_ENTRIES;c.key=spanKey;c.L=L;c.P.set(P.subarray(0,L));if(difar){c.E.set(E.subarray(0,L));c.N.set(N.subarray(0,L));c.S.set(S.subarray(0,L));}spanCacheMisses++;}
   return true;
  }
  private integrateCached(tEnd:number):boolean{
