@@ -35,9 +35,9 @@ describe('fast RES row path vs reference',()=>{
  },240000);
  it('60 contacts: error ≤0.01 dB (FULLBAND RES5)',()=>{const r=errors(5,12,60);console.log('fast-vs-reference dB error, 60 contacts:',JSON.stringify(r));for(const [band,v] of Object.entries(r))expect(v.maxDb,band).toBeLessThanOrEqual(.01);},240000);
  for(const kind of ['swath','src'] as const)it(`seed-777 ${kind} edge 10/50/90% times within one hop of the reference`,()=>{
-  setResRowPath('reference');const ref=measureEdges(kind);setResRowPath('fast');const fast=measureEdges(kind);const worst:Record<string,number>={};
-  for(const b of Object.keys(ref)){const hop=resParams(resForBand(b as never)).hopS;let w=0;for(const ph of ['rise','fall'] as const)for(const q of ['t10','t50','t90'] as const){const d=Math.abs(fast[b]![ph][q]-ref[b]![ph][q]);expect(Number.isFinite(d)).toBe(true);expect(d,`${b} ${ph} ${q}`).toBeLessThanOrEqual(hop);w=Math.max(w,d);}worst[b]=w;}
-  console.log(`edge |fast−ref| max s (${kind}):`,JSON.stringify(worst));
+  setResRowPath('reference');const ref=measureEdges(kind);setResRowPath('fast');const fast=measureEdges(kind);const worst:Record<string,number>={},deltas:Record<string,Record<string,number>>={};
+  for(const b of Object.keys(ref)){const hop=resParams(resForBand(b as never)).hopS;let w=0;deltas[b]={};for(const ph of ['rise','fall'] as const)for(const q of ['t10','t50','t90'] as const){const d=Math.abs(fast[b]![ph][q]-ref[b]![ph][q]);deltas[b]![`${ph}.${q}`]=fast[b]![ph][q]-ref[b]![ph][q];expect(Number.isFinite(d)).toBe(true);expect(d,`${b} ${ph} ${q}`).toBeLessThanOrEqual(hop);w=Math.max(w,d);}worst[b]=w;}
+  console.log(`edge |fast−ref| max s (${kind}):`,JSON.stringify(worst));console.log(`edge signed fast−ref s (${kind}):`,JSON.stringify(deltas));
  },600000);
  it('accumulators are shared NB/BB, allocated per band (bounded) and released on unsubscribe',()=>{
   const before=accumCount(),e=new AcousticEngine(scen(1,1),1) as any;

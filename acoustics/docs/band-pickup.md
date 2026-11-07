@@ -122,3 +122,44 @@ FE: draw each row at its `simT`, with no shift. Use `rowRateHz`/`fBin` from `gra
 \* A single stall while the test suite ran on the same machine; p95 is representative.
 
 Targets: RES5 ≤ 10 % is met at 1 contact. RES2 ≤ 25 % is **not met** (45 %), and 60 contacts is far over at both RES. Each row re-evaluates the modelled spectrum for every snapshot in its span. That costs O(bins × active contacts × frames in span), and RES2 FULLBAND (8 tiles × 4096 bins × 64 frames per row) dominates. Exact per-snapshot caches or incremental Welch sums would need well over 50 MB at 32 buoys (≈ 6 MB per RES2 tile) or a changed summation order (not bit-identical). Only the bounded NB/BB row reuse (64 KB) is implemented.
+
+## Fast-path validation and CPU/memory follow-up (2026-11-07, ET)
+
+475 tests passed (62 files), and `npm run typecheck` passed. The expected-spectrum error table above was reproduced (spectrum seed 4242; edge seed 777). Maximum error was 1.8825e-5 dB, mean 3.2117e-6 dB (60-contact MF); both are below the 0.01/0.001 dB limits. Replay, seek, startup and off-screen collection checks remain enabled.
+
+### Signed edge timing differences
+
+Fast minus reference, **microseconds**, interpolated 10/50/90% crossings. No band offsets.
+
+| Event | Band | Rise 10 / 50 / 90 | Fall 10 / 50 / 90 |
+|---|---|---|---|
+| swath | ELF | -0.753 / -0.193 / +0.479 | -1.392 / +0.064 / -0.297 |
+| swath | VLF | -0.049 / -0.164 / +0.167 | +0.661 / +0.310 / +0.167 |
+| swath | LF | -0.548 / -0.470 / -0.671 | +0.093 / -0.253 / +0.865 |
+| swath | MF | -0.580 / -0.754 / -0.566 | -0.580 / -1.226 / -0.207 |
+| src | ELF | +0.071 / -0.278 / -0.140 | +1.683 / -0.518 / -0.143 |
+| src | VLF | +0.025 / +0.075 / +0.084 | -0.666 / +0.000 / +0.049 |
+| src | LF | +0.020 / +0.000 / -0.066 | +0.050 / -0.020 / +0.026 |
+| src | MF | -0.007 / +0.017 / -0.071 | -0.052 / +0.038 / +0.023 |
+
+Worst absolute timing difference: 1.6834 microseconds (SRC ELF), far below one hop.
+
+### Sequential benchmark matrix
+
+Existing standalone pan harness (`/workspace/fastpath-logs/measure.ts`, copied from the prior measurement harness), fast path default, single process, seed 303. Each of 32 buoys has 16 NB/BB band streams plus its own FULLBAND stream; all tiles collect, including off-screen. FULLBAND pans every 3 s when multiple tiles exist. Every due row is drained. Thus this is **32 FULLBAND streams**, not a one-visible-pane computation shortcut. RES5 has one tile; RES2 has eight. No warm-up excluded. Each matrix case ran in a separate process, sequentially, after tests completed; no competing acoustics benchmark/test job ran.
+
+**Host caveat:** the shared box was not literally idle: existing trading services and infrastructure remained running. They were not stopped or modified. These are shared-host observations, not an exclusive-machine certification. Process snapshot and all raw logs are in `/workspace/fastpath-logs/`.
+
+All memory columns below are **MiB (2^20 bytes)**, not decimal MB. RSS/heap include the runtime; acoustic memory includes retained history, streams/render cache and scratch/accumulators/shared tables, but excludes FE display history and GPU buffers. Start/mid/end are samples, not a peak bound.
+
+| Contacts | RES | Sim s | Wall s | % real time | Tick mean / p95 / max ms | RSS start / mid / end | Heap start / mid / end | Acoustic start / mid / end |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 5 | 900 | 36.4 | 4 | 10.1 / 10.91 / 76.62 | 147.5 / 174.3 / 207.4 | 33.4 / 32.5 / 52.9 | 17.81 / 17.81 / 17.81 |
+| 1 | 2 | 900 | 163.7 | 18.2 | 45.48 / 48.98 / 131.52 | 135.2 / 191.9 / 194.4 | 27.4 / 40 / 35.1 | 22.41 / 23.62 / 23.62 |
+| 60 | 5 | 120 | 38.6 | 32.1 | 80.32 / 88 / 258.09 | 179 / 276.6 / 276.8 | 58.5 / 63.5 / 77.4 | 18.69 / 18.69 / 18.69 |
+| 60 | 2 | 120 | 534.7 | 445.5 | 1113.85 / 1183.02 / 1439.7 | 188.2 / 287.5 / 287.9 | 52 / 71.4 / 61.7 | 23.29 / 24.49 / 24.49 |
+| 60 | 5 | 900 | 287.5 | 31.9 | 79.85 / 86.29 / 269.77 | 190.1 / 301.3 / 302.3 | 54.7 / 99.3 / 108.1 | 18.69 / 18.69 / 18.69 |
+
+**Targets:** 1-contact RES5 passes ≤10% (4.0%), and RES2 passes ≤25% (18.2%). 60 contacts still fail CPU at both resolutions: RES5 31.9% over 900 s and RES2 445.5% over 120 s. RES2 900 s was not run: the measured rate predicts about 4010 s (67 min), above the ~15-minute limit. RES5 900 s was feasible and completed in 287.5 s.
+
+Accounted acoustic memory passes 50 MB even in decimal units: maximum sampled total 25,681,376 bytes (24.49 MiB, 60-contact RES2), flat from midpoint to end. This is **not** a total-process 50 MB pass: RSS/heap exceed that limit. FE's 15-minute display history and GPU allocation still need a combined budget/frame-cost review; these results do not clear the release hold. Retained history is not evicted, no visibility-dependent collection was introduced, and no workers/SIMD were added. Everything remains local, unpushed and held.
