@@ -495,3 +495,35 @@ Under the ≤50 MB acoustic target. Breakdown exposed on the full-load bench `me
 - Compute cache is independent of FE retained display rows; eviction does not mutate emitted copies.
 - Tests: `test/spanCacheSafety.test.ts`.
 
+## SPAN_CACHE ON vs OFF isolation (same tip, identical DEMON weighting)
+
+Sequential 60 s short screens on tip `143d315`+ (toggle present), provisional manifest v1,
+3 uncontended reps per cell. `SPAN_CACHE=0|1` via `setSpanCache` / fullLoad env. Cache arrays
+remain allocated when OFF (fixed bytes); OFF disables hit/miss only.
+
+| Case | OFF median %RT / tick ms | ON median %RT / tick ms | speedup OFF÷ON |
+|---|---|---|---|
+| RES5 × 1 | 9.26% / 23.1 ms | 9.36% / 23.4 ms | 0.99× |
+| RES5 × 60 | 49.15% / 122.8 ms | 49.22% / 123.0 ms | 1.00× |
+| RES2 × 1 | 37.62% / 94.0 ms | 26.54% / 66.3 ms | **1.42×** |
+| RES2 × 60 | 872.2% / 2180 ms | 457.0% / 1142 ms | **1.91×** |
+
+Raw: `bench/results/span-onoff-seq-2026-11-07.jsonl`. RES5 unchanged (NB/BB already share via
+accumulators). RES2 FULLBAND integrateHistory path is where SPAN_CACHE pays off (~1.9× at 60c).
+
+### Acoustic memory at RES2 × 60 (end of 60 s screen)
+
+| Item | Bytes |
+|---|---|
+| history | 4.48 MB |
+| scratch (incl. SPAN_CACHE 0.79 + shared FFT twiddles 0.08 + accums/tables) | 8.88 MB |
+| streams | 23.59 MB |
+| retained total | ≈ 36.95 MB |
+| DEMON renderers | ≈ 6.90 MB |
+| legacy LOFAR | ≈ 2.62 MB |
+| **acoustic total** | **≈ 46.48 MB** (≤ 50 MB) |
+
+### Boundedness / invalidation evidence
+`test/spanCacheSafety.test.ts`: fixed `SPAN_CACHE_ENTRIES=8` after 120 s run; seek/replay
+bit-identical to cold cache; `setEnvironment` prevents stale hits; `setSpanCache(false)` matches
+cold ON bit-for-bit; eviction leaves retained Float32 row copies untouched.
