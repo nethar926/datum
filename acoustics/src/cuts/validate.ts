@@ -41,6 +41,7 @@ export function validateCutSeed(value:unknown):asserts value is CutSeed {
   for(const g of c.gramLooks)if(!(GRAM_LOOK_IDS as readonly string[]).includes(g))throw new Error(`Unknown gramLook ${g}`);
  }
  if(c.scenario!==undefined&&!(CUT_SCENARIO_KINDS as readonly string[]).includes(c.scenario))throw new Error(`Unknown cut scenario ${c.scenario}`);
+ if(c.hydpShape!==undefined){const h=c.hydpShape;if(!h||typeof h!=='object'||!Number.isInteger(h.orders)||h.orders<1||h.orders>32||typeof h.drownFundamental!=='boolean'||typeof h.fadeS!=='number'||!(h.fadeS>=0&&h.fadeS<=2)||(h.powerScale!==undefined&&!(typeof h.powerScale==='number'&&h.powerScale>0&&h.powerScale<=20)))throw new Error('CutSeed.hydpShape invalid');}
  const klass=getClass(c.classId);
  let resolved;try{resolved=resolveReference({classId:c.classId,variantId:c.variantId,hullId:c.hullId});}catch(e){throw new Error(`CutSeed catalogRef invalid: ${e instanceof Error?e.message:e}`);}
  const reactorOffline=c.mode==='AIP'&&klass.plant==='nuclear';

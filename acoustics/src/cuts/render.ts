@@ -66,7 +66,7 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
  const kneeTo=Number((.78+.14*kneeRng()).toFixed(3));
  // HYDP: short squally bursts (Wilson ~1–3 s), seeded 1/2/3 count — not class durationS.
  const hydpRng=mulberry32(deriveSeed(cut.seed,'cut-hydp'));
- const hydpU=hydpRng(),hydpN=hydpU<.7?1:hydpU<.95?2:3,hydpDur=Number((1.2+hydpRng()*2.5).toFixed(2));
+ const hydpU=hydpRng(),hydpN=cut.hydpShape?1:hydpU<.7?1:hydpU<.95?2:3,hydpDur=cut.hydpShape?3.5:Number((1.2+hydpRng()*2.5).toFixed(2));
  const traffic=cut.richness==='sparse'?0:cut.richness==='moderate'?.15:.35;
  const sea=cut.richness==='sparse'?0:cut.richness==='moderate'?2:3;
  const motion=[{at:0,course,speed:v,depth:cut.depthM},...(wantsHydp?[{at:hydpAt,course:course+28*DEG,speed:v,depth:cut.depthM}]:[]),...(wantsKnee?[{at:kneeAt+kneeDur+10,course,speed:v*.85,depth:cut.depthM}]:[])];
@@ -133,6 +133,10 @@ export class CutSession {
   this.lofarBuf=new Float32Array(this.lofar.bins);
   const c0=this.contact;
   this.lloyd=new LloydPassTracker({depthM:c0.depth,courseRad:c0.course,speedMps:c0.speed});
+  if(cut.hydpShape){
+   const st=c0.params.hydpTransient;
+   if(st){st.shape={orders:cut.hydpShape.orders,drownFundamental:cut.hydpShape.drownFundamental,fadeS:cut.hydpShape.fadeS};}
+  }
  }
  private get contact(){return this.engine.scenario.contacts.find(c=>c.category!=='surface')??this.engine.scenario.contacts[0];}
  get simT():number{return this.engine.time;}
@@ -150,8 +154,13 @@ export class CutSession {
  /** SSP-derived CZ estimate (null profile → null). */
  convergenceZone():ConvergenceZoneEstimate|null{
   const wc=this.waterColumn;if(!wc)return null;
+  const enabled=this.engine.scenario.environment.propagation?.czEnabled===true;
   const c=this.contact,b=this.engine.scenario.buoys[0]!;
-  return estimateConvergenceZone({profile:wc,zsM:c.depth,zrM:b.depth,bottomDepthM:wc.depthM[wc.depthM.length-1]});
+  const est=estimateConvergenceZone({profile:wc,zsM:c.depth,zrM:b.depth,bottomDepthM:wc.depthM[wc.depthM.length-1]});
+  // When CZ is disabled (default), still report geometry estimate for FE chrome but mark not possible
+  // so chrome does not advertise a live CZ boost. Streams already ignore gain when disabled.
+  if(!enabled)return {...est,possible:false,rangeM:null,rangeNmi:null,note:est.note+' [CZ propagation disabled — set environment.propagation.czEnabled=true to enable teaching boost.]'};
+  return est;
  }
  /** Open (or reuse) a canonical stream. Logical ids waterColumn/truth/difarBearing need no gram subscribe. */
  openStream(id:SimStreamId):number|null{

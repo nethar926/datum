@@ -65,6 +65,15 @@ export const CUT_SCENARIO_KINDS=[
 export type CutScenarioKind=typeof CUT_SCENARIO_KINDS[number];
 
 /** Fixed seed for a short classification practice gram (CUT mode). Public physics only. */
+
+/** Optional pinned HYDP burst shape for teaching cuts (masked fund / rich stack). */
+export interface CutHydpShape {
+  orders:number;
+  drownFundamental:boolean;
+  drownOrders?:readonly number[];
+  fadeS:number;
+  powerScale?:number;
+}
 export interface CutSeed {
   v:1;
   /** Pinned acoustics cut renderer revision. */
@@ -87,6 +96,8 @@ export interface CutSeed {
   gramLooks?:readonly GramLookId[];
   /** Optional scenario-pack kind (15-min static seeded cuts). */
   scenario?:CutScenarioKind;
+  /** Pin HYDP burst shape (drown fund / rich harmonics). Requires class.hydp. */
+  hydpShape?:CutHydpShape;
 }
 
 export interface CutScenarioPack {

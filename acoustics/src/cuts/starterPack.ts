@@ -107,13 +107,16 @@ export const STARTER_PACK:CutStarterPack={
    ],
   },
   {
-   v:1,modelVersion:CUT_MODEL_VERSION,id:'cut-vellumwake-nuc',seed:0xC071000A,durationS:360,richness:'rich',
-   classId:'blue-vellumwake',variantId:'base',hullId:hull('blue-vellumwake'),mode:'NUC',speedKn:18,depthM:100,
-   gramLooks:['blade-harmonics-reinforced','compendium-truth','electrical-ac-dc'],
+   v:1,modelVersion:CUT_MODEL_VERSION,id:'cut-morrowcoil-hydp-masked',seed:0xC071000B,durationS:300,richness:'sparse',
+   classId:'green-morrowcoil',variantId:'base',hullId:hull('green-morrowcoil'),mode:'BATT',speedKn:3,depthM:55,
+   // Retarget of c778013 cut-russetwake-hydp-masked: green-russetwake is NO_HYDP on this branch.
+   // Same teaching truth — fundamental drowned, harmonics visible; Green diesel with HYDP.
+   hydpShape:{orders:12,drownFundamental:true,drownOrders:[],fadeS:.05,powerScale:4},
+   gramLooks:['compendium-truth'],
    classifyingLines:[
-    {lineFamily:'COOLANT',label:'Reactor coolant pump',n:1,behaviour:'stable',giveaway:false},
-    {lineFamily:'VANE',label:'Turbine vane-pass',n:1,harmonicOf:'TURBINE',behaviour:'stable',giveaway:false},
-    {lineFamily:'PSR',label:'Twin-shaft PSR doublets',n:1,behaviour:'stable',giveaway:true},
+    {lineFamily:'HYDP',label:'HYDP harmonics, fundamental masked',nominalHz:hydp('green-morrowcoil'),n:1,behaviour:'harmonics-only',giveaway:true},
+    {lineFamily:'HYDP',label:'HYDP 2nd harmonic (visible)',nominalHz:hydp('green-morrowcoil')*2,n:2,harmonicOf:'HYDP',behaviour:'stable',giveaway:false},
+    {lineFamily:'BR',label:'Blade rate',n:1,harmonicOf:'PSR',behaviour:'stable',giveaway:false},
    ],
   },
  ] satisfies CutSeed[],
