@@ -7,7 +7,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "bench": "tsx bench/engine.bench.ts"
+    "bench": "tsx bench/engine.bench.ts",
+    "build:wasm": "node scripts/build-wasm.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

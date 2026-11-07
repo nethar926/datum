@@ -1,5 +1,5 @@
 /** Provisional manifest v1 full-load benchmark. Run each case in a fresh process; no optimizations. */
-import {AcousticEngine,cpaScenario,fictionalSignature,resForBand,vernierHzForBand,attachWaterColumn,SIM_STREAM_SET,parseLofarStreamId,spanCacheBytes,rowCacheBytes,fftSharedTableBytes,sharedScratchBytes} from '../src/index.js';
+import {AcousticEngine,cpaScenario,fictionalSignature,resForBand,vernierHzForBand,attachWaterColumn,SIM_STREAM_SET,parseLofarStreamId,spanCacheBytes,rowCacheBytes,fftSharedTableBytes,sharedScratchBytes,setSpanCache,spanCacheEnabled} from '../src/index.js';
 import type {GramConfig} from '../src/protocol.js';
 export function scen(nBuoys:number,nContacts=1){const s=cpaScenario();s.fmax=2000;s.seed=303;
  s.contacts=Array.from({length:nContacts},(_,i)=>({id:'m'+i,category:'subsurface' as const,x:-1500+i*137,y:600+i*91,depth:60+i,course:Math.PI/2+i*.1,speed:4,motion:[{at:0,course:Math.PI/2+i*.1,speed:4,depth:60+i}],params:{...fictionalSignature,levelDb:150,modulation:0,cavitationPower:.05,tonals:[{family:'motor' as const,hz:40+i,power:1,width:'discrete' as const,stability:'stable' as const}]}}));
@@ -15,6 +15,7 @@ function ownedBuffers(objects:unknown[],seenBuffers:Set<ArrayBufferLike>):number
  objects.forEach(visit);return bytes;
 }
 export function runFullLoad(sec:number,res:number,nC:number){
+ if(process.env.SPAN_CACHE==='0')setSpanCache(false);else if(process.env.SPAN_CACHE==='1')setSpanCache(true);
  const scenario=scen(32,nC);scenario.waterColumn=attachWaterColumn(scenario.environment);
  const e=new AcousticEngine(scenario,303),internal=e as any,out=new Float32Array(4096),bearing=new Float32Array(4096);
  const streams:{streamId:number;demon:boolean}[]=[],fulls:GramConfig[]=[];
@@ -41,6 +42,6 @@ export function runFullLoad(sec:number,res:number,nC:number){
   if(k%120===0)console.error(JSON.stringify({progressSimS:t,wallS:(performance.now()-start)/1000}));
  }
  const wallS=(performance.now()-start)/1000;mem.push({at:'end',...memory()});ticks.sort((a,b)=>a-b);
- return {manifest:'provisional manifest v1',seconds:sec,contacts:nC,res,buoys:32,perBuoy:{bands:8,demon:2,fullband:2},logicalSet:SIM_STREAM_SET,counts,wallS,pctRealtime:100*wallS/sec,tickMs:{mean:ticks.reduce((a,b)=>a+b,0)/ticks.length,p95:ticks[Math.ceil(.95*ticks.length)-1],max:ticks.at(-1)},mem};
+ return {manifest:'provisional manifest v1',seconds:sec,contacts:nC,res,buoys:32,perBuoy:{bands:8,demon:2,fullband:2},logicalSet:SIM_STREAM_SET,counts,wallS,pctRealtime:100*wallS/sec,tickMs:{mean:ticks.reduce((a,b)=>a+b,0)/ticks.length,p95:ticks[Math.ceil(.95*ticks.length)-1],max:ticks.at(-1)},mem,spanCache:spanCacheEnabled()};
 }
 if(process.argv[2])console.log(JSON.stringify(runFullLoad(Number(process.argv[2]),Number(process.argv[3]),Number(process.argv[4]))));

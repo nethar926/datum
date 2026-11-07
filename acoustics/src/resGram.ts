@@ -15,6 +15,9 @@ import {RES_FRAME_S,RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import type {SpeedGated} from './catalog/drivetrain.js';
+import {resKernel,wasmKernelReady,ensureWasmKernel,wasmUploadTables,wasmClearOutputs,wasmProcessContact,wasmCopyOutputs,setResKernel,type ResKernel} from './wasm/kernel.js';
+export {setResKernel,resKernel,ensureWasmKernel,wasmSimdSupported,wasmKernelStats,resetWasmKernelStats} from './wasm/kernel.js';
+export type {ResKernel} from './wasm/kernel.js';
 /** Bytes of the shared render scratch (counted once per process). */
 export function sharedScratchBytes():number{let b=rowCacheBytes()+spanCacheBytes()+tableBytes()+accumBytes();for(const a of Object.values(SH))b+=a.byteLength;return b;}
 /** Row path. 'fast' (default): per-frame spectra evaluated once per band and folded into sliding
@@ -314,6 +317,7 @@ export class ResLofarGenerator {
   * one per bin. */
  private coreFast(P:Float64Array,sE:Float64Array,sN:Float64Array,sP:Float64Array):void{
   if(COARSE_BB){this.coreCoarse(P,sE,sN,sP);return;}
+  if(resKernel()==='wasm'&&wasmKernelReady()){this.coreFastWasm(P,sE,sN,sP);return;}
   const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,bt=this.bt,AB=SH.ab,se=this.shapeEnbw,amb=this.ambientBin,coh=this.sigma!==0;
   for(let i=0;i<L;i++)P[i]=amb[i]!;if(difar){sE.fill(0,0,L);sN.fill(0,0,L);sP.fill(0,0,L);}
   for(let j=0;j<this.contacts.length;j++){
@@ -340,6 +344,47 @@ export class ResLofarGenerator {
      const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;va*=ra;ra*=rra;vc*=rc;rc*=rrc;}
     i0=i1;}
    for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df)),lv=level*.0003*gs*enbw;for(let i=lo;i<=hi;i++){const contrib=lv*AB[i]!;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}
+   for(let k=0;k<item.frequencies.length;k++){
+    const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
+    if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
+    const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,bt.depth,e.soundSpeed,this.sigma);
+    if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
+   }
+  }
+ }
+
+ /** PROTOTYPE WASM SIMD kernel (setResKernel('wasm'); default 'js'). Broadband+Lloyd bin loop in
+  * wasm linear memory; tonals/swaths remain JS (swath absorption via Math.exp, same as reference core).
+  * Requires ensureWasmKernel() success; otherwise caller keeps the JS fast path. */
+ private coreFastWasm(P:Float64Array,sE:Float64Array,sN:Float64Array,sP:Float64Array):void{
+  const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,bt=this.bt,AB=SH.ab,se=this.shapeEnbw,amb=this.ambientBin,coh=this.sigma!==0,AE=this.absorptionExponent;
+  wasmUploadTables(this.tablesKey,se,AE,this.coherenceExponent,L);
+  wasmClearOutputs(L,difar);
+  for(let j=0;j<this.contacts.length;j++){
+   const item=this.contacts[j]!,c=item.trk;if(!item.act)continue;const g=geometry(c,bt,this.g);
+   const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
+   const prop=e.propagation,czOn=prop?.czEnabled===true;
+   const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
+   const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const flow=Number.isNaN(item.flowDb)?0:dbToPower(item.flowDb)*(g.range<=1?1:spread*item.flowFrac);
+   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,c.depth+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+bt.depth)/imageRange)**2:0;
+   const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed;
+   const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
+   wasmProcessContact({L,difar,coh,keepAb:false,broadband,flow,q,km,grazing2,phase,step,sinB,cosB});
+  }
+  wasmCopyOutputs(P,sE,sN,AB,L,difar,false);
+  for(let i=0;i<L;i++)P[i]+=amb[i]!;
+  for(let j=0;j<this.contacts.length;j++){
+   const item=this.contacts[j]!,c=item.trk;if(!item.act)continue;const g=geometry(c,bt,this.g);
+   const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
+   const prop=e.propagation,czOn=prop?.czEnabled===true;
+   const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
+   const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
+   if(item.swaths.length){for(let i=0;i<L;i++)AB[i]=Math.exp(AE[i]!*km);
+    for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df)),lv=level*.0003*gs*enbw;for(let i=lo;i<=hi;i++){const contrib=lv*AB[i]!;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}}
    for(let k=0;k<item.frequencies.length;k++){
     const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
     if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
