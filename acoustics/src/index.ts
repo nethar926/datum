@@ -42,3 +42,10 @@ export * from './behaviours.js';
 
 export * from './cuts/index.js';
 export * from './waterColumn.js';
+
+export * from './depthEnvelope.js';
+export * from './maneuver.js';
+export * from './sourceGate.js';
+export * from './lloydPass.js';
+export * from './convergenceZone.js';
+export * from './streamSet.js';

@@ -8,6 +8,11 @@ import type {TonalLine} from '../sourceModel.js';
 import {validateCutSeed} from './validate.js';
 import {bakeFidelityParams,applyRuntimeFidelity,looksOf} from './fidelity.js';
 import type {CutSeed} from './types.js';
+import {attachWaterColumn,buildWaterColumn} from '../waterColumn.js';
+import {SIM_STREAM_SET,parseLofarStreamId,vernierHzForBand,BoundedStreamHistory,CUT_HISTORY_ROWS_900S,type SimStreamId} from '../streamSet.js';
+import {LloydPassTracker,type LloydPassTruth} from '../lloydPass.js';
+import {estimateConvergenceZone,type ConvergenceZoneEstimate} from '../convergenceZone.js';
+import {geometry,createGeometry} from '../kinematics.js';
 
 const DEG=Math.PI/180;
 const ROW_DT=.25;
@@ -45,11 +50,11 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
  const transients:ContactTransient[]=[];
  if(wantsHydp){for(let k=0;k<hydpN;k++)transients.push({at:hydpAt+k*.4,kind:'hydp',params:{durationS:hydpDur}});}
  if(wantsKnee)transients.push({at:kneeAt,kind:'engine-ramp',params:{durationS:kneeDur,fromScale:1,toScale:kneeTo}});
- return {
+ const scen:ScenarioInput={
   v:1,seed:cut.seed,mode:'aviation',bins:CUT_BINS,fmax:CUT_FMAX,fMax:CUT_FMAX,fBin:CUT_FMAX/(CUT_BINS-1),band:[0,CUT_FMAX],time:0,
   surfaceTraffic:traffic,
   ownship:{x:0,y:0,depth:0,course:0,speed:80},
-  environment:{seaState:sea,shipping:traffic<.33?'light':traffic<.67?'moderate':'heavy',shippingDensity:traffic,soundSpeed:1500,spreading:'spherical',transition:1000},
+  environment:{seaState:sea,shipping:traffic<.33?'light':traffic<.67?'moderate':'heavy',shippingDensity:traffic,soundSpeed:1500,spreading:'spherical',transition:1000,temperatureC:15,salinityPsu:35},
   contacts:[{
    id:`cut-contact-${cut.id}`,category:'subsurface',classificationTarget:true,behaviour:'transit',
    // Bake classId into params only — catalogRef would re-derive and drop SSMA overlays.
@@ -59,6 +64,11 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
   }],
   buoys:[{id:'buoy-1',type:'difar',x:0,y:0,depth:60,course:0,speed:0,rfChannel:1,deployedAt:0,life:Math.max(7200,cut.durationS+600)}],
  };
+ // Wilson: cuts carry BT/SSP for the same tools as the live sim.
+ scen.waterColumn=attachWaterColumn(scen.environment,buildWaterColumn({
+  surfaceTempC:15,deepTempC:7,salinityPsu:35,maxDepthM:Math.max(400,cut.depthM*3,300),
+ }));
+ return scen;
 }
 
 /**
@@ -70,9 +80,16 @@ export class CutSession {
  readonly engine:AcousticEngine;
  readonly lofar:GramConfig;
  readonly demonStreamId:number;
+ /** Same tool/stream set as the live sim (Wilson cut parity). */
+ readonly streamSet:readonly SimStreamId[]=SIM_STREAM_SET;
  private readonly lofarBuf:Float32Array;
  private readonly rampBases=new Map<TonalLine,number>();
  private readonly engineHarmonicBases=new Map<TonalLine,number>();
+ private readonly openStreams=new Map<SimStreamId,number>();
+ private readonly lloyd:LloydPassTracker;
+ private readonly geo=createGeometry();
+ /** Synchronized per-row truth snapshots for Doppler/Lloyd/CPA tools (bounded). */
+ readonly truthHistory=new BoundedStreamHistory<{simT:number;lloyd:LloydPassTruth;cz:ConvergenceZoneEstimate|null}>(Math.min(CUT_HISTORY_ROWS_900S,Math.max(64,Math.ceil(900*4))));
  private ended=false;
  private disposed=false;
  constructor(cut:CutSeed){
@@ -85,13 +102,47 @@ export class CutSession {
    for(const l of this.contact.params.tonals??[])if(l.lineFamily==='EDA')this.rampBases.set(l,l.power);
    applyRuntimeFidelity(this.contact.params,cut,0,this.rampBases,this.engineHarmonicBases);
   }
+  // Default wide LOFAR (MF) kept for back-compat; full stream set opened on demand via openStream.
   this.lofar=this.engine.subscribe({channel:1,kind:'lofar',bins:CUT_BINS,band:[0,CUT_FMAX]});
   this.demonStreamId=this.engine.subscribe({kind:'demon',buoyId:1,band:[1000,Math.min(4000,CUT_FMAX)]});
+  this.openStreams.set('demon',this.demonStreamId);
   this.lofarBuf=new Float32Array(this.lofar.bins);
+  const c0=this.contact;
+  this.lloyd=new LloydPassTracker({depthM:c0.depth,courseRad:c0.course,speedMps:c0.speed});
  }
  private get contact(){return this.engine.scenario.contacts.find(c=>c.category!=='surface')??this.engine.scenario.contacts[0];}
  get simT():number{return this.engine.time;}
  get done():boolean{return this.disposed||this.ended||(this.engine.time>=this.cut.durationS&&this.engine.rowsReady(this.lofar.streamId)===0);}
+ get waterColumn(){return this.engine.scenario.waterColumn;}
+ /** FE tools: tactical truth (Doppler/CPA geometry consumers). */
+ tactical(){return this.engine.tactical();}
+ /** Live Lloyd qualifier — always computed from live zs; symmetricPass false when maneuvering. */
+ lloydTruth():LloydPassTruth{
+  const c=this.contact,b=this.engine.scenario.buoys[0]!;
+  this.lloyd.observe({depthM:c.depth,courseRad:c.course,speedMps:c.speed});
+  geometry(c,b,this.geo);
+  return this.lloyd.truth(c.depth,b.depth,this.geo.horizontal);
+ }
+ /** SSP-derived CZ estimate (null profile → null). */
+ convergenceZone():ConvergenceZoneEstimate|null{
+  const wc=this.waterColumn;if(!wc)return null;
+  const c=this.contact,b=this.engine.scenario.buoys[0]!;
+  return estimateConvergenceZone({profile:wc,zsM:c.depth,zrM:b.depth,bottomDepthM:wc.depthM[wc.depthM.length-1]});
+ }
+ /** Open (or reuse) a canonical stream. Logical ids waterColumn/truth/difarBearing need no gram subscribe. */
+ openStream(id:SimStreamId):number|null{
+  if(this.disposed)return null;
+  if(id==='waterColumn'||id==='truth'||id==='difarBearing')return null;
+  if(id==='demon')return this.demonStreamId;
+  const had=this.openStreams.get(id);if(had!==undefined)return had;
+  const parsed=parseLofarStreamId(id);
+  if(parsed){
+   // RES NB/BB vernier centred in the named band (bandPreset+res are exclusive on subscribe).
+   const cfg=this.engine.subscribe({channel:1,kind:'lofar',res:5,filter:parsed.filter,vernierHz:vernierHzForBand(parsed.bandPreset)});
+   this.openStreams.set(id,cfg.streamId);return cfg.streamId;
+  }
+  return null;
+ }
  /** True after dispose(); FE should drop the session reference. */
  get isDisposed():boolean{return this.disposed;}
  /**
@@ -104,6 +155,8 @@ export class CutSession {
   try{this.engine.unsubscribe(this.lofar.streamId);}catch{/* already gone */}
   try{this.engine.unsubscribe(this.demonStreamId);}catch{/* already gone */}
   this.rampBases.clear();this.engineHarmonicBases.clear();
+  for(const [id,sid] of this.openStreams){if(id==='demon')continue;try{this.engine.unsubscribe(sid);}catch{/* */} }
+  this.openStreams.clear();this.truthHistory.clear();
   this.lofarBuf.fill(0);
  }
  private ensureLofarRow():boolean{
@@ -114,6 +167,7 @@ export class CutSession {
    if(dt<=0){this.ended=true;return false;}
    this.engine.advance(dt);
    applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases,this.engineHarmonicBases);
+   this.truthHistory.push({simT:this.engine.time,lloyd:this.lloydTruth(),cz:this.convergenceZone()});
   }
   return true;
  }
