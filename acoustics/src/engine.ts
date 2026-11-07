@@ -68,19 +68,31 @@ export class AcousticEngine {
     for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(true);this.updateSwaths();this.updateNarrowTransients();
     this.truthState={contacts:this.allContacts.map((c,i)=>({speedGated:c.params.speedGated??[],id:i+1,sourceId:c.id,label:c.catalogRef?`${c.params.label} ${resolveReference(c.catalogRef).klass.hulls.find(h=>h.id===c.catalogRef!.hullId)?.number??c.id}`:`${c.params.label} ${c.id}`,propulsion:c.params.propulsion!,spdKts:mpsToKnots(c.speed),active:c.active!==false,category:c.category??'subsurface',...(c.behaviour?{behaviour:c.behaviour}:{}),classificationTarget:c.category!=='surface'&&c.classificationTarget!==false,x:c.x,y:c.y,depthM:c.depth,crsDeg:c.course*180/Math.PI,spdMps:c.speed,lines:c.lines!.map(l=>({eda:l.eda,reactorId:l.reactorId,lineFamily:l.lineFamily,fundamentalHz:l.fundamentalHz,harmonic:l.harmonic,engineId:l.engineId,shaftIndex:l.shaftIndex,id:l.id!,family:l.family,f0Hz:l.hz,freqHz:l.frequencyHz??l.hz,power:l.power,stability:l.stability!,width:l.width!,sigmaBins:l.sigmaBins??0}))}))};this.tacticalState.truth=this.truthState;
     this.generators=s.buoys.map(b=>new LofarGenerator(b,this.allContacts,s.bins,s.band?.[1]??s.fMax??s.fmax,s.seed,s.environment,s.band?.[0]??0));
+    this.syncPropagationContext();
     s.buoys.forEach((_,i)=>{this.streams.set(i+1,i);this.legacyIndices.set(i+1,0);});
     this.rows=s.buoys.map((b,i)=>({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:this.generators[i].row}));
     s.classificationTargets??=this.baseContacts.filter(c=>c.category!=='surface'&&c.classificationTarget!==false).map(c=>c.id);this.syncTacticalBuoys();
   }
   get simT():number{return this.time;}
   get time():number {return this.scenario.time;}
-  setEnvironment(environment:Environment):void {
+  /** Push water-column context into LOFAR/DEMON/RES so CZ gain (when enabled) can evaluate. */
+  private syncPropagationContext():void{
+    const wc=this.scenario.waterColumn;
+    for(const g of this.generators)g.setWaterColumn?.(wc);
+    for(const sub of this.subscriptions.values()){
+      sub.lofar?.setWaterColumn?.(wc);
+      sub.res?.setWaterColumn?.(wc);
+      sub.renderer?.setWaterColumn?.(wc);
+    }
+  }
+    setEnvironment(environment:Environment):void {
     const next={...this.scenario,environment};validateScenario(next);
     this.scenario.environment={...environment};for(const generator of this.generators)generator.setEnvironment(environment);for(const sub of this.subscriptions.values()){sub.lofar?.setEnvironment(environment);sub.res?.setEnvironment(environment);sub.renderer?.setEnvironment(environment);}
+    this.syncPropagationContext();
   }
   setSurfaceTraffic(v:number):void{v=Number.isFinite(v)?clamp(v,0,1):.5;this.scenario.surfaceTraffic=v;const pool=this.scenario.surfacePool;if(pool){const n=surfaceCount(v,pool.length),contacts=this.scenario.contacts;contacts.length=this.baseContacts.length;for(let i=0;i<pool.length;i++){pool[i].active=i<n;if(i<n)contacts.push(pool[i]);}}this.setEnvironment({...this.scenario.environment,shippingDensity:v,shipping:v<.33?'light':v<.67?'moderate':'heavy'});}
   registerStream(id:number,channel:number):void {if(!(channel>0))throw new Error('Unknown RF channel');const i=this.scenario.buoys.findIndex(b=>b.rfChannel===channel);if(i<0)throw new Error('Unknown RF channel');this.streams.set(id,i);if(!this.legacyIndices.has(id))this.legacyIndices.set(id,0);}
-  addBuoy(b:Buoy):void {const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:g.row});this.syncTacticalBuoys();}
+  addBuoy(b:Buoy):void {const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);g.setWaterColumn?.(this.scenario.waterColumn);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:g.row});this.syncTacticalBuoys();}
   /** Subscription rows are ready at 4 Hz since subscribe; legacy registered streams remain pull-based.
    * If multiple rows accumulate, each is rendered using current geometry (no historical snapshot queue). */
   subscribe(req:{kind:'demon';buoyId:number;band?:[number,number]}):number;
@@ -94,7 +106,7 @@ export class AcousticEngine {
       const i=this.scenario.buoys.findIndex((b,i)=>(Number(b.id.replace(/\D/g,''))||i+1)===req.buoyId);if(i<0)throw new Error('Unknown buoyId');
       const band=req.band??[1000,4000];if(band.length!==2||!band.every(Number.isFinite)||band[0]<20||band[1]>6000||band[1]-band[0]<1e-6)throw new Error('Invalid DEMON carrier band (20..6000 Hz)');
       while(this.streams.has(this.nextStreamId))this.nextStreamId++;const id=this.nextStreamId++,b=this.scenario.buoys[i];if(!isTuned(b))throw new Error('Buoy detuned');this.registerStream(id,b.rfChannel);
-      const renderer=new DemonStream(b,this.allContacts,this.scenario.seed,band,this.scenario.environment),config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId:id,kind:'demon',channel:b.rfChannel,bins:512,f0:0,fBin:renderer.fBin,rowRateHz:4,dbFloor:0,dbCeil:30,demodBandHz:[band[0],band[1]]};
+      const renderer=new DemonStream(b,this.allContacts,this.scenario.seed,band,this.scenario.environment);renderer.setWaterColumn?.(this.scenario.waterColumn);const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId:id,kind:'demon',channel:b.rfChannel,bins:512,f0:0,fBin:renderer.fBin,rowRateHz:4,dbFloor:0,dbCeil:30,demodBandHz:[band[0],band[1]]};
       this.subscriptions.set(id,{config,start:Math.floor(this.time*4)/4,read:0,renderer});return id;
     }
 
@@ -124,7 +136,7 @@ export class AcousticEngine {
     else{
       bandKey=`${index}:${band[0]}:${band[1]}`;
       let entry=this.lofarBandCache.get(bandKey);
-      if(!entry){entry={gen:new LofarGenerator(s.buoys[index],this.allContacts,s.bins,band[1],s.seed,s.environment,band[0]),refs:0};this.lofarBandCache.set(bandKey,entry);}
+      if(!entry){const gen=new LofarGenerator(s.buoys[index],this.allContacts,s.bins,band[1],s.seed,s.environment,band[0]);gen.setWaterColumn?.(s.waterColumn);entry={gen,refs:0};this.lofarBandCache.set(bandKey,entry);}
       entry.refs++;lofar=entry.gen;
     }
     this.subscriptions.set(streamId,{config,start:Math.floor(this.time*4)/4,read:0,lofar,bandKey});return config;
@@ -168,7 +180,7 @@ export class AcousticEngine {
     // Recreate generator when capacity must change (vernier 1024 ↔ FULLBAND 4096).
     const needCap=fullAxis?TILE_BINS:RES_BINS;
     let gen=old?.res;
-    if(!gen||gen.capacity!==needCap)gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);
+    if(!gen||gen.capacity!==needCap){gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);gen.setWaterColumn?.(s.waterColumn);}
     else gen.configure(settings);
     const p=gen.params,frames=Math.round(p.rowPeriodS/RES_FRAME_S),phase=Math.floor(i*frames/s.buoys.length)*RES_FRAME_S;
     if(fullAxis){

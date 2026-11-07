@@ -5,6 +5,8 @@ import {geometry,createGeometry} from './kinematics.js';
 import {doppler} from './doppler.js';
 import {exactGain,pathDifference,seaSurfaceSigma} from './lloydsMirror.js';
 import {spreadingLoss,thorp} from './transmissionLoss.js';
+import {czPropagationGainLinear,czEstimateFor} from './convergenceZone.js';
+import type {WaterColumnProfile} from './waterColumn.js';
 import {ambientLevel} from './ambientNoise.js';
 import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
 import {BEARING_NOISE_K,BEARING_SNR_FLOOR} from './lofar.js';
@@ -29,6 +31,7 @@ export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:
  * Capacity defaults to RES_BINS=1024 (vernier path). FULLBAND passes capacity=TILE_BINS and uses
  * selectTile + renderTile so the same line physics covers an arbitrary f0 tile window. */
 export class ResLofarGenerator {
+  private waterColumn:WaterColumnProfile|undefined;
  /** Current output width (RES_BINS vernier, or TILE_BINS for a full-axis tile). */
  bins:number;
  readonly capacity:number;
@@ -94,6 +97,7 @@ export class ResLofarGenerator {
   for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}
   this.setEnvironment(this.environment);
  }
+ setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
  setEnvironment(e:Environment):void{
   this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);const df=this.params.fBin,f0=this.band.f0,enbw=this.params.enbwHz,W=this.bins;
   for(let i=0;i<W;i++){const f=Math.max(df/2,f0+i*df),k=2*Math.PI*f/e.soundSpeed;this.coherenceExponent[i]=-2*k*k*this.sigma*this.sigma;this.absorptionExponent[i]=-thorp(f)*(Math.LN10/10);this.ambientBin[i]=i<this.band.liveBins?dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity))*enbw:NaN;this.shape[i]=1/(1+(f/400)**2);}
@@ -116,7 +120,11 @@ export class ResLofarGenerator {
   for(let j=0;j<this.contacts.length;j++){
    const item=this.contacts[j],c=item.contact;if(c.active===false)continue;const g=geometry(c,this.buoy,this.g);
    fillTonals(c.params,item.frequencies,item.powers,c.lines);
-   const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition)),level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread,km=Math.max(0,g.range-1)/1000;
+   const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
+   const prop=e.propagation,czOn=prop?.czEnabled===true;
+   const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,this.buoy.depth):null;
+   const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
+   const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
    const flow=c.params.flowNoiseDb===undefined?0:dbToPower(c.params.flowNoiseDb)*(g.range<=1?1:spread*(c.params.flowRadiatedFraction??0));
    const broadband=level*(.0001+(c.params.cavitationPower??0)),imageRange=Math.hypot(g.horizontal,c.depth+this.buoy.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+this.buoy.depth)/imageRange)**2:0;
    const delta=pathDifference(g.horizontal,c.depth,this.buoy.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);

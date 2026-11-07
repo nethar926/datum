@@ -23,7 +23,13 @@ function badSwath(p:Record<string,number|string>):boolean{for(const k of Object.
 function badNarrowTransient(p:Record<string,number|string>):boolean{for(const k of Object.keys(p))if(!['durationS','hz','harmonics'].includes(k))return true;return !finite(p.durationS,.05,30)||!finite(p.hz,.1,1e5)||(p.harmonics!==undefined&&(!Number.isInteger(p.harmonics)||!finite(p.harmonics,1,5)));}
 function badTransient(x:ContactTransient):boolean{if(!x||typeof x!=='object'||!finite(x.at,0,1e9)||!x.params||typeof x.params!=='object'||Array.isArray(x.params))return true;if(x.kind==='hydp')return badHydp(x.params);if(x.kind==='engine-ramp')return badEngineRamp(x.params);if(x.kind==='swath')return badSwath(x.params);if(x.kind==='transient')return badNarrowTransient(x.params);return true;}
 export interface Contact extends Track {behaviour?:BehaviourKind; lines?:TonalLine[]; id:string; category?:'surface'|'subsurface'; classificationTarget?:boolean; active?:boolean; surface?:{type:string;shafts:number;electricalHz:50|60;rank:number}; params:Signature; catalogRef?:CatalogReference; operatingMode?:ModeInput;reactorOffline?:boolean; motion:MotionLeg[]; transients?:ContactTransient[] }
-export interface Environment { shippingDensity?:number; seaState:number; shipping:Shipping; soundSpeed:number; spreading:Spreading; transition:number; /** Water column °C (Mackenzie / cavitation). */temperatureC?:number; /** Salinity ppt. */salinityPsu?:number }
+export interface PropagationSettings {
+  /** CZ annulus teaching boost in LOFAR/DEMON/RES. Default false — streams match zero-CZ gain. */
+  czEnabled?:boolean;
+  /** Test/FE hook: when set, multiply received power by this linear gain (1 = no boost). */
+  czForceGainLinear?:number;
+}
+export interface Environment { shippingDensity?:number; seaState:number; shipping:Shipping; soundSpeed:number; spreading:Spreading; transition:number; /** Water column °C (Mackenzie / cavitation). */temperatureC?:number; /** Salinity ppt. */salinityPsu?:number; /** Optional propagation feature flags (CZ off by default). */propagation?:PropagationSettings }
 export interface Scenario {reactorOffline?:boolean; surfacePool?:Contact[]; classificationTargets?:string[]; v:1; fMax?:number; fBin?:number; band?:[number,number]; surfaceTraffic?:number; seed:number; mode:'aviation'; bins:number; fmax:number; time:number; ownship:Track; environment:Environment; contacts:Contact[]; buoys:Buoy[]; /** Paired BT/SSP for FE graph (Mackenzie). */waterColumn?:import('./waterColumn.js').WaterColumnProfile }
 export type ContactInput=Omit<Contact,'params'> & {params?:Signature};
 export type ScenarioInput=Omit<Scenario,'contacts'> & {contacts:ContactInput[]};
@@ -42,6 +48,7 @@ export function validateScenario(value:unknown):asserts value is ScenarioInput {
   if(!e||!finite(e.seaState,0,6)||!['light','moderate','heavy'].includes(e.shipping)||!finite(e.soundSpeed,1300,1800)||!['spherical','cylindrical','hybrid'].includes(e.spreading)||!finite(e.transition,1,1e9)||(e.temperatureC!==undefined&&!finite(e.temperatureC,-2,40))||(e.salinityPsu!==undefined&&!finite(e.salinityPsu,0,42))) throw new Error('Invalid environment');
   if(!Array.isArray(s.contacts)||s.contacts.length>250||!Array.isArray(s.buoys)||s.buoys.length>128) throw new Error('Invalid counts');
   if(s.environment.shippingDensity!==undefined&&!finite(s.environment.shippingDensity,0,1))throw new Error('Invalid shipping density');
+  const prop=s.environment.propagation;if(prop!==undefined){if(typeof prop!=='object'||prop===null||Array.isArray(prop))throw new Error('Invalid propagation');if(prop.czEnabled!==undefined&&typeof prop.czEnabled!=='boolean')throw new Error('Invalid propagation.czEnabled');if(prop.czForceGainLinear!==undefined&&!finite(prop.czForceGainLinear,0,1e6))throw new Error('Invalid propagation.czForceGainLinear');}
   if(s.surfacePool!==undefined){if(!Array.isArray(s.surfacePool)||s.surfacePool.length>18||s.surfacePool.some(c=>c.category!=='surface')||s.contacts.filter(c=>!s.surfacePool!.some(p=>p.id===c.id)).length+s.surfacePool.length>250)throw new Error('Invalid surface pool');validateScenario({...s,surfacePool:undefined,classificationTargets:undefined,contacts:s.surfacePool});}
   if(s.classificationTargets!==undefined&&(!Array.isArray(s.classificationTargets)||s.classificationTargets.some(id=>!s.contacts.some(c=>c.id===id&&c.category!=='surface'))))throw new Error('Invalid classification targets');
   const ids=new Set<string>();

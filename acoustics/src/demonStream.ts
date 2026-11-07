@@ -3,6 +3,8 @@ import {deriveSeed,mulberry32} from './prng.js';
 import {powerToDb} from './units.js';
 import {sourceLevel,type Signature} from './sourceModel.js';
 import {transmissionLoss} from './transmissionLoss.js';
+import {czPropagationGainLinear,czEstimateFor} from './convergenceZone.js';
+import type {WaterColumnProfile} from './waterColumn.js';
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import {DEMON_NORM} from './cuts/norm.js';
@@ -25,15 +27,20 @@ export class DemonStream {
  private readonly signal=new Float32Array(SIZE);private readonly median=new Float32Array(512);private readonly spectrum=new Float32Array(512);private readonly fft=new FFT(SIZE);
  private readonly tables:Envelope[];private readonly weights:Float64Array;private readonly rng;
  private readonly carrier:number;
+ private waterColumn:WaterColumnProfile|undefined;
  constructor(private readonly buoy:Buoy,private readonly contacts:Contact[],seed:number,band:[number,number],private environment?:Environment){
   this.carrier=(band[0]+band[1])/2;this.weights=new Float64Array(contacts.length);this.rng=mulberry32(deriveSeed(seed,`demon:${buoy.id}`));
   this.tables=contacts.map(c=>{let e=envelopes.get(c.params);if(!e){e={shaft:-1,blades:0,modulation:-1,table:new Float32Array(SIZE),phase:mulberry32(deriveSeed(seed,`envelope:${c.id}`))()*2*Math.PI};envelopes.set(c.params,e);}refresh(c.params,e);return e;});
  }
  setEnvironment(e:Environment):void{this.environment=e;}
+ setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
  write(out:Float32Array,offset:number):void {
   this.signal.fill(0);let total=0;
   for(let j=0;j<this.contacts.length;j++){const c=this.contacts[j];if(c.active===false){this.weights[j]=0;continue;}const r=Math.hypot(c.x-this.buoy.x,c.y-this.buoy.y,c.depth-this.buoy.depth),tl=transmissionLoss(r,this.carrier,this.environment?.spreading,this.environment?.transition);
-   const w=Math.exp((sourceLevel(c.params,c.speed,c.depth)-tl)*(Math.LN10/10))*(.0001+(c.params.cavitationPower??0));this.weights[j]=w;total+=w;refresh(c.params,this.tables[j]);}
+   const prop=this.environment?.propagation,czOn=prop?.czEnabled===true;
+   const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,this.buoy.depth):null;
+   const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(r,czEst,{enabled:czOn});
+   const w=Math.exp((sourceLevel(c.params,c.speed,c.depth)-tl)*(Math.LN10/10))*(.0001+(c.params.cavitationPower??0))*czGain;this.weights[j]=w;total+=w;refresh(c.params,this.tables[j]);}
   if(total<=1e-30){out.fill(NaN,offset,offset+512);return;}
   for(let j=0;j<this.contacts.length;j++){const w=this.weights[j]/total;if(w<=0)continue;const table=this.tables[j].table;for(let i=0;i<SIZE;i++)this.signal[i]+=w*table[i];}
   let mean=0;for(let i=0;i<SIZE;i++){this.signal[i]+=.0001*(this.rng()-.5);mean+=this.signal[i];}mean/=SIZE;for(let i=0;i<SIZE;i++)this.signal[i]-=mean;

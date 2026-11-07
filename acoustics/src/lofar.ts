@@ -5,6 +5,8 @@ import { geometry, createGeometry } from './kinematics.js';
 import { doppler } from './doppler.js';
 import { exactGain,pathDifference,seaSurfaceSigma } from './lloydsMirror.js';
 import { spreadingLoss, thorp } from './transmissionLoss.js';
+import {czPropagationGainLinear,czEstimateFor} from './convergenceZone.js';
+import type {WaterColumnProfile} from './waterColumn.js';
 import { ambientLevel } from './ambientNoise.js';
 import { sourceLevel, fillTonals,sourceLines } from './sourceModel.js';
 import type { Contact, Environment } from './scenario.js';
@@ -41,6 +43,7 @@ export class LofarGenerator {
   private readonly baseSeed:number;private readonly bearingSeed:number;private rowIndex=0;
   private readonly g=createGeometry();
   private environment:Environment;
+  private waterColumn:WaterColumnProfile|undefined;
   private readonly difar:boolean;
   bearing=0;
   constructor(readonly buoy:Buoy, contacts:Contact[],readonly bins:number,readonly fmax:number,seed:number,environment:Environment,readonly f0=0){
@@ -49,6 +52,7 @@ export class LofarGenerator {
     this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const frequencies=new Float64Array(contact.lines.length),powers=new Float64Array(contact.lines.length);fillTonals(contact.params,frequencies,powers,contact.lines);const df=(fmax-f0)/(bins-1),swathSources=[...(contact.params.speedGated??[]).filter(w=>w.kind==='SWATH'),...(contact.params.eventSwaths??[])],swaths=swathSources.map(w=>({source:w,lo:Math.max(0,Math.ceil(((w as {loHz:number}).loHz-f0)/df)),hi:Math.min(bins-1,Math.floor(((w as {hiHz:number}).hiHz-f0)/df))}));return {contact,frequencies,powers,swaths,kernels:contact.lines.map(l=>lineKernel(l.width,l.sigmaBins)),gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
     this.setEnvironment(environment);
   }
+  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
   setEnvironment(e:Environment):void {
     this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);const df=(this.fmax-this.f0)/(this.bins-1);
     for(let i=0;i<this.bins;i++){const f=Math.max(df/2,this.f0+i*df);const k=2*Math.PI*f/e.soundSpeed;this.coherenceExponent[i]=-2*k*k*this.sigma*this.sigma;this.absorption[i]=thorp(f);this.absorptionExponent[i]=-this.absorption[i]*(Math.LN10/10);this.ambient[i]=dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity));this.shape[i]=1/(1+(f/400)**2);}
@@ -60,7 +64,10 @@ export class LofarGenerator {
       const item=this.contacts[j],c=item.contact;if(c.active===false)continue;const g=geometry(c,this.buoy,this.g);
       fillTonals(c.params,item.frequencies,item.powers,c.lines);
       const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
-      const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread;
+      const prop=e.propagation,czOn=prop?.czEnabled===true;
+      const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,this.buoy.depth):null;
+      const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
+      const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread*czGain;
       // Smooth fictional broadband PSD; absorption per bin cached, range factor updated.
       const km=Math.max(0,g.range-1)/1000;
       const flow=c.params.flowNoiseDb===undefined?0:dbToPower(c.params.flowNoiseDb)*(g.range<=1?1:spread*(c.params.flowRadiatedFraction??0));

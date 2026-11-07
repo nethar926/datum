@@ -103,3 +103,33 @@ export function estimateConvergenceZone(req:ConvergenceZoneRequest):ConvergenceZ
   return {...base,possible:true,rangeM,rangeNmi:nmi,
     note:`Parameterized CZ ≈ ${nmi.toFixed(1)} nmi from SSP critical depth ${zc.toFixed(0)} m + excess ${excess.toFixed(0)} m (Urick teaching band ${CZ_RANGE_NMI_BAND[0]}–${CZ_RANGE_NMI_BAND[1]} nmi; not a ray trace).`};
 }
+
+/** Default: CZ propagation boost OFF until FE opts in. */
+export const DEFAULT_CZ_ENABLED=false;
+
+/**
+ * Linear power multiplier from a CZ annulus teaching boost.
+ * Returns 1 when disabled, impossible, or forceZero — so streams match a no-CZ path.
+ * Peak ~+28 dB (±8% range half-width) when enabled — strong enough to lift CZ-range signal above ambient for teaching/FE.
+ */
+export function czPropagationGainLinear(
+  rangeM:number,
+  estimate:ConvergenceZoneEstimate|null|undefined,
+  opts:{enabled?:boolean;forceZero?:boolean}={},
+):number {
+  if(opts.forceZero||opts.enabled!==true)return 1;
+  if(!estimate?.possible||estimate.rangeM==null||!(estimate.rangeM>0))return 1;
+  const half=estimate.rangeM*.08,d=Math.abs(rangeM-estimate.rangeM);
+  if(d>half*3)return 1;
+  const db=28*Math.exp(-(d*d)/(2*half*half));
+  return 10**(db/10);
+}
+
+/** Resolve CZ estimate for live geometry when a water column is present. */
+export function czEstimateFor(
+  profile:import('./waterColumn.js').WaterColumnProfile|undefined,
+  zsM:number,zrM:number,bottomDepthM?:number,
+):ConvergenceZoneEstimate|null {
+  if(!profile)return null;
+  return estimateConvergenceZone({profile,zsM,zrM,bottomDepthM});
+}

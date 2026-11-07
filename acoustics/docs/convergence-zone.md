@@ -32,3 +32,11 @@ Live `AcousticEngine` / `CutSession` attach CZ next to Lloyd pass truth. Geometr
 - `src/convergenceZone.ts` — implementation
 - `src/lloydPass.ts` — CPA Lloyd qualifier (separate from CZ)
 - `docs/sources.md` — citations (`urick-pous`, `jensen-coa`, `mackenzie-1981`)
+
+## Feature flag (default OFF)
+
+`environment.propagation.czEnabled` defaults to **false**. While disabled, CZ annulus
+gain is forced to 1 (identical to a removed/zero-gain path) for every LOFAR / DEMON / RES
+stream. Set `propagation.czEnabled=true` to apply the teaching boost near the first-CZ range.
+Test hook: `propagation.czForceGainLinear` overrides the linear multiplier.
+
