@@ -16,6 +16,8 @@ import {RES_BINS,RES_FRAME_S,TILE_BINS,tileCountFor,tileIndexForHz,priorityTileO
 import type {GramFilter,LofarBandPresetId} from './protocol.js';
 import type {GramConfig,Tactical,DropBuoy,TruthContact} from './protocol.js';
 import {isLofarBandPresetId,resolveLofarBand} from './bands.js';
+import {StateHistory} from './stateHistory.js';
+import {sharedScratchBytes} from './resGram.js';
 /** @deprecated Retained for API compat; HYDP no longer curves high→fixed (Wilson squally bar). */
 export const HYDP_START_OFFSET_PCT=1.5;
 /** Simultaneous tuned RF channels (= FE field cap / bench budget). */
@@ -28,6 +30,8 @@ export class AcousticEngine {
   private readonly lineWanders:LineWander[]=[];
   private readonly truthState:{contacts:TruthContact[]};
   private readonly allContacts:Contact[];
+  /** Engine-wide source-state history shared by every RES stream. */
+  readonly history:StateHistory;private historyOn=false;
   private readonly baseContacts:Contact[];
   private readonly catalogStates:{contact:Contact;params:ClassParams;speed:number;depth:number}[]=[];
   private readonly streams=new Map<number,number>();
@@ -72,6 +76,13 @@ export class AcousticEngine {
     s.buoys.forEach((_,i)=>{this.streams.set(i+1,i);this.legacyIndices.set(i+1,0);});
     this.rows=s.buoys.map((b,i)=>({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:this.generators[i].row}));
     s.classificationTargets??=this.baseContacts.filter(c=>c.category!=='surface'&&c.classificationTarget!==false).map(c=>c.id);this.syncTacticalBuoys();
+    this.history=new StateHistory(this.allContacts);
+  }
+  /** Acoustics-side retained bytes for RES streams: shared state history + shared render scratch +
+   * each RES generator's own tables/rows/AR state. Excludes FE-held row history. */
+  retainedBytes():{history:number;scratch:number;streams:number;total:number;perStream:number[]}{
+    const per:number[]=[];for(const sub of this.subscriptions.values())if(sub.res)per.push(sub.res.retainedBytes());
+    const history=this.historyOn?this.history.bytes:0,scratch=sharedScratchBytes(),streams=per.reduce((a,b)=>a+b,0);return {history,scratch,streams,total:history+scratch+streams,perStream:per};
   }
   get simT():number{return this.time;}
   get time():number {return this.scenario.time;}
@@ -161,7 +172,7 @@ export class AcousticEngine {
     const {fLo,fHi}=win;if(!Number.isFinite(fLo)||!Number.isFinite(fHi)||!(fLo<fHi)||fLo<0||fHi>1e6)throw new Error('Invalid view window');
     const fa=sub.fullAxis,fBin=sub.config.fBin,centre=.5*(fLo+fHi);
     const visible=tileIndexForHz(centre,fBin,fa.tileBins,fa.tileCount);
-    fa.visibleTileIndex=visible;fa.viewFLo=fLo;fa.viewFHi=fHi;sub.res?.touchTiles(visible);
+    fa.visibleTileIndex=visible;fa.viewFLo=fLo;fa.viewFHi=fHi;
     // Reprioritise pending work: jobs for visible±1 become hot and jump ahead of backfill.
     if(fa.queue.length){
       const hotSet=new Set(priorityTileOrder(visible,fa.tileCount).slice(0,Math.min(3,fa.tileCount)));
@@ -180,7 +191,9 @@ export class AcousticEngine {
     // Recreate generator when capacity must change (vernier 1024 ↔ FULLBAND 4096).
     const needCap=fullAxis?TILE_BINS:RES_BINS;
     let gen=old?.res;
-    if(!gen||gen.capacity!==needCap){gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);gen.setWaterColumn?.(s.waterColumn);}
+    if(!gen||gen.capacity!==needCap){gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);gen.setWaterColumn?.(s.waterColumn);gen.setHistory(this.history);}
+    // History starts with the first RES stream (pre-filled with the state at that instant).
+    if(!this.historyOn){this.historyOn=true;this.history.record(this.time);}
     else gen.configure(settings);
     const p=gen.params,frames=Math.round(p.rowPeriodS/RES_FRAME_S),phase=Math.floor(i*frames/s.buoys.length)*RES_FRAME_S;
     if(fullAxis){
@@ -257,8 +270,6 @@ export class AcousticEngine {
       const fa=sub.fullAxis,job=fa.queue.shift()!;
       if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);sub.res.bearingRow.fill(NaN);fa.lastTile={tileIndex:job.tileIndex,tileBins:fa.tileBins,f0:job.tileIndex*fa.tileBins*sub.config.fBin,fBin:sub.config.fBin,liveBins:0,filled:false};return rowIndex;}
       const tEnd=sub.start+(job.rowKey+1)/sub.config.rowRateHz;
-      // Tiles outside the prepared (capped) set, or still warming after re-prepare: unfilled stub, never a snapshot.
-      if(!sub.res.tileReady(job.tileIndex,tEnd)){out.fill(NaN,offset,offset+bins);sub.res.bearingRow.fill(NaN);fa.lastTile={tileIndex:job.tileIndex,tileBins:fa.tileBins,f0:job.tileIndex*fa.tileBins*sub.config.fBin,fBin:sub.config.fBin,liveBins:0,filled:false};return rowIndex;}
       const t=tileBand(sub.config.res!,job.tileIndex,this.scenario.fMax??this.scenario.fmax,fa.tileBins);
       sub.res.renderTileAt(job.tileIndex,job.rowKey,tEnd,out,offset,fa.tileBins);
       fa.lastTile={tileIndex:t.tileIndex,tileBins:t.tileBins,f0:t.f0,fBin:t.fBin,liveBins:t.liveBins,filled:true};
@@ -333,8 +344,8 @@ export class AcousticEngine {
       const b=s.buoys[i],r=this.rows[i];advance(b,dt);r.alive=isFeeding(b,s.time);r.depth=b.depth;r.rfChannel=b.rfChannel;
       if(!r.alive){r.bearing=null;this.generators[i].lineCount=0;}
     }
-    // RES span averaging: every RES stream (vernier and each FULLBAND tile) records its noise-free modelled power spectrum each frame (time-averaging of modelled spectra, not a waveform FFT).
-    for(const sub of this.subscriptions.values())if(sub.res){const bi=this.streams.get(sub.config.streamId);if(bi!==undefined&&this.rows[bi]?.alive)sub.res.sample(s.time);}
+    // RES span averaging: one engine-wide source-STATE record per frame (stateHistory.ts); rows re-evaluate the modelled spectrum per frame (not a waveform FFT).
+    if(this.historyOn)this.history.record(s.time);
   }
   /** HYDP hydraulic burst (Wilson): speed-independent class Hz × harmonics; squally abrupt on/off
    * with tiny seeded fade. Latest-started window wins; outside every window slots are silent. */

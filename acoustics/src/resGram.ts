@@ -10,11 +10,15 @@ import type {WaterColumnProfile} from './waterColumn.js';
 import {ambientLevel} from './ambientNoise.js';
 import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
 import {BEARING_NOISE_K,BEARING_SNR_FLOOR} from './lofar.js';
-import {priorityTileOrder,RES_FRAME_S,RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand,type TileBand} from './res.js';
+import {StateHistory} from './stateHistory.js';
+import {RES_FRAME_S,RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand,type TileBand} from './res.js';
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import type {SpeedGated} from './catalog/drivetrain.js';
-interface ResContact {contact:Contact;frequencies:Float64Array;powers:Float64Array;sigmaHz:Float64Array;gain:number;swaths:{source:SpeedGated;loHz:number;hiHz:number;lo:number;hi:number}[]}
+/** Bytes of the shared render scratch (counted once per process). */
+export function sharedScratchBytes():number{let b=0;for(const a of Object.values(SH))b+=a.byteLength;return b;}
+interface Trk{x:number;y:number;depth:number;course:number;speed:number}
+interface ResContact {contact:Contact;frequencies:Float64Array;powers:Float64Array;sigmaHz:Float64Array;gain:number;trk:Trk;act:boolean;srcDb:number;flowDb:number;flowFrac:number;cav:number;swG:Float64Array;swLo:Float64Array;swHi:Float64Array;swaths:{source:SpeedGated;loHz:number;hiHz:number;lo:number;hi:number}[]}
 export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:unknown}):ResGramSettings{
  const res=s.res??RES_DEFAULT,filter=s.filter??'NB';
  if(!isResLevel(res))throw new Error('Invalid res (integer 1..9)');if(filter!=='NB'&&filter!=='BB')throw new Error("Invalid filter ('NB'|'BB')");
@@ -30,14 +34,10 @@ export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:
  *
  * Capacity defaults to RES_BINS=1024 (vernier path). FULLBAND passes capacity=TILE_BINS and uses
  * selectTile + renderTile so the same line physics covers an arbitrary f0 tile window. */
-/** Late-read margin kept in the snapshot ring (s). */
-export const RING_LATE_MARGIN_S=8;
-interface SpectrumRing{n:number;p:Float32Array;d:Float32Array;t:Float64Array;head:number;count:number;last:number;prefill:boolean}
-/** FULLBAND: max tiles holding span history per stream (visible ±1 = the hot set). LRU eviction
- * disposes the evicted tile's history; a re-prepared tile warms up from real records (no prefill)
- * and emits unfilled rows until its history covers a full span, after which its rows are
- * bit-identical to a never-evicted tile. The ONE place the cap is set. */
-export const FULLBAND_MAX_PREPARED_TILES=3;
+/** Shared scratch (single-threaded engine): every generator renders into these, so per-stream
+ * retained memory is only its band tables, output row and AR(1) state. Read `expected` etc.
+ * immediately after a render. */
+const SH=(()=>{const n=TILE_BINS+1,f=()=>new Float64Array(n);return {P:f(),E:f(),N:f(),S:f(),FP:f(),FE:f(),FN:f(),FS:f(),power:f(),background:f(),clipped:f(),p0:f(),p1:f(),p2:f(),p3:f()};})();
 export class ResLofarGenerator {
   private waterColumn:WaterColumnProfile|undefined;
  /** Current output width (RES_BINS vernier, or TILE_BINS for a full-axis tile). */
@@ -59,9 +59,9 @@ export class ResLofarGenerator {
  private readonly zr:Float64Array;private readonly zi:Float64Array;
  private readonly halfWidth:Int32Array;private readonly clipped:Float64Array;
  private readonly p0:Float64Array;private readonly p1:Float64Array;private readonly p2:Float64Array;private readonly p3:Float64Array;
- /** Span averaging (engine path): per-frame records of the noise-free MODELLED power spectrum on the RES_FRAME_S grid (not waveform samples). */
- private vRing:SpectrumRing={prefill:true,n:0,p:new Float32Array(0),d:new Float32Array(0),t:new Float64Array(0),head:0,count:0,last:-Infinity};
- private readonly tileRings=new Map<number,SpectrumRing>();private readonly tileEnvCache=new Map<number,{hw:Int32Array;amb:Float64Array;shape:Float64Array;abs:Float64Array;coh:Float64Array}>();private fullAxisTiles=0;private fullAxisTileBins=TILE_BINS;
+ /** Engine-wide source-state history (stateHistory.ts); null → snapshot fallback only. */
+ private history:StateHistory|null=null;private buoyRing:Float64Array|null=null;private readonly bt:Trk={x:0,y:0,depth:0,course:0,speed:0};
+ private fullAxisTiles=0;
  /** True when the last row was a real span average; false = explicit snapshot fallback (direct generate()/renderTile without history). */
  lastIntegrated=false;
  /** Count of rows that fell back to an instantaneous snapshot (diagnostic; cut/live paths keep this 0). */
@@ -75,15 +75,15 @@ export class ResLofarGenerator {
   if(!Number.isFinite(fmax)||fmax<=0)throw new Error('Invalid fmax');
   if(!Number.isInteger(capacity)||capacity<RES_BINS||capacity>TILE_BINS)throw new Error(`Invalid capacity (RES_BINS..TILE_BINS)`);
   this.capacity=capacity;this.bins=capacity===TILE_BINS?TILE_BINS:RES_BINS;
-  this.row=new Float32Array(capacity);this.bearingRow=new Float32Array(capacity);this.expected=new Float64Array(capacity);this.ambientBin=new Float64Array(capacity);this.power=new Float64Array(capacity);this.background=new Float64Array(capacity);
-  this.signalEast=new Float64Array(capacity);this.signalNorth=new Float64Array(capacity);this.signalPower=new Float64Array(capacity);
+  this.row=new Float32Array(capacity);this.bearingRow=new Float32Array(capacity);this.expected=SH.P;this.ambientBin=new Float64Array(capacity);this.power=SH.power;this.background=SH.background;
+  this.signalEast=SH.E;this.signalNorth=SH.N;this.signalPower=SH.S;
   this.shape=new Float64Array(capacity);this.absorptionExponent=new Float64Array(capacity);this.coherenceExponent=new Float64Array(capacity);
-  this.zr=new Float64Array(capacity);this.zi=new Float64Array(capacity);this.halfWidth=new Int32Array(capacity);this.clipped=new Float64Array(capacity);
-  this.p0=new Float64Array(capacity+1);this.p1=new Float64Array(capacity+1);this.p2=new Float64Array(capacity+1);this.p3=new Float64Array(capacity+1);
+  this.zr=new Float64Array(capacity);this.zi=new Float64Array(capacity);this.halfWidth=new Int32Array(capacity);this.clipped=SH.clipped;
+  this.p0=SH.p0;this.p1=SH.p1;this.p2=SH.p2;this.p3=SH.p3;
   this.difar=buoy.type==='difar';this.baseSeed=deriveSeed(seed,`res:${buoy.id}`);this.bearingSeed=deriveSeed(seed,`resBearing:${buoy.id}`);this.rng=mulberry32(this.baseSeed);this.bearingRng=mulberry32(this.bearingSeed);this.environment={...environment};
   this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const n=contact.lines.length,frequencies=new Float64Array(n),powers=new Float64Array(n),sigmaHz=new Float64Array(n);fillTonals(contact.params,frequencies,powers,contact.lines);for(let k=0;k<n;k++){const l=contact.lines[k];sigmaHz[k]=l.width==='diffuse'?(l.sigmaBins??2.5)*DIFFUSE_REFERENCE_BIN_HZ:0;}
    const swathSources=[...(contact.params.speedGated??[]).filter(w=>w.kind==='SWATH'),...(contact.params.eventSwaths??[])],swaths=swathSources.map(w=>({source:w,loHz:(w as {loHz:number}).loHz,hiHz:(w as {hiHz:number}).hiHz,lo:0,hi:-1}));
-   return {contact,frequencies,powers,sigmaHz,swaths,gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
+   return {contact,frequencies,powers,sigmaHz,swaths,gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))(),trk:{x:0,y:0,depth:0,course:0,speed:0} as Trk,act:true,srcDb:0,flowDb:NaN,flowFrac:0,cav:0,swG:new Float64Array(swaths.length),swLo:new Float64Array(swaths.length),swHi:new Float64Array(swaths.length)};});
   this.band=resBand(RES_DEFAULT,undefined,fmax);this.configure(normalizeResSettings(settings));
  }
  get liveBins():number{return this.band.liveBins;}
@@ -92,40 +92,26 @@ export class ResLofarGenerator {
  /** Config-time: change RES/filter/vernier. Resets the row counter and AR(1) state. Vernier window is always RES_BINS. */
  configure(settings:ResGramSettings):void{
   const s=normalizeResSettings(settings);this.settings=s;this.params=resParams(s.res);this.band=resBand(s.res,s.vernierHz,this.fmax);this.bins=RES_BINS;this.tileIndex=0;this.rowIndex=0;this.tileAr.clear();this.bias=tpswBias(this.params.edof);
-  this.applyWindow();this.allocRing();
+  this.applyWindow();
  }
  /** Preallocate per-tile AR(1) buffers so renderTile stays allocation-free after setup. */
- /** FULLBAND: make visible±1 the most-recently-used prepared tiles; evict LRU beyond the cap
-  * (history disposed). `initial` = stream start (history pre-filled with the start state). */
- touchTiles(visibleTileIndex:number,initial=false):void{
-  if(this.fullAxisTiles<=0)return;const want=priorityTileOrder(visibleTileIndex,this.fullAxisTiles).slice(0,FULLBAND_MAX_PREPARED_TILES);
-  const keep=this.tileIndex,kb=this.bins;
-  for(let q=want.length-1;q>=0;q--){const i=want[q]!,r=this.tileRings.get(i);if(r){this.tileRings.delete(i);this.tileRings.set(i,r);continue;}
-   this.selectTile(i,this.fullAxisTileBins);this.tileRings.set(i,this.newRing(this.band.liveBins,initial,this.tileRingFrames()));}
-  while(this.tileRings.size>FULLBAND_MAX_PREPARED_TILES){const oldest=this.tileRings.keys().next().value as number;this.tileRings.delete(oldest);}
-  if(this.tileRings.size&&kb>0)this.selectTile(keep,kb);
- }
- /** True when tile history covers the whole span ending at tEnd (row may be rendered). */
- tileReady(tileIndex:number,tEnd:number):boolean{const r=this.tileRings.get(tileIndex);if(!r||r.count===0)return false;const f=RES_FRAME_S,newest=r.t[(r.head-1+r.n)%r.n],oldest=r.t[(r.head-r.count+r.n)%r.n];return newest>=tEnd-1e-6&&oldest-f<=tEnd-this.spanS+1e-6;}
- /** Prepared tile count and total history bytes for this generator (vernier + tiles). */
- historyStats():{tiles:number;bytes:number}{let b=this.vRing.p.byteLength+this.vRing.d.byteLength+this.vRing.t.byteLength;for(const r of this.tileRings.values())b+=r.p.byteLength+r.d.byteLength+r.t.byteLength;return {tiles:this.tileRings.size,bytes:b};}
- prepareFullAxis(tileCount:number,visibleTileIndex=0):void{
-  // FULLBAND keeps history per tile only; release the unused vernier ring.
-  this.vRing={prefill:true,n:0,p:new Float32Array(0),d:new Float32Array(0),t:new Float64Array(0),head:0,count:0,last:-Infinity};
-  this.fullAxisTiles=tileCount;this.touchTiles(visibleTileIndex,true);
+ /** Retained bytes owned by this generator (band tables, output rows, AR(1) state). Shared scratch and
+  * the engine StateHistory are counted once by the engine. */
+ retainedBytes():number{let b=this.row.byteLength+this.bearingRow.byteLength+this.ambientBin.byteLength+this.shape.byteLength+this.absorptionExponent.byteLength+this.coherenceExponent.byteLength+this.halfWidth.byteLength+this.zr.byteLength+this.zi.byteLength;for(const a of this.tileAr.values())b+=a.zr.byteLength+a.zi.byteLength;return b;}
+ /** FULLBAND: AR(1) state per tile only when rows are single FFTs (K=1, RES1–3). No tile history. */
+ prepareFullAxis(tileCount:number,_visibleTileIndex=0):void{
+  this.fullAxisTiles=tileCount;if(this.params.averages!==1)return;
   for(let i=0;i<tileCount;i++)if(!this.tileAr.has(i))this.tileAr.set(i,{zr:new Float64Array(this.capacity),zi:new Float64Array(this.capacity),lastRow:-1});
  }
+ /** Attach the engine-wide state history (same contact list/order as this generator). */
+ setHistory(h:StateHistory|null):void{if(h&&h.contacts.length!==this.contacts.length)throw new Error('History contact list mismatch');this.history=h;this.buoyRing=h?h.buoyRing(this.buoy):null;}
  /** FULLBAND: point the live window at tile `tileIndex` without resetting the row counter. */
  selectTile(tileIndex:number,tileBins:number=TILE_BINS):TileBand{
   if(this.capacity<tileBins)throw new Error('Generator capacity too small for tileBins');
   const t=tileBand(this.settings.res,tileIndex,this.fmax,tileBins);
   this.tileIndex=t.tileIndex;this.bins=t.tileBins;
   this.band={f0:t.f0,fcHz:t.f0+(t.tileBins/2)*t.fBin,bandLimited:t.bandLimited,liveBins:t.liveBins,slid:false};
-  // Per-tile cache of the environment-dependent bin arrays (tiles are re-selected every frame for history).
-  const key=t.tileIndex*8192+t.tileBins,hit=this.tileEnvCache.get(key);
-  if(hit){this.halfWidth.set(hit.hw);this.ambientBin.set(hit.amb);this.shape.set(hit.shape);this.absorptionExponent.set(hit.abs);this.coherenceExponent.set(hit.coh);this.applySwathWindow();return t;}
-  this.applyWindow();
-  const W=this.bins;this.tileEnvCache.set(key,{hw:this.halfWidth.slice(0,W),amb:this.ambientBin.slice(0,W),shape:this.shape.slice(0,W),abs:this.absorptionExponent.slice(0,W),coh:this.coherenceExponent.slice(0,W)});return t;
+  this.applyWindow();return t;
  }
  private applyWindow():void{
   const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins,W=this.bins,k=(2**(BB_SMOOTH_OCTAVE/2)-2**(-BB_SMOOTH_OCTAVE/2))/2;
@@ -135,7 +121,7 @@ export class ResLofarGenerator {
  }
  private applySwathWindow():void{const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins;for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}}
  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
- setEnvironment(e:Environment):void{this.environment={...e};this.tileEnvCache.clear();this.computeEnvironment();}
+ setEnvironment(e:Environment):void{this.environment={...e};this.computeEnvironment();}
  private computeEnvironment():void{
   const e=this.environment;this.sigma=seaSurfaceSigma(e.seaState);const df=this.params.fBin,f0=this.band.f0,enbw=this.params.enbwHz,W=this.bins;
   for(let i=0;i<W;i++){const f=Math.max(df/2,f0+i*df),k=2*Math.PI*f/e.soundSpeed;this.coherenceExponent[i]=-2*k*k*this.sigma*this.sigma;this.absorptionExponent[i]=-thorp(f)*(Math.LN10/10);this.ambientBin[i]=i<this.band.liveBins?dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity))*enbw:NaN;this.shape[i]=1/(1+(f/400)**2);}
@@ -144,40 +130,12 @@ export class ResLofarGenerator {
   const rowKey=this.rowIndex++;
   return this.render(rowKey,out,offset,false);
  }
- /** Engine hook: record the instantaneous noise-free modelled power spectrum at every RES_FRAME_S
-  * grid point up to t, for the vernier window and (FULLBAND) every prepared tile. This is
-  * time-averaging of modelled power spectra, NOT a waveform FFT: rows later average these records
-  * with Welch-style Hann² weights — an approximation of the STFT temporal response.
-  * Startup: the first record pre-fills the whole history with the state at that instant (the source
-  * is treated as stationary before the stream existed), so early rows are full-span and deterministic. */
- sample(t:number):void{
-  if(this.fullAxisTiles>0){const keep=this.tileIndex,keepBins=this.bins;for(const [k,r] of this.tileRings){this.selectTile(k,this.fullAxisTileBins);this.sampleInto(r,t);}this.selectTile(keep,keepBins);return;}
-  this.sampleInto(this.vRing,t);
- }
- private sampleInto(r:SpectrumRing,t:number):void{
-  const f=RES_FRAME_S,L=this.band.liveBins;if(r.n===0)return;
-  const cold=!Number.isFinite(r.last);let tk=cold?Math.floor(t/f+1e-9)*f:r.last+f;if(tk>t+1e-9)return;
-  this.computeExpected();const P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower,difar=this.difar;
-  const put=(tt:number)=>{const h=r.head,o=h*L;for(let i=0;i<L;i++)r.p[o+i]=P[i];if(difar){const d=3*o;for(let i=0;i<L;i++){r.d[d+3*i]=sE[i];r.d[d+3*i+1]=sN[i];r.d[d+3*i+2]=sP[i];}}r.t[h]=tt;r.head=(h+1)%r.n;r.count=Math.min(r.count+1,r.n);r.last=tt;};
-  if(cold&&r.prefill)for(let j=r.n-1;j>0;j--)put(tk-j*f);
-  for(;tk<=t+1e-9;tk+=f)put(tk);
- }
  /** Engine path: render the row whose analysis span ends at tEnd (simT stamp = END of span). */
  generateAt(tEnd:number,out:Float32Array=this.row,offset=0):Float32Array{
   const rowKey=this.rowIndex++;return this.render(rowKey,out,offset,false,tEnd);
  }
  /** Analysis span (s) of one row: K Hann segments of length T, hop T/4 → T+(K−1)·T/4. */
  get spanS():number{const p=this.params;return p.integrationS+(p.averages-1)*p.hopS;}
- /** Bounded history length (frames): span + late-read margin. */
- private ringFrames():number{return Math.ceil((this.spanS+RING_LATE_MARGIN_S)/RES_FRAME_S)+2;}
- private newRing(L:number,prefill=true,frames=this.ringFrames()):SpectrumRing{const n=frames;return {prefill,n,p:new Float32Array(n*L),d:this.difar?new Float32Array(3*n*L):new Float32Array(0),t:new Float64Array(n),head:0,count:0,last:-Infinity};}
- /** Tile history: span + one row period + 1 s (hot tiles render on their row tick; backfill tiles beyond the cap are not rendered). */
- private tileRingFrames():number{return Math.ceil((this.spanS+this.params.rowPeriodS+1)/RES_FRAME_S)+2;}
- private allocRing():void{
-  const L=this.band.liveBins,n=this.ringFrames(),r=this.vRing;
-  if(r.n!==n||r.p.length!==n*L)this.vRing=this.newRing(L);else{r.head=0;r.count=0;r.last=-Infinity;}
-  this.tileRings.clear();this.tileEnvCache.clear();this.fullAxisTiles=0;
- }
  /** Welch power weighting of a record interval: Σ_m Hann²(segment m) averaged over 8 sub-points
   * of the frame (ts−f, ts]. Segment m spans [tEnd−m·hop−T, tEnd−m·hop]. */
  private frameWeight(ts:number,tEnd:number):number{
@@ -185,17 +143,31 @@ export class ResLofarGenerator {
   for(let q=0;q<8;q++){const t=ts-f+(q+.5)*f/8;for(let m=0;m<K;m++){const x=(t-(tEnd-m*hop-T))/T;if(x>0&&x<1){const s=Math.sin(Math.PI*x);w+=s*s*s*s;}}}
   return w;
  }
- /** Replace expected/signal* with the Welch-weighted average over the row's span. Returns false
-  * (snapshot fallback, integrated:false) only when the history does not cover the whole span. */
- private integrate(r:SpectrumRing,tEnd:number):boolean{
-  const L=this.band.liveBins,P=this.expected,difar=this.difar,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower,f=RES_FRAME_S;
-  if(r.count===0)return false;const newest=r.t[(r.head-1+r.n)%r.n],oldest=r.t[(r.head-r.count+r.n)%r.n];
-  if(newest<tEnd-1e-6||oldest-f>tEnd-this.spanS+1e-6)return false;
-  let wsum=0;for(let i=0;i<L;i++)P[i]=0;if(difar){sE.fill(0);sN.fill(0);sP.fill(0);}
-  for(let c=0;c<r.count;c++){const h=(r.head-1-c+r.n)%r.n,w=this.frameWeight(r.t[h],tEnd);if(!(w>0))continue;const o=h*L;
-   for(let i=0;i<L;i++)P[i]+=w*r.p[o+i];if(difar){const d=3*o;for(let i=0;i<L;i++){sE[i]+=w*r.d[d+3*i];sN[i]+=w*r.d[d+3*i+1];sP[i]+=w*r.d[d+3*i+2];}}wsum+=w;}
-  const k=1/wsum;for(let i=0;i<L;i++)P[i]*=k;if(difar)for(let i=0;i<L;i++){sE[i]*=k;sN[i]*=k;sP[i]*=k;}
+ /** Welch-weighted average of the modelled spectrum re-evaluated at every recorded frame in the
+  * span → expected/signal*. False (snapshot fallback) when history does not cover the span. */
+ private integrateHistory(tEnd:number):boolean{
+  const h=this.history;if(!h||h.count===0)return false;const f=RES_FRAME_S,span=this.spanS,newest=h.t[h.slot(0)]!,oldest=h.t[h.slot(h.count-1)]!;
+  if(newest<tEnd-1e-6||oldest-f>tEnd-span+1e-6)return false;
+  const L=this.band.liveBins,P=SH.P,E=SH.E,N=SH.N,S=SH.S,FP=SH.FP,FE=SH.FE,FN=SH.FN,FS=SH.FS,difar=this.difar;let wsum=0;
+  P.fill(0,0,L);if(difar){E.fill(0,0,L);N.fill(0,0,L);S.fill(0,0,L);}
+  for(let c=0;c<h.count;c++){const sl=h.slot(c),ts=h.t[sl]!;if(ts<=tEnd-span-1e-9)break;if(ts>tEnd+f)continue;const w=this.frameWeight(ts,tEnd);if(!(w>0))continue;
+   this.loadFrame(sl);this.core(FP,FE,FN,FS);for(let i=0;i<L;i++)P[i]+=w*FP[i]!;if(difar)for(let i=0;i<L;i++){E[i]+=w*FE[i]!;N[i]+=w*FN[i]!;S[i]+=w*FS[i]!;}wsum+=w;}
+  if(!(wsum>0))return false;const k=1/wsum;for(let i=0;i<L;i++)P[i]*=k;if(difar)for(let i=0;i<L;i++){E[i]*=k;N[i]*=k;S[i]*=k;}
   return true;
+ }
+ private loadLive():void{
+  const b=this.buoy,bt=this.bt;bt.x=b.x;bt.y=b.y;bt.depth=b.depth;bt.course=b.course;bt.speed=b.speed;
+  for(const it of this.contacts){const c=it.contact,p=c.params,t=it.trk;it.act=c.active!==false;t.x=c.x;t.y=c.y;t.depth=c.depth;t.course=c.course;t.speed=c.speed;
+   if(!it.act)continue;fillTonals(p,it.frequencies,it.powers,c.lines);it.srcDb=sourceLevel(p,c.speed,c.depth);it.flowDb=p.flowNoiseDb===undefined?NaN:p.flowNoiseDb;it.flowFrac=p.flowRadiatedFraction??0;it.cav=p.cavitationPower??0;
+   for(let s=0;s<it.swaths.length;s++){const w=it.swaths[s]!.source as {gain:number;loHz:number;hiHz:number};it.swG[s]=w.gain;it.swLo[s]=w.loHz;it.swHi[s]=w.hiHz;}}
+ }
+ private loadFrame(sl:number):void{
+  const h=this.history!,d=h.data,base=sl*h.stride,br=this.buoyRing!,bo=sl*StateHistory.B_STRIDE,bt=this.bt;
+  bt.x=br[bo]!;bt.y=br[bo+1]!;bt.depth=br[bo+2]!;bt.course=br[bo+3]!;bt.speed=br[bo+4]!;
+  for(let j=0;j<this.contacts.length;j++){const it=this.contacts[j]!,L=h.layout[j]!,o=base+L.offset,t=it.trk;it.act=d[o]===1;t.x=d[o+1]!;t.y=d[o+2]!;t.depth=d[o+3]!;t.course=d[o+4]!;t.speed=d[o+5]!;
+   it.srcDb=d[o+6]!;it.flowDb=d[o+7]!;it.flowFrac=d[o+8]!;it.cav=d[o+9]!;const n=Math.min(L.lines,it.frequencies.length);
+   for(let k=0;k<n;k++){it.frequencies[k]=d[o+StateHistory.C_HEAD+k]!;it.powers[k]=d[o+StateHistory.C_HEAD+L.lines+k]!;}
+   const so=o+StateHistory.C_HEAD+2*L.lines,m=Math.min(L.swaths,it.swaths.length);for(let s=0;s<m;s++){it.swG[s]=d[so+3*s]!;it.swLo[s]=d[so+3*s+1]!;it.swHi[s]=d[so+3*s+2]!;}}
  }
  /** Engine FULLBAND hook: render tile `tileIndex` for the row ending at tEnd. */
  renderTileAt(tileIndex:number,rowKey:number,tEnd:number,out:Float32Array=this.row,offset=0,tileBins:number=TILE_BINS):Float32Array{
@@ -207,27 +179,28 @@ export class ResLofarGenerator {
   return this.render(rowKey,out,offset,true);
  }
  /** Instantaneous expected spectrum (ambient + contacts) at the current scenario state → expected/signal*. */
- private computeExpected():void{
-  const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
-  for(let i=0;i<L;i++)P[i]=this.ambientBin[i];if(difar){sE.fill(0);sN.fill(0);sP.fill(0);}
+ private computeExpected():void{this.loadLive();this.core(SH.P,SH.E,SH.N,SH.S);}
+ /** Modelled spectrum for the loaded state (live or a history frame) into P/sE/sN/sP. */
+ private core(P:Float64Array,sE:Float64Array,sN:Float64Array,sP:Float64Array):void{
+  const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,bt=this.bt;
+  for(let i=0;i<L;i++)P[i]=this.ambientBin[i];if(difar){sE.fill(0,0,L);sN.fill(0,0,L);sP.fill(0,0,L);}
   for(let j=0;j<this.contacts.length;j++){
-   const item=this.contacts[j],c=item.contact;if(c.active===false)continue;const g=geometry(c,this.buoy,this.g);
-   fillTonals(c.params,item.frequencies,item.powers,c.lines);
+   const item=this.contacts[j]!,c=item.trk;if(!item.act)continue;const g=geometry(c,bt,this.g);
    const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
    const prop=e.propagation,czOn=prop?.czEnabled===true;
-   const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,this.buoy.depth):null;
+   const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
    const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
-   const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
-   const flow=c.params.flowNoiseDb===undefined?0:dbToPower(c.params.flowNoiseDb)*(g.range<=1?1:spread*(c.params.flowRadiatedFraction??0));
-   const broadband=level*(.0001+(c.params.cavitationPower??0)),imageRange=Math.hypot(g.horizontal,c.depth+this.buoy.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+this.buoy.depth)/imageRange)**2:0;
-   const delta=pathDifference(g.horizontal,c.depth,this.buoy.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const flow=Number.isNaN(item.flowDb)?0:dbToPower(item.flowDb)*(g.range<=1?1:spread*item.flowFrac);
+   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,c.depth+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+bt.depth)/imageRange)**2:0;
+   const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
    const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
    for(let i=0;i<L;i++){const coherent=q*(this.sigma===0?1:Math.exp(this.coherenceExponent[i]*grazing2)),gain=Math.max(0,1+coherent*coherent-2*coherent*cp),contrib=(broadband*gain+flow)*this.shape[i]*Math.exp(this.absorptionExponent[i]*km)*enbw;P[i]+=contrib;if(difar){sP[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;}
-   for(let s=0;s<item.swaths.length;s++){const w=item.swaths[s];if(w.source.gain>0)for(let i=w.lo;i<=w.hi;i++){const contrib=level*.0003*w.source.gain*Math.exp(this.absorptionExponent[i]*km)*enbw;P[i]+=contrib;if(difar){sP[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}
+   for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df));for(let i=lo;i<=hi;i++){const contrib=level*.0003*gs*Math.exp(this.absorptionExponent[i]*km)*enbw;P[i]+=contrib;if(difar){sP[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}
    for(let k=0;k<item.frequencies.length;k++){
     const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
     if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
-    const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,this.buoy.depth,e.soundSpeed,this.sigma);
+    const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,bt.depth,e.soundSpeed,this.sigma);
     if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
    }
   }
@@ -237,8 +210,7 @@ export class ResLofarGenerator {
   if(!Number.isInteger(offset)||offset<0||out.length<offset+W)throw new Error('Row size mismatch');
   this.rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
   this.computeExpected();
-  const ring=perTileAr?this.tileRings.get(this.tileIndex):this.vRing;
-  this.lastIntegrated=tEnd!==undefined&&ring!==undefined&&this.integrate(ring,tEnd);if(!this.lastIntegrated)this.snapshotFallbacks++;
+  this.lastIntegrated=tEnd!==undefined&&this.integrateHistory(tEnd);if(!this.lastIntegrated)this.snapshotFallbacks++;
   const enbw=this.params.enbwHz,L=this.band.liveBins,difar=this.difar,P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
   // Noise: K=1 → exact AR(1) on complex amplitudes (correlated rows); K>1 → unit-mean χ²_ν gamma.
   const pw=this.power,rng=this.rng;

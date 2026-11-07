@@ -30,22 +30,38 @@ Each segment is Hann-tapered, so in power it weights time as Hann². The summed 
 
 ## What the integration is (and is not)
 
-This is **time-averaging of modelled power spectra** with Welch-style Hann² weights (Welch 1967; Harris 1978). It is **not** a waveform FFT. No time series is synthesised. The engine records each stream's noise-free modelled spectrum (ambient + contacts, plus DIFAR components) every 0.25 s. Each row averages those records over its span, and noise (χ²_ν / AR(1)) is then drawn on the averaged spectrum exactly as before. That makes it an **approximation** of the STFT temporal response: right for onset/fade timing and sharpness, but it does not model phase effects within a window. Frequencies, bins and statistics are unchanged, and the output is deterministic.
+This is **time-averaging of modelled power spectra** with Welch-style Hann² weights (Welch 1967; Harris 1978). It is **not** a waveform FFT. No time series is synthesised.
 
-FULLBAND tiles use the same averaging, with each tile's RES T and K. Every prepared tile records every frame, regardless of which tile is visible, so panning does not change timing or sharpness. FULLBAND defaults to **RES5** (Δf 0.5 Hz, T 2 s, K 4, span 3.5 s), the same as the LF band stream. The other bands' streams differ: ELF RES2 / 16 s, VLF RES4 / 5 s, MF RES7 / 2.375 s. Pick a FULLBAND RES to match a band if needed.
+Every 0.25 s the engine records one **source-state** frame, shared by all streams (`src/stateHistory.ts`). Per contact it records activity, position and velocity, source level, flow and cavitation, tonal frequencies and powers, and swath gains and edges. Per buoy it records kinematics. A row re-evaluates the modelled spectrum (ambient + contacts, plus DIFAR components) at each recorded frame in its span and averages them. Noise (χ²_ν / AR(1)) is then drawn on the averaged spectrum exactly as before.
+
+That makes it an **approximation** of the STFT temporal response: right for onset/fade timing and sharpness, but it does not model phase effects within a window. Frequencies, bins and statistics are unchanged, and the output is deterministic.
+
+FULLBAND tiles use the same averaging, with each tile's RES T and K. Any tile can be rendered from the shared state, so there is **no tile cap, no eviction and no warm-up**. Panning does not change timing or sharpness, and a tile you pan back to is filled immediately and bit-identical to one that was never left. FULLBAND defaults to **RES5** (span 3.5 s, the same as LF). ELF is RES2 / 16 s, VLF RES4 / 5 s, MF RES7 / 2.375 s.
 
 ## Startup, seek, history
 
-- **Startup:** when a stream starts, its history is pre-filled with the spectrum at the start instant. The source is treated as stationary before the stream existed. So the first rows are full-span averages, not a renormalised partial span, and they are deterministic.
+- **Startup:** history starts when the first RES stream opens, pre-filled with the state at that instant (the source is treated as stationary before it). Streams opened later see the real past state, up to the window length. Early rows are full-span and deterministic.
 - **Seek/replay:** seek replays from t=0 on the 0.25 s grid. Rows match continuous play bit-for-bit for frame-aligned seek targets. For an off-grid target (e.g. 17.6 s) the split kinematic step rounds differently in floating point; the worst measured difference is 1.2e-5 dB (one float32 ulp). The same split happens in continuous play with off-grid tick sizes.
 - **Paused scroll-back:** rows that have already been emitted are FE-owned copies, and later engine history never touches them.
-- **Bounded:** each vernier stream keeps ceil((span + 8 s)/0.25) + 2 frames. Each prepared FULLBAND tile keeps ceil((span + row period + 1 s)/0.25) + 2 frames.
-- **FULLBAND tile cap:** at most `FULLBAND_MAX_PREPARED_TILES` = 3 tiles per stream (visible ±1, the hot set) hold history. This one constant in `src/resGram.ts` sets the cap. When the view pans, the least recently used tile is evicted and its history is freed. Tiles outside the prepared set emit **unfilled** rows (`filled:false`), never a snapshot.
-  - A re-prepared tile is **not** pre-filled. History cannot be rewound without replaying the whole scenario, so the tile warms up from real records and stays unfilled for one span.
-  - After that, its rows are bit-identical to a tile that was never evicted. That includes noise: the AR(1) chain is fast-forwarded through the skipped rows with the same per-row seeded draws.
-  - Start-of-stream pre-fill (stationary start state) applies only to tiles prepared when the stream starts.
-  - Measured: 32 buoys (the supported field size, docs/data-contract.md) × (8 band streams + 1 FULLBAND panned every 3 s). Over 900 s: 96 prepared tiles (3 per FULLBAND stream) and 787.6 MB of history in total (24.9 MB per buoy with RES2 FULLBAND, DIFAR), flat for the whole run with 0 snapshot fallbacks. The total is bounded but large for a browser; see the open item in the report.
-- **Fallback:** calling `generate()`/`renderTile()` directly with no recorded history renders an instantaneous snapshot. It sets `lastIntegrated=false` and increments `snapshotFallbacks`. Tests assert that every cut stream and every worker live/FULLBAND stream has 0 fallbacks.
+- **Bounded:** one engine-wide ring of `HISTORY_FRAMES` = ceil((32 s longest span + 8 s late margin)/0.25) + 2 = 162 frames. Its size depends on the number of contacts and lines, not on the number of streams or tiles. Render scratch is shared by all generators. Each stream retains only its band tables, its output and bearing row, and AR(1) state (FULLBAND RES1–3 only, per tile).
+- **Fallback:** calling `generate()`/`renderTile()` directly with no history renders an instantaneous snapshot, sets `lastIntegrated=false` and increments `snapshotFallbacks`. Tests assert that every cut stream and every worker live/FULLBAND stream has 0 fallbacks.
+
+## Memory (acoustics side only; FE row history is separate)
+
+`engine.retainedBytes()` reports `{history, scratch, streams, total, perStream}`. Measured at 32 buoys (the supported field size, docs/data-contract.md) × (16 band streams + 1 FULLBAND panned every 3 s): over 900 s the total was flat at every 30 s sample, with 0 fallbacks and 0 unfilled tiles:
+
+- **FULLBAND RES2 (8 tiles, panned):** 44.4 MB total = state history 3.56 MB + shared scratch 0.49 MB + streams 40.4 MB. Per stream that is 60 KB for a band stream and 752 KB for a FULLBAND stream (mostly per-tile AR(1) state).
+- **FULLBAND RES5 (default):** 27.6 MB total.
+
+The trade-off is compute: rows re-evaluate the spectrum for every frame in their span. With all 8 RES2 tiles backfilled at 32 buoys, 900 s of sim took 556 s in Node. `test/fullbandTileCap.test.ts` asserts that the total is flat and under 50 MB.
+
+**FE budgeting (bytes per emitted row, data + bearing, Float32):**
+
+| Stream | Bins | Bytes/row | Row period | Rows per 15 min | MB per 15 min |
+|---|---|---|---|---|---|
+| ELF NB/BB | 1024 | 8 192 | 4 s | 225 | 1.84 |
+| VLF / LF / MF NB/BB | 1024 | 8 192 | 2 s | 450 | 3.69 |
+| FULLBAND tile (RES5) | 4096 | 32 768 + 13 meta | 2 s per tile-row | 450 × tiles | 14.7 per tile |
 
 ## Measured edges (test/bandEdges.test.ts)
 

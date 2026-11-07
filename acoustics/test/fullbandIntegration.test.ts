@@ -62,9 +62,9 @@ describe('startup, seek/replay, bounded history',()=>{
   for(let i=0;i<40;i++)rt.tick(.25);const snap=messages.filter(m=>m.type==='gramRows').map(m=>Float32Array.from((m as GramRows).data));const before=messages.filter(m=>m.type==='gramRows') as GramRows[];
   for(let i=0;i<40;i++)rt.tick(.25);before.forEach((m,i)=>expect(Buffer.from(m.data.buffer).equals(Buffer.from(snap[i]!.buffer))).toBe(true));
  });
- it('history buffers are bounded: frames = ceil((span+8 s)/0.25)+2, independent of run length',()=>{
-  const e=new AcousticEngine(scen(),91) as any;const c=e.subscribe({channel:1,kind:'lofar',res:2,filter:'NB',vernierHz:32}),f=e.subscribe({channel:1,kind:'lofar',res:5,filter:'NB',fullAxis:true});
-  const g=e.subscriptions.get(c.streamId).res,h=e.subscriptions.get(f.streamId).res;const n0=g.vRing.p.length,t0=[...h.tileRings.values()].map((r:any)=>r.p.length);
-  for(let i=0;i<2000;i++)e.advance(.25);expect(g.vRing.n).toBe(Math.ceil((16+8)/.25)+2);expect(g.vRing.p.length).toBe(n0);expect([...h.tileRings.values()].map((r:any)=>r.p.length)).toEqual(t0);
+ it('history is bounded: one engine-wide state ring of HISTORY_FRAMES frames, independent of run length',()=>{
+  const e=new AcousticEngine(scen(),91) as any;e.subscribe({channel:1,kind:'lofar',res:2,filter:'NB',vernierHz:32});e.subscribe({channel:1,kind:'lofar',res:5,filter:'NB',fullAxis:true});
+  const b0=e.retainedBytes().total;for(let i=0;i<2000;i++)e.advance(.25);expect(e.history.frames).toBe(Math.ceil((32+8)/.25)+2);expect(e.retainedBytes().total).toBe(b0);
  });
+
 });

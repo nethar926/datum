@@ -52,3 +52,4 @@ export * from './streamSet.js';
 export * from './spawnGeometry.js';
 export * from './stateBroadband.js';
 export * from './sources.js';
+export * from './stateHistory.js';

@@ -136,7 +136,7 @@ export const MODEL_ASSUMPTIONS:readonly string[]=Object.freeze([
   'Convergence-zone range is a parameterized Urick-band approximation from SSP critical depth + depth excess, not a ray solution.',
   'Lloyd mirror uses a pressure-release image source; coherent nulls are minima under unequal spreading.',
   'Ambient noise is a smooth Wenz/Knudsen-style fit, not site-calibrated.',
-  'LOFAR rows time-average modelled power spectra (recorded every 0.25 s) with Welch/Hann² weights over each RES span; this approximates the STFT temporal response and is not a waveform FFT. History before a stream starts is assumed stationary at the start state.',
+  'LOFAR rows time-average modelled power spectra, re-evaluated from source state recorded every 0.25 s, with Welch/Hann² weights over each RES span; this approximates the STFT temporal response and is not a waveform FFT. State before the first RES stream opens is assumed stationary.',
   'Surface and submarine event rates are teaching policies, not doctrine.',
 ]);
 
