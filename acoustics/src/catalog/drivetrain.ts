@@ -24,13 +24,17 @@ export type SpeedWindowSpec={name:string;kind:'SRC';speedKts:[number,number];hz:
 export type SpeedGated={name:string;kind:'SRC';hz:number;active:boolean;gain:number}|{name:string;kind:'SWATH';loHz:number;hiHz:number;active:boolean;gain:number};
 export interface PropellerSpec {shafts:number;blades:number;type:'flat'|'skewed'|'cpp'}
 export interface HydpSpec {nominalHz:number;pairSpacingHz:number;durationS:number}
-export interface VesselPlantSpec {propeller?:PropellerSpec;hydp?:HydpSpec;tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
+export interface VesselPlantSpec {/** Geared diesel with a clutch-shift onto its propulsion motor: an out-of-band coupled command auto-declutches. Unflagged coupled plants reject such commands. */declutchToMotor?:boolean;propeller?:PropellerSpec;hydp?:HydpSpec;tpk?:number;tpkMinKts?:number;speedWindows?:SpeedWindowSpec[];emergencyPropulsor?:EmergencyPropulsorSpec;motorSlots?:number;aip?:AipSpec;maxPsrpm:number;shafts:number;shaftMismatchPct:[number,number];machinery:Plant;edas:EdaSpec[];aux:AuxSpec[]}
 export interface PropulsionTruth {
  kind:Plant['kind']|'unspecified';tpk:number;tpkValid:boolean;tpkMinKts?:number;propulsor:{shafts:number;blades:number;bladeType:PropellerSpec['type'];brHz:number};emergencyPropulsor?:{active:boolean;rpm:number;hz:number;blades:number};mode:OperatingMode;drivetrainCode:DrivetrainCode|'unspecified';drivetrainLabel:string;aip?:{kind:AipSpec['kind'];active:boolean};ratio:number;ratioLabel:string;
  /** Speed window where PSR×R:R sits inside every engine's own erpmMin–erpmMax (coupled D/D & GR). */
  coupledSpeedKn?:{min:number;max:number};
  /** True when a clutched mode was requested but PSR×R:R left the engine band (motor declutch or invalid). */
  declutched?:boolean;
+ /** Coupled command check: 'rejected' when PSR×R:R would leave the engine band on a plant without declutchToMotor (previous valid command held). */
+ commandStatus?:'ok'|'rejected';
+ /** True when an engine-ramp knee was bounded so coupled ERPM stays inside the band (unflagged plants). */
+ kneeLimited?:boolean;
  engines:{id:string;stroke:2|4;cylinders:number;erpm:number;running:boolean;csrHz:number;cfrHz:number;efrHz:number}[];
  stages:{pinionTeeth:number;bullTeeth:number;ratio:number;meshHz:number}[];
  shafts:{rpm:number;hz:number;coupled:boolean}[];motor?:{rpm:number;shaftHz:number;slots:number;msrHz:number};generators?:{rpm:number;hz:number}[];
@@ -57,6 +61,7 @@ export function validateVesselPlant(s:VesselPlantSpec,electricalHz:50|60):void {
  if(!s||!finite(s.maxPsrpm,20,1200)||!Number.isInteger(s.shafts)||!finite(s.shafts,1,3)||!Array.isArray(s.shaftMismatchPct)||s.shaftMismatchPct.length!==2||!finite(s.shaftMismatchPct[0],0,2)||!finite(s.shaftMismatchPct[1],s.shaftMismatchPct[0],2))throw new Error('Invalid vessel shaft envelope');
  if(s.aip&&(!['stirling','fuelcell','closed-cycle'].includes(s.aip.kind)||!finite(s.aip.powerKw,1,1000)||!finite(s.aip.maxSpeedKts,1,8)||!finite(s.aip.enduranceDays,.1,90)))throw new Error('Invalid AIP backup');
  if(s.speedWindows)for(const w of s.speedWindows)if(!w||!w.name||!Array.isArray(w.speedKts)||w.speedKts.length!==2||!finite(w.speedKts[0],0,45)||!finite(w.speedKts[1],w.speedKts[0],45)||(w.kind==='SRC'?(!finite(w.hz,.01,1e5)||(w.hzPerKnot!==undefined&&!finite(w.hzPerKnot,.01,100))):w.kind!=='SWATH'||!finite(w.loHz,0,1e5)||!finite(w.hiHz,w.loHz+1e-6,1e5)))throw new Error('Invalid speed window');
+ if(s.declutchToMotor&&(s.machinery?.kind!=='dieselGR'||!s.machinery.motor))throw new Error('declutchToMotor needs a geared diesel with a propulsion motor');
  const p=s.machinery;if(!p||!['dieselDirect','dieselGR','dieselElectric','nuclearGR','nuclearElectric'].includes(p.kind))throw new Error('Invalid plant');let rated=0;
  if(p.kind==='dieselDirect'||p.kind==='dieselGR'||p.kind==='dieselElectric'){
   if(!Array.isArray(p.engines)||!p.engines.length||p.engines.length>6||new Set(p.engines.map(e=>e?.id)).size!==p.engines.length)throw new Error('Invalid engine list');

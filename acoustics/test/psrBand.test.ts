@@ -126,7 +126,13 @@ describe('ERPM bands and coupling (Wilson / Lead)',()=>{
       expect(e.erpm).toBeLessThanOrEqual(sheet.erpm.obsMax+1e-6);
      }
     }else if(frac>0&&(speed<win.min||speed>win.max)){
-     // Auto-declutch onto motor: engine lines drop, shaft still turns (CPP may floor rpm via tpkMinKts).
+     if(!c.declutchToMotor){
+      // Unflagged (direct drive / fixed-coupled GR): command rejected, previous valid command held in band.
+      expect(t.commandStatus).toBe('rejected');expect(t.declutched).toBeFalsy();expect(t.shafts[0].coupled).toBe(true);
+      for(const e of t.engines.filter(e=>e.running)){const sheet=p.engines.find(x=>x.id===e.id)!;expect(e.erpm).toBeGreaterThanOrEqual(sheet.erpm.obsMin-1e-6);expect(e.erpm).toBeLessThanOrEqual(sheet.erpm.obsMax+1e-6);}
+      continue;
+     }
+     // Flagged declutchToMotor: engine lines drop, shaft still turns (CPP may floor rpm via tpkMinKts).
      expect(t.declutched).toBe(true);expect(t.shafts[0].coupled).toBe(false);
      expect(t.engines.every(e=>!e.running&&e.erpm===0)).toBe(true);
      expect(t.shafts[0].rpm).toBeGreaterThan(0);expect(t.motor!.rpm).toBeGreaterThan(0);

@@ -1,7 +1,8 @@
+import {commandSpeedWindowKn} from '../catalog/plantModel.js';
 import {chooseOperatingState} from '../catalog/operations.js';
 import {createSurfacePool,surfaceCount} from '../catalog/surface.js';
 import {deriveSeed,mulberry32} from '../prng.js';
-import {clamp,knotsToMps} from '../units.js';
+import {clamp,knotsToMps,mpsToKnots} from '../units.js';
 import {cpaScenario,loadScenario,type Scenario,type ScenarioInput,type ContactTransient} from '../scenario.js';
 import {randomizeSelection,rarityWeights,rarityOrder,type RarityWeights} from '../catalog/randomize.js';
 import {effectiveParams} from '../catalog/schema.js';
@@ -47,6 +48,8 @@ export function generateScenario(params:ScenarioParams,seed=params.seed):Scenari
   const brng=mulberry32(deriveSeed(p.seed,`behaviour:${i}`)),behaviour=pickSubBehaviour(brng,p.behaviourWeights??subBehaviourWeights),limits=subBehaviourLimits(draw.klass,c,op,p,quiet);
   // Legs hold the original CPA geometry for the first 600 s (CPA time), then diverge.
   const motion=planBehaviour({kind:behaviour,seed:Math.floor(brng()*4294967296),durationS:BEHAVIOUR_HORIZON_S,holdS:600,start:{course,speed:v,depth},limits}),transients:ContactTransient[]=maneuverTransients(motion,{},brng);
+  // Lead: tactics for unflagged coupled plants stay inside the exposed coupled window (no rejected commands).
+  const cw=commandSpeedWindowKn(draw.klass,mode);if(cw)for(const leg of motion){const k=mpsToKnots(leg.speed);leg.speed=knotsToMps(Math.min(cw.max*(1-1e-6),Math.max(cw.min*(1+1e-6),k)));}
   // Fictional diesel teaching: after CPA hold, a small ratio-locked engine-slowdown knee on SNORK/SURF.
   if(draw.klass.plant==='diesel'&&(mode==='SNORK'||mode==='SURF')){const kneeAt=720+Math.floor(brng()*180),toScale=.82+.06*brng();transients.push({at:kneeAt,kind:'engine-ramp',params:{durationS:35+Math.floor(brng()*25),fromScale:1,toScale:Number(toScale.toFixed(3))}});}
   s.contacts.push({id:`fictional-${i+1}`,category:'subsurface',classificationTarget:true,behaviour,catalogRef:{classId:draw.classId,variantId:draw.variantId,hullId:draw.hullId},operatingMode:mode,reactorOffline:p.reactorOffline===true&&draw.klass.plant==='nuclear'&&draw.klass.aipCapable,x:-600*v*Math.sin(course)+cpa*Math.cos(course),y:-600*v*Math.cos(course)-cpa*Math.sin(course),depth,course,speed:v,motion,...(transients.length?{transients}:{})});

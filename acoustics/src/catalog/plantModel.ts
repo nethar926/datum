@@ -3,7 +3,7 @@ import {tagLine,type Signature,type TonalFamily,type LineProfile,type HydpShape,
 import {shaftDrivetrain,firingRateHz,edaFrequencyHz,vanePassHz,type VesselPlantSpec,type PropulsionTruth,type Plant,drivetrainCode,drivetrainLabel} from './drivetrain.js';
 import {normalizeMode,type ModeInput,type OperatingMode} from './schema.js';
 export type DieselRichness='sparse'|'partial'|'rich';
-interface State {spec:VesselPlantSpec;factors:Float64Array;selected:Uint8Array;truth:PropulsionTruth;bright: {efr:number;csr:number;cfr:number}[];richness:DieselRichness}
+interface State {lastValidFraction?:number;spec:VesselPlantSpec;factors:Float64Array;selected:Uint8Array;truth:PropulsionTruth;bright: {efr:number;csr:number;cfr:number}[];richness:DieselRichness}
 const states=new WeakMap<Signature,State>();
 function enginesEnabled(p:Plant,mode:OperatingMode):boolean{return p.kind==='dieselDirect'?(mode==='SNORK'||mode==='SURF'||mode==='D/E'):mode!=='BATT'&&mode!=='AIP';}
 /** Coupled D/D & GR speed window from each engine's own erpm band and fixed R:R (no silent clamp).
@@ -13,6 +13,12 @@ export function coupledSpeedWindowKn(spec:VesselPlantSpec):{min:number;max:numbe
  const ratio=p.drivetrain!.ratio,tpk=spec.tpk??0;if(!(tpk>0))return undefined;
  let lo=0,hi=Infinity;for(const e of p.engines){lo=Math.max(lo,e.erpm.obsMin/(ratio*tpk));hi=Math.min(hi,e.erpm.obsMax/(ratio*tpk));}
  if(!(hi>=lo))return undefined;return {min:lo,max:hi};
+}
+/** Speed window a scenario/tactics planner must respect: defined only for UNFLAGGED coupled plants
+ * (dieselDirect, or dieselGR without declutchToMotor) in clutched modes (SURF/SNORK). undefined → no bound. */
+export function commandSpeedWindowKn(spec:VesselPlantSpec,mode:ModeInput):{min:number;max:number}|undefined{
+ const m=normalizeMode(mode,spec.machinery.kind),p=spec.machinery;if(!(m==='SURF'||m==='SNORK'))return undefined;
+ if(p.kind==='dieselDirect'||(p.kind==='dieselGR'&&!spec.declutchToMotor))return coupledSpeedWindowKn(spec);return undefined;
 }
 /** True when commanded shaft RPM × fixed R:R sits inside every selected engine's own band. */
 export function coupledErpmInBand(spec:VesselPlantSpec,shaftRpm:number,selected?:Uint8Array):boolean {
@@ -68,14 +74,32 @@ export function updatePropulsion(s:Signature,fraction:number,mode:ModeInput):Pro
  const adjusted=fraction>0&&spec.tpk&&spec.tpkMinKts?Math.max(fraction,spec.tpk*spec.tpkMinKts/spec.maxPsrpm):fraction;
  const rpmScale=Number.isFinite(s.plantRpmScale)?Math.max(0,s.plantRpmScale!):1;
  // Shaft RPM always follows commanded speed (TPK). Coupling never silently clamps PSR or ERPM.
- for(let i=0;i<t.shafts.length;i++){const shaft=t.shafts[i];shaft.rpm=spec.maxPsrpm*Math.max(0,Math.min(1,adjusted))*factors[i];shaft.hz=shaft.rpm/60;shaft.coupled=false;}
+ const setShafts=(f:number)=>{for(let i=0;i<t.shafts.length;i++){const shaft=t.shafts[i];shaft.rpm=spec.maxPsrpm*Math.max(0,Math.min(1,f))*factors[i];shaft.hz=shaft.rpm/60;shaft.coupled=false;}};
+ setShafts(adjusted);
  const wantClutch=(p.kind==='dieselDirect'||p.kind==='dieselGR')&&enginesEnabled(p,mode)&&mode!=='D/E';
- // Wilson/Lead: while coupled, R:R is fixed and ERPM must sit in each engine's own band. Outside the
- // band with a battery/motor → deterministic declutch (engine lines drop, shaft on motor). No motor →
- // same acoustic result plus declutched flag (scenario should stay inside coupledSpeedKn).
+ // Wilson/Lead: while coupled, R:R is fixed and ERPM must sit in each engine's own band.
+ // declutchToMotor (explicit per-class flag, geared + propulsion motor only): out-of-band → deterministic
+ // declutch (engine lines drop, shaft on motor). Unflagged: the command is REJECTED — the previous valid
+ // coupled command is held (first-ever command with no history: nearest edge of coupledSpeedKn) and
+ // commandStatus='rejected'. Shaft stop (0 RPM) is always valid (engines simply stop).
+ let inBand=wantClutch&&coupledErpmInBand(spec,t.shafts[0]?.rpm??0,selected);
+ const stopped=(t.shafts[0]?.rpm??0)<=0,canDeclutch=!!spec.declutchToMotor&&p.kind==='dieselGR'&&!!p.motor;
+ t.commandStatus='ok';
+ if(wantClutch&&!inBand&&!stopped&&!canDeclutch){
+  let f=state.lastValidFraction;
+  if(f===undefined){const w=coupledSpeedWindowKn(spec),tpk=spec.tpk??0,kn=adjusted*spec.maxPsrpm/(tpk||1);f=w&&tpk>0?Math.min(w.max*(1-1e-9),Math.max(w.min*(1+1e-9),kn))*tpk/spec.maxPsrpm:adjusted;}
+  setShafts(f);inBand=coupledErpmInBand(spec,t.shafts[0].rpm,selected);t.commandStatus='rejected';
+ }else if(wantClutch&&inBand&&!stopped)state.lastValidFraction=adjusted;
+ // Knee (engine-ramp plantRpmScale) obeys the same band rule: the scaled coupled ERPM is re-checked.
+ // Unflagged: knee factor is bounded so ERPM stays inside every selected engine's band (kneeLimited).
+ // Flagged declutchToMotor: a knee that would leave the band declutches onto the motor deterministically.
+ let kneeScale=rpmScale;t.kneeLimited=undefined;
+ if(wantClutch&&inBand&&!stopped&&rpmScale!==1&&!coupledErpmInBand(spec,t.shafts[0].rpm*rpmScale,selected)){
+  if(canDeclutch)inBand=false;
+  else if('engines' in p){const base=t.shafts[0].rpm*d.ratio;let lo=0,hi=Infinity;for(let i=0;i<p.engines.length;i++){if(!selected[i])continue;lo=Math.max(lo,p.engines[i].erpm.obsMin/base);hi=Math.min(hi,p.engines[i].erpm.obsMax/base);}kneeScale=Math.min(hi,Math.max(lo,rpmScale));t.kneeLimited=true;}
+ }
  const refShaft=t.shafts[0]?.rpm??0;
- const inBand=wantClutch&&coupledErpmInBand(spec,refShaft,selected);
- const declutched=wantClutch&&!inBand;
+ const declutched=wantClutch&&!inBand&&!stopped&&canDeclutch;
  t.declutched=declutched||undefined;t.coupledSpeedKn=coupledSpeedWindowKn(spec);
  if(wantClutch&&inBand)for(const shaft of t.shafts)shaft.coupled=true;
  else if(p.kind==='nuclearGR'&&mode!=='AIP')for(const shaft of t.shafts)shaft.coupled=true;
@@ -88,12 +112,12 @@ export function updatePropulsion(s:Signature,fraction:number,mode:ModeInput):Pro
    const coupledRun=wantClutch&&inBand&&selected[i]!==0&&refShaft>0;
    e.running=coupledRun||(enabled&&selected[i]!==0&&electricLike);
    if(electricLike)e.erpm=e.running?sheet.erpm.normal*rpmScale:0;
-   else if(coupledRun)e.erpm=(p.kind==='dieselDirect'?t.shafts[i%t.shafts.length].rpm:t.shafts[0].rpm*d.ratio)*rpmScale;
+   else if(coupledRun)e.erpm=(p.kind==='dieselDirect'?t.shafts[i%t.shafts.length].rpm:t.shafts[0].rpm*d.ratio)*kneeScale;
    else e.erpm=0;
    e.csrHz=e.erpm/60;e.cfrHz=e.csrHz/(e.stroke===4?2:1);e.efrHz=firingRateHz(e,e.erpm);
   }
   // Coupled ramp: scale shaft with plantRpmScale so CSR≡PSR×R:R holds through a knee.
-  if(rpmScale!==1)for(let i=0;i<t.shafts.length;i++){const shaft=t.shafts[i];if(!shaft.coupled)continue;shaft.rpm*=rpmScale;shaft.hz=shaft.rpm/60;}
+  if(kneeScale!==1)for(let i=0;i<t.shafts.length;i++){const shaft=t.shafts[i];if(!shaft.coupled)continue;shaft.rpm*=kneeScale;shaft.hz=shaft.rpm/60;}
   for(let i=0;i<t.generators!.length;i++){const g=t.generators![i];g.rpm=p.kind==='dieselElectric'?t.engines[i].erpm:electrical*60/2;g.hz=g.rpm/60*(p.kind==='dieselElectric'?p.generator!.polePairs:2);}
  }else if('turbineGenerators' in p)for(let i=0;i<t.generators!.length;i++){const g=t.generators![i],r=p.reactorSets[i]?.turboGenerator??p.turbineGenerators;g.rpm=r.rpm;g.hz=g.rpm/60*r.polePairs;}
  // Motor drives whenever shafts are not engine-coupled (BATT, AIP, D/E electric, or auto-declutch).
