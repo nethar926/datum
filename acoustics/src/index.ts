@@ -49,3 +49,5 @@ export * from './sourceGate.js';
 export * from './lloydPass.js';
 export * from './convergenceZone.js';
 export * from './streamSet.js';
+export * from './spawnGeometry.js';
+export * from './stateBroadband.js';
