@@ -11,6 +11,7 @@ All vessels and acoustic signatures are fictional and procedurally generated. An
 - Convergence-zone range is a parameterized Urick-band approximation from SSP critical depth + depth excess, not a ray solution.
 - Lloyd mirror uses a pressure-release image source; coherent nulls are minima under unequal spreading.
 - Ambient noise is a smooth Wenz/Knudsen-style fit, not site-calibrated.
+- LOFAR rows time-average modelled power spectra (recorded every 0.25 s) with Welch/Hann² weights over each RES span; this approximates the STFT temporal response and is not a waveform FFT. History before a stream starts is assumed stationary at the start state.
 - Surface and submarine event rates are teaching policies, not doctrine.
 
 ## Sources
@@ -102,6 +103,26 @@ W. A. Struzinski and E. D. Lowe, “A split-window technique for estimating nois
 **Used for:** Two-pass split-window (TPSW) background model notes for RES NB.
 
 **Modules:** `res.ts`
+
+### `welch-1967`
+
+P. D. Welch, “The use of fast Fourier transform for the estimation of power spectra: a method based on time averaging over short, modified periodograms,” IEEE Trans. Audio Electroacoust. AU-15, 70–73 (1967).
+
+[Link](https://doi.org/10.1109/TAU.1967.1161901)
+
+**Used for:** RES row temporal response: time-averaging of MODELLED power spectra with Welch-style Hann² weights over K overlapped segments (span T+(K−1)·T/4), and EDOF of averaged bins. Not a waveform FFT; an approximation of the STFT temporal response.
+
+**Modules:** `res.ts`, `resGram.ts`
+
+### `harris-1978`
+
+F. J. Harris, “On the use of windows for harmonic analysis with the discrete Fourier transform,” Proc. IEEE 66(1), 51–83 (1978).
+
+[Link](https://doi.org/10.1109/PROC.1978.10837)
+
+**Used for:** Hann ENBW, scallop loss and 75 % overlap correlation; Hann² taper shapes the 10–90 % edge response.
+
+**Modules:** `res.ts`, `resGram.ts`
 
 ### `kinsler-frey`
 

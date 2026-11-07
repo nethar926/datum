@@ -257,7 +257,7 @@ export class AcousticEngine {
       const fa=sub.fullAxis,job=fa.queue.shift()!;
       if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);sub.res.bearingRow.fill(NaN);fa.lastTile={tileIndex:job.tileIndex,tileBins:fa.tileBins,f0:job.tileIndex*fa.tileBins*sub.config.fBin,fBin:sub.config.fBin,liveBins:0,filled:false};return rowIndex;}
       const t=tileBand(sub.config.res!,job.tileIndex,this.scenario.fMax??this.scenario.fmax,fa.tileBins);
-      sub.res.renderTile(job.tileIndex,job.rowKey,out,offset,fa.tileBins);
+      sub.res.renderTileAt(job.tileIndex,job.rowKey,sub.start+(job.rowKey+1)/sub.config.rowRateHz,out,offset,fa.tileBins);
       fa.lastTile={tileIndex:t.tileIndex,tileBins:t.tileBins,f0:t.f0,fBin:t.fBin,liveBins:t.liveBins,filled:true};
       // Mirror current tile on gramConfig so FE peeking config sees the last emitted slice.
       sub.config={...sub.config,f0:t.f0,liveBins:t.liveBins,bandLimited:t.bandLimited,simT:this.time};
@@ -330,8 +330,8 @@ export class AcousticEngine {
       const b=s.buoys[i],r=this.rows[i];advance(b,dt);r.alive=isFeeding(b,s.time);r.depth=b.depth;r.rfChannel=b.rfChannel;
       if(!r.alive){r.bearing=null;this.generators[i].lineCount=0;}
     }
-    // RES window integration: every vernier RES stream snapshots its expected spectrum each frame.
-    for(const sub of this.subscriptions.values())if(sub.res&&!sub.fullAxis){const bi=this.streams.get(sub.config.streamId);if(bi!==undefined&&this.rows[bi]?.alive)sub.res.sample(s.time);}
+    // RES span averaging: every RES stream (vernier and each FULLBAND tile) records its noise-free modelled power spectrum each frame (time-averaging of modelled spectra, not a waveform FFT).
+    for(const sub of this.subscriptions.values())if(sub.res){const bi=this.streams.get(sub.config.streamId);if(bi!==undefined&&this.rows[bi]?.alive)sub.res.sample(s.time);}
   }
   /** HYDP hydraulic burst (Wilson): speed-independent class Hz × harmonics; squally abrupt on/off
    * with tiny seeded fade. Latest-started window wins; outside every window slots are silent. */

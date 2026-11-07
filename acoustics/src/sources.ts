@@ -103,6 +103,22 @@ export const SOURCES:readonly SourceEntry[]=Object.freeze([
     verified:false,
   }),
   Object.freeze({
+    id:'welch-1967',
+    citation:'P. D. Welch, “The use of fast Fourier transform for the estimation of power spectra: a method based on time averaging over short, modified periodograms,” IEEE Trans. Audio Electroacoust. AU-15, 70–73 (1967).',
+    url:'https://doi.org/10.1109/TAU.1967.1161901',
+    usedFor:'RES row temporal response: time-averaging of MODELLED power spectra with Welch-style Hann² weights over K overlapped segments (span T+(K−1)·T/4), and EDOF of averaged bins. Not a waveform FFT; an approximation of the STFT temporal response.',
+    modules:['res.ts','resGram.ts'],
+    verified:false,
+  }),
+  Object.freeze({
+    id:'harris-1978',
+    citation:'F. J. Harris, “On the use of windows for harmonic analysis with the discrete Fourier transform,” Proc. IEEE 66(1), 51–83 (1978).',
+    url:'https://doi.org/10.1109/PROC.1978.10837',
+    usedFor:'Hann ENBW, scallop loss and 75 % overlap correlation; Hann² taper shapes the 10–90 % edge response.',
+    modules:['res.ts','resGram.ts'],
+    verified:false,
+  }),
+  Object.freeze({
     id:'kinsler-frey',
     citation:'L. E. Kinsler, A. R. Frey, A. B. Coppens, and J. V. Sanders, Fundamentals of Acoustics.',
     usedFor:'dB power/amplitude conventions; DEMON incoherent envelope framing.',
@@ -120,6 +136,7 @@ export const MODEL_ASSUMPTIONS:readonly string[]=Object.freeze([
   'Convergence-zone range is a parameterized Urick-band approximation from SSP critical depth + depth excess, not a ray solution.',
   'Lloyd mirror uses a pressure-release image source; coherent nulls are minima under unequal spreading.',
   'Ambient noise is a smooth Wenz/Knudsen-style fit, not site-calibrated.',
+  'LOFAR rows time-average modelled power spectra (recorded every 0.25 s) with Welch/Hann² weights over each RES span; this approximates the STFT temporal response and is not a waveform FFT. History before a stream starts is assumed stationary at the start state.',
   'Surface and submarine event rates are teaching policies, not doctrine.',
 ]);
 

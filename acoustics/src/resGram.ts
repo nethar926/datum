@@ -32,6 +32,7 @@ export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:
  * selectTile + renderTile so the same line physics covers an arbitrary f0 tile window. */
 /** Late-read margin kept in the snapshot ring (s). */
 export const RING_LATE_MARGIN_S=8;
+interface SpectrumRing{n:number;p:Float32Array;d:Float32Array;t:Float64Array;head:number;count:number;last:number}
 export class ResLofarGenerator {
   private waterColumn:WaterColumnProfile|undefined;
  /** Current output width (RES_BINS vernier, or TILE_BINS for a full-axis tile). */
@@ -53,8 +54,13 @@ export class ResLofarGenerator {
  private readonly zr:Float64Array;private readonly zi:Float64Array;
  private readonly halfWidth:Int32Array;private readonly clipped:Float64Array;
  private readonly p0:Float64Array;private readonly p1:Float64Array;private readonly p2:Float64Array;private readonly p3:Float64Array;
- /** Window integration (engine path): per-frame expected-spectrum snapshots on the RES_FRAME_S grid. */
- private ring:Float32Array=new Float32Array(0);private ringDifar:Float32Array=new Float32Array(0);private ringT:Float64Array=new Float64Array(0);private ringN=0;private ringHead=0;private ringCount=0;private lastSampleT=-Infinity;
+ /** Span averaging (engine path): per-frame records of the noise-free MODELLED power spectrum on the RES_FRAME_S grid (not waveform samples). */
+ private vRing:SpectrumRing={n:0,p:new Float32Array(0),d:new Float32Array(0),t:new Float64Array(0),head:0,count:0,last:-Infinity};
+ private readonly tileRings=new Map<number,SpectrumRing>();private readonly tileEnvCache=new Map<number,{hw:Int32Array;amb:Float64Array;shape:Float64Array;abs:Float64Array;coh:Float64Array}>();private fullAxisTiles=0;private fullAxisTileBins=TILE_BINS;
+ /** True when the last row was a real span average; false = explicit snapshot fallback (direct generate()/renderTile without history). */
+ lastIntegrated=false;
+ /** Count of rows that fell back to an instantaneous snapshot (diagnostic; cut/live paths keep this 0). */
+ snapshotFallbacks=0;
  private readonly contacts:ResContact[];private readonly rng:Random;private readonly bearingRng:Random;private readonly baseSeed:number;private readonly bearingSeed:number;
  private readonly g=createGeometry();private readonly difar:boolean;private environment:Environment;private sigma=0;private bias=1;
  /** Per-tile AR(1) state for FULLBAND (K=1); vernier uses zr/zi directly. */
@@ -85,6 +91,7 @@ export class ResLofarGenerator {
  }
  /** Preallocate per-tile AR(1) buffers so renderTile stays allocation-free after setup. */
  prepareFullAxis(tileCount:number):void{
+  this.fullAxisTiles=tileCount;for(let i=0;i<tileCount;i++)if(!this.tileRings.has(i)){const keep=this.tileIndex,kb=this.bins;this.selectTile(i,this.fullAxisTileBins);this.tileRings.set(i,this.newRing(this.band.liveBins));this.selectTile(keep,kb);}
   for(let i=0;i<tileCount;i++)if(!this.tileAr.has(i))this.tileAr.set(i,{zr:new Float64Array(this.capacity),zi:new Float64Array(this.capacity),lastRow:-1});
  }
  /** FULLBAND: point the live window at tile `tileIndex` without resetting the row counter. */
@@ -93,59 +100,83 @@ export class ResLofarGenerator {
   const t=tileBand(this.settings.res,tileIndex,this.fmax,tileBins);
   this.tileIndex=t.tileIndex;this.bins=t.tileBins;
   this.band={f0:t.f0,fcHz:t.f0+(t.tileBins/2)*t.fBin,bandLimited:t.bandLimited,liveBins:t.liveBins,slid:false};
-  this.applyWindow();return t;
+  // Per-tile cache of the environment-dependent bin arrays (tiles are re-selected every frame for history).
+  const key=t.tileIndex*8192+t.tileBins,hit=this.tileEnvCache.get(key);
+  if(hit){this.halfWidth.set(hit.hw);this.ambientBin.set(hit.amb);this.shape.set(hit.shape);this.absorptionExponent.set(hit.abs);this.coherenceExponent.set(hit.coh);this.applySwathWindow();return t;}
+  this.applyWindow();
+  const W=this.bins;this.tileEnvCache.set(key,{hw:this.halfWidth.slice(0,W),amb:this.ambientBin.slice(0,W),shape:this.shape.slice(0,W),abs:this.absorptionExponent.slice(0,W),coh:this.coherenceExponent.slice(0,W)});return t;
  }
  private applyWindow():void{
   const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins,W=this.bins,k=(2**(BB_SMOOTH_OCTAVE/2)-2**(-BB_SMOOTH_OCTAVE/2))/2;
   for(let i=0;i<W;i++)this.halfWidth[i]=Math.round((f0+i*df)*k/df);
-  for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}
-  this.setEnvironment(this.environment);
+  this.applySwathWindow();
+  this.computeEnvironment();
  }
+ private applySwathWindow():void{const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins;for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}}
  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
- setEnvironment(e:Environment):void{
-  this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);const df=this.params.fBin,f0=this.band.f0,enbw=this.params.enbwHz,W=this.bins;
+ setEnvironment(e:Environment):void{this.environment={...e};this.tileEnvCache.clear();this.computeEnvironment();}
+ private computeEnvironment():void{
+  const e=this.environment;this.sigma=seaSurfaceSigma(e.seaState);const df=this.params.fBin,f0=this.band.f0,enbw=this.params.enbwHz,W=this.bins;
   for(let i=0;i<W;i++){const f=Math.max(df/2,f0+i*df),k=2*Math.PI*f/e.soundSpeed;this.coherenceExponent[i]=-2*k*k*this.sigma*this.sigma;this.absorptionExponent[i]=-thorp(f)*(Math.LN10/10);this.ambientBin[i]=i<this.band.liveBins?dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity))*enbw:NaN;this.shape[i]=1/(1+(f/400)**2);}
  }
  generate(out:Float32Array=this.row,offset=0):Float32Array{
   const rowKey=this.rowIndex++;
   return this.render(rowKey,out,offset,false);
  }
- /** Engine hook: snapshot the instantaneous expected spectrum at every RES_FRAME_S grid point up to t
-  * (state is the current one; engine advances in ≤ one frame per call on the cut/worker paths). */
+ /** Engine hook: record the instantaneous noise-free modelled power spectrum at every RES_FRAME_S
+  * grid point up to t, for the vernier window and (FULLBAND) every prepared tile. This is
+  * time-averaging of modelled power spectra, NOT a waveform FFT: rows later average these records
+  * with Welch-style Hann² weights — an approximation of the STFT temporal response.
+  * Startup: the first record pre-fills the whole history with the state at that instant (the source
+  * is treated as stationary before the stream existed), so early rows are full-span and deterministic. */
  sample(t:number):void{
-  const f=RES_FRAME_S,L=this.band.liveBins;if(this.ringN===0)return;
-  let tk=Number.isFinite(this.lastSampleT)?this.lastSampleT+f:Math.floor(t/f+1e-9)*f;if(tk>t+1e-9)return;
-  this.computeExpected();const P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower,difar=this.difar;
-  for(;tk<=t+1e-9;tk+=f){const h=this.ringHead,o=h*L;for(let i=0;i<L;i++)this.ring[o+i]=P[i];if(difar){const d=3*o;for(let i=0;i<L;i++){this.ringDifar[d+3*i]=sE[i];this.ringDifar[d+3*i+1]=sN[i];this.ringDifar[d+3*i+2]=sP[i];}}
-   this.ringT[h]=tk;this.ringHead=(h+1)%this.ringN;this.ringCount=Math.min(this.ringCount+1,this.ringN);this.lastSampleT=tk;}
+  if(this.fullAxisTiles>0){const keep=this.tileIndex,keepBins=this.bins;for(let k=0;k<this.fullAxisTiles;k++){const r=this.tileRings.get(k);if(!r)continue;this.selectTile(k,this.fullAxisTileBins);this.sampleInto(r,t);}this.selectTile(keep,keepBins);return;}
+  this.sampleInto(this.vRing,t);
  }
- /** Engine path: render the row whose analysis span ends at tEnd (simT stamp = window END). */
+ private sampleInto(r:SpectrumRing,t:number):void{
+  const f=RES_FRAME_S,L=this.band.liveBins;if(r.n===0)return;
+  const cold=!Number.isFinite(r.last);let tk=cold?Math.floor(t/f+1e-9)*f:r.last+f;if(tk>t+1e-9)return;
+  this.computeExpected();const P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower,difar=this.difar;
+  const put=(tt:number)=>{const h=r.head,o=h*L;for(let i=0;i<L;i++)r.p[o+i]=P[i];if(difar){const d=3*o;for(let i=0;i<L;i++){r.d[d+3*i]=sE[i];r.d[d+3*i+1]=sN[i];r.d[d+3*i+2]=sP[i];}}r.t[h]=tt;r.head=(h+1)%r.n;r.count=Math.min(r.count+1,r.n);r.last=tt;};
+  if(cold)for(let j=r.n-1;j>0;j--)put(tk-j*f);
+  for(;tk<=t+1e-9;tk+=f)put(tk);
+ }
+ /** Engine path: render the row whose analysis span ends at tEnd (simT stamp = END of span). */
  generateAt(tEnd:number,out:Float32Array=this.row,offset=0):Float32Array{
   const rowKey=this.rowIndex++;return this.render(rowKey,out,offset,false,tEnd);
  }
  /** Analysis span (s) of one row: K Hann segments of length T, hop T/4 → T+(K−1)·T/4. */
  get spanS():number{const p=this.params;return p.integrationS+(p.averages-1)*p.hopS;}
- /** Rows may be pulled up to this late after their due time and still integrate from the ring. */
+ /** Bounded history length (frames): span + late-read margin. */
+ private ringFrames():number{return Math.ceil((this.spanS+RING_LATE_MARGIN_S)/RES_FRAME_S)+2;}
+ private newRing(L:number):SpectrumRing{const n=this.ringFrames();return {n,p:new Float32Array(n*L),d:this.difar?new Float32Array(3*n*L):new Float32Array(0),t:new Float64Array(n),head:0,count:0,last:-Infinity};}
  private allocRing():void{
-  const n=Math.ceil((this.spanS+RING_LATE_MARGIN_S)/RES_FRAME_S)+2,L=this.band.liveBins;
-  if(this.ringN!==n||this.ring.length!==n*L){this.ringN=n;this.ring=new Float32Array(n*L);this.ringDifar=this.difar?new Float32Array(3*n*L):new Float32Array(0);this.ringT=new Float64Array(n);}
-  this.ringHead=0;this.ringCount=0;this.lastSampleT=-Infinity;
+  const L=this.band.liveBins,n=this.ringFrames(),r=this.vRing;
+  if(r.n!==n||r.p.length!==n*L)this.vRing=this.newRing(L);else{r.head=0;r.count=0;r.last=-Infinity;}
+  this.tileRings.clear();this.tileEnvCache.clear();this.fullAxisTiles=0;
  }
- /** Welch power weighting of a snapshot interval: Σ_m Hann²(segment m) averaged over 8 sub-points
+ /** Welch power weighting of a record interval: Σ_m Hann²(segment m) averaged over 8 sub-points
   * of the frame (ts−f, ts]. Segment m spans [tEnd−m·hop−T, tEnd−m·hop]. */
  private frameWeight(ts:number,tEnd:number):number{
   const p=this.params,T=p.integrationS,hop=p.hopS,K=p.averages,f=RES_FRAME_S;let w=0;
   for(let q=0;q<8;q++){const t=ts-f+(q+.5)*f/8;for(let m=0;m<K;m++){const x=(t-(tEnd-m*hop-T))/T;if(x>0&&x<1){const s=Math.sin(Math.PI*x);w+=s*s*s*s;}}}
   return w;
  }
- /** Replace expected/signal* with the Welch-weighted average over the row's analysis span.
-  * Falls back to the instantaneous spectrum when no snapshot overlaps (cold start). */
- private integrate(tEnd:number):void{
-  const L=this.band.liveBins,P=this.expected,difar=this.difar,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;let wsum=0,first=true;
-  for(let c=0;c<this.ringCount;c++){const h=(this.ringHead-1-c+this.ringN)%this.ringN,w=this.frameWeight(this.ringT[h],tEnd);if(!(w>0))continue;const o=h*L;
-   if(first){for(let i=0;i<L;i++)P[i]=0;if(difar){sE.fill(0);sN.fill(0);sP.fill(0);}first=false;}
-   for(let i=0;i<L;i++)P[i]+=w*this.ring[o+i];if(difar){const d=3*o;for(let i=0;i<L;i++){sE[i]+=w*this.ringDifar[d+3*i];sN[i]+=w*this.ringDifar[d+3*i+1];sP[i]+=w*this.ringDifar[d+3*i+2];}}wsum+=w;}
-  if(wsum>0){const k=1/wsum;for(let i=0;i<L;i++)P[i]*=k;if(difar)for(let i=0;i<L;i++){sE[i]*=k;sN[i]*=k;sP[i]*=k;}}
+ /** Replace expected/signal* with the Welch-weighted average over the row's span. Returns false
+  * (snapshot fallback, integrated:false) only when the history does not cover the whole span. */
+ private integrate(r:SpectrumRing,tEnd:number):boolean{
+  const L=this.band.liveBins,P=this.expected,difar=this.difar,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower,f=RES_FRAME_S;
+  if(r.count===0)return false;const newest=r.t[(r.head-1+r.n)%r.n],oldest=r.t[(r.head-r.count+r.n)%r.n];
+  if(newest<tEnd-1e-6||oldest-f>tEnd-this.spanS+1e-6)return false;
+  let wsum=0;for(let i=0;i<L;i++)P[i]=0;if(difar){sE.fill(0);sN.fill(0);sP.fill(0);}
+  for(let c=0;c<r.count;c++){const h=(r.head-1-c+r.n)%r.n,w=this.frameWeight(r.t[h],tEnd);if(!(w>0))continue;const o=h*L;
+   for(let i=0;i<L;i++)P[i]+=w*r.p[o+i];if(difar){const d=3*o;for(let i=0;i<L;i++){sE[i]+=w*r.d[d+3*i];sN[i]+=w*r.d[d+3*i+1];sP[i]+=w*r.d[d+3*i+2];}}wsum+=w;}
+  const k=1/wsum;for(let i=0;i<L;i++)P[i]*=k;if(difar)for(let i=0;i<L;i++){sE[i]*=k;sN[i]*=k;sP[i]*=k;}
+  return true;
+ }
+ /** Engine FULLBAND hook: render tile `tileIndex` for the row ending at tEnd. */
+ renderTileAt(tileIndex:number,rowKey:number,tEnd:number,out:Float32Array=this.row,offset=0,tileBins:number=TILE_BINS):Float32Array{
+  this.selectTile(tileIndex,tileBins);return this.render(rowKey,out,offset,true,tEnd);
  }
  /** FULLBAND: render one tile at an explicit rowKey (shared across tiles of the same row time). Does not bump rowIndex. */
  renderTile(tileIndex:number,rowKey:number,out:Float32Array=this.row,offset=0,tileBins:number=TILE_BINS):Float32Array{
@@ -182,7 +213,9 @@ export class ResLofarGenerator {
   const W=this.bins;
   if(!Number.isInteger(offset)||offset<0||out.length<offset+W)throw new Error('Row size mismatch');
   this.rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
-  this.computeExpected();if(tEnd!==undefined&&!perTileAr)this.integrate(tEnd);
+  this.computeExpected();
+  const ring=perTileAr?this.tileRings.get(this.tileIndex):this.vRing;
+  this.lastIntegrated=tEnd!==undefined&&ring!==undefined&&this.integrate(ring,tEnd);if(!this.lastIntegrated)this.snapshotFallbacks++;
   const enbw=this.params.enbwHz,L=this.band.liveBins,difar=this.difar,P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
   // Noise: K=1 → exact AR(1) on complex amplitudes (correlated rows); K>1 → unit-mean χ²_ν gamma.
   const pw=this.power,rng=this.rng;

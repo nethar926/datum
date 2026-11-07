@@ -15,15 +15,36 @@ Each band stream now opens at the finest RES whose 1024-bin zoom covers the band
 
 ## Row simT convention
 
-Every RES vernier row is stamped at the **end** of its analysis span, for every band. Row k is due at `start + (k+1)/rowRateHz` and integrates `(tEnd − span, tEnd]`. Span = T + (K−1)·T/4, where K is the number of Hann segments averaged per row at 75 % overlap.
+Every RES row, vernier or FULLBAND tile, is stamped at the **end** of its analysis span, for every band. Row k is due at `start + (k+1)/rowRateHz` and averages `(tEnd − span, tEnd]`.
 
-## Integration (real, fixed in this commit)
+## Why spans differ from the nominal FFT windows
 
-Before this commit, each row was an instantaneous snapshot of the source state at render time. RES changed only the bin width, ENBW and noise EDOF, so the band window was a relabel in time. Now each vernier RES stream snapshots its noise-free expected spectrum (ambient + contacts, DIFAR components too) on every 0.25 s frame. Each row averages those snapshots with Welch power weighting Σₘ Hann²(segment m). Noise (χ²_ν / AR(1)) is drawn on the integrated spectrum exactly as before, so frequencies, bins and statistics are unchanged and the output is deterministic. FULLBAND tiles still render instantaneously, and standalone `generate()` with no snapshots is unchanged.
+The nominal window is T = 1/Δf (16 / 4 / 2 / 0.5 s). Each row averages K Hann segments hopped by T/4 (75 % overlap), where K = row period ÷ hop. That gives span = T + (K−1)·T/4:
+
+- **ELF:** 16 + 0 = 16 s (K=1)
+- **VLF:** 4 + 1·1 = 5 s (K=2)
+- **LF:** 2 + 3·0.5 = 3.5 s (K=4)
+- **MF:** 0.5 + 15·0.125 = 2.375 s (K=16)
+
+Each segment is Hann-tapered, so in power it weights time as Hann². The summed Σₘ Hann² weight peaks mid-span and tapers at both ends. That taper is why the 10–90 % rise is shorter than the span (about 0.37 of the span for ELF, about 0.67 for MF, where many segments overlap and the weight is flatter).
+
+## What the integration is (and is not)
+
+This is **time-averaging of modelled power spectra** with Welch-style Hann² weights (Welch 1967; Harris 1978). It is **not** a waveform FFT. No time series is synthesised. The engine records each stream's noise-free modelled spectrum (ambient + contacts, plus DIFAR components) every 0.25 s. Each row averages those records over its span, and noise (χ²_ν / AR(1)) is then drawn on the averaged spectrum exactly as before. That makes it an **approximation** of the STFT temporal response: right for onset/fade timing and sharpness, but it does not model phase effects within a window. Frequencies, bins and statistics are unchanged, and the output is deterministic.
+
+FULLBAND tiles use the same averaging, with each tile's RES T and K. Every prepared tile records every frame, regardless of which tile is visible, so panning does not change timing or sharpness. FULLBAND defaults to **RES5** (Δf 0.5 Hz, T 2 s, K 4, span 3.5 s), the same as the LF band stream. The other bands' streams differ: ELF RES2 / 16 s, VLF RES4 / 5 s, MF RES7 / 2.375 s. Pick a FULLBAND RES to match a band if needed.
+
+## Startup, seek, history
+
+- **Startup:** when a stream starts, its history is pre-filled with the spectrum at the start instant. The source is treated as stationary before the stream existed. So the first rows are full-span averages, not a renormalised partial span, and they are deterministic.
+- **Seek/replay:** seek replays from t=0 on the 0.25 s grid. Rows match continuous play bit-for-bit for frame-aligned seek targets. For an off-grid target (e.g. 17.6 s) the split kinematic step rounds differently in floating point; the worst measured difference is 1.2e-5 dB (one float32 ulp). The same split happens in continuous play with off-grid tick sizes.
+- **Paused scroll-back:** rows that have already been emitted are FE-owned copies, and later engine history never touches them.
+- **Bounded:** each stream (and each FULLBAND tile) keeps ceil((span + 8 s)/0.25) + 2 frames, fixed at configure time. The 8 s margin covers late or backfill reads.
+- **Fallback:** calling `generate()`/`renderTile()` directly with no recorded history renders an instantaneous snapshot. It sets `lastIntegrated=false` and increments `snapshotFallbacks`. Tests assert that every cut stream and every worker live/FULLBAND stream has 0 fallbacks.
 
 ## Measured edges (test/bandEdges.test.ts)
 
-Setup: one stationary contact, seed 777, swath 20–45 Hz and SRC 40 Hz with sharp on/off steps, edge phase swept over 16 frames. Times are seconds after the true edge. Swath and SRC give identical numbers, and fall mirrors rise.
+Setup (vernier band streams; FULLBAND at equal RES, static and panned, gives identical times to < 1e-6 s): one stationary contact, seed 777, swath 20–45 Hz and SRC 40 Hz with sharp on/off steps, edge phase swept over 16 frames. Times are seconds after the true edge. Swath and SRC give identical numbers, and fall mirrors rise.
 
 | Band | Span | 10 % | 50 % | 90 % | 10–90 |
 |---|---|---|---|---|---|
