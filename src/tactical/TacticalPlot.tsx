@@ -198,7 +198,12 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
         const colS = health === 'working' ? C.stWork : health === 'dead' ? C.stDead : health === 'error' ? C.stErr : C.stDet
         const feCh = fe?.channel
         const label = health === 'detuned' ? 'DT' : feCh != null ? String(feCh) : String(b.channel)
-        ctx.strokeStyle = colS; ctx.fillStyle = colS; ctx.lineWidth = (b.channel === sel || feCh === sel ? 2.5 : 1.5) * dpr
+        const selected = b.channel === sel || feCh === sel
+        if (selected) {
+          ctx.save(); ctx.strokeStyle = '#0a84ff'; ctx.fillStyle = 'rgba(10,132,255,0.2)'; ctx.lineWidth = 3 * dpr
+          ctx.beginPath(); ctx.arc(sx, sy, 11 * dpr, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore()
+        }
+        ctx.strokeStyle = colS; ctx.fillStyle = colS; ctx.lineWidth = (selected ? 2.5 : 1.5) * dpr
         ctx.beginPath()
         if (b.kind === 'difar') { ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy + r); ctx.lineTo(sx - r, sy + r); ctx.closePath() } else ctx.arc(sx, sy, r, 0, Math.PI * 2)
         if (b.state === 'falling' || health === 'integrating') ctx.setLineDash([2 * dpr, 2 * dpr])

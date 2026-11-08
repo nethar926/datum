@@ -1,4 +1,5 @@
 import { hideLandscapePlot, loadLandscapePlotHidden, saveLandscapePlotHidden } from './ui/plotVisibility'
+import { BuoyRing } from './ui/BuoyRing'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
@@ -886,8 +887,9 @@ export default function App() {
                 const label = health === 'detuned' ? 'DT' : `${fe?.channel ?? c.channel}${kind}`
                 return (
                   <button key={c.streamId} aria-pressed={i === stream} data-health={health} data-testid={`buoy-ch-${c.channel}`}
-                    style={{ color: BUOY_STATUS_COLOR[health] }}
-                    onClick={() => setStream(i)}>
+                    style={{ color: i === stream ? '#fff' : BUOY_STATUS_COLOR[health] }}
+                    aria-label={`Buoy ${label}${i === stream ? ', selected; open controls' : ''}`}
+                    onClick={() => { if (i === stream) setBuoySheet(true); else setStream(i) }}>
                     {label}
                   </button>
                 )
@@ -1222,21 +1224,13 @@ export default function App() {
         {((tab === 'cuts' && !cuts.session) || tab === 'settings') && <div className="dock-spacer" aria-hidden />}
       </div>
 
-      <Sheet open={buoySheet} onClose={() => setBuoySheet(false)} title={buoy ? `Buoy ${buoy.channel}` : 'Buoy'} testId="buoy-sheet"
-        actions={buoy ? (() => {
+      <Sheet open={buoySheet} onClose={() => setBuoySheet(false)} title={buoy ? `Buoy ${buoy.channel}` : 'Buoy'} testId="buoy-sheet">
+        {buoy ? (() => {
           const fe = detune.get(buoy.id)
           const health = paintHealth(fe, buoy.state)
-          const canDetune = health === 'working' || health === 'integrating'
-          const canTune = health === 'detuned'
-          return (
-            <div className="buoy-actions" role="group" aria-label="Channel tune" data-testid="buoy-actions">
-              <button type="button" className="btn" data-testid="buoy-detune" disabled={!canDetune}
-                onClick={() => detune.detune(buoy.id)} title="Detune: stop feeding and free the RX channel">DETUNE</button>
-              <button type="button" className="btn primary" data-testid="buoy-tune" disabled={!canTune}
-                onClick={() => detune.tune(buoy.id)} title="Tune: re-acquire the lowest free RX channel">TUNE</button>
-            </div>
-          )
-        })() : undefined}>
+          return <BuoyRing channel={fe?.channel ?? buoy.channel} directional={buoy.kind === 'difar'} health={health}
+            onDetune={() => detune.detune(buoy.id)} onTune={() => detune.tune(buoy.id)} />
+        })() : null}
         {buoy ? (() => {
           const fe = detune.get(buoy.id)
           const health = paintHealth(fe, buoy.state)
