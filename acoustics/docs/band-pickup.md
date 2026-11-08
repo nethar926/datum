@@ -586,3 +586,45 @@ recurrence so more of the bin loop vectorises — out of scope for this prototyp
 
 Acoustic total at RES2×60 remains **46.48 MB ≤ 50 MB** (same SPAN_CACHE budget; wasm linear
 memory is 0.25 MB and not double-counted into retainedBytes).
+
+## Kernel opts for 60-contact full-load (2026-11-08 ET)
+
+Lead ask: cut RES2×60 full-load (provisional manifest v1). Profile still shows per-contact ×
+per-bin broadband+Lloyd (`coreFast`) at 95–99%. Ideas evaluated:
+
+| Idea | Result |
+|---|---|
+| (1) Lloyd phase recurrence (cos/sin rotation) | **Already shipped** in `coreFast` / `core` / `lofar.ts`. Periodic re-anchoring not added (reference path uses the same recurrence; drift stays inside the 0.01 dB fast-path budget). |
+| (2) Hoist per-contact source spectrum; TL scalar + coarse absorption | Shape tables are already band-shared. Baking a buoy-independent source PSD does **not** remove the buoy-dependent LM×bin loop (same reason coarse-grid BB closed unsuccessful). Absorption was already a chunked exp recurrence; widening that chunk is the only absorption win (below). |
+| (3) Skip contacts ≫X dB below ambient | Implemented (`setContactCull`, default ON). Conservative bound shares a 0.01 dB ambient-rise budget across `contacts.length`; tonals still deposit. On the full-load bench **every** contact×buoy pair is above ambient, so **0 pairs culled** — no full-load speedup. Bit-identical when nothing qualifies. |
+| (4) Typed-array / loop fusion | Small exact win: hoist `1+q²` / `2q` when σ=0 (`!coh` path), drop redundant `Math.max` only where unsafe. No layout change beyond existing Float64/Float32 scratch. |
+
+### Adaptive absorption chunk 32→128 (default ON)
+
+`setAdaptiveChunk(true)` (default): after bin 0, try 128-bin quadratic exp chunks; fall back to 32 when
+`|Δ² AE|·|km|·n² > 0.5`. Coherence (∝f²) stays exact. Max fast-vs-reference error on the existing
+suite ≤ 9e-5 dB (≪ 0.01). Microbench coreFast RES2×60: ~0.80 ms vs ~1.05 ms (~1.24×). Provisional manifest
+v1 sequential 30 s × 3 reps (`bench/results/kernel-opts-seq-2026-11-08.*`):
+
+| Case | flags ON median %RT [min–max] | flags OFF median %RT [min–max] | wall speedup (off÷on) |
+|---|---|---|---|
+| RES5 × 1 | 9.8% [9.6–10.1] | 9.6% [9.5–9.9] | ~1.0× |
+| RES5 × 60 | 48.5% [48.1–55.8] | 51.9% [51.5–92.1*] | ~1.07× (*one contended OFF rep) |
+| RES2 × 1 | 26.1% [25.6–27.4] | 28.2% [26.6–28.4] | ~1.08× |
+| RES2 × 60 | **379% [372–382]** | 506% [465–519] | **~1.33×** vs paired OFF; **~1.21×** vs tip baseline 457% |
+
+Acoustic memory unchanged vs paired OFF (RES2×60 **46.48 MB**). Tip `d815338` SPAN_CACHE
+baseline medians for reference: RES5×1 9.2%, RES5×60 49.3%, RES2×1 27.2%, RES2×60 457%.
+
+### RES2 tile sliding accums (`setAccumMaxTiles(8)`, default stays 2)
+
+Raising the cap to 8 enables Welch accums for all RES2 FULLBAND tiles. Combined with adaptive chunk
+on a 20 s screen: RES2×60 **~180 %RT**, acoustic **~108 MB** (scratch ~70 MB) — over the ≤50 MB
+budget. Default remains 2. Flag is for Lead/FE budget review only; not a ship default.
+
+### What still fails the target
+
+RES2×60 target &lt;100% (ideally &lt;50%) is **not met** at the 50 MB budget. Best in-budget result
+with these opts: ~377 %RT (20 s). Out-of-budget tile accums reach ~180 %RT. Coarse BB / WASM SIMD
+remain closed unsuccessful. Contact cull does not fire on this dense teaching field.
+
