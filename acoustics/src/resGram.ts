@@ -60,8 +60,34 @@ export function accumMaxTiles():number{return ACCUM_MAX_TILES;}
 export {ACCUM_MAX_TILES};
 export function setAccumMaxTiles(n:number):void{
  if(!Number.isInteger(n)||n<1||n>16)throw new Error('accumMaxTiles must be integer 1..16');
- ACCUM_MAX_TILES=n;ACCUMS.clear();invalidateSpanCache();
+ ACCUM_MAX_TILES=n;ACCUMS.clear();invalidateSpanCache();tileAccumBytesUsed=0;
 }
+/** Budget-capped FULLBAND tile Welch accums for streams with tileCount > ACCUM_MAX_TILES.
+ * Profile (RES2×60): history-path coreFast is ~2.1× the accum-path call count; full 8-tile
+ * q=3 Float32 accums need ~61 MB extra scratch (over the 50 MiB retainedBytes budget).
+ * This path allocates as many per-buoy tile accums as fit in TILE_ACCUM_BUDGET (fair cap),
+ * exact same Float32 Welch math as vernier/RES5; cold tiles keep integrateHistory.
+ * Default ON when the budget is positive. */
+let BOUNDED_TILE_ACCUMS=true;
+/** Soft byte budget for FULLBAND tile RowAccum.acc/wsum/rowE/done only (not vernier). */
+let TILE_ACCUM_BUDGET=Math.floor(3.2*1024*1024);
+let tileAccumBytesUsed=0;
+/** Max FULLBAND tiles with accums per buoy (fair share). 1×P-only (q=1) fits under 50 MiB at 32 buoys. */
+let TILE_ACCUM_PER_BUOY=1;
+export function boundedTileAccums():boolean{return BOUNDED_TILE_ACCUMS;}
+export function setBoundedTileAccums(on:boolean):void{BOUNDED_TILE_ACCUMS=on;ACCUMS.clear();invalidateSpanCache();tileAccumBytesUsed=0;}
+export function tileAccumBudget():number{return TILE_ACCUM_BUDGET;}
+export function setTileAccumBudget(bytes:number):void{
+ if(!Number.isFinite(bytes)||bytes<0)throw new Error('tileAccumBudget must be ≥ 0');
+ TILE_ACCUM_BUDGET=bytes|0;ACCUMS.clear();invalidateSpanCache();tileAccumBytesUsed=0;
+}
+export function tileAccumPerBuoy():number{return TILE_ACCUM_PER_BUOY;}
+export function setTileAccumPerBuoy(n:number):void{
+ if(!Number.isInteger(n)||n<0||n>16)throw new Error('tileAccumPerBuoy must be integer 0..16');
+ TILE_ACCUM_PER_BUOY=n;ACCUMS.clear();invalidateSpanCache();tileAccumBytesUsed=0;
+}
+export function tileAccumBytes():number{return tileAccumBytesUsed;}
+export function accumBytesTotal():number{return accumBytes();}
 /** Adaptive absorption/coherence chunk width: try 128 bins, fall back to 32 when the Thorp
  * curvature proxy says the quadratic recurrence would exceed the 0.01 dB budget. Coherence (∝f²)
  * stays exact either way. Default ON. */
@@ -244,17 +270,58 @@ export class ResLofarGenerator {
  dispose():void{this.releaseAccum();}
  /** Acquire (allocate on first use) the shared accumulator for (history, buoy, RES, f0, L). Called at
   * config time for the stream's band/tiles so the row path allocates nothing. */
- private accumFor(f0:number,L:number):RowAccum{
-  const h=this.history!,f=RES_FRAME_S,p=this.params,rpF=Math.max(1,Math.round(p.rowPeriodS/f)),spanF=Math.ceil(this.spanS/f-1e-9),slots=Math.ceil(spanF/rpF)+1,q=this.difar?3:1;
-  const id=`${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${f0}|${L}|${q}`;
-  let A=this.held.get(id);if(A)return A;let a=ACCUMS.get(id);if(!a||a.slots!==slots||a.L!==L||a.q!==q){a=new RowAccum(slots,L,q);ACCUMS.set(id,a);}a.users++;this.held.set(id,a);return a;
+ /** slots/q for RowAccum. budgeted FULLBAND tiles use q=1 (P only) so 32×1 tile fits in the
+  * ~3.5 MB headroom under the 50 MB acoustic total (demon+legacy included); vernier keeps q=3. */
+ private accumShape(budgeted=false):{slots:number;q:number}{
+  const f=RES_FRAME_S,p=this.params,rpF=Math.max(1,Math.round(p.rowPeriodS/f)),spanF=Math.ceil(this.spanS/f-1e-9);
+  return {slots:Math.ceil(spanF/rpF)+1,q:(budgeted||!this.difar)?1:3};
+ }
+ private accumId(f0:number,L:number,q:number):string{
+  return `${this.history!.uid}|${this.historyBuoyKey()}|${this.settings.res}|${f0}|${L}|${q}`;
+ }
+ /** Acquire a RowAccum. When budgeted=true (FULLBAND tile under BOUNDED_TILE_ACCUMS), refuse
+  * new allocations that would exceed TILE_ACCUM_BUDGET so acoustic total stays ≤ 50 MB. */
+ private accumFor(f0:number,L:number,budgeted=false):RowAccum|null{
+  const h=this.history!;if(!h)return null;const {slots,q}=this.accumShape(budgeted);
+  const id=this.accumId(f0,L,q);
+  let A=this.held.get(id);if(A)return A;
+  let a=ACCUMS.get(id);
+  if(!a||a.slots!==slots||a.L!==L||a.q!==q){
+   const probe=new RowAccum(slots,L,q),need=probe.bytes;
+   if(budgeted&&BOUNDED_TILE_ACCUMS&&tileAccumBytesUsed+need>TILE_ACCUM_BUDGET)return null;
+   a=probe;ACCUMS.set(id,a);if(budgeted)tileAccumBytesUsed+=need;
+  }
+  a.users++;this.held.set(id,a);return a;
+ }
+ private hasAccumFor(f0:number,L:number):boolean{
+  if(!this.history)return false;
+  // Prefer budgeted (q=1) id for FULLBAND tiles; also accept vernier-style q if present.
+  const qBud=this.accumShape(true).q,qFull=this.accumShape(false).q;
+  for(const q of [qBud,qFull]){const id=this.accumId(f0,L,q);if(this.held.has(id)||ACCUMS.has(id))return true;}
+  return false;
  }
  private prepareAccums():void{
   if(!this.history||ROW_PATH!=='fast')return;
-  if(this.fullAxisTiles>0){if(this.fullAxisTiles<=ACCUM_MAX_TILES)for(let i=0;i<this.fullAxisTiles;i++){const t=tileBand(this.settings.res,i,this.fmax,TILE_BINS);this.accumFor(t.f0,t.liveBins);}}
-  else this.accumFor(this.band.f0,this.band.liveBins);
+  if(this.fullAxisTiles>0){
+   if(this.fullAxisTiles<=ACCUM_MAX_TILES){
+    for(let i=0;i<this.fullAxisTiles;i++){const t=tileBand(this.settings.res,i,this.fmax,TILE_BINS);this.accumFor(t.f0,t.liveBins,false);}
+   }else if(BOUNDED_TILE_ACCUMS&&TILE_ACCUM_PER_BUOY>0){
+    // Fair per-buoy cap: tiles 0..cap-1 (stable; no LRU thrash). P-only q=1 keeps 32×1 under 50 MB.
+    const cap=Math.min(this.fullAxisTiles,TILE_ACCUM_PER_BUOY);
+    for(let i=0;i<cap;i++){const t=tileBand(this.settings.res,i,this.fmax,TILE_BINS);if(!this.accumFor(t.f0,t.liveBins,true))break;}
+   }
+  }else this.accumFor(this.band.f0,this.band.liveBins,false);
  }
- private releaseAccum():void{for(const [k,a] of this.held)if(--a.users<=0&&ACCUMS.get(k)===a)ACCUMS.delete(k);this.held.clear();}
+ private releaseAccum():void{
+  for(const [k,a] of this.held){
+   if(--a.users<=0&&ACCUMS.get(k)===a){
+    // Budget tracks FULLBAND tile accums (L > RES_BINS); vernier never budgeted.
+    if(a.L>RES_BINS)tileAccumBytesUsed=Math.max(0,tileAccumBytesUsed-a.bytes);
+    ACCUMS.delete(k);
+   }
+  }
+  this.held.clear();
+ }
  generate(out:Float32Array=this.row,offset=0):Float32Array{
   const rowKey=this.rowIndex++;
   return this.render(rowKey,out,offset,false);
@@ -282,7 +349,7 @@ export class ResLofarGenerator {
   const L=this.band.liveBins,difar=this.difar;
   let spanKey='';
   if(fast&&spanCacheOn){
-   spanKey=`${spanEpoch}|${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}|${h.last}`;
+   spanKey=`${spanEpoch}|${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}|${BOUNDED_TILE_ACCUMS?1:0}|${h.last}`;
    for(const c of SPAN_CACHE)if(c.key===spanKey){const amb=this.ambientBin;SH.P.set(c.P.subarray(0,L));if(difar){SH.E.set(c.E.subarray(0,L));SH.N.set(c.N.subarray(0,L));for(let i=0;i<L;i++)SH.S[i]=Math.max(0,SH.P[i]!-amb[i]!);}spanCacheHits++;return true;}
   }
   const P=SH.P,E=SH.E,N=SH.N,S=SH.S,FP=SH.FP,FE=SH.FE,FN=SH.FN,FS=SH.FS;let wsum=0;
@@ -304,7 +371,9 @@ export class ResLofarGenerator {
  }
  private integrateRow(tEnd:number,perTile:boolean):boolean{
   if(ROW_PATH==='reference')return perTile?this.integrateHistory(tEnd):this.integrateCached(tEnd);
-  if(!perTile||this.fullAxisTiles<=ACCUM_MAX_TILES){const r=this.integrateAccum(tEnd);if(r!==null)return r;}
+  const useAccum=!perTile||this.fullAxisTiles<=ACCUM_MAX_TILES
+   ||(BOUNDED_TILE_ACCUMS&&this.fullAxisTiles>ACCUM_MAX_TILES&&this.hasAccumFor(this.band.f0,this.band.liveBins));
+  if(useAccum){const r=this.integrateAccum(tEnd);if(r!==null)return r;}
   return this.integrateHistory(tEnd,true);
  }
  /** Fast path: sliding per-row Welch accumulators. Each 0.25 s frame's modelled spectrum is evaluated
@@ -315,9 +384,11 @@ export class ResLofarGenerator {
   const h=this.history;if(!h||h.count===0)return false;const f=RES_FRAME_S,e=Math.round(tEnd/f);if(Math.abs(e*f-tEnd)>1e-7)return null;
   const span=this.spanS,newest=h.t[h.slot(0)]!,oldest=h.t[h.slot(h.count-1)]!;
   if(newest<tEnd-1e-6||oldest-f>tEnd-span+1e-6)return false;
-  const p=this.params,rpF=Math.max(1,Math.round(p.rowPeriodS/f)),spanF=Math.ceil(span/f-1e-9),R=Math.ceil(spanF/rpF),slots=R+1,L=this.band.liveBins,q=this.difar?3:1;
-  const A=this.accumFor(this.band.f0,L);
-  const ver=`${this.tablesKey}|${envEpoch}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}`;if(A.ver!==ver){A.reset();A.ver=ver;}
+  const budgeted=BOUNDED_TILE_ACCUMS&&this.fullAxisTiles>ACCUM_MAX_TILES;
+  const p=this.params,rpF=Math.max(1,Math.round(p.rowPeriodS/f)),spanF=Math.ceil(span/f-1e-9),R=Math.ceil(spanF/rpF),slots=R+1,L=this.band.liveBins;
+  const qWant=this.accumShape(budgeted).q;
+  const A=this.accumFor(this.band.f0,L,budgeted);if(!A)return null;const q=A.q;
+  const ver=`${this.tablesKey}|${envEpoch}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}|${BOUNDED_TILE_ACCUMS?1:0}`;if(A.ver!==ver){A.reset();A.ver=ver;}
   const slotOf=(x:number)=>((Math.round(x/rpF)%slots)+slots)%slots,s=slotOf(e);
   if(!(A.rowE[s]===e&&A.done[s]===1)){
    const open=(x:number)=>{const k=slotOf(x);if(A.rowE[k]===x)return;A.rowE[k]=x;A.done[k]=0;A.wsum[k]=0;A.acc.fill(0,k*q*L,(k+1)*q*L);};
@@ -334,6 +405,13 @@ export class ResLofarGenerator {
   const wsum=A.wsum[s]!;if(!(wsum>0))return false;const kk=1/wsum,o=s*q*L,acc=A.acc,P=SH.P,amb=this.ambientBin;
   for(let i=0;i<L;i++)P[i]=acc[o+i]!*kk;
   if(q===3){const E=SH.E,N=SH.N,S=SH.S;for(let i=0;i<L;i++){E[i]=acc[o+L+i]!*kk;N[i]=acc[o+2*L+i]!*kk;S[i]=Math.max(0,P[i]!-amb[i]!);}}
+  else if(this.difar){
+   // P-only accum: span-averaged power is exact (Float32); bearings from the newest frame in the
+   // span (one extra coreFast) so DIFAR still has a signal. S = max(0, P−amb) as usual.
+   const E=SH.E,N=SH.N,S=SH.S,FE=SH.FE,FN=SH.FN,FS=SH.FS,FP=SH.FP;
+   const sl=h.slot(0);this.loadFrame(sl);this.coreFast(FP,FE,FN,FS);
+   for(let i=0;i<L;i++){E[i]=FE[i]!;N[i]=FN[i]!;S[i]=Math.max(0,P[i]!-amb[i]!);}
+  }
   return true;
  }
  /** Same model as core() with per-bin exps replaced by a chunked exp recurrence (fast path):
