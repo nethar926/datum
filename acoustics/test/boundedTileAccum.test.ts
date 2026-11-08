@@ -76,4 +76,23 @@ describe('bounded FULLBAND tile Welch accums',()=>{
     for(const b of e.scenario.buoys)e.subscribe({channel:b.rfChannel,kind:'lofar',res:2,filter:'NB',fullAxis:true,visibleTileIndex:0});
     expect(tileAccumBytes()).toBe(0);
   });
+
+  it('RES2↔RES5 round-trip keeps tileAccumBytes accounting (soak regression)',()=>{
+    setBoundedTileAccums(true);setTileAccumPerBuoy(1);
+    const e=new AcousticEngine(scen(4,1),303) as any;
+    const fulls=e.scenario.buoys.flatMap((b:any)=>['NB','BB'].map((f:any)=>
+      e.subscribe({channel:b.rfChannel,kind:'lofar',res:2,filter:f,fullAxis:true,visibleTileIndex:0})));
+    const out=new Float32Array(4096);
+    for(let k=1;k<=16;k++){e.advance(.25);for(const c of fulls)while(e.rowsReady(c.streamId)>0)e.writeRow(c.streamId,out);}
+    const before=tileAccumBytes();
+    expect(before).toBeGreaterThan(0);
+    for(const c of fulls)e.setGram(c.streamId,{res:5,fullAxis:true,visibleTileIndex:0});
+    for(let k=1;k<=8;k++){e.advance(.25);for(const c of fulls)while(e.rowsReady(c.streamId)>0)e.writeRow(c.streamId,out);}
+    // RES5 tileCount ≤ ACCUM_MAX_TILES → non-budgeted; gauge should be 0
+    expect(tileAccumBytes()).toBe(0);
+    for(const c of fulls)e.setGram(c.streamId,{res:2,fullAxis:true,visibleTileIndex:0});
+    for(let k=1;k<=16;k++){e.advance(.25);for(const c of fulls)while(e.rowsReady(c.streamId)>0)e.writeRow(c.streamId,out);}
+    expect(tileAccumBytes()).toBe(before);
+    expect(tileAccumBytes()).toBeLessThanOrEqual(tileAccumBudget());
+  },120000);
 });

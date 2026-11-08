@@ -111,7 +111,7 @@ function tableBytes():number{let b=0;for(const t of TABLES.values())b+=t.bytes;r
 /** Sliding Welch row accumulators shared by streams of the same (history, buoy, RES, band) — NB and
  * BB share one. Float32 sums (positive terms, ≤128 adds → rel. error ≲1e-5). */
 class RowAccum{
- ver='';users=0;lastFold=NaN;readonly acc:Float32Array;readonly wsum:Float64Array;readonly rowE:Float64Array;readonly done:Uint8Array;
+ ver='';users=0;lastFold=NaN;budgeted=false;readonly acc:Float32Array;readonly wsum:Float64Array;readonly rowE:Float64Array;readonly done:Uint8Array;
  constructor(readonly slots:number,readonly L:number,readonly q:number){this.acc=new Float32Array(slots*q*L);this.wsum=new Float64Array(slots);this.rowE=new Float64Array(slots).fill(NaN);this.done=new Uint8Array(slots);}
  reset():void{this.acc.fill(0);this.wsum.fill(0);this.rowE.fill(NaN);this.done.fill(0);this.lastFold=NaN;}
  get bytes():number{return this.acc.byteLength+this.wsum.byteLength+this.rowE.byteLength+this.done.byteLength;}
@@ -289,7 +289,9 @@ export class ResLofarGenerator {
   if(!a||a.slots!==slots||a.L!==L||a.q!==q){
    const probe=new RowAccum(slots,L,q),need=probe.bytes;
    if(budgeted&&BOUNDED_TILE_ACCUMS&&tileAccumBytesUsed+need>TILE_ACCUM_BUDGET)return null;
-   a=probe;ACCUMS.set(id,a);if(budgeted)tileAccumBytesUsed+=need;
+   // Drop a shape-mismatched occupant: only budgeted bytes are tracked in tileAccumBytesUsed.
+   if(a&&ACCUMS.get(id)===a){if(a.budgeted)tileAccumBytesUsed=Math.max(0,tileAccumBytesUsed-a.bytes);ACCUMS.delete(id);}
+   probe.budgeted=!!budgeted;a=probe;ACCUMS.set(id,a);if(probe.budgeted)tileAccumBytesUsed+=need;
   }
   a.users++;this.held.set(id,a);return a;
  }
@@ -315,8 +317,10 @@ export class ResLofarGenerator {
  private releaseAccum():void{
   for(const [k,a] of this.held){
    if(--a.users<=0&&ACCUMS.get(k)===a){
-    // Budget tracks FULLBAND tile accums (L > RES_BINS); vernier never budgeted.
-    if(a.L>RES_BINS)tileAccumBytesUsed=Math.max(0,tileAccumBytesUsed-a.bytes);
+    // Only budgeted FULLBAND tile accums (BOUNDED_TILE_ACCUMS path) own tileAccumBytesUsed.
+    // Non-budgeted L>RES_BINS (e.g. RES5 FULLBAND under ACCUM_MAX_TILES) must not debit the counter —
+    // that was zeroing the gauge across RES2↔RES5 switches in the 900 s soak.
+    if(a.budgeted)tileAccumBytesUsed=Math.max(0,tileAccumBytesUsed-a.bytes);
     ACCUMS.delete(k);
    }
   }
