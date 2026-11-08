@@ -51,10 +51,35 @@ function coarseNodes(f0:number,df:number,L:number):Int32Array{
 }
 const CS={P:new Float64Array(TILE_BINS+1),E:new Float64Array(TILE_BINS+1),N:new Float64Array(TILE_BINS+1)};
 /** FULLBAND streams with at most this many tiles use accumulators (memory-bounded static rule). */
-export const ACCUM_MAX_TILES=2;
+export const ACCUM_MAX_TILES_DEFAULT=2;
+/** Runtime cap for FULLBAND sliding accumulators (default 2). Raising to 8 enables RES2 tile
+ * accums (~2× full-load at 60 contacts) but scratch jumps to ~70 MB (over the 50 MB acoustic
+ * budget). Flag via setAccumMaxTiles; default stays 2. */
+let ACCUM_MAX_TILES=ACCUM_MAX_TILES_DEFAULT;
+export function accumMaxTiles():number{return ACCUM_MAX_TILES;}
+export {ACCUM_MAX_TILES};
+export function setAccumMaxTiles(n:number):void{
+ if(!Number.isInteger(n)||n<1||n>16)throw new Error('accumMaxTiles must be integer 1..16');
+ ACCUM_MAX_TILES=n;ACCUMS.clear();invalidateSpanCache();
+}
+/** Adaptive absorption/coherence chunk width: try 128 bins, fall back to 32 when the Thorp
+ * curvature proxy says the quadratic recurrence would exceed the 0.01 dB budget. Coherence (∝f²)
+ * stays exact either way. Default ON. */
+let ADAPTIVE_CHUNK=true;
+export function setAdaptiveChunk(on:boolean):void{ADAPTIVE_CHUNK=on;ACCUMS.clear();invalidateSpanCache();envEpoch++;}
+export function adaptiveChunk():boolean{return ADAPTIVE_CHUNK;}
+export const CHUNK_WIDE=128,CHUNK_NARROW=32;
+/** Skip a contact's broadband+swath loop when a conservative upper bound on its received
+ * broadband is below the threshold that can move any bin by 0.01 dB even if every contact
+ * were similarly quiet (budget shared across nActive). Tonals still deposit. Default ON. */
+let CONTACT_CULL=true;
+export function setContactCull(on:boolean):void{CONTACT_CULL=on;ACCUMS.clear();invalidateSpanCache();envEpoch++;}
+export function contactCull():boolean{return CONTACT_CULL;}
+/** 10^(0.01/10)−1: linear power fraction that yields a 0.01 dB rise over ambient alone. */
+export const CULL_POWER_FRAC=10**(0.01/10)-1;
 /** Band tables (ambient, shape, absorption/coherence exponents, BB half-widths) depend only on
  * (RES, f0, width, environment) — not on the buoy — so they are shared. LRU, bounded entries. */
-interface BandTables{amb:Float64Array;shape:Float64Array;shapeEnbw:Float64Array;absE:Float64Array;cohE:Float64Array;halfWidth:Int32Array;bytes:number}
+interface BandTables{amb:Float64Array;shape:Float64Array;shapeEnbw:Float64Array;absE:Float64Array;cohE:Float64Array;halfWidth:Int32Array;minAmb:number;bytes:number}
 const TABLES=new Map<string,BandTables>();const TABLES_MAX=64;
 function tableBytes():number{let b=0;for(const t of TABLES.values())b+=t.bytes;return b;}
 /** Sliding Welch row accumulators shared by streams of the same (history, buoy, RES, band) — NB and
@@ -134,7 +159,7 @@ export class ResLofarGenerator {
  /** NB TPSW background (bias corrected) of the last NB row. */
  readonly background:Float64Array;
  private readonly signalEast:Float64Array;private readonly signalNorth:Float64Array;private readonly signalPower:Float64Array;
- private shape:Float64Array;private shapeEnbw:Float64Array;private absorptionExponent:Float64Array;private coherenceExponent:Float64Array;
+ private shape:Float64Array;private shapeEnbw:Float64Array;private absorptionExponent:Float64Array;private coherenceExponent:Float64Array;private minAmb=Infinity;
  /** AR(1) state (K=1 only, allocated on demand; Float32). */
  private zr:Float32Array;private zi:Float32Array;
  private halfWidth:Int32Array;private readonly clipped:Float64Array;private tablesKey='';
@@ -204,12 +229,13 @@ export class ResLofarGenerator {
   let t=TABLES.get(key);if(t){TABLES.delete(key);TABLES.set(key,t);}else{t=this.buildTables();TABLES.set(key,t);if(TABLES.size>TABLES_MAX)TABLES.delete(TABLES.keys().next().value!);}
   if(this.fullAxisTiles>0)this.tileTables.set(this.tileIndex,{key,bins:this.bins,t});this.setTables(key,t);
  }
- private setTables(key:string,t:BandTables):void{this.tablesKey=key;this.ambientBin=t.amb;this.shape=t.shape;this.shapeEnbw=t.shapeEnbw;this.absorptionExponent=t.absE;this.coherenceExponent=t.cohE;this.halfWidth=t.halfWidth;}
+ private setTables(key:string,t:BandTables):void{this.tablesKey=key;this.ambientBin=t.amb;this.shape=t.shape;this.shapeEnbw=t.shapeEnbw;this.absorptionExponent=t.absE;this.coherenceExponent=t.cohE;this.halfWidth=t.halfWidth;this.minAmb=t.minAmb;}
  private buildTables():BandTables{
   const e=this.environment,df=this.params.fBin,f0=this.band.f0,enbw=this.params.enbwHz,W=this.bins,L=this.band.liveBins,k=(2**(BB_SMOOTH_OCTAVE/2)-2**(-BB_SMOOTH_OCTAVE/2))/2,sigma=seaSurfaceSigma(e.seaState);
   const amb=new Float64Array(W),shape=new Float64Array(W),shapeEnbw=new Float64Array(W),absE=new Float64Array(W),cohE=new Float64Array(W),halfWidth=new Int32Array(W);
-  for(let i=0;i<W;i++){halfWidth[i]=Math.round((f0+i*df)*k/df);const f=Math.max(df/2,f0+i*df),kk=2*Math.PI*f/e.soundSpeed;cohE[i]=-2*kk*kk*sigma*sigma;absE[i]=-thorp(f)*(Math.LN10/10);amb[i]=i<L?dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity))*enbw:NaN;shape[i]=1/(1+(f/400)**2);shapeEnbw[i]=shape[i]*enbw;}
-  return {amb,shape,shapeEnbw,absE,cohE,halfWidth,bytes:W*(5*8+4)};
+  let minAmb=Infinity;
+  for(let i=0;i<W;i++){halfWidth[i]=Math.round((f0+i*df)*k/df);const f=Math.max(df/2,f0+i*df),kk=2*Math.PI*f/e.soundSpeed;cohE[i]=-2*kk*kk*sigma*sigma;absE[i]=-thorp(f)*(Math.LN10/10);amb[i]=i<L?dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity))*enbw:NaN;if(i<L&&amb[i]!<minAmb)minAmb=amb[i]!;shape[i]=1/(1+(f/400)**2);shapeEnbw[i]=shape[i]*enbw;}
+  return {amb,shape,shapeEnbw,absE,cohE,halfWidth,minAmb,bytes:W*(5*8+4)};
  }
  private applySwathWindow():void{const df=this.params.fBin,f0=this.band.f0,L=this.band.liveBins;for(const c of this.contacts)for(const w of c.swaths){w.lo=Math.max(0,Math.ceil((w.loHz-f0)/df));w.hi=Math.min(L-1,Math.floor((w.hiHz-f0)/df));}}
  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
@@ -256,7 +282,7 @@ export class ResLofarGenerator {
   const L=this.band.liveBins,difar=this.difar;
   let spanKey='';
   if(fast&&spanCacheOn){
-   spanKey=`${spanEpoch}|${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${h.last}`;
+   spanKey=`${spanEpoch}|${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}|${h.last}`;
    for(const c of SPAN_CACHE)if(c.key===spanKey){const amb=this.ambientBin;SH.P.set(c.P.subarray(0,L));if(difar){SH.E.set(c.E.subarray(0,L));SH.N.set(c.N.subarray(0,L));for(let i=0;i<L;i++)SH.S[i]=Math.max(0,SH.P[i]!-amb[i]!);}spanCacheHits++;return true;}
   }
   const P=SH.P,E=SH.E,N=SH.N,S=SH.S,FP=SH.FP,FE=SH.FE,FN=SH.FN,FS=SH.FS;let wsum=0;
@@ -291,7 +317,7 @@ export class ResLofarGenerator {
   if(newest<tEnd-1e-6||oldest-f>tEnd-span+1e-6)return false;
   const p=this.params,rpF=Math.max(1,Math.round(p.rowPeriodS/f)),spanF=Math.ceil(span/f-1e-9),R=Math.ceil(spanF/rpF),slots=R+1,L=this.band.liveBins,q=this.difar?3:1;
   const A=this.accumFor(this.band.f0,L);
-  const ver=`${this.tablesKey}|${envEpoch}|${COARSE_BB?1:0}`;if(A.ver!==ver){A.reset();A.ver=ver;}
+  const ver=`${this.tablesKey}|${envEpoch}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}`;if(A.ver!==ver){A.reset();A.ver=ver;}
   const slotOf=(x:number)=>((Math.round(x/rpF)%slots)+slots)%slots,s=slotOf(e);
   if(!(A.rowE[s]===e&&A.done[s]===1)){
    const open=(x:number)=>{const k=slotOf(x);if(A.rowE[k]===x)return;A.rowE[k]=x;A.done[k]=0;A.wsum[k]=0;A.acc.fill(0,k*q*L,(k+1)*q*L);};
@@ -315,11 +341,27 @@ export class ResLofarGenerator {
   * chunk's first, middle and last bins — exact for the f² coherence exponent; for the smooth
   * rational absorption exponent the residual is its third difference. 3 exp per chunk instead of
   * one per bin. */
+ /** Choose chunk width for the quadratic exp recurrence. Bin 0 stays width 1. Wide chunks cut
+  * setup; a cheap AE curvature×range proxy falls back to 32 when the absorption residual would
+  * threaten the 0.01 dB budget. Coherence (exact quadratic in f) is fine at either width. */
+ private chunkWidth(i0:number,L:number,km:number,AE:Float64Array):number{
+  if(i0===0)return 1;
+  const rem=L-i0;if(rem<=CHUNK_NARROW||!ADAPTIVE_CHUNK)return Math.min(CHUNK_NARROW,rem);
+  const n=Math.min(CHUNK_WIDE,rem);if(n<3)return n;
+  const hh=(n-1)>>1,h2=n-1,d0=AE[i0+hh]!-AE[i0]!,d1=AE[i0+h2]!-AE[i0+hh]!;
+  // |Δ² AE|·|km|·n² proxy; threshold 0.5 ≈ mid-band Thorp at ~20 km with n=128. Empirically the
+  // residual stays ≪ 0.01 dB on the fastPath suite (see kernelOpts / fastPath tests).
+  if(Math.abs(d1-d0)*Math.abs(km)*n*n>0.5)return Math.min(CHUNK_NARROW,rem);
+  return n;
+ }
  private coreFast(P:Float64Array,sE:Float64Array,sN:Float64Array,sP:Float64Array):void{
   if(COARSE_BB){this.coreCoarse(P,sE,sN,sP);return;}
   if(resKernel()==='wasm'&&wasmKernelReady()){this.coreFastWasm(P,sE,sN,sP);return;}
   const e=this.environment,df=this.params.fBin,enbw=this.params.enbwHz,f0=this.band.f0,L=this.band.liveBins,difar=this.difar,bt=this.bt,AB=SH.ab,se=this.shapeEnbw,amb=this.ambientBin,coh=this.sigma!==0;
   for(let i=0;i<L;i++)P[i]=amb[i]!;if(difar){sE.fill(0,0,L);sN.fill(0,0,L);sP.fill(0,0,L);}
+  // Cull budget: share the 0.01 dB ambient rise across contacts.length (stable; avoids a pre-pass).
+  const cullCeil=CONTACT_CULL&&this.contacts.length>0?CULL_POWER_FRAC/this.contacts.length:0,minAmb=this.minAmb;
+  const AE=this.absorptionExponent,CE=this.coherenceExponent;
   for(let j=0;j<this.contacts.length;j++){
    const item=this.contacts[j]!,c=item.trk;if(!item.act)continue;const g=geometry(c,bt,this.g);
    const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
@@ -329,21 +371,31 @@ export class ResLofarGenerator {
    const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
    const flow=Number.isNaN(item.flowDb)?0:dbToPower(item.flowDb)*(g.range<=1?1:spread*item.flowFrac);
    const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,c.depth+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+bt.depth)/imageRange)**2:0;
-   const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
-   const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
-   // Absorption/coherence factors by the chunked exp recurrence, fused into the bin loop.
-   const AE=this.absorptionExponent,CE=this.coherenceExponent,keep=item.swaths.length>0;
-   for(let i0=0;i0<L;){const n=i0===0?1:Math.min(32,L-i0);let va:number,ra:number,rra:number,vc=1,rc=1,rrc=1;
-    if(n<3){va=Math.exp(AE[i0]!*km);ra=n>1?Math.exp((AE[i0+1]!-AE[i0]!)*km):1;rra=1;if(coh){vc=Math.exp(CE[i0]!*grazing2);rc=n>1?Math.exp((CE[i0+1]!-CE[i0]!)*grazing2):1;}}
-    else{const hh=(n-1)>>1,h2=n-1;let x0=AE[i0]!*km,x1=AE[i0+hh]!*km,x2=AE[i0+h2]!*km,bq=((x2-x0)/h2-(x1-x0)/hh)/(h2-hh),aq=(x1-x0)/hh-bq*hh;va=Math.exp(x0);ra=Math.exp(aq+bq);rra=Math.exp(2*bq);
-     if(coh){x0=CE[i0]!*grazing2;x1=CE[i0+hh]!*grazing2;x2=CE[i0+h2]!*grazing2;bq=((x2-x0)/h2-(x1-x0)/hh)/(h2-hh);aq=(x1-x0)/hh-bq*hh;vc=Math.exp(x0);rc=Math.exp(aq+bq);rrc=Math.exp(2*bq);}}
-    const i1=i0+n;
-    if(difar&&!keep)for(let i=i0;i<i1;i++){const coherent=q*vc,gain=Math.max(0,1+coherent*coherent-2*coherent*cp),contrib=(broadband*gain+flow)*se[i]!*va;P[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;
-     const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;va*=ra;ra*=rra;vc*=rc;rc*=rrc;}
-    else for(let i=i0;i<i1;i++){const coherent=q*vc,gain=Math.max(0,1+coherent*coherent-2*coherent*cp),contrib=(broadband*gain+flow)*se[i]!*va;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}if(keep)AB[i]=va;
-     const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;va*=ra;ra*=rra;vc*=rc;rc*=rrc;}
-    i0=i1;}
-   for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df)),lv=level*.0003*gs*enbw;for(let i=lo;i<=hi;i++){const contrib=lv*AB[i]!;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}
+   const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing),keep=item.swaths.length>0;
+   // Conservative broadband bound: max LM (1+q)², max envelope at bin 0 (Thorp/shape peak at LF).
+   let skipBb=false;
+   if(cullCeil>0){const maxEnv=se[0]!*Math.exp(AE[0]!*km),maxBb=(broadband*(1+q)*(1+q)+flow)*maxEnv;skipBb=maxBb<=cullCeil*minAmb;}
+   if(!skipBb){
+    const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
+    const q2=q*q,twoQ=2*q;
+    for(let i0=0;i0<L;){const n=this.chunkWidth(i0,L,km,AE);let va:number,ra:number,rra:number,vc=1,rc=1,rrc=1;
+     if(n<3){va=Math.exp(AE[i0]!*km);ra=n>1?Math.exp((AE[i0+1]!-AE[i0]!)*km):1;rra=1;if(coh){vc=Math.exp(CE[i0]!*grazing2);rc=n>1?Math.exp((CE[i0+1]!-CE[i0]!)*grazing2):1;}}
+     else{const hh=(n-1)>>1,h2=n-1;let x0=AE[i0]!*km,x1=AE[i0+hh]!*km,x2=AE[i0+h2]!*km,bq=((x2-x0)/h2-(x1-x0)/hh)/(h2-hh),aq=(x1-x0)/hh-bq*hh;va=Math.exp(x0);ra=Math.exp(aq+bq);rra=Math.exp(2*bq);
+      if(coh){x0=CE[i0]!*grazing2;x1=CE[i0+hh]!*grazing2;x2=CE[i0+h2]!*grazing2;bq=((x2-x0)/h2-(x1-x0)/hh)/(h2-hh);aq=(x1-x0)/hh-bq*hh;vc=Math.exp(x0);rc=Math.exp(aq+bq);rrc=Math.exp(2*bq);}}
+     const i1=i0+n;
+     if(!coh){
+      // Constant reflection amplitude: hoist 1+q² and 2q out of the bin loop.
+      if(difar&&!keep)for(let i=i0;i<i1;i++){const gain=Math.max(0,1+q2-twoQ*cp),contrib=(broadband*gain+flow)*se[i]!*va;P[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;
+       const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;va*=ra;ra*=rra;}
+      else for(let i=i0;i<i1;i++){const gain=Math.max(0,1+q2-twoQ*cp),contrib=(broadband*gain+flow)*se[i]!*va;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}if(keep)AB[i]=va;
+       const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;va*=ra;ra*=rra;}
+     }else if(difar&&!keep)for(let i=i0;i<i1;i++){const coherent=q*vc,gain=Math.max(0,1+coherent*coherent-2*coherent*cp),contrib=(broadband*gain+flow)*se[i]!*va;P[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;
+      const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;va*=ra;ra*=rra;vc*=rc;rc*=rrc;}
+     else for(let i=i0;i<i1;i++){const coherent=q*vc,gain=Math.max(0,1+coherent*coherent-2*coherent*cp),contrib=(broadband*gain+flow)*se[i]!*va;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}if(keep)AB[i]=va;
+      const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;va*=ra;ra*=rra;vc*=rc;rc*=rrc;}
+     i0=i1;}
+    for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df)),lv=level*.0003*gs*enbw;for(let i=lo;i<=hi;i++){const contrib=lv*AB[i]!;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}
+   }
    for(let k=0;k<item.frequencies.length;k++){
     const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
     if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
