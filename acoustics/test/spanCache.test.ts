@@ -1,7 +1,7 @@
 import {describe,it,expect,afterEach} from 'vitest';
-import {AcousticEngine,cpaScenario,fictionalSignature,resForBand,vernierHzForBand,setResRowPath,spanCacheStats,resetSpanCacheStats,setSpanCache,SIM_STREAM_SET,parseLofarStreamId,attachWaterColumn} from '../src/index.js';
+import {AcousticEngine,cpaScenario,fictionalSignature,resForBand,vernierHzForBand,setResRowPath,spanCacheStats,resetSpanCacheStats,setSpanCache,SIM_STREAM_SET,parseLofarStreamId,attachWaterColumn,setBoundedTileAccums} from '../src/index.js';
 
-afterEach(()=>{setResRowPath('fast');setSpanCache(true);resetSpanCacheStats();});
+afterEach(()=>{setResRowPath('fast');setSpanCache(true);resetSpanCacheStats();setBoundedTileAccums(true);});
 
 function scen(nB:number,nC:number){const s=cpaScenario();s.fmax=2000;s.seed=303;
  s.contacts=Array.from({length:nC},(_,i)=>({id:'m'+i,category:'subsurface' as const,x:-1500+i*137,y:600+i*91,depth:60+i,course:Math.PI/2+i*.1,speed:4,motion:[{at:0,course:Math.PI/2+i*.1,speed:4,depth:60+i}],params:{...fictionalSignature,levelDb:150,modulation:0,cavitationPower:.05,tonals:[{family:'motor' as const,hz:40+i,power:1,width:'discrete' as const,stability:'stable' as const}]}}));
@@ -18,6 +18,8 @@ function subManifest(e:any,b:any,res:number){
 
 describe('exact span-spectrum reuse (FULLBAND integrateHistory)',()=>{
  it('RES2 FULLBAND NB then BB: span cache hits and bit-identical expected spectra',()=>{
+  // Isolate integrateHistory + SPAN_CACHE (bounded tile-0 accums would bypass the cache).
+  setBoundedTileAccums(false);
   const scenario=scen(1,3);scenario.waterColumn=attachWaterColumn(scenario.environment);
   const e=new AcousticEngine(scenario,303) as any;
   const {nb,bb}=subManifest(e,scenario.buoys[0],2);

@@ -1,0 +1,34 @@
+{
+  "pctRealtime": 474.98397983750004,
+  "acousticBytes": 49104000,
+  "acousticMB": 49.104,
+  "resBytes": 39577728,
+  "demonBytes": 6904832,
+  "legacyBytes": 2621440,
+  "breakdown": {
+    "history": 4482304,
+    "scratch": 11502464,
+    "streams": 23592960,
+    "spanCache": 786432,
+    "rowCache": 65536,
+    "fftShared": 81920,
+    "sharedScratch": 11502464
+  },
+  "tileAccumBytes": 2624160,
+  "tileAccumMB": 2.624,
+  "accumBytesTotal": 8504064,
+  "accumCount": 160,
+  "componentsMB": {
+    "history": 4.482,
+    "scratch": 11.502,
+    "streams": 23.593,
+    "spanCache": 0.786,
+    "rowCache": 0.066,
+    "fftShared": 0.082,
+    "sharedScratch": 11.502,
+    "tileAccum": 2.624,
+    "demon": 6.905,
+    "legacy": 2.621,
+    "acousticTotal": 49.104
+  }
+}

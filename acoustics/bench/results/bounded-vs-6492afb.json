@@ -1,0 +1,51 @@
+{
+  "baseline_tip": "6492afb",
+  "feature_tip_pending": "a8f1064 + results",
+  "note": "baseline medians from kernel-opts-seq (chunk/cull/fusion). bounded off \u2248 same path as tip for FULLBAND.",
+  "cells": [
+    {
+      "cell": "RES5\u00d71",
+      "baseline_6492afb_pctRT": 9.82,
+      "bounded_on_pctRT": 9.21,
+      "bounded_off_pctRT": 9.34,
+      "vs_baseline_speedup": 1.067,
+      "vs_off_speedup": 1.015,
+      "acousticMB_on": 29.04,
+      "acousticMB_off": 29.04,
+      "tileAccumMB": 0
+    },
+    {
+      "cell": "RES5\u00d760",
+      "baseline_6492afb_pctRT": 48.53,
+      "bounded_on_pctRT": 47.16,
+      "bounded_off_pctRT": 47.87,
+      "vs_baseline_speedup": 1.029,
+      "vs_off_speedup": 1.015,
+      "acousticMB_on": 30.95,
+      "acousticMB_off": 30.95,
+      "tileAccumMB": 0
+    },
+    {
+      "cell": "RES2\u00d71",
+      "baseline_6492afb_pctRT": 26.08,
+      "bounded_on_pctRT": 24.58,
+      "bounded_off_pctRT": 25.44,
+      "vs_baseline_speedup": 1.061,
+      "vs_off_speedup": 1.035,
+      "acousticMB_on": 47.19,
+      "acousticMB_off": 44.57,
+      "tileAccumMB": 2.62
+    },
+    {
+      "cell": "RES2\u00d760",
+      "baseline_6492afb_pctRT": 379.09,
+      "bounded_on_pctRT": 346.83,
+      "bounded_off_pctRT": 383.8,
+      "vs_baseline_speedup": 1.093,
+      "vs_off_speedup": 1.107,
+      "acousticMB_on": 49.1,
+      "acousticMB_off": 46.48,
+      "tileAccumMB": 2.62
+    }
+  ]
+}
