@@ -1,0 +1,196 @@
+{
+  "on": {
+    "sec": 900,
+    "nC": 60,
+    "res0": 2,
+    "boundedOn": true,
+    "boundedTileAccums": true,
+    "sampleCount": 181,
+    "sampleS": 5,
+    "wallS": 2585.718593618,
+    "acousticMB": {
+      "start": 45.6260986328125,
+      "final": 32.89569091796875,
+      "peak": 47.0010986328125,
+      "p50": 47.0010986328125,
+      "p99": 47.0010986328125,
+      "growth": -13.93353271484375,
+      "growthFromStart": -12.73040771484375,
+      "warmT": 30,
+      "warmMB": 46.8292236328125,
+      "underBudget": true
+    },
+    "heapMB": {
+      "start": 67.34164428710938,
+      "final": 249.85640716552734,
+      "peak": 338.0207061767578,
+      "p99": 337.4081726074219,
+      "growth": 182.51476287841797
+    },
+    "peakOp": {
+      "op": "resSwitch",
+      "phase": "res",
+      "t": 150,
+      "acousticMB": 47.0010986328125,
+      "breakdown": {
+        "history": 4482304,
+        "scratch": 11682688,
+        "streams": 23592960,
+        "tileAccum": 0,
+        "spanCache": 786432,
+        "rowCache": 65536,
+        "fftShared": 81920,
+        "sharedScratch": 11682688,
+        "accumCount": 160
+      }
+    },
+    "byOp": {
+      "pan": {
+        "peakMB": 47.0010986328125,
+        "t": 180
+      },
+      "advance": {
+        "peakMB": 47.0010986328125,
+        "t": 155
+      },
+      "seekFwd": {
+        "peakMB": 47.0010986328125,
+        "t": 228
+      },
+      "seekBack": {
+        "peakMB": 47.0010986328125,
+        "t": 216
+      },
+      "resSwitch": {
+        "peakMB": 47.0010986328125,
+        "t": 150
+      }
+    },
+    "finalBreakdown": {
+      "history": 4482304,
+      "scratch": 13669312,
+      "streams": 6815744,
+      "tileAccum": 0,
+      "spanCache": 786432,
+      "rowCache": 65536,
+      "fftShared": 81920,
+      "sharedScratch": 13669312,
+      "accumCount": 160,
+      "demon": 6904832,
+      "legacy": 2621440,
+      "acoustic": 34493632
+    },
+    "res2PeakMB": 47.0010986328125,
+    "res2LastMB": 47.0010986328125
+  },
+  "off": {
+    "sec": 900,
+    "nC": 60,
+    "res0": 2,
+    "boundedOn": false,
+    "boundedTileAccums": false,
+    "sampleCount": 181,
+    "sampleS": 5,
+    "wallS": 2776.98634205,
+    "acousticMB": {
+      "start": 43.123504638671875,
+      "final": 32.89569091796875,
+      "peak": 44.498504638671875,
+      "p50": 44.498504638671875,
+      "p99": 44.498504638671875,
+      "growth": -11.430938720703125,
+      "growthFromStart": -10.227813720703125,
+      "warmT": 30,
+      "warmMB": 44.326629638671875,
+      "underBudget": true
+    },
+    "heapMB": {
+      "start": 65.16700744628906,
+      "final": 215.29401397705078,
+      "peak": 340.96346282958984,
+      "p99": 339.75980377197266,
+      "growth": 150.12700653076172
+    },
+    "peakOp": {
+      "op": "resSwitch",
+      "phase": "res",
+      "t": 150,
+      "acousticMB": 44.498504638671875,
+      "breakdown": {
+        "history": 4482304,
+        "scratch": 9058528,
+        "streams": 23592960,
+        "tileAccum": 0,
+        "spanCache": 786432,
+        "rowCache": 65536,
+        "fftShared": 81920,
+        "sharedScratch": 9058528,
+        "accumCount": 128
+      }
+    },
+    "byOp": {
+      "pan": {
+        "peakMB": 44.498504638671875,
+        "t": 180
+      },
+      "advance": {
+        "peakMB": 44.498504638671875,
+        "t": 155
+      },
+      "seekFwd": {
+        "peakMB": 44.498504638671875,
+        "t": 228
+      },
+      "seekBack": {
+        "peakMB": 44.498504638671875,
+        "t": 216
+      },
+      "resSwitch": {
+        "peakMB": 44.498504638671875,
+        "t": 150
+      }
+    },
+    "finalBreakdown": {
+      "history": 4482304,
+      "scratch": 13669312,
+      "streams": 6815744,
+      "tileAccum": 0,
+      "spanCache": 786432,
+      "rowCache": 65536,
+      "fftShared": 81920,
+      "sharedScratch": 13669312,
+      "accumCount": 160,
+      "demon": 6904832,
+      "legacy": 2621440,
+      "acoustic": 34493632
+    },
+    "res2PeakMB": 44.498504638671875,
+    "res2LastMB": 44.498504638671875
+  },
+  "table": {
+    "on": {
+      "peak": 47.0010986328125,
+      "p99": 47.0010986328125,
+      "final": 32.89569091796875,
+      "res2Peak": 47.0010986328125,
+      "growthWarm": -13.93353271484375,
+      "peakOp": "resSwitch",
+      "peakT": 150,
+      "heapPeak": 338.0207061767578,
+      "wallS": 2585.718593618,
+      "underBudget": true
+    },
+    "off": {
+      "peak": 44.498504638671875,
+      "p99": 44.498504638671875,
+      "final": 32.89569091796875,
+      "res2Peak": 44.498504638671875,
+      "growthWarm": -11.430938720703125,
+      "peakOp": "resSwitch",
+      "peakT": 150,
+      "heapPeak": 340.96346282958984,
+      "wallS": 2776.98634205,
+      "underBudget": true
+    }
+  }
+}

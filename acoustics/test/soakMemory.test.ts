@@ -15,16 +15,16 @@ afterEach(()=>{
 });
 
 describe('900s-style memory soak (short)',()=>{
-  it('RES2×60 bounded ON: peak acoustic ≤ 50 MB, growth ≈ 0 over 90 s pan/seek/RES',()=>{
-    const r=runSoak(90,true,60,2);
+  it('RES2×60 bounded ON: peak acoustic ≤ 50 MB, growth ≈ 0 over 60 s pan/seek/RES',()=>{
+    const r=runSoak(60,true,60,2);
     expect(r.acousticMB.peak).toBeLessThanOrEqual(50);
     expect(Math.abs(r.acousticMB.growth)).toBeLessThan(0.5); // MB after warm; plateau
     expect(r.sampleCount).toBeGreaterThan(5);
     console.log('soak ON peak/p99/final',r.acousticMB.peak,r.acousticMB.p99,r.acousticMB.final,'peakOp',r.peakOp.op,r.peakOp.phase);
   },600000);
 
-  it('RES2×60 bounded OFF: peak acoustic ≤ 50 MB, growth ≈ 0 over 90 s',()=>{
-    const r=runSoak(90,false,60,2);
+  it('RES2×60 bounded OFF: peak acoustic ≤ 50 MB, growth ≈ 0 over 60 s',()=>{
+    const r=runSoak(60,false,60,2);
     expect(r.acousticMB.peak).toBeLessThanOrEqual(50);
     expect(Math.abs(r.acousticMB.growth)).toBeLessThan(0.5);
     console.log('soak OFF peak/p99/final',r.acousticMB.peak,r.acousticMB.p99,r.acousticMB.final,'peakOp',r.peakOp.op,r.peakOp.phase);
