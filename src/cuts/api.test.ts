@@ -53,7 +53,7 @@ describe('CUT acoustics API (m3-cuts)', () => {
       expect(getCutSeed(c.id)?.id).toBe(c.id)
       for (const line of c.classifyingLines) {
         if (line.behaviour) {
-          expect(['stable', 'unstable', 'skipped', 'harmonics-only', 'ramping', 'broadband']).toContain(line.behaviour)
+          expect(['stable', 'unstable', 'skipped', 'harmonics-only', 'ramping', 'broadband', 'kneeing']).toContain(line.behaviour)
         }
         if (line.n != null) expect(line.n).toBeGreaterThanOrEqual(1)
       }
@@ -127,6 +127,15 @@ describe('behaviour / identify wording', () => {
     expect(behaviourWording('skipped')).toBe('skipped')
     expect(behaviourWording('harmonics-only')).toBe('harmonics-only')
     expect(behaviourWording('broadband')).toBe('broadband')
+  })
+
+  it('accepts the diesel knee without changing its acoustic behavior tag', () => {
+    const cut = getCutSeed('cut-brindleflux-snork')!
+    const knee = cut.classifyingLines.find((line) => line.behaviour === 'kneeing')
+    expect(knee).toBeDefined()
+    expect(knee!.lineFamily).toBe('CFR')
+    expect(behaviourWording(knee!.behaviour!)).toBe('engine family slows together')
+    expect(behaviourWording('future-tag')).toBe('future-tag')
   })
 
   it('names harmonic giveaways as FAMILY ×n', () => {

@@ -70,6 +70,8 @@ export function behaviourWording(b: string): string {
     case 'ramping':
     case 'ramp':
       return 'ramps'
+    case 'kneeing':
+      return 'engine family slows together'
     case 'skipped':
       return 'skipped'
     case 'harmonics-only':
