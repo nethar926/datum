@@ -8,8 +8,9 @@ pan/seek/RES; investigate reuse that does not store every Welch frame.
 - Bench: `bench/soakMemory.bench.ts` (900 s default; `on|off|both`)
 - Test: `test/soakMemory.test.ts` (90 s pan/seek/RES mix, ON+OFF)
 - Workload: provisional manifest v1, RES2×60, 32 buoys × 12 streams
-- Ops: FULLBAND pan every 3 s; seekFwd/seekBack on a 15 s cadence; RES2↔RES5 every 30 s
-  in the res/mixed phases (60 s phase cycle: pan → seek → res → mixed)
+- Ops: FULLBAND pan every 3 s; seekFwd (skipToLatest) / seekBack (rewind 4 streams by 1 row,
+  bounded drain + skipToLatest — full 32×8 history scrub is hours at RES2×60) on a 20 s
+  cadence; RES2↔RES5 every 30 s in the res/mixed phases (60 s cycle: pan → seek → res → mixed)
 - Samples: after every special op + every 5 s; growth measured from warm (t≥30 s)
 
 Raw 900 s results: `bench/results/soak-900-2026-11-08.{on,off}.json` (filled by nohup driver).
