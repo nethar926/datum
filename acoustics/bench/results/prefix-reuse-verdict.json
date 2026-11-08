@@ -1,0 +1,156 @@
+{
+  "date": "2026-11-08",
+  "res": 2,
+  "spanF": 64,
+  "averages": 1,
+  "weightPeakToTrough": 872094.029801894,
+  "accuracy": [
+    {
+      "step": 1,
+      "mode": "uniform",
+      "maxDb": 0,
+      "bins": 256,
+      "pass": true
+    },
+    {
+      "step": 1,
+      "mode": "centre",
+      "maxDb": 0,
+      "bins": 256,
+      "pass": true
+    },
+    {
+      "step": 2,
+      "mode": "uniform",
+      "maxDb": 0.00820313768403855,
+      "bins": 256,
+      "pass": true
+    },
+    {
+      "step": 2,
+      "mode": "centre",
+      "maxDb": 0.1254474895164522,
+      "bins": 256,
+      "pass": false
+    },
+    {
+      "step": 4,
+      "mode": "uniform",
+      "maxDb": 0.0408198766515524,
+      "bins": 256,
+      "pass": false
+    },
+    {
+      "step": 4,
+      "mode": "centre",
+      "maxDb": 0.13280977343572783,
+      "bins": 256,
+      "pass": false
+    },
+    {
+      "step": 8,
+      "mode": "uniform",
+      "maxDb": 0.168184709206944,
+      "bins": 256,
+      "pass": false
+    },
+    {
+      "step": 8,
+      "mode": "centre",
+      "maxDb": 0.16820486096288512,
+      "bins": 256,
+      "pass": false
+    },
+    {
+      "step": 16,
+      "mode": "uniform",
+      "maxDb": 0.6264863648827862,
+      "bins": 256,
+      "pass": false
+    },
+    {
+      "step": 16,
+      "mode": "centre",
+      "maxDb": 0.3295343474077245,
+      "bins": 256,
+      "pass": false
+    },
+    {
+      "step": 32,
+      "mode": "uniform",
+      "maxDb": 2.8548369312158313,
+      "bins": 256,
+      "pass": false
+    },
+    {
+      "step": 32,
+      "mode": "centre",
+      "maxDb": 2.868309931834337,
+      "bins": 256,
+      "pass": false
+    }
+  ],
+  "anyCoarsePass": true,
+  "sizing": [
+    {
+      "step": 1,
+      "nEntries": 162,
+      "KB": 2592,
+      "fitBuoyTiles": 1,
+      "cover32x8": false,
+      "cover32x1": false,
+      "MB_32x8": 648
+    },
+    {
+      "step": 4,
+      "nEntries": 41,
+      "KB": 656,
+      "fitBuoyTiles": 5,
+      "cover32x8": false,
+      "cover32x1": false,
+      "MB_32x8": 164
+    },
+    {
+      "step": 8,
+      "nEntries": 21,
+      "KB": 336,
+      "fitBuoyTiles": 10,
+      "cover32x8": false,
+      "cover32x1": false,
+      "MB_32x8": 84
+    },
+    {
+      "step": 16,
+      "nEntries": 11,
+      "KB": 176,
+      "fitBuoyTiles": 20,
+      "cover32x8": false,
+      "cover32x1": false,
+      "MB_32x8": 44
+    },
+    {
+      "step": 32,
+      "nEntries": 6,
+      "KB": 96,
+      "fitBuoyTiles": 37,
+      "cover32x8": false,
+      "cover32x1": true,
+      "MB_32x8": 24
+    },
+    {
+      "step": 64,
+      "nEntries": 3,
+      "KB": 48,
+      "fitBuoyTiles": 74,
+      "cover32x8": false,
+      "cover32x1": true,
+      "MB_32x8": 12
+    }
+  ],
+  "verdict": {
+    "unweightedOrCentreBlockPrefix": "FAIL accuracy — Hann^4 weights vary by ~1e5–1e6 across the span; any block>1 exceeds 0.01 dB on a mild time-varying spectrum.",
+    "fullFramePrefix32x8": "FAIL memory — 648 MB at step=1; 24 MB even at step=32 (over 3.5 MB headroom).",
+    "prefixAtStep16_32buoy1tile": "Fits ~20 (buoy,tile) in 3.5 MB — same coverage as bounded 1-tile Welch slots, but worse accuracy and no open-row fold benefit.",
+    "slidingWelchSlots": "Still the right encoding for exact Hann-weighted spans; denser non-frame stores break 0.01 dB or the 50 MB budget."
+  }
+}
