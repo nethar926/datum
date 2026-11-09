@@ -69,6 +69,6 @@ function profileFor(c:SubmarineClass,source:Catalog,byKey:Map<string,EngineProdu
   primeMovers:turbines?[turbines]:engines,...('motor' in c.machinery&&c.machinery.motor?{propulsionMotor:{maxShaftRpm:round(c.machinery.motor.maxRpm/c.machinery.motor.drivetrain.ratio,1)}}:{}),edas,
   independentAux:c.aux.filter(a=>a.kind!=='hydp').map(a=>({id:a.id,kind:a.kind,duty:a.duty,nominalHz:round(a.fHz,2),wander1SigmaHz:round(a.stability==='stable'?.00008*a.fHz:.002*a.fHz+1.5,3),stability:a.stability,harmonics:a.harmonics})),
   ...(c.idKeys.hydp?{hydp:{nominalHz:rr(c.idKeys.hydp.nominalHz as Range,1),pairSpacingHz:rr(c.idKeys.hydp.pairSpacingHz as Range,3)}}:{}),
-  speedRelated:c.speedWindows.map(w=>({name:w.name,kind:w.kind,speedKts:rr(w.speedKts as Range,1),hz:w.kind==='SRC'?{fixedHz:round(w.hz,2),scalesWithSpeed:false as const}:rr([w.loHz,w.hiHz],1)})),
+  speedRelated:(c.speedWindows??[]).map(w=>({name:w.name,kind:w.kind,speedKts:rr(w.speedKts as Range,1),hz:w.kind==='SRC'?{fixedHz:round(w.hz,2),scalesWithSpeed:false as const}:rr([w.loHz,w.hiHz],1)})),
   electricalHz:p.electricalHz};
 }

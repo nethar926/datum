@@ -1,0 +1,375 @@
+{
+ "note": "History precision (cold-store page-back): Float32 hot reference vs Float16-dB / Uint8-dB cold formats dequantized as if paged into the 600-row @ 2 Hz (5 min) hot ring. Uint8 span 80 dB from floor 40. Float16-linear unsuitable. Fictional scenarios only. GPU textures already Float16.",
+ "generatedAt": "2026-11-09T05:00:33.540Z",
+ "uint8": {
+  "floorDb": 40,
+  "spanDb": 80,
+  "stepDb": 0.3137
+ },
+ "float16DbNote": "IEEE-754 binary16 via Math.f16round; ~0.03–0.06 dB step near 60–120 dB.",
+ "lloyd": {
+  "scenario": "lloydsCpaScenario(712)",
+  "rows": 240,
+  "bins": 4096,
+  "dtS": 0.25,
+  "fMax": 6000,
+  "formats": {
+   "float32": {
+    "trackHz": 2500,
+    "nullTimes": [
+     1,
+     1.75,
+     3,
+     3.75,
+     4.5,
+     5.25,
+     6,
+     6.5
+    ],
+    "peakTimes": [
+     0.25,
+     1.5,
+     2.5,
+     3.25,
+     4.25,
+     4.75,
+     5.5,
+     6.25
+    ],
+    "tCpaEst": 29,
+    "spacingAtCpaHz": 772.161,
+    "fitOk": true,
+    "fitZs": 37.523,
+    "fitDepthRatio": 71.3221,
+    "residualRms": 43.1802
+   },
+   "float16db": {
+    "trackHz": 2500,
+    "nullTimes": [
+     1,
+     1.75,
+     3,
+     3.75,
+     4.5,
+     5.25,
+     6,
+     6.5
+    ],
+    "peakTimes": [
+     0.25,
+     1.5,
+     2.5,
+     3.25,
+     4.25,
+     4.75,
+     5.5,
+     6.25
+    ],
+    "tCpaEst": 29,
+    "spacingAtCpaHz": 772.161,
+    "fitOk": true,
+    "fitZs": 37.523,
+    "fitDepthRatio": 71.3221,
+    "residualRms": 43.1802,
+    "errorsVsFloat32": {
+     "nullTimeMaxS": 0,
+     "nullTimeMeanS": 0,
+     "peakTimeMaxS": 0,
+     "peakTimeMeanS": 0,
+     "tCpaErrS": 0,
+     "spacingAtCpaErrHz": 0,
+     "zsErrM": 0
+    }
+   },
+   "uint8db": {
+    "trackHz": 2500,
+    "nullTimes": [
+     1,
+     1.75,
+     3,
+     3.75,
+     4.5,
+     5.25,
+     6,
+     6.5
+    ],
+    "peakTimes": [
+     0.25,
+     1.5,
+     2.5,
+     3.25,
+     4.25,
+     4.75,
+     5.5,
+     6.25
+    ],
+    "tCpaEst": 29,
+    "spacingAtCpaHz": 772.161,
+    "fitOk": true,
+    "fitZs": 37.538,
+    "fitDepthRatio": 71.2929,
+    "residualRms": 42.9646,
+    "errorsVsFloat32": {
+     "nullTimeMaxS": 0,
+     "nullTimeMeanS": 0,
+     "peakTimeMaxS": 0,
+     "peakTimeMeanS": 0,
+     "tCpaErrS": 0,
+     "spacingAtCpaErrHz": 0,
+     "zsErrM": 0.015
+    }
+   },
+   "float16Linear": {
+    "note": "Float16 max finite is 65504; LOFAR dB→linear overflows for typical gram levels (ambient ~50–80 dB → 1e5–1e8). History MUST store dB (or other log), never linear power in f16.",
+    "overflows": 4049,
+    "underflows": 0,
+    "maxLin": 102380509183.108,
+    "bins": 4096,
+    "overflowFraction": 0.9885
+   }
+  }
+ },
+ "doppler": {
+  "scenario": "cpaScenario(seed=42)",
+  "rows": 480,
+  "bins": 1024,
+  "dtS": 0.25,
+  "fMax": 500,
+  "fNom": 90,
+  "formats": {
+   "float32": {
+    "fNom": 90,
+    "fApproach": 49.0083,
+    "fRecede": 4.2811,
+    "shiftHz": 44.7272,
+    "fitOk": false,
+    "fitF0": null,
+    "fitSpeedMps": null,
+    "fitTCpa": null,
+    "fitRCpa": null,
+    "trackHz": [
+     90.4315,
+     51.9914,
+     10.6865,
+     5.7894,
+     9.271,
+     9.7058,
+     9.6897,
+     6.4385,
+     0.4888,
+     0.4888,
+     5.7358,
+     3.3964,
+     3.5875,
+     5.814,
+     9.8055,
+     2.3709,
+     7.3883,
+     7.2323,
+     1.5169,
+     7.963,
+     7.8211,
+     7.3804,
+     1.8684,
+     6.2255
+    ]
+   },
+   "float16db": {
+    "fNom": 90,
+    "fApproach": 49.0084,
+    "fRecede": 4.281,
+    "shiftHz": 44.7273,
+    "fitOk": false,
+    "fitF0": null,
+    "fitSpeedMps": null,
+    "fitTCpa": null,
+    "fitRCpa": null,
+    "trackHz": [
+     90.4312,
+     51.9916,
+     10.6864,
+     5.7886,
+     9.2711,
+     9.7059,
+     9.6895,
+     6.4387,
+     0.4888,
+     0.4888,
+     5.7361,
+     3.3967,
+     3.5873,
+     5.8146,
+     9.8051,
+     2.3702,
+     7.3884,
+     7.2329,
+     1.5172,
+     7.9625,
+     7.8213,
+     7.3804,
+     1.8679,
+     6.2259
+    ],
+    "errorsVsFloat32": {
+     "trackMaxHz": 0.0008,
+     "trackMeanHz": 0.0003,
+     "shiftErrHz": 0.0001,
+     "f0ErrHz": null,
+     "speedErrMps": null
+    }
+   },
+   "uint8db": {
+    "fNom": 90,
+    "fApproach": 48.9867,
+    "fRecede": 4.1779,
+    "shiftHz": 44.8088,
+    "fitOk": false,
+    "fitF0": null,
+    "fitSpeedMps": null,
+    "fitTCpa": null,
+    "fitRCpa": null,
+    "trackHz": [
+     90.4332,
+     51.9887,
+     10.686,
+     5.7899,
+     9.2714,
+     9.7057,
+     9.6885,
+     6.4378,
+     0.4888,
+     0.4888,
+     5.7348,
+     3.3962,
+     3.5919,
+     5.8142,
+     9.8031,
+     2.369,
+     7.3878,
+     7.2374,
+     1.5177,
+     7.9583,
+     7.8232,
+     7.3785,
+     1.8695,
+     6.2264
+    ],
+    "errorsVsFloat32": {
+     "trackMaxHz": 0.0051,
+     "trackMeanHz": 0.00146,
+     "shiftErrHz": 0.0816,
+     "f0ErrHz": null,
+     "speedErrMps": null
+    }
+   }
+  }
+ },
+ "contrast": {
+  "cutId": "cut-orbelune-msr",
+  "window": {
+   "rows": 120,
+   "rowDtS": 0.25,
+   "centerFrac": 0.5,
+   "fLoHz": 12,
+   "fHiHz": 2000,
+   "guardBins": 3,
+   "sideBins": 8,
+   "minContrastDb": 6
+  },
+  "uint8": {
+   "floorDb": 40,
+   "spanDb": 80
+  },
+  "formats": {
+   "float32": {
+    "bestHz": 906.69,
+    "bestContrastDb": 43.7229,
+    "lessons": [
+     {
+      "family": "MSR",
+      "n": 1,
+      "hz": 907.0370370370371,
+      "contrastDb": 43.7229,
+      "peakHz": 906.69
+     },
+     {
+      "family": "GRID",
+      "n": 1,
+      "hz": 60,
+      "contrastDb": 21.2206,
+      "peakHz": 72.3
+     }
+    ]
+   },
+   "float16db": {
+    "bestHz": 906.69,
+    "bestContrastDb": 43.7188,
+    "lessons": [
+     {
+      "family": "MSR",
+      "n": 1,
+      "hz": 907.0370370370371,
+      "contrastDb": 43.7188,
+      "peakHz": 906.69
+     },
+     {
+      "family": "GRID",
+      "n": 1,
+      "hz": 60,
+      "contrastDb": 21.2188,
+      "peakHz": 72.3
+     }
+    ],
+    "errorsVsFloat32": {
+     "lessonContrastMaxDb": 0.0041,
+     "lessonContrastMeanDb": 0.00295,
+     "bestContrastErrDb": 0.0041
+    }
+   },
+   "uint8db": {
+    "bestHz": 906.69,
+    "bestContrastDb": 43.6078,
+    "lessons": [
+     {
+      "family": "MSR",
+      "n": 1,
+      "hz": 907.0370370370371,
+      "contrastDb": 43.6078,
+      "peakHz": 906.69
+     },
+     {
+      "family": "GRID",
+      "n": 1,
+      "hz": 60,
+      "contrastDb": 21.0196,
+      "peakHz": 73.28
+     }
+    ],
+    "errorsVsFloat32": {
+     "lessonContrastMaxDb": 0.201,
+     "lessonContrastMeanDb": 0.15805,
+     "bestContrastErrDb": 0.1151
+    }
+   }
+  }
+ },
+ "verdict": {
+  "float16Db": {
+   "losesAnythingMeasurable": false,
+   "ok": true,
+   "lessonContrastMaxDb": 0.0041,
+   "summary": "Float16-dB errors stay below measurement noise for LM fringe timing, Doppler track, and line contrast. Safe for CPU history."
+  },
+  "uint8Db": {
+   "losesAnythingMeasurable": true,
+   "dopplerMostlyOk": true,
+   "lessonContrastMaxDb": 0.201,
+   "summary": "Uint8-dB (~0.31 dB/step over 80 dB) changes lesson contrast by up to 0.20 dB; Doppler bin-track stays nearly intact. Reject for history; prefer Float16-dB."
+  },
+  "float16Linear": {
+   "mustStoreDb": true,
+   "overflowFraction": 0.9885,
+   "summary": "Float16 of linear power overflows on ordinary gram levels; history must store dB (or another log domain)."
+  }
+ }
+}

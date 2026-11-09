@@ -3,7 +3,7 @@ import { deriveSeed, mulberry32, gaussian, type Random } from './prng.js';
 import { dbToPower, powerToDb } from './units.js';
 import { geometry, createGeometry } from './kinematics.js';
 import { doppler } from './doppler.js';
-import { exactGain,pathDifference,seaSurfaceSigma } from './lloydsMirror.js';
+import { pathDifference,seaSurfaceSigma } from './lloydsMirror.js';
 import { acousticSourceDepthM } from './acousticSourceDepth.js';
 import { spreadingLoss, thorp } from './transmissionLoss.js';
 import {czPropagationGainLinear,czEstimateFor} from './convergenceZone.js';
@@ -37,7 +37,10 @@ export class LofarGenerator {
   private readonly signalPower:Float64Array;
   private readonly shape:Float64Array;
   private readonly absorptionExponent:Float64Array;
-  private readonly coherenceExponent:Float64Array;private sigma=0;
+  private readonly coherenceExponent:Float64Array;
+  /** Per-row scratch: exp(absExp[i]*km) and Lloyd coherent factor; filled once per contact. */
+  private readonly absScale:Float64Array;
+  private readonly coherentScratch:Float64Array;private sigma=0;
   private readonly contacts:CachedContact[];
   private readonly rng:Random;
   private readonly bearingRng:Random;
@@ -48,7 +51,7 @@ export class LofarGenerator {
   private readonly difar:boolean;
   bearing=0;
   constructor(readonly buoy:Buoy, contacts:Contact[],readonly bins:number,readonly fmax:number,seed:number,environment:Environment,readonly f0=0){
-    this.row=new Float32Array(bins);this.bearingRow=new Float32Array(bins);this.power=new Float64Array(bins);this.signalEast=new Float64Array(bins);this.signalNorth=new Float64Array(bins);this.signalPower=new Float64Array(bins);this.ambient=new Float64Array(bins);this.absorption=new Float64Array(bins);this.shape=new Float64Array(bins);this.absorptionExponent=new Float64Array(bins);this.coherenceExponent=new Float64Array(bins);
+    this.row=new Float32Array(bins);this.bearingRow=new Float32Array(bins);this.power=new Float64Array(bins);this.signalEast=new Float64Array(bins);this.signalNorth=new Float64Array(bins);this.signalPower=new Float64Array(bins);this.ambient=new Float64Array(bins);this.absorption=new Float64Array(bins);this.shape=new Float64Array(bins);this.absorptionExponent=new Float64Array(bins);this.coherenceExponent=new Float64Array(bins);this.absScale=new Float64Array(bins);this.coherentScratch=new Float64Array(bins);
     this.difar=buoy.type==='difar';this.baseSeed=deriveSeed(seed,`buoy:${buoy.id}`);this.bearingSeed=deriveSeed(seed,`bearing:${buoy.id}`);this.rng=mulberry32(this.baseSeed);this.bearingRng=mulberry32(this.bearingSeed);this.environment={...environment};
     this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const frequencies=new Float64Array(contact.lines.length),powers=new Float64Array(contact.lines.length);fillTonals(contact.params,frequencies,powers,contact.lines);const df=(fmax-f0)/(bins-1),swathSources=[...(contact.params.speedGated??[]).filter(w=>w.kind==='SWATH'),...(contact.params.eventSwaths??[])],swaths=swathSources.map(w=>({source:w,lo:Math.max(0,Math.ceil(((w as {loHz:number}).loHz-f0)/df)),hi:Math.min(bins-1,Math.floor(((w as {hiHz:number}).hiHz-f0)/df))}));return {contact,frequencies,powers,swaths,kernels:contact.lines.map(l=>lineKernel(l.width,l.sigmaBins)),gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
     this.setEnvironment(environment);
@@ -78,28 +81,84 @@ export class LofarGenerator {
       const flow=c.params.flowNoiseDb===undefined?0:dbToPower(c.params.flowNoiseDb)*(g.range<=1?1:spread*(c.params.flowRadiatedFraction??0));
       const broadband=level*(.0001+(c.params.cavitationPower??0)),imageRange=Math.hypot(g.horizontal,zs+this.buoy.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((zs+this.buoy.depth)/imageRange)**2:0;
       const delta=pathDifference(g.horizontal,zs,this.buoy.depth),phase=2*Math.PI*this.f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
-      const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
-      for(let i=0;i<this.bins;i++){const coherent=q*(this.sigma===0?1:Math.exp(this.coherenceExponent[i]*grazing2)),gain=Math.max(0,1+coherent*coherent-2*coherent*cp);const contrib=(broadband*gain+flow)*this.shape[i]*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;}
-      for(const w of item.swaths)if(w.source.gain>0)for(let i=w.lo;i<=w.hi;i++){const contrib=level*.0003*w.source.gain*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}
-      const sb=c.params.stateBroadband;if(sb){for(const band of [sb.snort,sb.waveSlap]){if(!band.active||!(band.level>0))continue;const lo=Math.max(0,Math.floor((band.loHz-this.f0)/df)),hi=Math.min(this.bins-1,Math.ceil((band.hiHz-this.f0)/df));for(let i=lo;i<=hi;i++){const contrib=level*.00025*band.level*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}}}
+      const sinB=difar?Math.sin(g.bearing):0,cosB=difar?Math.cos(g.bearing):0;
+      const ae=this.absorptionExponent,sh=this.shape,powArr=this.power,absS=this.absScale;
+      // Hot path: seaState 0 → sigma=0 → coherent factor is constant q. Prefill absScale once for BB+bands.
+      if(this.sigma===0&&flow===0){
+       for(let i=0;i<this.bins;i++)absS[i]=Math.exp(ae[i]*km);
+       const q2=q*q,twoQ=2*q,bb=broadband;
+       if(difar){
+        const sP=this.signalPower,sE=this.signalEast,sN=this.signalNorth;
+        for(let i=0;i<this.bins;i++){
+         const gain=Math.max(0,1+q2-twoQ*cp),contrib=bb*gain*sh[i]*absS[i];
+         powArr[i]+=contrib;sP[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;
+         const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;
+        }
+       }else{
+        for(let i=0;i<this.bins;i++){
+         const gain=Math.max(0,1+q2-twoQ*cp);
+         powArr[i]+=bb*gain*sh[i]*absS[i];
+         const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;
+        }
+       }
+      }else{
+       // sea>0 / flow: keep abs+coh inline in one BB pass (avoid dual full-band scratch fills).
+       const ce=this.coherenceExponent,sig0=this.sigma===0;
+       if(difar){
+        const sP=this.signalPower,sE=this.signalEast,sN=this.signalNorth;
+        for(let i=0;i<this.bins;i++){
+         const coherent=q*(sig0?1:Math.exp(ce[i]*grazing2)),gain=Math.max(0,1+coherent*coherent-2*coherent*cp);
+         const contrib=(broadband*gain+flow)*sh[i]*Math.exp(ae[i]*km);
+         powArr[i]+=contrib;sP[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;
+         const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;
+        }
+       }else{
+        for(let i=0;i<this.bins;i++){
+         const coherent=q*(sig0?1:Math.exp(ce[i]*grazing2)),gain=Math.max(0,1+coherent*coherent-2*coherent*cp);
+         powArr[i]+=(broadband*gain+flow)*sh[i]*Math.exp(ae[i]*km);
+         const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;
+        }
+       }
+      }
+      for(const w of item.swaths)if(w.source.gain>0)for(let i=w.lo;i<=w.hi;i++){const contrib=level*.0003*w.source.gain*Math.exp(ae[i]*km);powArr[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}
+      const sb=c.params.stateBroadband;if(sb){for(const band of [sb.snort,sb.waveSlap]){if(!band.active||!(band.level>0))continue;const lo=Math.max(0,Math.floor((band.loHz-this.f0)/df)),hi=Math.min(this.bins-1,Math.ceil((band.hiHz-this.f0)/df));const bandScale=level*.00025*band.level;for(let i=lo;i<=hi;i++){const contrib=bandScale*Math.exp(ae[i]*km);powArr[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}}}
+      // Lloyd geometry once per contact/row (exactGain was recomputing hypot+pathDiff per tonal).
+      // Absorption keeps thorp(f); Lloyd hypot/pathDiff hoisted (bit-identical to exactGain).
+      const rH=g.horizontal,zr=this.buoy.depth,cSound=e.soundSpeed;
+      const aPath=Math.hypot(rH,zs-zr),bPath=Math.hypot(rH,zs+zr);
+      const deltaT=4*zs*zr/Math.max(aPath+bPath,1e-12);
+      const qGeom=bPath>0?aPath/bPath:1,grazing=bPath>0?(zs+zr)/bPath:0;
+      const rayleigh2=this.sigma===0?0:2*this.sigma*this.sigma*grazing*grazing;
+      const invC=1/Math.max(1,cSound),piInvC=Math.PI*invC;
       for(let k=0;k<item.frequencies.length;k++){
         const f0k=item.frequencies[k],pow=item.powers[k];
         if(!Number.isFinite(f0k)||f0k<1e-3||!(pow>0))continue;
-        const f=doppler(f0k,g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-this.f0)/df;
+        const f=doppler(f0k,g.sourceRadial,g.receiverRadial,cSound),bin=(f-this.f0)/df;
         if(!Number.isFinite(bin)||bin<0||bin>this.bins-1)continue;
         const i=Math.floor(bin);
+        const kWave=2*Math.PI*f*invC,q=rayleigh2===0?qGeom:qGeom*Math.exp(-kWave*kWave*rayleigh2);
+        const sLloyd=Math.sin(f*deltaT*piInvC),lloyd=(1-q)*(1-q)+4*q*sLloyd*sLloyd;
         // Absolute tonals: fillTonals already applied tonalRefDb; relative path keeps BB×weight.
-        const v=(absTonals?tonalProp*pow:level*pow)*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,zs,this.buoy.depth,e.soundSpeed,this.sigma);
+        const v=(absTonals?tonalProp*pow:level*pow)*Math.exp(-thorp(f)*km*(Math.LN10/10))*lloyd;
         if(difar)item.kernels[k].depositBearing(this.power,this.signalEast,this.signalNorth,this.signalPower,bin,v/df,sinB,cosB);
         else item.kernels[k].deposit(this.power,bin,v/df);
-        const quality=powerToDb(v/df/this.ambient[i]);
-        if(quality>0){let pos=0;while(pos<this.lineCount&&this.lines[pos].quality>quality)pos++;if(pos<8){this.lineCount=Math.min(8,this.lineCount+1);for(let h=this.lineCount-1;h>pos;h--){const dst=this.lines[h],src=this.lines[h-1];dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;}const line=this.lines[pos];line.freqHz=f;line.quality=quality;line.brgDeg=(g.bearing*180/Math.PI+Math.min(90,20*10**(-quality/20))*gaussian(this.rng)+720)%360;}}
+        // Absolute tonalRefDb makes many tonals pass quality>0; linear floor skips log when top-8 already stronger.
+        const psd=v/df,ambI=this.ambient[i];
+        if(psd>ambI){
+         if(this.lineCount===8&&psd<=ambI*Math.pow(10,this.lines[7].quality/10)){/* weaker than #8 */}
+         else{
+          const quality=powerToDb(psd/ambI);
+          let pos=0;while(pos<this.lineCount&&this.lines[pos].quality>quality)pos++;
+          if(pos<8){this.lineCount=Math.min(8,this.lineCount+1);for(let h=this.lineCount-1;h>pos;h--){const dst=this.lines[h],src=this.lines[h-1];dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;}const line=this.lines[pos];line.freqHz=f;line.quality=quality;line.brgDeg=(g.bearing*180/Math.PI+Math.min(90,20*Math.pow(10,-quality/20))*gaussian(this.rng)+720)%360;}
+         }
+        }
         east+=v*Math.sin(g.bearing);north+=v*Math.cos(g.bearing);
       }
     }
     // Ideal cross-spectrum beam resultant, not a multi-source bearing separator.
     this.bearing=(Math.atan2(east,north)+2*Math.PI)%(2*Math.PI);
-    for(let i=0;i<this.bins;i++)out[offset+i]=powerToDb(this.power[i]*-Math.log(Math.max(this.rng(),1/4294967296)));
+    const LN10_10=10/Math.LN10,rng=this.rng; // identical to powerToDb(p*-ln(u)) within float64
+    for(let i=0;i<this.bins;i++)out[offset+i]=LN10_10*Math.log(this.power[i]*-Math.log(Math.max(rng(),1/4294967296)));
     if(!difar)this.bearingRow.fill(NaN);
     else{
       const br=this.bearingRng,eastA=this.signalEast,northA=this.signalNorth,sig=this.signalPower,amb=this.ambient,outB=this.bearingRow;

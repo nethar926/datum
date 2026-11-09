@@ -1,5 +1,5 @@
 {
- "note": "Post tonalRefDb/effective-depth/SNORK fix. Diesel/AIP starter cuts only (nuclear velvetshoal/twilightweft coming soon). Lesson lines clear 6 dB; masked HYDP stays masked. Procedural pools diesel-weighted.",
+ "note": "Post tonalRefDb/effective-depth/SNORK fix + gloamspiral stable-AIP/200 m CPA. Diesel/AIP starter cuts only (nuclear coming soon). Orbelune MSR ~44 dB and emberbraid SSMA/MESH ~49\u201352 dB kept (plausible vs Wenz+tonalRefDb; see docs/cut-visibility-plausibility.md). Gloamspiral AUX 14 Hz ~9.75 dB. Lesson lines clear 6 dB; masked HYDP stays masked.",
  "beforeBaseline": [
   [
    "cut-brindleflux-snork",
@@ -86,7 +86,7 @@
   [
    "cut-gloamspiral-aip",
    84,
-   10.31
+   25.64
   ],
   [
    "cut-morrowcoil-hydp-masked",
@@ -336,17 +336,17 @@
    "id": "cut-gloamspiral-aip",
    "mode": "AIP",
    "depthM": 80,
-   "cpaM": 300,
-   "cpaNote": "Quiet AIP VLF AUX giveaway: 300 m textbook CPA so 14/28 Hz plant tones clear shared window",
+   "cpaM": 200,
+   "cpaNote": "Quiet Stirling AIP: stable plant tones + 200 m CPA so 14/28 Hz clear shared window ~10 dB",
    "bestHz": 84,
-   "bestContrastDb": 10.31,
+   "bestContrastDb": 25.64,
    "lessons": [
     {
      "family": "AUX",
      "n": 1,
      "hz": 14,
-     "peakHz": 28.334147532975084,
-     "contrastDb": 6.37,
+     "peakHz": 13.678553981436249,
+     "contrastDb": 9.75,
      "window": "mid",
      "masked": false,
      "inWindow": true,
@@ -367,7 +367,7 @@
      "n": 1,
      "hz": 207.6,
      "peakHz": 208.10942843185148,
-     "contrastDb": 10.36,
+     "contrastDb": 17.84,
      "window": "hydp-moment",
      "masked": false,
      "inWindow": true,

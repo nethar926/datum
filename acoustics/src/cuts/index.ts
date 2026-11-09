@@ -6,7 +6,7 @@ import {CUT_MODEL_VERSION,type CutSeed,type CutStarterPack} from './types.js';
 export * from './types.js';
 export {validateCutSeed,validateStarterPack,validateLookalikePair} from './validate.js';
 export {lookalikeDiffersOn} from './lookalike.js';
-export {looksOf,bakeFidelityParams,applyRuntimeFidelity,CUT_SSMA_AUX} from './fidelity.js';
+export {looksOf,bakeFidelityParams,applyRuntimeFidelity,cutNeedsRuntimeFidelity,CUT_SSMA_AUX} from './fidelity.js';
 export {scenarioFromCut,CutSession,CUT_BINS,CUT_FMAX} from './render.js';
 export {
  CUT_LOFAR_NORM,CUT_LOFAR_NORM_PASS2,CUT_LOFAR_NORM_GAIN,CUT_LOFAR_NORM_RECIPE,

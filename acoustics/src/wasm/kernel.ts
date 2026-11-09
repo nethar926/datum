@@ -19,7 +19,7 @@ function simdProbeBytes():Uint8Array{
 let simdSupported:boolean|null=null;
 export function wasmSimdSupported():boolean{
   if(simdSupported!==null)return simdSupported;
-  try{simdSupported=typeof WebAssembly!=='undefined'&&WebAssembly.validate(simdProbeBytes());}
+  try{simdSupported=typeof WebAssembly!=='undefined'&&WebAssembly.validate(simdProbeBytes() as BufferSource);}
   catch{simdSupported=false;}
   return !!simdSupported;
 }
@@ -50,7 +50,7 @@ export async function ensureWasmKernel():Promise<boolean>{
     try{
       const bytes=b64ToU8(BROADBAND_LLOYD_WASM_BASE64);
       const inst=await WebAssembly.instantiate(bytes,{});
-      const ex=('instance' in inst?(inst as WebAssembly.WebAssemblyInstantiatedSource).instance:inst as WebAssembly.Instance).exports as unknown as Exports;
+      const ex=('instance' in inst?(inst as unknown as WebAssembly.WebAssemblyInstantiatedSource).instance:inst as WebAssembly.Instance).exports as unknown as Exports;
       exportsRef=ex;
       stats.instantiateMs=performance.now()-t0;
       stats.linearMemoryBytes=ex.memory.buffer.byteLength;

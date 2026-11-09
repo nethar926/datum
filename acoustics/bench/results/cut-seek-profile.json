@@ -1,0 +1,102 @@
+{
+ "note": "CutSession seek profile. ROW_DT=0.25 s (4 Hz drain). FE hot ring 600 rows @ 2 Hz display = 5 min → 1200 engine rows.",
+ "ring": {
+  "displayRows": 600,
+  "displayHz": 2,
+  "historyS": 300,
+  "engineRows": 1200,
+  "estWarmSeekMs": 370.5,
+  "budgetMs": 150
+ },
+ "cuts": [
+  {
+   "id": "cut-brindleflux-snork",
+   "durationS": 420,
+   "tonals": 51,
+   "constructMs": 46.98,
+   "coldMs": 438.38,
+   "warmMs": 363.32,
+   "rowsToMid": 840,
+   "msPerRowCold": 0.4659,
+   "msPerRowWarm": 0.4325
+  },
+  {
+   "id": "cut-cinderlilt-cav",
+   "durationS": 360,
+   "tonals": 43,
+   "constructMs": 25.85,
+   "coldMs": 436.3,
+   "warmMs": 370.09,
+   "rowsToMid": 720,
+   "msPerRowCold": 0.5701,
+   "msPerRowWarm": 0.514
+  },
+  {
+   "id": "cut-pebblewisp-demon",
+   "durationS": 480,
+   "tonals": 29,
+   "constructMs": 22.04,
+   "coldMs": 272.84,
+   "warmMs": 241.73,
+   "rowsToMid": 960,
+   "msPerRowCold": 0.2613,
+   "msPerRowWarm": 0.2518
+  },
+  {
+   "id": "cut-mistacorn-batt",
+   "durationS": 300,
+   "tonals": 27,
+   "constructMs": 20.46,
+   "coldMs": 145.77,
+   "warmMs": 121.45,
+   "rowsToMid": 600,
+   "msPerRowCold": 0.2089,
+   "msPerRowWarm": 0.2024
+  },
+  {
+   "id": "cut-orbelune-msr",
+   "durationS": 420,
+   "tonals": 26,
+   "constructMs": 17.13,
+   "coldMs": 214.77,
+   "warmMs": 197.23,
+   "rowsToMid": 840,
+   "msPerRowCold": 0.2353,
+   "msPerRowWarm": 0.2348
+  },
+  {
+   "id": "cut-emberbraid-ssma",
+   "durationS": 450,
+   "tonals": 53,
+   "constructMs": 19.22,
+   "coldMs": 378.59,
+   "warmMs": 334.23,
+   "rowsToMid": 900,
+   "msPerRowCold": 0.3993,
+   "msPerRowWarm": 0.3714
+  },
+  {
+   "id": "cut-gloamspiral-aip",
+   "durationS": 480,
+   "tonals": 20,
+   "constructMs": 22.13,
+   "coldMs": 262.53,
+   "warmMs": 234.2,
+   "rowsToMid": 960,
+   "msPerRowCold": 0.2504,
+   "msPerRowWarm": 0.244
+  },
+  {
+   "id": "cut-morrowcoil-hydp-masked",
+   "durationS": 300,
+   "tonals": 26,
+   "constructMs": 16.42,
+   "coldMs": 148.53,
+   "warmMs": 131.44,
+   "rowsToMid": 600,
+   "msPerRowCold": 0.2202,
+   "msPerRowWarm": 0.2191
+  }
+ ],
+ "avgMsPerRowWarm": 0.3087
+}
