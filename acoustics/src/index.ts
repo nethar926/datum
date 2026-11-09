@@ -3,6 +3,8 @@ export * from './units.js';
 export * from './kinematics.js';
 export * from './doppler.js';
 export * from './lloydsMirror.js';
+export * from './acousticSourceDepth.js';
+export * from './tonalLevels.js';
 export * from './transmissionLoss.js';
 export * from './ambientNoise.js';
 export * from './sourceModel.js';

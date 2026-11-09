@@ -1,5 +1,5 @@
 import type {VesselPlantSpec,PropulsionTruth,SpeedGated} from './catalog/drivetrain.js';
-import { clamp } from './units.js';
+import { clamp, dbToPower } from './units.js';
 export type TonalFamily='shaft'|'blade'|'src'|'gear'|'electrical'|'motor'|'diesel'|'pump'|'crank'|'cylinder'|'eda'|'turbine';
 export type LineStability='stable'|'unstable';
 export type LineWidth='discrete'|'diffuse';
@@ -19,12 +19,15 @@ export function sourceLines(s:Signature):TonalLine[]{
  for(let i=0;i<lines.length;i++)tagLine(lines[i],i,s.lineProfiles?.[lines[i].family]);return lines;
 }
 /** Seeded HYDP teaching shape: harmonic stack of the class frequency (not a fixed pair). */
-export interface HydpShape {/** Live harmonic orders 1..HYDP_MAX_ORDERS when on. */orders:number;/** Ambient drowns h1; higher orders remain. */drownFundamental:boolean;/** Tiny abrupt-edge fade (seconds). */fadeS:number}
+export interface HydpShape {/** Live harmonic orders 1..HYDP_MAX_ORDERS when on. */orders:number;/** Ambient drowns h1; higher orders remain. */drownFundamental:boolean;/** Tiny abrupt-edge fade (seconds). */fadeS:number;/** Optional teaching scale on HYDP_POWER (cut hydpShape.powerScale). */powerScale?:number}
 /** Engine-owned live HYDP state. Reserves HYDP_MAX_ORDERS fixed slots so topology never changes.
  * offsetFrac kept at 0 (Wilson: no high→fixed curve; squally abrupt on/off). */
 export interface HydpTransientState {offsetFrac:number;gain:number;shape:HydpShape}
 /** Optional live scale on diesel ERPM (and coupled shaft) for engine-ramp knees; 1 = nominal. */
-export interface Signature {/** Snort / wave-slap broadband (state+sea dependent). */stateBroadband?:import('./stateBroadband.js').StateBroadbandSpec;/** Sim time (s) for intermittent aux duty; set by AcousticEngine. */dutyClockS?:number;hydpTransient?:HydpTransientState;/** m3 diesel-dyn: 1 = nominal; engine-ramp lerps this. */plantRpmScale?:number;speedGated?:SpeedGated[];/** Short broadband swath flashes (Wilson); painted like speed-window SWATH. */eventSwaths?:{name:string;kind:'SWATH';loHz:number;hiHz:number;active:boolean;gain:number}[];reactorOffline?:boolean; plantSpec?:VesselPlantSpec;propulsion?:PropulsionTruth; label: string; shafts?:number; electricalHz?:50|60; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; lineProfiles?:LineProfiles; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number; waterTempC?:number; waterSalinity?:number; /** Live sea state for snort/wave-slap. */seaState?:number; /** Class periscope keel depth (m). */periscopeDepthM?:number; /** Optional per-class BR1 boost. */reinforceBr1?:boolean; /** Optional: suppress PSR harmonics above blade count. */psrHarmonicsStopAtBlades?:boolean }
+export interface Signature {/** Snort / wave-slap broadband (state+sea dependent). */stateBroadband?:import('./stateBroadband.js').StateBroadbandSpec;/** Sim time (s) for intermittent aux duty; set by AcousticEngine. */dutyClockS?:number;hydpTransient?:HydpTransientState;/** m3 diesel-dyn: 1 = nominal; engine-ramp lerps this. */plantRpmScale?:number;speedGated?:SpeedGated[];/** Short broadband swath flashes (Wilson); painted like speed-window SWATH. */eventSwaths?:{name:string;kind:'SWATH';loHz:number;hiHz:number;active:boolean;gain:number}[];reactorOffline?:boolean; plantSpec?:VesselPlantSpec;propulsion?:PropulsionTruth; label: string; shafts?:number; electricalHz?:50|60; shaftHz: number; blades: number; tonalHz: number; levelDb: number; modulation: number; lineProfiles?:LineProfiles; tonals?:TonalLine[]; inceptionKn?:number; cavitationPower?:number; flowNoiseDb?:number; flowRadiatedFraction?:number; waterTempC?:number; waterSalinity?:number; /** Live sea state for snort/wave-slap. */seaState?:number; /** Class periscope keel depth (m). */periscopeDepthM?:number; /** Optional per-class BR1 boost. */reinforceBr1?:boolean; /** Optional: suppress PSR harmonics above blade count. */psrHarmonicsStopAtBlades?:boolean;
+ /** Narrowband tonal reference dB re 1 µPa @1 m in ~1 Hz (invented). When set, fillTonals emits absolute linear power = dbToPower(tonalRefDb)*relativeWeight; LOFAR/RES multiply by TL only (not broadband levelDb). */tonalRefDb?:number;
+ /** Surfaced draught (m) for acousticSourceDepthM (hull form); default 6. */draughtSurfacedM?:number;
+ /** Quieting tier used to refresh tonalRefDb. */quietingTier?:'gen2'|'gen3'|'gen4'; }
 export const fictionalSignature: Signature = {label:'SSK A',shaftHz:2,blades:5,tonalHz:90,levelDb:125,modulation:.35};
 /** Fictional teaching curves only. Urick: machinery harmonics, propeller blade rate and cavitation.
  * Inception speed rises with hydrostatic pressure; this illustrative fit is NOT platform data. */
@@ -34,6 +37,14 @@ export function sourceLevel(s:Signature,speed:number,depth:number):number {
   return clamp(s.levelDb+(s.tonals?0:20*Math.log10(1+Math.max(0,speed)/3)+10*Math.log10(1+Math.max(0,speed-inceptionSpeed(depth))**2)),0,220);
 }
 export function fillTonals(s:Signature,freq:Float64Array,power:Float64Array,lines=s.tonals):void {
-  if(lines){for(let i=0;i<freq.length;i++){const t=lines[i];freq[i]=t?.frequencyHz??t?.hz??0;power[i]=t?.power??0;}return;}
-  for(let i=0;i<freq.length;i++){ freq[i]=i<2 ? (i===0?s.shaftHz:bladeRate(s)) : s.tonalHz*(i-1); power[i]=10**(-i*3/10); }
+  // When tonalRefDb is set, emit ABSOLUTE linear tonal power (independent of broadband levelDb).
+  // Otherwise keep relative weights for legacy hand-authored scenarios (lofar multiplies by BB SL).
+  const absScale=s.tonalRefDb!==undefined?dbToPower(s.tonalRefDb):undefined;
+  if(lines){for(let i=0;i<freq.length;i++){const t=lines[i];const hz=t?.frequencyHz??t?.hz??0;const rel=t?.power??0;
+    // Guard: null/NaN/sub-bin fundamentals (PSR/AUX ~1 Hz) → zero power, avoid NaN deposit index.
+    if(!Number.isFinite(hz)||hz<1e-3||!(rel>0)){freq[i]=Number.isFinite(hz)?hz:0;power[i]=0;continue;}
+    freq[i]=hz;power[i]=absScale!==undefined?absScale*rel:rel;}return;}
+  for(let i=0;i<freq.length;i++){ const hz=i<2 ? (i===0?s.shaftHz:bladeRate(s)) : s.tonalHz*(i-1); const rel=10**(-i*3/10);
+    if(!Number.isFinite(hz)||hz<1e-3){freq[i]=0;power[i]=0;continue;}
+    freq[i]=hz;power[i]=absScale!==undefined?absScale*rel:rel; }
 }
