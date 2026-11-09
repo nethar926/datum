@@ -38,4 +38,30 @@ describe('explicit procedural shallow-machinery mixture',()=>{
    }
   }
  });
+ it.each([
+  ['deep-only request without envelope',{depthM:[120,300] as [number,number]}],
+  ['explicit deep envelope',{depthM:[150,250] as [number,number],allowedDepthM:[150,300] as [number,number]}],
+  ['submerged-only envelope',{depthM:[20,100] as [number,number],allowedDepthM:[8,100] as [number,number]}],
+ ])('shallow mixture never overrides requested depth constraint: %s',(_n,o)=>{
+  let diesels=0;
+  for(let seed=0;seed<48;seed++){
+   const base=presetToParams('regular',seed);
+   const p=clampParams({...base,subCount:3,opState:{...base.opState,shallowDieselProb:1,depthM:o.depthM,allowedDepthM:(o as {allowedDepthM?:[number,number]}).allowedDepthM}});
+   if(!(o as {allowedDepthM?:unknown}).allowedDepthM)expect(p.opState.allowedDepthM).toBeUndefined();
+   const env=p.opState.allowedDepthM??p.opState.depthM;
+   for(const c of generateScenario(p).contacts.filter(c=>c.category!=='surface')){
+    const k=catalog.classes.find(k=>k.id===c.catalogRef!.classId)!,cls=effectiveParams(k,c.catalogRef!.variantId).depthM;
+    if(k.plant==='diesel')diesels++;
+    expect(c.depth).toBeGreaterThanOrEqual(Math.min(env[0],cls[1])-1e-9);
+    expect(c.depth).toBeLessThanOrEqual(Math.max(env[1],cls[0])+1e-9);
+    if(env[0]>0)expect(c.operatingMode).not.toBe('SURF');
+   }
+  }
+  expect(diesels).toBeGreaterThan(0);
+ });
+ it('presets declare the envelope explicitly; custom depth edits must drop or narrow it',()=>{
+  expect(presetToParams('regular',1).opState.allowedDepthM).toEqual([0,100]);
+  expect(presetToParams('difficult',1).opState.allowedDepthM).toEqual([0,300]);
+  expect(clampParams({opState:{allowedDepthM:[300,-5]}}).opState.allowedDepthM).toEqual([0,300]);
+ });
 });

@@ -29,3 +29,6 @@ These checks establish that valid sources are generated and processed; they do N
 ## Tests
 
 37 targeted tests pass across proceduralMachinery, presets, events, dieselDyn and taxonomyAuxGate. These include engine/aux fractional RPM lock, independent auxiliaries on battery, mixture determinism, traffic independence, disable semantics and physically legal surfaced/snorkelling states. Full-suite results will be reported separately. `tsc --noEmit` currently reports errors in wasm/kernel.ts and test/demonCarrierWeight.test.ts; no typecheck clearance is claimed.
+
+## Depth-constraint enforcement (follow-up)
+`opState.allowedDepthM` is the hard depth envelope for every procedural placement, shallow encounters included. When it is omitted the envelope is `depthM`, so a custom deep-only range (e.g. `[120,300]`) can never be overridden by the shallow mixture, even with `shallowDieselProb: 1`. Surfacing is only possible when the envelope starts at 0 m. Regular and Difficult presets declare `[0,100]` and `[0,300]` explicitly. A setup editor that changes the depth range must drop or narrow `allowedDepthM` with it. Regression tests cover a deep-only request without envelope, an explicit deep envelope and a submerged-only envelope; all four new tests fail on 960b67d and pass here.
