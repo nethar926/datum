@@ -738,3 +738,8 @@ button.ios-row:active { background: var(--sys-fill); }
   .app.ios .workspace.detent-stack > .stack-plot,
   .app.ios .workspace.detent-stack > .plot-grabber { transition: none !important; }
 }
+
+/* PLOTHIDE changes only the presentation: plot stays mounted and collection continues. */
+.app.ios[data-split='x'] .workspace[data-plot-hidden='1'] { grid-template-columns: minmax(0, 1fr); }
+.app.ios .workspace[data-plot-hidden='1'] > .tac-panel { display: none; }
+.plot-visibility { min-width: 88px; min-height: 44px; }

@@ -1,3 +1,4 @@
+import { hideLandscapePlot } from './ui/plotVisibility'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
@@ -218,6 +219,7 @@ export default function App() {
   // Phone-portrait plot sheet (gram / half / plot). Landscape and iPad keep the resizable SplitHandle.
   const [plotDetent, setPlotDetent] = useState<PlotDetent>('gram')
   const [plotProgress, setPlotProgress] = useState<number | null>(null)
+  const [landscapePlotHidden, setLandscapePlotHidden] = useState(false)
   const liveProgress = plotProgress ?? detentProgress(plotDetent)
   const commitDetent = (d: PlotDetent) => { setPlotDetent(d); setPlotProgress(null) }
   const { split: segSplit } = useViewportSegments()
@@ -807,6 +809,7 @@ export default function App() {
   // Static on purpose: the ticking sim clock lives on the opaque plot (below), so the glass nav never repaints per tick.
   const navSub = <span className="nav-scn">{scnName}{!phone && ` · LOG ${logCount}`}</span>
   const instrumentsVisible = tab === 'live' || tab === 'plot'
+  const plotHidden = hideLandscapePlot(landscapePlotHidden, portrait, !!hinge, tab)
 
   return (
     <div className={`app ios layout-${layout}`} data-layout={layout} data-gram-dir={gramDir} data-tab={tab} data-split={splitAxis}
@@ -889,6 +892,9 @@ export default function App() {
                 )
               })}
             </div>
+            {!portrait && !hinge && <button type="button" className="btn plot-visibility" data-testid="plot-visibility"
+              aria-controls="live-tactical-panel" aria-expanded={!plotHidden}
+              onClick={() => setLandscapePlotHidden((hidden) => !hidden)}>{plotHidden ? 'Show plot' : 'Hide plot'}</button>}
             {detune.noCh && <span className="noch-chip" data-testid="noch-chip" role="status">NO CH</span>}
             <button className="btn icon info-btn" data-testid="buoy-info" aria-label="Buoy info" onClick={() => setBuoySheet(true)} disabled={!buoy}><IcInfo /></button>
             <span className="readout" data-testid="view-readout">{viewReadout}</span>
@@ -897,7 +903,7 @@ export default function App() {
         </div>
       )}
 
-      <main ref={wsRef} className={`workspace${useDetents ? ' detent-stack' : ''}${hinge ? ' hinge-split' : ''}`} data-testid="workspace"
+      <main ref={wsRef} className={`workspace${useDetents ? ' detent-stack' : ''}${hinge ? ' hinge-split' : ''}`} data-testid="workspace" data-plot-hidden={plotHidden ? '1' : '0'}
         data-detent={useDetents ? plotDetent : undefined}
         aria-hidden={!instrumentsVisible || undefined}
         style={{
@@ -974,11 +980,11 @@ export default function App() {
             streamIndex={Math.max(0, demonCfgs.findIndex((c) => c.channel === cfg?.channel))} />
         )}
         </div>
-        {!useDetents && !hinge && (
+        {!useDetents && !hinge && !plotHidden && (
           <SplitHandle axis={splitAxis} frac={split} onFrac={setSplit} storeKey={splitKey} targetRef={wsRef} defaultFrac={splitDefault} />
         )}
         {hinge && <div className="hinge-fold" aria-hidden data-testid="hinge-fold" />}
-        <section className="panel tac-panel stack-plot" data-testid="tac-panel">
+        <section id="live-tactical-panel" className="panel tac-panel stack-plot" data-testid="tac-panel" hidden={plotHidden} inert={plotHidden}>
           <div className="panel-body plot">
             <div className="plot-corner readout">
               <span className="sim-clock" data-testid="sim-clock">T+{fmtT(st.simT)}</span>
