@@ -612,6 +612,21 @@ export default function App() {
     if (gramMode === 'demon' && demonCfgs.length === 0) setGramMode('lofar')
   }, [gramMode, demonCfgs.length])
   const cfg = lofarCfgs[stream]
+  // Keep MATCHED honest as the waterfall advances (same gate as peak ticks; does not move marks).
+  useEffect(() => {
+    if (combCentreHz === null || combSpacingHz === null || !(combSpacingHz > 0)) return
+    const tick = () => updateCombMatch(combCentreHz, combSpacingHz, combSidebands, 0)
+    tick()
+    const id = window.setInterval(tick, 250)
+    return () => window.clearInterval(id)
+  }, [combCentreHz, combSpacingHz, combSidebands, cfg?.f0, cfg?.fBin, cfg?.bins])
+  useEffect(() => {
+    if (cutArm.combCentreHz === null || cutArm.combSpacingHz === null || !(cutArm.combSpacingHz > 0)) return
+    const tick = () => updateCutCombMatch(cutArm.combCentreHz!, cutArm.combSpacingHz!, cutArm.combSidebands, 0)
+    tick()
+    const id = window.setInterval(tick, 250)
+    return () => window.clearInterval(id)
+  }, [cutArm.combCentreHz, cutArm.combSpacingHz, cutArm.combSidebands, cfg?.f0, cfg?.fBin, cfg?.bins])
   const gram = st.gram
   const filter: GramFilter = cfg?.filter ?? gram?.filter ?? 'NB'
   // Last picked band preset (shown "armed" while RES is on, so the picker state is always visible).
