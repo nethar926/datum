@@ -32,8 +32,13 @@ export function bakeFidelityParams(sig:Signature,cut:CutSeed):Signature {
  * Propulsion "ramp" here is catalog EDA riseS only (Lead: no full mode-switch this tip).
  * Slip rate is deferred.
  */
-export function applyRuntimeFidelity(sig:Signature,cut:CutSeed,simT:number,bases:Map<TonalLine,number>,engineBases:Map<TonalLine,number>=bases):void {
- const looks=looksOf(cut),tonals=sig.tonals;if(!tonals)return;
+const RUNTIME_LOOKS=new Set<GramLookId>(['propulsion-ramp','harmonic-skip','blade-harmonics-reinforced','msr-dominant','engine-harmonics']);
+/** True when applyRuntimeFidelity must run each advance (not just bake-time overlays). */
+export function cutNeedsRuntimeFidelity(cut:CutSeed,looks:ReadonlySet<GramLookId>=looksOf(cut)):boolean{
+ for(const id of RUNTIME_LOOKS)if(looks.has(id))return true;return false;
+}
+export function applyRuntimeFidelity(sig:Signature,cut:CutSeed,simT:number,bases:Map<TonalLine,number>,engineBases:Map<TonalLine,number>=bases,looks:ReadonlySet<GramLookId>=looksOf(cut)):void {
+ const tonals=sig.tonals;if(!tonals)return;
  if(looks.has('propulsion-ramp')){
   // Use the first EDA's catalog ramp.riseS (default 3 s from plantIdentity).
   const rise=Math.max(.01,sig.plantSpec?.edas[0]?.ramp?.riseS??3);

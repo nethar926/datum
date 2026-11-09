@@ -6,8 +6,8 @@ import {loadScenario,type ScenarioInput,type ContactTransient} from '../scenario
 import type {GramConfig} from '../protocol.js';
 import type {TonalLine} from '../sourceModel.js';
 import {validateCutSeed} from './validate.js';
-import {bakeFidelityParams,applyRuntimeFidelity,looksOf} from './fidelity.js';
-import type {CutSeed} from './types.js';
+import {bakeFidelityParams,applyRuntimeFidelity,looksOf,cutNeedsRuntimeFidelity} from './fidelity.js';
+import type {CutSeed,GramLookId} from './types.js';
 import {attachWaterColumn,buildWaterColumn} from '../waterColumn.js';
 import {SIM_STREAM_SET,parseLofarStreamId,vernierHzForBand,resForBand,BoundedStreamHistory,CUT_HISTORY_ROWS_900S,type SimStreamId} from '../streamSet.js';
 import {LloydPassTracker,type LloydPassTruth} from '../lloydPass.js';
@@ -116,15 +116,22 @@ export class CutSession {
  readonly truthHistory=new BoundedStreamHistory<{simT:number;lloyd:LloydPassTruth;cz:ConvergenceZoneEstimate|null}>(Math.min(CUT_HISTORY_ROWS_900S,Math.max(64,Math.ceil(900*4))));
  private ended=false;
  private disposed=false;
+ /** Cached gram looks — avoid allocating a Set on every row. */
+ private readonly looks:ReadonlySet<GramLookId>;
+ private readonly needsRuntimeFidelity:boolean;
  constructor(cut:CutSeed){
   validateCutSeed(cut);
   this.cut=cut;
+  this.looks=looksOf(cut);
+  this.needsRuntimeFidelity=cutNeedsRuntimeFidelity(cut,this.looks);
   const loaded=loadScenario(scenarioFromCut(cut));
   this.engine=new AcousticEngine(loaded,cut.seed);
   // Snapshot EDA powers at full output; propulsion-ramp uses catalog EDA riseS only (no mode switch).
-  if(looksOf(cut).has('propulsion-ramp')){
+  if(this.looks.has('propulsion-ramp')){
    for(const l of this.contact.params.tonals??[])if(l.lineFamily==='EDA')this.rampBases.set(l,l.power);
-   applyRuntimeFidelity(this.contact.params,cut,0,this.rampBases,this.engineHarmonicBases);
+   applyRuntimeFidelity(this.contact.params,cut,0,this.rampBases,this.engineHarmonicBases,this.looks);
+  }else if(this.needsRuntimeFidelity){
+   applyRuntimeFidelity(this.contact.params,cut,0,this.rampBases,this.engineHarmonicBases,this.looks);
   }
   // Default wide LOFAR (MF) kept for back-compat; full stream set opened on demand via openStream.
   this.lofar=this.engine.subscribe({channel:1,kind:'lofar',bins:CUT_BINS,band:[0,CUT_FMAX]});
@@ -199,7 +206,7 @@ export class CutSession {
    const dt=Math.min(ROW_DT,this.cut.durationS-this.engine.time);
    if(dt<=0){this.ended=true;return false;}
    this.engine.advance(dt);
-   applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases,this.engineHarmonicBases);
+   if(this.needsRuntimeFidelity)applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases,this.engineHarmonicBases,this.looks);
    this.truthHistory.push({simT:this.engine.time,lloyd:this.lloydTruth(),cz:this.convergenceZone()});
   }
   return true;
@@ -211,7 +218,7 @@ export class CutSession {
  writeDemonRow(out:Float32Array,offset=0):number{
   if(this.disposed||!this.ensureLofarRow())return -1;
   if(this.engine.rowsReady(this.demonStreamId)===0){
-   if(this.engine.time<this.cut.durationS){this.engine.advance(ROW_DT);applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases,this.engineHarmonicBases);}
+   if(this.engine.time<this.cut.durationS){this.engine.advance(ROW_DT);if(this.needsRuntimeFidelity)applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases,this.engineHarmonicBases,this.looks);}
    if(this.engine.rowsReady(this.demonStreamId)===0)return -1;
   }
   return this.engine.writeRow(this.demonStreamId,out,offset);
@@ -219,6 +226,25 @@ export class CutSession {
  drainLofar(out:Float32Array,maxRows=Infinity):number{
   if(this.disposed)return -1;
   let n=0;while(n<maxRows){const i=this.writeLofarRow(out);if(i<0)break;n++;}return n;
+ }
+ /**
+  * Warm seek: advance kinematics/plant to targetS without generating intermediate LOFAR/DEMON
+  * rows, then skipToLatest so the next writeLofarRow emits current geometry. Use when the FE
+  * hot ring (600 rows @ 2 Hz ≈ 5 min) already holds older history — avoids O(T) gram regen.
+  * Truth history still records each advance step (Lloyd/CZ). Idempotent if targetS <= simT.
+  */
+ seekTo(targetS:number):void{
+  if(this.disposed)return;
+  const t=Math.max(0,Math.min(this.cut.durationS,targetS));
+  while(this.engine.time<t-1e-9){
+   const dt=Math.min(ROW_DT,t-this.engine.time);if(dt<=0)break;
+   this.engine.advance(dt);
+   if(this.needsRuntimeFidelity)applyRuntimeFidelity(this.contact.params,this.cut,this.engine.time,this.rampBases,this.engineHarmonicBases,this.looks);
+   this.truthHistory.push({simT:this.engine.time,lloyd:this.lloydTruth(),cz:this.convergenceZone()});
+  }
+  if(this.engine.time>=this.cut.durationS)this.ended=true;
+  this.engine.skipToLatest(this.lofar.streamId);
+  if(this.engine.rowsReady(this.demonStreamId)>0)this.engine.skipToLatest(this.demonStreamId);
  }
  checksumFirstRows(n:number):number{
   let hash=0x811c9dc5>>>0;
