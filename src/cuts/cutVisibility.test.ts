@@ -4,7 +4,9 @@
  * acoustics measure the same mid-cut mean row and local-median contrast.
  *
  * Physics fix (2026-11-08, Sonya f1a4d57): diesel/AIP cuts clear the 6 dB window.
- * Nuclear classes are "Coming soon" (Lead) — skip velvetshoal/twilightweft.
+ * Nuclear classes are "Coming soon" (Wilson) — visibility not required yet;
+ * UI badge/disabled picker covered in comingSoon/CutPicker tests. Keep these
+ * acoustics-visibility skips until nuclear grams ship.
  * Morrowcoil lesson is h2 clear / h1 masked.
  *
  * Lazy: no CutSession work at module import — under the full parallel suite that

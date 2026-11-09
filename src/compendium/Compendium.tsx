@@ -3,6 +3,7 @@ import { NarrowDown } from './NarrowDown'
 import { EMPTY_NARROW, constraintCount, keyLabel, rankIds, toObservations, type NarrowForm } from './narrow'
 import { catalog, matchClasses, type ClassMatch } from '@acoustics'
 import { compendiumCards, filterCards, r2, type CardFilter, type CompendiumCard } from './cards'
+import { COMING_SOON_LABEL, isNuclearPlant } from '../cuts/comingSoon'
 
 const TIER: Record<string, string> = { gen1: 'GEN 1', gen2: 'GEN 2', gen3: 'GEN 3', gen4: 'GEN 4' }
 
@@ -16,14 +17,33 @@ function MatchBadge({ m }: { m: ClassMatch }) {
   )
 }
 
+function ComingSoonBadge() {
+  return <span className="cmp-coming-soon" data-testid="cmp-coming-soon">{COMING_SOON_LABEL}</span>
+}
+
 function Card({ c, m }: { c: CompendiumCard; m?: ClassMatch }) {
+  const comingSoon = isNuclearPlant(c.plant)
   return (
-    <article className={`cmp-card force-${c.force.toLowerCase()}${m?.ruledOutBy.length ? ' ruled-out' : ''}`} data-testid="cmp-card" data-class-id={c.id}>
+    <article
+      className={`cmp-card force-${c.force.toLowerCase()}${m?.ruledOutBy.length ? ' ruled-out' : ''}${comingSoon ? ' coming-soon' : ''}`}
+      data-testid="cmp-card"
+      data-class-id={c.id}
+      data-plant={c.plant}
+      data-coming-soon={comingSoon ? '1' : undefined}
+    >
       {m && <MatchBadge m={m} />}
       <header>
-        <h3>{c.name}</h3>
+        <h3>
+          {c.name}
+          {comingSoon && <ComingSoonBadge />}
+        </h3>
         <span className="cmp-tag">{c.country.toUpperCase()} · {c.force.toUpperCase()} · {c.gridHz} HZ</span>
       </header>
+      {comingSoon && (
+        <p className="cmp-coming-soon-note" data-testid="cmp-coming-soon-note">
+          Nuclear propulsion — {COMING_SOON_LABEL}. Basic class sheet only; practice cuts for this plant are not playable yet.
+        </p>
+      )}
       <dl>
         <dt>Plant</dt><dd>{/DIESEL|NUCLEAR/.test(c.drivetrain) ? c.drivetrain : `${c.plant === 'nuclear' ? 'NUCLEAR' : 'DIESEL'} ${c.drivetrain}`}{c.aip ? ` + ${c.aip}` : ''}</dd>
         {(c.era || c.tier) && <><dt>Era</dt><dd>{c.era ?? '—'}{c.tier ? ` · ${TIER[c.tier] ?? c.tier.toUpperCase()}` : ''}</dd></>}

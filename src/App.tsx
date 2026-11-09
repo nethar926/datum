@@ -56,6 +56,7 @@ import { DETENT_SPRING_MS, detentProgress, segmentCssVars, type PlotDetent } fro
 import { CutController } from './cuts/session'
 import { CutsTab, type CutsGramTools } from './cuts/CutsTab'
 import { listCutSeeds } from './cuts/api'
+import { isNuclearCut, isNuclearCutId } from './cuts/comingSoon'
 import {
   availabilityMap, clearToolArm, emptyToolArm, FIX_DISABLED_REASON,
   type ToolArmState,
@@ -384,6 +385,8 @@ export default function App() {
   }, [client])
 
   const startCut = (cutId: string) => {
+    // Nuclear starter cuts are Coming soon — listed but not openable/seekable.
+    if (isNuclearCutId(cutId)) return
     clearCutArm()
     setStream(0) // CUT renderCut exposes one LOFAR stream
     const sess = cuts.open(cutId)
@@ -1156,7 +1159,8 @@ export default function App() {
           onSubmit={() => cuts.submit({ harmF0Hz: cutArm.harmF0, probeHz: cutArm.harmProbe }, Math.max(1.5, 3 * (cfg?.fBin ?? 0.5)))}
           onClearReveal={() => cuts.clearReveal()}
           onNext={() => {
-            const all = listCutSeeds()
+            const all = listCutSeeds().filter((c) => !isNuclearCut(c))
+            if (!all.length) return
             const i = all.findIndex((c) => c.id === cuts.cutId)
             startCut(all[(i + 1) % all.length].id)
           }}
