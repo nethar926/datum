@@ -58,9 +58,8 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .nav-title .readout { font: 500 12px/1 var(--font-mono); color: var(--sys-label-2); }
 .navbar.title-hidden .nav-title { opacity: 0; transform: translateY(4px); }
 .nav-trail { display: flex; align-items: center; gap: 6px; }
-.play-btn { width: 44px; height: 44px; padding: 0; color: var(--sys-label); background: transparent; }
-/* Play idle→ready: green-tinted Liquid Glass (reuse accent glass tokens; not a solid tint fill). */
-.play-btn.primary {
+.play-btn {
+  width: 44px; height: 44px; padding: 0;
   position: relative; isolation: isolate;
   color: var(--on-glass-accent, #f2fff4);
   background: transparent;
@@ -68,13 +67,14 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
   --glass-tint-reduced: var(--glass-accent-tint-reduced);
   box-shadow: var(--glass-shadow);
 }
-.play-btn.primary::before {
+/* Same green-tinted Liquid Glass for Play and Pause (primary = idle/ready affordance only). */
+.play-btn::before, .play-btn.primary::before {
   content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
   background: var(--glass-tint);
   -webkit-backdrop-filter: blur(14px) saturate(190%) brightness(1.04);
   backdrop-filter: blur(14px) saturate(190%) brightness(1.04);
 }
-.play-btn.primary::after {
+.play-btn::after, .play-btn.primary::after {
   content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
   background:
     radial-gradient(140% 120% at 18% -30%, var(--glass-spec), transparent 42%),
@@ -83,9 +83,9 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
   box-shadow: inset 0 1px 0 var(--glass-rim), inset 0 -1px 0 var(--glass-rim-lo), inset 0 0 0 .5px var(--glass-edge),
     inset 0 0 12px rgba(255, 255, 255, .05), inset 0 0 2px 1px rgba(255, 255, 255, .06);
 }
-:root[data-glass='reduced'] .play-btn.primary::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
+:root[data-glass='reduced'] .play-btn::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
 @media (prefers-reduced-transparency: reduce) {
-  :root:not([data-glass='full']) .play-btn.primary::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  :root:not([data-glass='full']) .play-btn::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 /* iOS segmented control (chrome). */
@@ -404,11 +404,23 @@ button.ios-row:active { background: var(--sys-fill); }
 .cut-player:has([data-testid='demon-panel']):not(:has(> .cut-chrome-row)) {
   grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.5fr) auto;
 }
+/* Live-style toggle: cut-gram hidden → DemonPane alone fills the gram row (no short 0.5fr slot). */
+.cut-player:has([data-testid='demon-panel'][data-visible='1']):has([data-testid='cut-gram'][hidden]) {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.cut-player:has([data-testid='demon-panel'][data-visible='1']):has([data-testid='cut-gram'][hidden]):not(:has(> .cut-chrome-row)) {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
 .cut-player .demon-panel.gram-panel,
 .app.ios .cut-player .panel.gram-panel.demon-panel {
   min-height: 0; height: 100%; border-radius: 22px; overflow: hidden; box-shadow: var(--shadow-panel);
+  /* head + body; optional hint via :has — body must own 1fr (absolute .gram collapses auto rows) */
   display: grid; grid-template-rows: auto minmax(0, 1fr) !important;
   background: var(--gram-bg, #000); color: var(--text-1, #d7e0d7);
+}
+.cut-player .demon-panel.gram-panel:has(.demon-hint),
+.app.ios .cut-player .panel.gram-panel.demon-panel:has(.demon-hint) {
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
 }
 .cut-player .demon-panel .panel-head { flex: 0 0 auto; }
 .cut-player .demon-panel .panel-body {
@@ -691,16 +703,38 @@ button.ios-row:active { background: var(--sys-fill); }
   .splash-scrim { background: rgba(0, 0, 0, .78); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
-/* HIG4: LOFAR + DEMON stacked when ?demon=1 enables DEMON streams. */
+/* HIG4 / live DEMON toggle (2f2a9ec): one pane fills the gram column.
+ * The old stacked 1.15fr+0.85fr template still reserved ~140px for a hidden
+ * DemonPane whenever data-demon=1, starving LOFAR/DIFAR (and leaving DEMON
+ * with only the short second row). Share one grid cell; the hidden sibling
+ * is display:none and does not take space. */
 .app.ios[data-demon='1'] .workspace-left {
-  grid-template-rows: minmax(0, 1.15fr) minmax(140px, 0.85fr);
-  gap: var(--space-3, 8px);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
-.app.ios[data-demon='1'] .demon-panel {
-  min-height: 140px;
+.app.ios[data-demon='1'] .workspace-left > .gram-box,
+.app.ios[data-demon='1'] .workspace-left > .demon-panel {
+  grid-area: 1 / 1;
+  min-height: 0;
+  height: 100%;
 }
-.app.ios.layout-phonePortrait[data-demon='1'] .workspace-left {
-  grid-template-rows: minmax(0, 1fr) minmax(120px, 0.7fr);
+/* DemonPane: head + optional hint + body — body must own the 1fr (hint used to steal it). */
+.app.ios .demon-panel.gram-panel,
+.app.ios .panel.gram-panel.demon-panel {
+  /* head + body; hint (when present) is an extra auto row via :has() below */
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.app.ios .demon-panel.gram-panel:has(.demon-hint),
+.app.ios .panel.gram-panel.demon-panel:has(.demon-hint) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+.app.ios .demon-panel .panel-body {
+  /* Absolute .gram needs a definite containing block height (height:auto collapses to 0). */
+  position: relative; min-height: 0; min-width: 0; height: 100%;
+}
+.app.ios .demon-panel .demon-hint {
+  flex: 0 0 auto; margin: 0; padding: 4px 14px 6px; color: var(--sys-label-2);
 }
 
 

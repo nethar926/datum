@@ -952,10 +952,10 @@ export default function App() {
         } as React.CSSProperties}
         onPointerDownCapture={onWorkspaceDown} onPointerUpCapture={onWorkspaceUp} onPointerCancelCapture={onWorkspaceUp}>
         <div className="workspace-left stack-gram">
-        <section className="panel gram-panel gram-box">
+        <section className="panel gram-panel gram-box" data-testid="live-gram-panel" hidden={gramMode === 'demon'} style={gramMode === 'demon' ? { display: 'none' } : undefined}>
           <div className="panel-body">
             {lofarCfgs.length > 0 && tab !== 'cuts' && (
-              <div data-testid="lofar-gram-wrap" hidden={gramMode === 'demon'} style={gramMode === 'demon' ? { display: 'none' } : undefined}>
+              <div data-testid="lofar-gram-wrap">
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}

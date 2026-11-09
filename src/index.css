@@ -740,11 +740,23 @@ button, select { font: inherit; color: inherit; }
 .app.ios.layout-phonePortrait .nav-title b { font-size: 15px; }
 .app.ios.layout-phonePortrait .listen-menu { right: 0; left: auto; min-width: 240px; }
 
-/* HIG4: LOFAR + DEMON stacked when demon streams are live. */
+/* HIG4 / live DEMON toggle: one pane fills (see ios.css). */
 .app[data-demon='1'] .workspace-left {
-  grid-template-rows: minmax(0, 1.15fr) minmax(140px, 0.85fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
-.app[data-demon='1'] .demon-panel { min-height: 140px; }
+.app[data-demon='1'] .workspace-left > .gram-box,
+.app[data-demon='1'] .workspace-left > .demon-panel {
+  grid-area: 1 / 1;
+  min-height: 0;
+  height: 100%;
+}
+.app .demon-panel.gram-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.app .demon-panel.gram-panel:has(.demon-hint) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
 
 /* REFRESH: standalone reload control + update-available badge */
 .nav-btn.refresh-btn { position: relative; width: 44px; height: 44px; padding: 0; flex-shrink: 0; }
