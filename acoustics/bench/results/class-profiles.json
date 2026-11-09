@@ -151,6 +151,53 @@
   {
    "id": "blue-brindleflux",
    "name": "Fictional Brindleflux",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 58.1,
+    "beamM": 6.5,
+    "draughtSurfacedM": 5.2,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.25,
+     "lengthM": 6.1,
+     "heightM": 6.4
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "ostmark-league",
+    "operators": [
+     {
+      "nationId": "ostmark-league",
+      "role": "origin",
+      "hullIds": [
+       "fx-brindleflux-1",
+       "fx-brindleflux-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-brindleflux-1",
+      "number": "FX-BQ-01-1",
+      "name": "Brindleflux Wisp",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-brindleflux-2",
+      "number": "FX-BQ-01-2",
+      "name": "Brindleflux Glimmer",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Ostmark League",
+    "operatorNames": [
+     "Ostmark League"
+    ]
+   },
    "operatorNation": "Ostmark League",
    "force": "Blue",
    "alliedNations": [
@@ -180,6 +227,15 @@
     "propeller": {
      "type": "cpp",
      "blades": 5
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "cpp",
+     "blades": 5,
+     "skewDeg": 11,
+     "expandedAreaRatio": 0.55,
+     "hubDiameterRatio": 0.32,
+     "diameterM": 2.8
     }
    },
    "speedKts": {
@@ -218,8 +274,9 @@
      16
     ]
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-1",
      "productName": "Halvard 6T-480",
      "count": 1,
@@ -237,6 +294,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 480
+   },
    "edas": [
     {
      "name": "LOP",
@@ -372,6 +432,68 @@
   {
    "id": "blue-orbelune",
    "name": "Fictional Orbelune",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 71.2,
+    "beamM": 9.3,
+    "draughtSurfacedM": 8,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.39,
+     "lengthM": 7.1,
+     "heightM": 4.6
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "ostmark-league",
+    "operators": [
+     {
+      "nationId": "ostmark-league",
+      "role": "origin",
+      "hullIds": [
+       "fx-orbelune-1",
+       "fx-orbelune-2"
+      ]
+     },
+     {
+      "nationId": "tarsian-republic",
+      "role": "export",
+      "hullIds": [
+       "blue-orbelune-export-1-1"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-orbelune-1",
+      "number": "FX-BQ-02-1",
+      "name": "Orbelune Wisp",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-orbelune-2",
+      "number": "FX-BQ-02-2",
+      "name": "Orbelune Glimmer",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     },
+     {
+      "id": "blue-orbelune-export-1-1",
+      "number": "FX-TQ-02E-1",
+      "name": "Orbelune Tide",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": false
+     }
+    ],
+    "designOrigin": "Ostmark League",
+    "operatorNames": [
+     "Ostmark League",
+     "Tarsian Republic"
+    ]
+   },
    "operatorNation": "Ostmark League",
    "force": "Blue",
    "alliedNations": [
@@ -401,6 +523,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 7,
+     "skewDeg": 33,
+     "expandedAreaRatio": 0.68,
+     "hubDiameterRatio": 0.23,
+     "diameterM": 4.3
     }
    },
    "speedKts": {
@@ -435,8 +566,9 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-2",
      "productName": "Corvane 8V-1500",
      "count": 3,
@@ -454,6 +586,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 440
+   },
    "edas": [
     {
      "name": "Freshwater pump",
@@ -574,6 +709,53 @@
   {
    "id": "blue-vellumwake",
    "name": "Fictional Vellumwake",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 107.4,
+    "beamM": 11.3,
+    "draughtSurfacedM": 9,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.25,
+     "lengthM": 13.7,
+     "heightM": 5
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "norrland-union",
+    "operators": [
+     {
+      "nationId": "norrland-union",
+      "role": "origin",
+      "hullIds": [
+       "fx-vellumwake-1",
+       "fx-vellumwake-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-vellumwake-1",
+      "number": "FX-BQ-03-1",
+      "name": "Vellumwake Wisp",
+      "operatorNationId": "norrland-union",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-vellumwake-2",
+      "number": "FX-BQ-03-2",
+      "name": "Vellumwake Glimmer",
+      "operatorNationId": "norrland-union",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Norrland Union",
+    "operatorNames": [
+     "Norrland Union"
+    ]
+   },
    "operatorNation": "Norrland Union",
    "force": "Blue",
    "alliedNations": [
@@ -603,6 +785,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 7,
+     "skewDeg": 42,
+     "expandedAreaRatio": 0.71,
+     "hubDiameterRatio": 0.24,
+     "diameterM": 5.5
     }
    },
    "speedKts": {
@@ -641,13 +832,15 @@
      33
     ]
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 114.52,
-    "vaneCount": 44,
-    "vanePassHzMax": 5038.9
-   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 114.52,
+     "vaneCount": 44,
+     "vanePassHzMax": 5038.9
+    }
+   ],
    "edas": [],
    "independentAux": [
     {
@@ -728,6 +921,53 @@
   {
    "id": "blue-quartzwhorl",
    "name": "Fictional Quartzwhorl",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 109.7,
+    "beamM": 10.8,
+    "draughtSurfacedM": 8.8,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.29,
+     "lengthM": 14.8,
+     "heightM": 6.7
+    },
+    "planes": "bow",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "norrland-union",
+    "operators": [
+     {
+      "nationId": "norrland-union",
+      "role": "origin",
+      "hullIds": [
+       "fx-quartzwhorl-1",
+       "fx-quartzwhorl-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-quartzwhorl-1",
+      "number": "FX-BQ-04-1",
+      "name": "Quartzwhorl Wisp",
+      "operatorNationId": "norrland-union",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-quartzwhorl-2",
+      "number": "FX-BQ-04-2",
+      "name": "Quartzwhorl Glimmer",
+      "operatorNationId": "norrland-union",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Norrland Union",
+    "operatorNames": [
+     "Norrland Union"
+    ]
+   },
    "operatorNation": "Norrland Union",
    "force": "Blue",
    "alliedNations": [
@@ -757,6 +997,15 @@
     "propeller": {
      "type": "flat",
      "blades": 9
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "flat",
+     "blades": 9,
+     "skewDeg": 3,
+     "expandedAreaRatio": 0.67,
+     "hubDiameterRatio": 0.18,
+     "diameterM": 5.2
     }
    },
    "speedKts": {
@@ -791,12 +1040,17 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 60,
-    "vaneCount": 20,
-    "vanePassHzMax": 1200
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 60,
+     "vaneCount": 20,
+     "vanePassHzMax": 1200
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 450
    },
    "edas": [],
    "independentAux": [
@@ -868,6 +1122,53 @@
   {
    "id": "green-morrowcoil",
    "name": "Fictional Morrowcoil",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 62.7,
+    "beamM": 8.3,
+    "draughtSurfacedM": 6.8,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.33,
+     "lengthM": 8.5,
+     "heightM": 5.9
+    },
+    "planes": "bow",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "tarsian-republic",
+    "operators": [
+     {
+      "nationId": "tarsian-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-morrowcoil-1",
+       "fx-morrowcoil-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-morrowcoil-1",
+      "number": "FX-GQ-05-1",
+      "name": "Morrowcoil Wisp",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-morrowcoil-2",
+      "number": "FX-GQ-05-2",
+      "name": "Morrowcoil Glimmer",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Tarsian Republic",
+    "operatorNames": [
+     "Tarsian Republic"
+    ]
+   },
    "operatorNation": "Tarsian Republic",
    "force": "Green",
    "alliedNations": [
@@ -897,6 +1198,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 6
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 6,
+     "skewDeg": 31,
+     "expandedAreaRatio": 0.75,
+     "hubDiameterRatio": 0.23,
+     "diameterM": 3.8
     }
    },
    "speedKts": {
@@ -931,8 +1241,9 @@
     ],
     "psrHarmonicsStopAtBlades": true
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-3",
      "productName": "Dunmere 16V-1309",
      "count": 1,
@@ -950,6 +1261,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 430
+   },
    "edas": [
     {
      "name": "Ventilation drive",
@@ -1069,6 +1383,53 @@
   {
    "id": "green-fennelglint",
    "name": "Fictional Fennelglint",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 65.6,
+    "beamM": 7.8,
+    "draughtSurfacedM": 6.1,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.28,
+     "lengthM": 8,
+     "heightM": 6.4
+    },
+    "planes": "bow",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "tarsian-republic",
+    "operators": [
+     {
+      "nationId": "tarsian-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-fennelglint-1",
+       "fx-fennelglint-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-fennelglint-1",
+      "number": "FX-GQ-06-1",
+      "name": "Fennelglint Wisp",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-fennelglint-2",
+      "number": "FX-GQ-06-2",
+      "name": "Fennelglint Glimmer",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Tarsian Republic",
+    "operatorNames": [
+     "Tarsian Republic"
+    ]
+   },
    "operatorNation": "Tarsian Republic",
    "force": "Green",
    "alliedNations": [
@@ -1098,6 +1459,15 @@
     "propeller": {
      "type": "cpp",
      "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "cpp",
+     "blades": 7,
+     "skewDeg": 13,
+     "expandedAreaRatio": 0.59,
+     "hubDiameterRatio": 0.32,
+     "diameterM": 3.8
     }
    },
    "speedKts": {
@@ -1136,8 +1506,9 @@
      25
     ]
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-4",
      "productName": "Pellor 6V-1500",
      "count": 3,
@@ -1155,6 +1526,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 460
+   },
    "edas": [
     {
      "name": "Cooling pump",
@@ -1285,6 +1659,53 @@
   {
    "id": "green-thistledrift",
    "name": "Fictional Thistledrift",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 104.2,
+    "beamM": 11.8,
+    "draughtSurfacedM": 10.1,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.35,
+     "lengthM": 11.8,
+     "heightM": 4.7
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "tarsian-republic",
+    "operators": [
+     {
+      "nationId": "tarsian-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-thistledrift-1",
+       "fx-thistledrift-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-thistledrift-1",
+      "number": "FX-GQ-07-1",
+      "name": "Thistledrift Wisp",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-thistledrift-2",
+      "number": "FX-GQ-07-2",
+      "name": "Thistledrift Glimmer",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Tarsian Republic",
+    "operatorNames": [
+     "Tarsian Republic"
+    ]
+   },
    "operatorNation": "Tarsian Republic",
    "force": "Green",
    "alliedNations": [
@@ -1314,6 +1735,15 @@
     "propeller": {
      "type": "flat",
      "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "flat",
+     "blades": 8,
+     "skewDeg": 4,
+     "expandedAreaRatio": 0.63,
+     "hubDiameterRatio": 0.21,
+     "diameterM": 5.5
     }
    },
    "speedKts": {
@@ -1352,13 +1782,15 @@
      49
     ]
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 159.075,
-    "vaneCount": 70,
-    "vanePassHzMax": 11135.3
-   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 159.075,
+     "vaneCount": 70,
+     "vanePassHzMax": 11135.3
+    }
+   ],
    "edas": [],
    "independentAux": [
     {
@@ -1429,6 +1861,53 @@
   {
    "id": "green-opalweft",
    "name": "Fictional Opalweft",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 73.8,
+    "beamM": 8.2,
+    "draughtSurfacedM": 6.4,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.37,
+     "lengthM": 8.2,
+     "heightM": 4.5
+    },
+    "planes": "bow",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "meridia",
+    "operators": [
+     {
+      "nationId": "meridia",
+      "role": "origin",
+      "hullIds": [
+       "fx-opalweft-1",
+       "fx-opalweft-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-opalweft-1",
+      "number": "FX-GQ-08-1",
+      "name": "Opalweft Wisp",
+      "operatorNationId": "meridia",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-opalweft-2",
+      "number": "FX-GQ-08-2",
+      "name": "Opalweft Glimmer",
+      "operatorNationId": "meridia",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Meridia",
+    "operatorNames": [
+     "Meridia"
+    ]
+   },
    "operatorNation": "Meridia",
    "force": "Green",
    "alliedNations": [
@@ -1458,6 +1937,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 7,
+     "skewDeg": 40,
+     "expandedAreaRatio": 0.7,
+     "hubDiameterRatio": 0.18,
+     "diameterM": 4.3
     }
    },
    "speedKts": {
@@ -1492,8 +1980,9 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-5",
      "productName": "Ashgrove 10V-1500",
      "count": 3,
@@ -1511,6 +2000,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 460
+   },
    "edas": [
     {
      "name": "Lube scavenger",
@@ -1624,6 +2116,53 @@
   {
    "id": "red-cinderlilt",
    "name": "Fictional Cinderlilt",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 73.6,
+    "beamM": 9.2,
+    "draughtSurfacedM": 7.8,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.27,
+     "lengthM": 9.1,
+     "heightM": 6.4
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "zahrestan",
+    "operators": [
+     {
+      "nationId": "zahrestan",
+      "role": "origin",
+      "hullIds": [
+       "fx-cinderlilt-1",
+       "fx-cinderlilt-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-cinderlilt-1",
+      "number": "FX-RQ-09-1",
+      "name": "Cinderlilt Wisp",
+      "operatorNationId": "zahrestan",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-cinderlilt-2",
+      "number": "FX-RQ-09-2",
+      "name": "Cinderlilt Glimmer",
+      "operatorNationId": "zahrestan",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Zahrestan",
+    "operatorNames": [
+     "Zahrestan"
+    ]
+   },
    "operatorNation": "Zahrestan",
    "force": "Red",
    "alliedNations": [
@@ -1655,6 +2194,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 5
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 5,
+     "skewDeg": 31,
+     "expandedAreaRatio": 0.78,
+     "hubDiameterRatio": 0.21,
+     "diameterM": 4.6
     }
    },
    "speedKts": {
@@ -1689,8 +2237,9 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-6",
      "productName": "Tamsin 6T-510",
      "count": 1,
@@ -1708,6 +2257,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 510
+   },
    "edas": [
     {
      "name": "Cooling pump",
@@ -1832,6 +2384,53 @@
   {
    "id": "red-emberbraid",
    "name": "Fictional Emberbraid",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 56.3,
+    "beamM": 6.6,
+    "draughtSurfacedM": 5.8,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.28,
+     "lengthM": 7.7,
+     "heightM": 5.2
+    },
+    "planes": "bow",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "zahrestan",
+    "operators": [
+     {
+      "nationId": "zahrestan",
+      "role": "origin",
+      "hullIds": [
+       "fx-emberbraid-1",
+       "fx-emberbraid-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-emberbraid-1",
+      "number": "FX-RQ-10-1",
+      "name": "Emberbraid Wisp",
+      "operatorNationId": "zahrestan",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-emberbraid-2",
+      "number": "FX-RQ-10-2",
+      "name": "Emberbraid Glimmer",
+      "operatorNationId": "zahrestan",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Zahrestan",
+    "operatorNames": [
+     "Zahrestan"
+    ]
+   },
    "operatorNation": "Zahrestan",
    "force": "Red",
    "alliedNations": [
@@ -1863,6 +2462,15 @@
     "propeller": {
      "type": "flat",
      "blades": 6
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "flat",
+     "blades": 6,
+     "skewDeg": 3,
+     "expandedAreaRatio": 0.55,
+     "hubDiameterRatio": 0.21,
+     "diameterM": 3.1
     }
    },
    "speedKts": {
@@ -1901,8 +2509,9 @@
      13
     ]
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-7",
      "productName": "Orrin 16V-1235",
      "count": 1,
@@ -1920,6 +2529,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 400
+   },
    "edas": [
     {
      "name": "Lube scavenger",
@@ -2041,6 +2653,69 @@
   {
    "id": "red-gloamspiral",
    "name": "Fictional Gloamspiral",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 72,
+    "beamM": 9.3,
+    "draughtSurfacedM": 7.9,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.36,
+     "lengthM": 8,
+     "heightM": 6.9
+    },
+    "planes": "bow",
+    "stern": "x-form",
+    "aipPlugM": 9.8
+   },
+   "operators": {
+    "designOriginNationId": "kaelun-republic",
+    "operators": [
+     {
+      "nationId": "kaelun-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-gloamspiral-1",
+       "fx-gloamspiral-2"
+      ]
+     },
+     {
+      "nationId": "dorhan-commonwealth",
+      "role": "export",
+      "hullIds": [
+       "red-gloamspiral-export-1-1"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-gloamspiral-1",
+      "number": "FX-RQ-11-1",
+      "name": "Gloamspiral Wisp",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-gloamspiral-2",
+      "number": "FX-RQ-11-2",
+      "name": "Gloamspiral Glimmer",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "red-gloamspiral-export-1-1",
+      "number": "FX-DQ-11E-1",
+      "name": "Gloamspiral Ember",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": false
+     }
+    ],
+    "designOrigin": "Kaelun Republic",
+    "operatorNames": [
+     "Kaelun Republic",
+     "Dorhan Commonwealth"
+    ]
+   },
    "operatorNation": "Kaelun Republic",
    "force": "Red",
    "alliedNations": [
@@ -2078,6 +2753,15 @@
     "propeller": {
      "type": "cpp",
      "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "cpp",
+     "blades": 7,
+     "skewDeg": 12,
+     "expandedAreaRatio": 0.79,
+     "hubDiameterRatio": 0.34,
+     "diameterM": 4.4
     }
    },
    "speedKts": {
@@ -2112,8 +2796,9 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-8",
      "productName": "Veskel 6V-850",
      "count": 2,
@@ -2131,6 +2816,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 420
+   },
    "edas": [
     {
      "name": "Freshwater pump",
@@ -2253,6 +2941,53 @@
   {
    "id": "red-sablequill",
    "name": "Fictional Sablequill",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 103.1,
+    "beamM": 10,
+    "draughtSurfacedM": 8.1,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.37,
+     "lengthM": 12.1,
+     "heightM": 6.4
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "varkeshna-federation",
+    "operators": [
+     {
+      "nationId": "varkeshna-federation",
+      "role": "origin",
+      "hullIds": [
+       "fx-sablequill-1",
+       "fx-sablequill-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-sablequill-1",
+      "number": "FX-RQ-12-1",
+      "name": "Sablequill Wisp",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-sablequill-2",
+      "number": "FX-RQ-12-2",
+      "name": "Sablequill Glimmer",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Varkeshna Federation",
+    "operatorNames": [
+     "Varkeshna Federation"
+    ]
+   },
    "operatorNation": "Varkeshna Federation",
    "force": "Red",
    "alliedNations": [
@@ -2284,6 +3019,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 8,
+     "skewDeg": 38,
+     "expandedAreaRatio": 0.77,
+     "hubDiameterRatio": 0.24,
+     "diameterM": 4.2
     }
    },
    "speedKts": {
@@ -2322,13 +3066,15 @@
      63
     ]
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 31.72,
-    "vaneCount": 72,
-    "vanePassHzMax": 2283.8
-   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 31.72,
+     "vaneCount": 72,
+     "vanePassHzMax": 2283.8
+    }
+   ],
    "edas": [],
    "independentAux": [
     {
@@ -2409,6 +3155,53 @@
   {
    "id": "red-dorhan-pebblewisp",
    "name": "Fictional Pebblewisp",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 65.4,
+    "beamM": 8.2,
+    "draughtSurfacedM": 7.2,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.28,
+     "lengthM": 6.7,
+     "heightM": 6.9
+    },
+    "planes": "bow",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "dorhan-commonwealth",
+    "operators": [
+     {
+      "nationId": "dorhan-commonwealth",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-dorhan-pebblewisp-1",
+       "fx-red-dorhan-pebblewisp-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-dorhan-pebblewisp-1",
+      "number": "FX-DH-PE-1",
+      "name": "Pebblewisp Lantern 1",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-dorhan-pebblewisp-2",
+      "number": "FX-DH-PE-2",
+      "name": "Pebblewisp Lantern 2",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Dorhan Commonwealth",
+    "operatorNames": [
+     "Dorhan Commonwealth"
+    ]
+   },
    "operatorNation": "Dorhan Commonwealth",
    "force": "Red",
    "alliedNations": [
@@ -2442,6 +3235,15 @@
     "propeller": {
      "type": "flat",
      "blades": 4
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "flat",
+     "blades": 4,
+     "skewDeg": 2,
+     "expandedAreaRatio": 0.79,
+     "hubDiameterRatio": 0.24,
+     "diameterM": 4.3
     }
    },
    "speedKts": {
@@ -2480,8 +3282,9 @@
      11
     ]
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-8",
      "productName": "Veskel 6V-850",
      "count": 2,
@@ -2499,6 +3302,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 380
+   },
    "edas": [
     {
      "name": "Lube scavenger",
@@ -2622,6 +3428,53 @@
   {
    "id": "red-dorhan-mistacorn",
    "name": "Fictional Mistacorn",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 73.3,
+    "beamM": 9.6,
+    "draughtSurfacedM": 8.4,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.35,
+     "lengthM": 9,
+     "heightM": 5.2
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "dorhan-commonwealth",
+    "operators": [
+     {
+      "nationId": "dorhan-commonwealth",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-dorhan-mistacorn-1",
+       "fx-red-dorhan-mistacorn-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-dorhan-mistacorn-1",
+      "number": "FX-DH-MI-1",
+      "name": "Mistacorn Lantern 1",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-dorhan-mistacorn-2",
+      "number": "FX-DH-MI-2",
+      "name": "Mistacorn Lantern 2",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Dorhan Commonwealth",
+    "operatorNames": [
+     "Dorhan Commonwealth"
+    ]
+   },
    "operatorNation": "Dorhan Commonwealth",
    "force": "Red",
    "alliedNations": [
@@ -2655,6 +3508,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 4
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 4,
+     "skewDeg": 42,
+     "expandedAreaRatio": 0.62,
+     "hubDiameterRatio": 0.2,
+     "diameterM": 5.1
     }
    },
    "speedKts": {
@@ -2689,8 +3551,9 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-8",
      "productName": "Veskel 6V-850",
      "count": 1,
@@ -2708,6 +3571,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 900
+   },
    "edas": [
     {
      "name": "Lube scavenger",
@@ -2818,6 +3684,53 @@
   {
    "id": "blue-copperlune",
    "name": "Fictional Copperlune",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 118.6,
+    "beamM": 12.1,
+    "draughtSurfacedM": 10,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.25,
+     "lengthM": 14.9,
+     "heightM": 5.2
+    },
+    "planes": "bow",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "ostmark-league",
+    "operators": [
+     {
+      "nationId": "ostmark-league",
+      "role": "origin",
+      "hullIds": [
+       "fx-blue-copperlune-1",
+       "fx-blue-copperlune-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-blue-copperlune-1",
+      "number": "FX-NV-COP-1",
+      "name": "Copperlune Lantern 1",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-blue-copperlune-2",
+      "number": "FX-NV-COP-2",
+      "name": "Copperlune Lantern 2",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Ostmark League",
+    "operatorNames": [
+     "Ostmark League"
+    ]
+   },
    "operatorNation": "Ostmark League",
    "force": "Blue",
    "alliedNations": [
@@ -2847,6 +3760,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 7,
+     "skewDeg": 28,
+     "expandedAreaRatio": 0.65,
+     "hubDiameterRatio": 0.22,
+     "diameterM": 6.5
     }
    },
    "speedKts": {
@@ -2881,13 +3803,15 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 125.592,
-    "vaneCount": 61,
-    "vanePassHzMax": 7661.1
-   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 125.592,
+     "vaneCount": 61,
+     "vanePassHzMax": 7661.1
+    }
+   ],
    "edas": [],
    "independentAux": [
     {
@@ -2956,6 +3880,53 @@
   {
    "id": "green-russetwake",
    "name": "Fictional Russetwake",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 62.3,
+    "beamM": 6.9,
+    "draughtSurfacedM": 5.7,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.36,
+     "lengthM": 7.8,
+     "heightM": 4.7
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "meridia",
+    "operators": [
+     {
+      "nationId": "meridia",
+      "role": "origin",
+      "hullIds": [
+       "fx-green-russetwake-1",
+       "fx-green-russetwake-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-green-russetwake-1",
+      "number": "FX-NV-RUS-1",
+      "name": "Russetwake Lantern 1",
+      "operatorNationId": "meridia",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-green-russetwake-2",
+      "number": "FX-NV-RUS-2",
+      "name": "Russetwake Lantern 2",
+      "operatorNationId": "meridia",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Meridia",
+    "operatorNames": [
+     "Meridia"
+    ]
+   },
    "operatorNation": "Meridia",
    "force": "Green",
    "alliedNations": [
@@ -2985,6 +3956,15 @@
     "propeller": {
      "type": "cpp",
      "blades": 6
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "cpp",
+     "blades": 6,
+     "skewDeg": 12,
+     "expandedAreaRatio": 0.64,
+     "hubDiameterRatio": 0.33,
+     "diameterM": 3.1
     }
    },
    "speedKts": {
@@ -3019,8 +3999,9 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-9",
      "productName": "Brannoc 6V-1373",
      "count": 1,
@@ -3038,6 +4019,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 430
+   },
    "edas": [
     {
      "name": "LOP",
@@ -3138,6 +4122,53 @@
   {
    "id": "red-ivorycoil",
    "name": "Fictional Ivorycoil",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 111.8,
+    "beamM": 10.9,
+    "draughtSurfacedM": 9.6,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.36,
+     "lengthM": 13.6,
+     "heightM": 6.2
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "varkeshna-federation",
+    "operators": [
+     {
+      "nationId": "varkeshna-federation",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-ivorycoil-1",
+       "fx-red-ivorycoil-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-ivorycoil-1",
+      "number": "FX-NV-IVO-1",
+      "name": "Ivorycoil Lantern 1",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-ivorycoil-2",
+      "number": "FX-NV-IVO-2",
+      "name": "Ivorycoil Lantern 2",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Varkeshna Federation",
+    "operatorNames": [
+     "Varkeshna Federation"
+    ]
+   },
    "operatorNation": "Varkeshna Federation",
    "force": "Red",
    "alliedNations": [
@@ -3169,6 +4200,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 8,
+     "skewDeg": 26,
+     "expandedAreaRatio": 0.66,
+     "hubDiameterRatio": 0.22,
+     "diameterM": 5.5
     }
    },
    "speedKts": {
@@ -3203,13 +4243,15 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 103.17,
-    "vaneCount": 74,
-    "vanePassHzMax": 7634.6
-   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 103.17,
+     "vaneCount": 74,
+     "vanePassHzMax": 7634.6
+    }
+   ],
    "edas": [],
    "independentAux": [
     {
@@ -3268,6 +4310,54 @@
   {
    "id": "red-frostwhorl",
    "name": "Fictional Frostwhorl",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 113,
+    "beamM": 11.5,
+    "draughtSurfacedM": 10.1,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.36,
+     "lengthM": 11.3,
+     "heightM": 5.4
+    },
+    "planes": "bow",
+    "stern": "x-form",
+    "aipPlugM": 6.5
+   },
+   "operators": {
+    "designOriginNationId": "varkeshna-federation",
+    "operators": [
+     {
+      "nationId": "varkeshna-federation",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-frostwhorl-1",
+       "fx-red-frostwhorl-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-frostwhorl-1",
+      "number": "FX-NV-FRO-1",
+      "name": "Frostwhorl Lantern 1",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-frostwhorl-2",
+      "number": "FX-NV-FRO-2",
+      "name": "Frostwhorl Lantern 2",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Varkeshna Federation",
+    "operatorNames": [
+     "Varkeshna Federation"
+    ]
+   },
    "operatorNation": "Varkeshna Federation",
    "force": "Red",
    "alliedNations": [
@@ -3303,6 +4393,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 9
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 9,
+     "skewDeg": 43,
+     "expandedAreaRatio": 0.63,
+     "hubDiameterRatio": 0.18,
+     "diameterM": 5.8
     }
    },
    "speedKts": {
@@ -3341,12 +4440,17 @@
      42
     ]
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 50,
-    "vaneCount": 50,
-    "vanePassHzMax": 2500
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 50,
+     "vaneCount": 50,
+     "vanePassHzMax": 2500
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 450
    },
    "edas": [],
    "independentAux": [
@@ -3428,6 +4532,53 @@
   {
    "id": "red-marigoldrift",
    "name": "Fictional Marigoldrift",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 62.7,
+    "beamM": 7.4,
+    "draughtSurfacedM": 5.8,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.4,
+     "lengthM": 7.1,
+     "heightM": 5.6
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "varkeshna-federation",
+    "operators": [
+     {
+      "nationId": "varkeshna-federation",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-marigoldrift-1",
+       "fx-red-marigoldrift-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-marigoldrift-1",
+      "number": "FX-NV-MAR-1",
+      "name": "Marigoldrift Lantern 1",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-marigoldrift-2",
+      "number": "FX-NV-MAR-2",
+      "name": "Marigoldrift Lantern 2",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Varkeshna Federation",
+    "operatorNames": [
+     "Varkeshna Federation"
+    ]
+   },
    "operatorNation": "Varkeshna Federation",
    "force": "Red",
    "alliedNations": [
@@ -3459,6 +4610,15 @@
     "propeller": {
      "type": "flat",
      "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "flat",
+     "blades": 7,
+     "skewDeg": 0,
+     "expandedAreaRatio": 0.58,
+     "hubDiameterRatio": 0.23,
+     "diameterM": 3.9
     }
    },
    "speedKts": {
@@ -3493,8 +4653,9 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-10",
      "productName": "Quillon 12V-850",
      "count": 2,
@@ -3512,6 +4673,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 420
+   },
    "edas": [
     {
      "name": "LOP",
@@ -3629,6 +4793,53 @@
   {
    "id": "red-velvetshoal",
    "name": "Fictional Velvetshoal",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 118.1,
+    "beamM": 11.9,
+    "draughtSurfacedM": 9.9,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.34,
+     "lengthM": 12.3,
+     "heightM": 6.7
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "kaelun-republic",
+    "operators": [
+     {
+      "nationId": "kaelun-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-velvetshoal-1",
+       "fx-red-velvetshoal-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-velvetshoal-1",
+      "number": "FX-NV-VEL-1",
+      "name": "Velvetshoal Lantern 1",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-velvetshoal-2",
+      "number": "FX-NV-VEL-2",
+      "name": "Velvetshoal Lantern 2",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Kaelun Republic",
+    "operatorNames": [
+     "Kaelun Republic"
+    ]
+   },
    "operatorNation": "Kaelun Republic",
    "force": "Red",
    "alliedNations": [
@@ -3660,6 +4871,15 @@
     "propeller": {
      "type": "skewed",
      "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "skewed",
+     "blades": 8,
+     "skewDeg": 35,
+     "expandedAreaRatio": 0.76,
+     "hubDiameterRatio": 0.2,
+     "diameterM": 6.3
     }
    },
    "speedKts": {
@@ -3694,13 +4914,15 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 27.539,
-    "vaneCount": 63,
-    "vanePassHzMax": 1735
-   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 27.539,
+     "vaneCount": 63,
+     "vanePassHzMax": 1735
+    }
+   ],
    "edas": [],
    "independentAux": [
     {
@@ -3769,6 +4991,53 @@
   {
    "id": "red-twilightweft",
    "name": "Fictional Twilightweft",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 108.6,
+    "beamM": 10,
+    "draughtSurfacedM": 8.5,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.28,
+     "lengthM": 13,
+     "heightM": 5.2
+    },
+    "planes": "bow",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "kaelun-republic",
+    "operators": [
+     {
+      "nationId": "kaelun-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-twilightweft-1",
+       "fx-red-twilightweft-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-twilightweft-1",
+      "number": "FX-NV-TWI-1",
+      "name": "Twilightweft Lantern 1",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-twilightweft-2",
+      "number": "FX-NV-TWI-2",
+      "name": "Twilightweft Lantern 2",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Kaelun Republic",
+    "operatorNames": [
+     "Kaelun Republic"
+    ]
+   },
    "operatorNation": "Kaelun Republic",
    "force": "Red",
    "alliedNations": [
@@ -3800,6 +5069,15 @@
     "propeller": {
      "type": "cpp",
      "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "cpp",
+     "blades": 8,
+     "skewDeg": 12,
+     "expandedAreaRatio": 0.68,
+     "hubDiameterRatio": 0.33,
+     "diameterM": 4.8
     }
    },
    "speedKts": {
@@ -3834,13 +5112,15 @@
     ],
     "psrHarmonicsStopAtBlades": false
    },
-   "engines": [],
-   "turbines": {
-    "count": 2,
-    "rotorHzMax": 105.858,
-    "vaneCount": 39,
-    "vanePassHzMax": 4128.5
-   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 105.858,
+     "vaneCount": 39,
+     "vanePassHzMax": 4128.5
+    }
+   ],
    "edas": [],
    "independentAux": [
     {
@@ -3909,6 +5189,53 @@
   {
    "id": "red-lanternmoss",
    "name": "Fictional Lanternmoss",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 55.9,
+    "beamM": 6.3,
+    "draughtSurfacedM": 5.1,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.33,
+     "lengthM": 6.9,
+     "heightM": 5.6
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "kaelun-republic",
+    "operators": [
+     {
+      "nationId": "kaelun-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-lanternmoss-1",
+       "fx-red-lanternmoss-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-lanternmoss-1",
+      "number": "FX-NV-LAN-1",
+      "name": "Lanternmoss Lantern 1",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-lanternmoss-2",
+      "number": "FX-NV-LAN-2",
+      "name": "Lanternmoss Lantern 2",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Kaelun Republic",
+    "operatorNames": [
+     "Kaelun Republic"
+    ]
+   },
    "operatorNation": "Kaelun Republic",
    "force": "Red",
    "alliedNations": [
@@ -3940,6 +5267,15 @@
     "propeller": {
      "type": "flat",
      "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "type": "flat",
+     "blades": 7,
+     "skewDeg": 7,
+     "expandedAreaRatio": 0.67,
+     "hubDiameterRatio": 0.23,
+     "diameterM": 2.9
     }
    },
    "speedKts": {
@@ -3978,8 +5314,9 @@
      21
     ]
    },
-   "engines": [
+   "primeMovers": [
     {
+     "kind": "diesel",
      "productId": "fx-engine-11",
      "productName": "Merrow 8V-850",
      "count": 3,
@@ -3997,6 +5334,9 @@
      ]
     }
    ],
+   "propulsionMotor": {
+    "maxShaftRpm": 720
+   },
    "edas": [
     {
      "name": "Cooling pump",
