@@ -13,6 +13,11 @@ import { loadWheel, saveWheel } from './gram/wheelSettings'
 import type { DifarWheelSettings } from './gl/colormap'
 import { NewScenario } from './settings/NewScenario'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
+import {
+  emptyLmThreePoint, evaluateLmThreePoint, lmIdealPassGramLabel, lmThreePointText, nextLmPointRole, placeLmPoint,
+  type LmThreePointState,
+} from './gram/lmThreePoint'
+import { returnToLive } from './touch/scrollBack'
 import { DopplerOverlay, DopplerReadout } from './gram/DopplerOverlay'
 import { RulerStore } from './gram/dopplerRuler'
 import { acousticsV11 } from './scenarios/acousticsApi'
@@ -300,6 +305,10 @@ export default function App() {
     setTool(on ? 'dop' : 'select')
   }
   const [lm, setLm] = useState<LloydState>({ basis: 'cpaFit', k: 40, tCpaS: 0, tauS: 300, manRangeM: 2000, manSpeedMps: 4 })
+  const [lm3, setLm3] = useState<LmThreePointState>(() => emptyLmThreePoint())
+  const [scrollBackS, setScrollBackS] = useState(0)
+  // Collection continues while paused; Return to Live / resume clears the review offset.
+  useEffect(() => { if (st.playing && scrollBackS !== 0) setScrollBackS(0) }, [st.playing, scrollBackS])
   // Doppler ruler (f0 at CPA, f1 on the approach leg, f2 mirrored): its pass geometry also feeds Lloyd's mirror.
   const ruler = useMemo(() => new RulerStore(acousticsV11.fitCpaFromDoppler), [])
   const rulerCommit = useSyncExternalStore(ruler.subscribe, ruler.getCommitted)
@@ -312,11 +321,17 @@ export default function App() {
   const lmDragRaw = useLloydDrag(lm, setLm, cpaGeom, st.simT)
   const lmDrag = (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => {
     if (locks.lm && phase !== 'end') return
+    // 3-point LM: first three placements = turning → peak → shallow; then drag slides the fitted curve.
+    if (lm3.points.length < 3) {
+      if (phase === 'end') setLm3((s) => placeLmPoint(s, { tS: st.simT - agoS, fHz: hz }))
+      return
+    }
     lmDragRaw(phase, hz, agoS, shift)
   }
   const toggleLm = () => {
     if (tool === 'lm') { setTool('select'); return }
     if (lm.tCpaS === 0) setLm({ ...lm, tCpaS: st.simT - 100 })
+    setLm3(emptyLmThreePoint())
     setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false)
     setTool('lm')
   }
@@ -454,6 +469,23 @@ export default function App() {
   const viewDigits = (cfg?.fBin ?? 1) < 0.1 ? 2 : (cfg?.fBin ?? 1) < 1 ? 1 : 0
   const probeName = reveal && harmProbe !== null ? truthEdaName(st.tactical?.truth?.contacts, harmProbe, Math.max(0.5, 3 * (cfg?.fBin ?? 0.5))) : null
   const buoy = st.tactical?.buoys[stream]
+  const lm3Fit = evaluateLmThreePoint(lm3, {
+    zrM: buoy?.hydrophoneDepthM ?? null,
+    rCpaM: cpaGeom?.rCpaM ?? (lm.basis === 'manual' ? lm.manRangeM : null),
+    speedMps: cpaGeom?.speedMps ?? (lm.basis === 'manual' ? lm.manSpeedMps : null),
+  })
+  const lmIdealLabel = lmIdealPassGramLabel(lm3Fit)
+  useEffect(() => {
+    if (lm3.points.length < 3 || !lm3Fit.ok) return
+    setLm((prev) => ({
+      ...prev,
+      k: lm3Fit.k,
+      tCpaS: lm3Fit.tCpaS,
+      tauS: lm3Fit.tauS,
+      basis: prev.basis === 'cpaFit' && !cpaGeom ? 'none' : prev.basis,
+    }))
+  }, [lm3.points, lm3.slideK, lm3.slideTCpaS, lm3Fit.ok, lm3Fit.k, lm3Fit.tCpaS, lm3Fit.tauS, cpaGeom])
+
   const listen = useListen({
     client, cfg, streamIndex: stream, configs: lofarCfgs, cursorHz, view,
     // CUTTOOLS: listen/FOCUS also runs on an open cut player (mute gate treats this as allowed).
@@ -925,12 +957,17 @@ export default function App() {
                 dragLockable={(tool === 'harm' && harmF0 !== null) || tool === 'lm'}
                 onDragLockTap={() => flipLock(tool === 'lm' ? 'lm' : 'harm')}
                 horz={horzOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
+                paused={!st.playing} scrollBackS={scrollBackS} onScrollBack={setScrollBackS}
+                onReturnToLive={() => setScrollBackS(returnToLive())}
                 overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
                     <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
                   {harmF0 !== null && harmProbe !== null && harmProbe >= ctx.view.lo && harmProbe <= ctx.view.hi && (
                     <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(harmProbe, ctx.view, ctx.width) }}><span>×{(harmProbe / harmF0).toFixed(2)}</span></div>)}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
+                  {tool === 'lm' && lmIdealLabel && (
+                    <div className="lm-ideal-badge" data-testid="lm-ideal-pass-label">{lmIdealLabel}</div>
+                  )}
                   {(ruler.placed || dopMode) && <DopplerOverlay ctx={ctx} store={ruler} nowS={st.simT} active={dopMode} locked={locks.dop} onLockTap={() => flipLock('dop')} />}
                 </>) : undefined} />
             )}
@@ -955,7 +992,26 @@ export default function App() {
                     <button type="button" onClick={() => setLm({ ...lm, tCpaS: lm.tCpaS + 10 })} title="CPA time +10 s">CPA +</button>
                   </div>
                 )}
-                <span className={`lm-read${locks.lm ? " locked" : ""}`} data-testid="lm-readout" data-locked={locks.lm ? "1" : "0"}>{locks.lm && <IcLock size={11} className="cursor-lock-ic" />}{lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}</span>
+                <div className="seg" role="group" aria-label="LM 3-point place" data-testid="lm3-place">
+                  <span className="seg-label">3-PT</span>
+                  <button type="button" onClick={() => setLm3(emptyLmThreePoint())} title="Clear 3-point marks">Reset</button>
+                  <span data-testid="lm3-role">{nextLmPointRole(lm3.points.length).toUpperCase()} ({lm3.points.length}/3)</span>
+                </div>
+                {lm3.points.length >= 3 && (
+                  <div className="seg" role="group" aria-label="LM slide adjust" data-testid="lm3-slide">
+                    <button type="button" onClick={() => setLm3((s) => ({ ...s, slideK: s.slideK - 1 }))} title="Slide K −1 Hz">K−</button>
+                    <button type="button" onClick={() => setLm3((s) => ({ ...s, slideK: s.slideK + 1 }))} title="Slide K +1 Hz">K+</button>
+                    <button type="button" onClick={() => setLm3((s) => ({ ...s, slideTCpaS: s.slideTCpaS - 2 }))} title="Slide CPA −2 s">t−</button>
+                    <button type="button" onClick={() => setLm3((s) => ({ ...s, slideTCpaS: s.slideTCpaS + 2 }))} title="Slide CPA +2 s">t+</button>
+                  </div>
+                )}
+                <span className={`lm-read${locks.lm ? " locked" : ""}${lm3Fit.warn ? " lm-warn" : ""}`} data-testid="lm-readout" data-locked={locks.lm ? "1" : "0"} data-warn={lm3Fit.warn ? "1" : "0"}>
+                  {locks.lm && <IcLock size={11} className="cursor-lock-ic" />}
+                  {lm3.points.length >= 3
+                    ? lmThreePointText(lm3Fit)
+                    : lloydText(lm, cpaGeom, buoy?.hydrophoneDepthM ?? null, { t0: Math.max(0, st.simT - 300), t1: st.simT })}
+                </span>
+                <span className="lm-assume" data-testid="lm-assumption">Turning point = CPA only for a straight, constant-speed, constant-depth pass.</span>
               </div>
             )}
             {gramMode === 'difar' && wheelOpen && <DifarApplet wheel={wheel} onChange={setWheel} onClose={() => setWheelOpen(false)} />}
