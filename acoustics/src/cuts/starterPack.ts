@@ -28,6 +28,9 @@ export const STARTER_PACK:CutStarterPack={
   {
    v:1,modelVersion:CUT_MODEL_VERSION,id:'cut-cinderlilt-cav',seed:0xC0710002,durationS:360,richness:'rich',
    classId:'red-cinderlilt',variantId:'base',hullId:hull('red-cinderlilt'),mode:'SURF',speedKn:14,depthM:0,
+   // Surfaced: effective zs ~half draught still leaves strong LF Lloyd dipole loss + rich ambient;
+   // closer textbook CPA so GRID/BR tonals clear the shared window (geometry, not a gain hack).
+   cpaM:400,cpaNote:'Surfaced Lloyd dipole + rich SS3 ambient: 400 m CPA so GRID/BR teach above 6 dB',
    gramLooks:['cavitation','engine-harmonics','compendium-truth'],
    classifyingLines:[
     {lineFamily:'BR',label:'5-blade rate; LOFAR shows cavitation broadband',n:1,harmonicOf:'PSR',behaviour:'broadband',giveaway:true},
@@ -99,9 +102,11 @@ export const STARTER_PACK:CutStarterPack={
   {
    v:1,modelVersion:CUT_MODEL_VERSION,id:'cut-gloamspiral-aip',seed:0xC0710009,durationS:480,richness:'sparse',
    classId:'red-gloamspiral',variantId:'base',hullId:hull('red-gloamspiral'),mode:'AIP',speedKn:4,depthM:80,
+   // Quiet AIP: VLF plant giveaway needs a modest closer CPA so 14 Hz AUX clears ambient at 900 m TL.
+   cpaM:300,cpaNote:'Quiet AIP VLF AUX giveaway: 300 m textbook CPA so 14/28 Hz plant tones clear shared window',
    gramLooks:['compendium-truth'],
    classifyingLines:[
-    {lineFamily:'AUX',label:'AIP-quiet plant (engines off)',n:1,behaviour:'unstable',giveaway:true},
+    {lineFamily:'AUX',label:'AIP-quiet plant (engines off)',nominalHz:14,n:1,behaviour:'unstable',giveaway:true},
     {lineFamily:'BR',label:'7-blade blade rate',n:1,harmonicOf:'PSR',behaviour:'stable',giveaway:false},
     {lineFamily:'HYDP',label:'HYDP pair',nominalHz:hydp('red-gloamspiral'),n:1,behaviour:'stable',giveaway:false},
    ],
