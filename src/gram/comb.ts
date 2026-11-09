@@ -24,7 +24,7 @@ export const COMB_MATCH_TOL_BINS = 0.5
 /** Match half-width as a fraction of spacing (whichever is larger with the bin floor wins). */
 export const COMB_MATCH_TOL_SPACING_FRAC = 0.15
 /** Minimum pixel gap between sideband labels before we thin to every Nth. */
-export const COMB_LABEL_MIN_GAP_PX = 16
+export const COMB_LABEL_MIN_GAP_PX = 28
 
 export interface CombMark {
   /** Sideband order: 0 = centre, ±1..±N = sidebands. */

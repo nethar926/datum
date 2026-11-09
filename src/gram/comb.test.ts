@@ -117,8 +117,8 @@ describe('comb MATCHED gate (strict local peak)', () => {
 
 describe('comb label thinning + fit', () => {
   it('thins labels when px gap is tight', () => {
-    expect(combLabelStride(30, 2.26)).toBe(1) // ~68 px
-    expect(combLabelStride(5, 2.26)).toBeGreaterThan(1) // ~11 px < 16
+    expect(combLabelStride(30, 2.26)).toBe(1) // ~68 px ≥ 28
+    expect(combLabelStride(11, 2.26)).toBeGreaterThan(1) // ~25 px < 28
     expect(combLabelVisible(0, 2)).toBe(true)
     expect(combLabelVisible(1, 2)).toBe(false)
     expect(combLabelVisible(2, 2)).toBe(true)
