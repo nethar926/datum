@@ -60,6 +60,7 @@ describe('CUT seek fills', () => {
       disposeCutSession(r.session)
     }
     times.sort((a, b) => a - b)
+    console.log(JSON.stringify({ warmSeekMedianMs: times[2], warmSeekTimesMs: times }))
     expect(times[2]!).toBeLessThan(150)
     const r = fillCutSeekFast(cutId, target, out)
     expect(r.simT).toBeGreaterThanOrEqual(target - 0.3)

@@ -8,7 +8,7 @@
     "build": "node scripts/build.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "node scripts/assert-vitest-projects.mjs && vitest run",
     "shoot": "node scripts/shoot.mjs",
     "typecheck": "tsc -b"
   },
