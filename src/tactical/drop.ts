@@ -63,7 +63,7 @@ export function gesturePlacement(pattern: DropPattern, start: Pt, end: Pt | null
 const sinD = (d: number) => Math.sin((d * Math.PI) / 180), cosD = (d: number) => Math.cos((d * Math.PI) / 180)
 
 /** Placement + count → buoy positions via the engine planner (orientation/extent applied as a similarity transform). */
-export function planDrop(pl: Placement, count = DEFAULT_COUNT[pl.pattern], seed = 0): DropPlan {
+export function planDrop(pl: Placement, count = DEFAULT_COUNT[pl.pattern], seed = 0, buoyKind?: DropKind): DropPlan {
   const pattern = pl.pattern, kind = PATTERN_KIND[pattern], n0 = clampCount(pattern, count)
   // Planner axis: barrier lies across its axis; grid corner sits 45° clockwise of it; ring/wedge use it as is.
   const axisDeg = pattern === 'line' ? norm360(pl.bearingDeg - 90) : pattern === 'field' ? norm360(pl.bearingDeg - 45) : pl.bearingDeg
@@ -80,7 +80,7 @@ export function planDrop(pl: Placement, count = DEFAULT_COUNT[pl.pattern], seed 
   const xy = new Float64Array(2 * n)
   for (let i = 0; i < n; i++) { xy[2 * i] = pl.center.x + (pts[i].x - ax) * k; xy[2 * i + 1] = pl.center.y + (pts[i].y - ay) * k }
   const spacingM = pattern === 'circle' ? 2 * pl.extentM * Math.sin(Math.PI / n) : pattern === 'single' ? 0 : plan.spacingM * k
-  return { pattern, n, xy, kinds: plan.types.map((t) => (t === 'passive-omni' ? 'omni' : 'difar')), channels: plan.channels.slice(),
+  return { pattern, n, xy, kinds: plan.types.map((t) => buoyKind ?? (t === 'passive-omni' ? 'omni' : 'difar')), channels: plan.channels.slice(),
     center: { ...pl.center }, bearingDeg: pl.bearingDeg, extentM: pattern === 'single' ? 0 : pl.extentM, spacingM, placement: pl }
 }
 

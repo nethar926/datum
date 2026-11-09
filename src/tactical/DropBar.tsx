@@ -1,3 +1,4 @@
+import { BuoyTypeSelector } from './BuoyTypeSelector'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SimClient } from '../engine/client'
 import type { BuoysDropped, DropSpec, Tactical } from '../engine/contract'
@@ -18,7 +19,7 @@ interface Props {
 
 const TOAST_MS = 2600
 const FIELD_MODE_SHORT = { preplan: 'PRE', auto: 'AUTO', manual: 'MAN' } as const
-const specs = (p: DropPlan, n: number, channels: number[], lifeS?: number): DropSpec[] => {
+export const dropSpecs = (p: DropPlan, n: number, channels: number[], lifeS?: number): DropSpec[] => {
   const out: DropSpec[] = []
   for (let i = 0; i < Math.min(n, p.n, channels.length); i++) {
     out.push({ kind: p.kinds[i], x: p.xy[2 * i], y: p.xy[2 * i + 1], channel: channels[i], ...(lifeS ? { lifeS } : {}) })
@@ -76,7 +77,7 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
     if (n <= 0) { detune.allocateForDrop(1); return false }
     const chs = detune.allocateForDrop(n)
     if (!chs) return false
-    const seq = client.dropBuoys(specs(p, n, chs, buoyLifeS), source)
+    const seq = client.dropBuoys(dropSpecs(p, n, chs, buoyLifeS), source)
     sent.current.set(seq, PATTERN_LABEL[p.pattern].toUpperCase())
     drop.committed()
     return true
@@ -140,6 +141,7 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
         <div key={hint} className={`drop-hint${toast ? ' toast' : ''}${toast === 'NO CH' ? ' noch' : ''}`} data-testid="drop-hint" aria-live="polite"><span className="drop-hint-count">{count}/{MAX_BUOYS}<span className="drop-hint-sep"> · </span></span><span className="lbl-full">{hint}</span><span className="lbl-short">{hintShort}</span></div>
       )}
       <div className="drop-tools" data-testid="pattern-row">
+        <BuoyTypeSelector value={s.buoyKind} disabled={!ready || full} onChange={(kind) => drop.dispatch({ type: 'kind', kind })} />
         <div className="seg field-mode" role="group" aria-label="Field mode" data-testid="field-mode">
           {FIELD_MODES.map((m) => (
             <button key={m} data-mode={m} aria-pressed={s.mode === m} aria-label={`${FIELD_MODE_LABEL[m]} field mode`} onClick={() => drop.dispatch({ type: 'mode', mode: m })}

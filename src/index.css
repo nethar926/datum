@@ -715,3 +715,11 @@ button, select { font: inherit; color: inherit; }
 }
 .app.ios.layout-phonePortrait .nav-btn.refresh-btn { width: 44px; height: 44px; }
 .ios-row .row-label .update-avail { color: var(--tint, #0a84ff); }
+
+/* Placement type belongs to the existing compact drop tools, never the reveal. */
+.drop-type { flex: 0 0 auto; }
+.drop-type select { min-height: 44px; max-width: 176px; padding: 0 8px; color: var(--text-1); background: var(--bg-1); border: 1px solid var(--hairline-strong); border-radius: 10px; font: 600 11px/1 var(--font-ui); }
+.drop-type select:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Scroll the tool row rather than clipping the added selector or shrinking targets. */
+.layout-phonePortrait .drop-bar .drop-tools, .layout-phoneLandscape .drop-bar .drop-tools { overflow-x: auto; }
+.layout-phonePortrait .drop-bar .drop-palette, .layout-phoneLandscape .drop-bar .drop-palette { flex: 0 0 auto; }

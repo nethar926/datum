@@ -1,4 +1,4 @@
-import { DEFAULT_COUNT, clampCount, gesturePlacement, type DropPattern, type Placement, type Pt } from './drop'
+import { DEFAULT_COUNT, clampCount, gesturePlacement, type DropKind, type DropPattern, type Placement, type Pt } from './drop'
 
 /**
  * Field modes. PREPLAN: the scenario's preplanned field, nothing laid automatically. AUTO: the trainer lays the
@@ -13,11 +13,12 @@ export const MAX_BUOYS = 32
 
 export type DropPhase = 'idle' | 'armed' | 'placing' | 'preview'
 export interface DropState {
-  mode: FieldMode; phase: DropPhase; pattern: DropPattern | null; count: number
+  buoyKind: DropKind; mode: FieldMode; phase: DropPhase; pattern: DropPattern | null; count: number
   placement: Placement | null; start: Pt | null
 }
 export type DropAction =
   | { type: 'mode'; mode: FieldMode }
+  | { type: 'kind'; kind: DropKind }
   | { type: 'arm'; pattern: DropPattern }
   | { type: 'disarm' }
   | { type: 'press'; at: Pt }
@@ -27,10 +28,13 @@ export type DropAction =
   | { type: 'confirm' }
   | { type: 'cancel' }
 
-export const initialDrop = (mode: FieldMode = 'preplan'): DropState => ({ mode, phase: 'idle', pattern: null, count: 1, placement: null, start: null })
+export const initialDrop = (mode: FieldMode = 'preplan'): DropState => ({ buoyKind: 'difar', mode, phase: 'idle', pattern: null, count: 1, placement: null, start: null })
 
 export function dropReducer(s: DropState, a: DropAction): DropState {
   switch (a.type) {
+    case 'kind':
+      // ACTIVE has no ping/echo model yet: reject unsupported values even if dispatched directly.
+      return (a.kind === 'omni' || a.kind === 'difar') && a.kind !== s.buoyKind ? { ...s, buoyKind: a.kind } : s
     case 'mode': return a.mode === s.mode ? s : { ...s, mode: a.mode }
     case 'arm':
       // Tapping the armed pattern again puts it away; another pattern re-arms (any pending ghost is discarded).

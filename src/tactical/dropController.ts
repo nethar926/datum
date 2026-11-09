@@ -19,8 +19,8 @@ export class DropController {
     const prev = this.state, next = dropReducer(prev, a)
     if (next === prev) return
     this.state = next
-    if (next.placement !== prev.placement || next.count !== prev.count) {
-      this.ghost = next.placement ? planDrop(next.placement, next.count, this.drops) : null
+    if (next.placement !== prev.placement || next.count !== prev.count || next.buoyKind !== prev.buoyKind) {
+      this.ghost = next.placement ? planDrop(next.placement, next.count, this.drops, next.buoyKind) : null
       this.version++
     }
     for (const l of this.listeners) l()
