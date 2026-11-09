@@ -29,3 +29,12 @@ Public / invented teaching ranges only — not measured platform spectra.
 - Tones are **stable+discrete** (fixed-speed plant), not DC AUX — previously they inherited Wilson ±1.5 Hz absolute AUX wander, which smeared the VLF peak on the 120-row mean window.
 - CPA 300→200 m adds spherical TL headroom. Combined: lesson line **9.75 dB** on the shared window (≥9.5 target). 6 dB bar unchanged.
 - Fuel-cell AIP classes do **not** emit shaft-rate tones (pumps / blower / inverter instead).
+
+## NORM whitened-SNR floor (not the FE local-median gate)
+
+### cut-brindleflux-snork — CFR fund whitened SNR ≈ 6.57 dB (was ~9.2 pre-585a129)
+
+- Class: fictional diesel Brindleflux, **SNORK @ 12 m**, CFR ≈ 5.3 Hz (below `CUT_VISIBILITY_WINDOW.fLoHz` 12 Hz).
+- Culprit commit **585a129**: LOFAR/RES switched to the absolute `tonalRefDb` path (skip broadband×fraction) and Lloyd geometry uses `acousticSourceDepthM`. That is the intended physics wire-up after 6587ad7; not a seek/perf regression (`e3ddd5c` SNR unchanged).
+- Why the number fell: SNORK raises continuum `levelDb` by +18. Absolute CFR power is correct, but SplitWindowNormalizer (192/3) sees a higher VLF floor (CSR/PSR + snort BB), so **whitened peak − global median** drops ~9.2 → ~6.6. Raw mid-window best line remains ~24 dB; in-window giveaway **EDA @ ~147 Hz ≈ 11.1 dB** raw local contrast (clears the shared 6 dB teaching bar).
+- cutNorm asserts ≥6 on this whitened-SNR metric (shared teaching-floor *number* with `minContrastDb`). FE gate stays **6 dB raw local-median** on `CUT_VISIBILITY_WINDOW` — different quantity; do not raise FE to 8.
