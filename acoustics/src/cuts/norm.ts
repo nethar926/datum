@@ -52,8 +52,9 @@ export interface CutLofarNormRecipe {
 /**
  * Cut LOFAR NORM pass1: long split-window matched to the ~50 Hz dense plant cluster on
  * CUT Δf ≈ 0.977 Hz (window·Δf ≈ 188 Hz). Keep live NB 1–22 dB colour scale.
- * Measured on cut-brindleflux-snork @ ~176 s: w=24 → ~2–3.5 dB whitened CFR SNR;
- * w=192 → ≳ 9 dB (target 8–10) vs full-band median — but leaves a LF pedestal.
+ * Measured on cut-brindleflux-snork @ ~176 s: w=24 → ~0.2–3.5 dB whitened CFR SNR;
+ * w=192 → ~6.6 dB vs full-band median after absolute tonalRefDb + SNORK continuum
+ * (585a129; was ~9 dB on relative BB×fraction). Floor ≥6; see cut-visibility-plausibility.md.
  */
 export const CUT_LOFAR_NORM: NormParams = {window: 192, guard: 3, floorDb: 1, ceilDb: 22};
 

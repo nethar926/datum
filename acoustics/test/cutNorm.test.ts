@@ -167,7 +167,7 @@ describe('cut tonal whitened SNR (brindleflux)',()=>{
   return c>0?row[bin]-s/c:row[bin];
  }
 
- it('legacy w=24 crushes CFR; CUT_LOFAR_NORM restores ≳8 dB whitened SNR',()=>{
+ it('legacy w=24 crushes CFR; CUT_LOFAR_NORM restores ≳6 dB whitened SNR',()=>{
   const cut=getCutSeed('cut-brindleflux-snork')!;
   const fBin=CUT_FMAX/(CUT_BINS-1);
   const probe=renderCut(cut);
@@ -180,7 +180,10 @@ describe('cut tonal whitened SNR (brindleflux)',()=>{
   const legacy=whitenedSnr(avg,cfrBin,24,3);
   const tuned=whitenedSnr(avg,cfrBin,CUT_LOFAR_NORM.window,CUT_LOFAR_NORM.guard);
   expect(legacy.snr).toBeLessThan(5);
-  expect(tuned.snr).toBeGreaterThanOrEqual(8);
+  // Post-585a129 absolute tonalRefDb + SNORK continuum: CFR whitened SNR ~6.6 (was ~9.2 on
+  // relative BB×fraction). Floor matches CUT_VISIBILITY_WINDOW.minContrastDb teaching bar;
+  // metric ≠ FE raw local-median — see docs/cut-visibility-plausibility.md (brindleflux).
+  expect(tuned.snr).toBeGreaterThanOrEqual(6);
   expect(tuned.snr).toBeGreaterThan(legacy.snr+3);
   // Denser diesel families can drive high raw peaks before FE LUT clip; SNR contract is the bar.
   expect(Number.isFinite(tuned.peak)).toBe(true);
