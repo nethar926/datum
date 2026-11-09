@@ -142,6 +142,7 @@ export function CutsTab({
           : [{ n: 0, hz: t.combCentreHz, snappedHz: t.combCentreHz, matched: true }]
         ).filter((m) => m.snappedHz >= ctx.view.lo && m.snappedHz <= ctx.view.hi).map((m) => (
           <div key={`c${m.n}`} className={`harm-marker lofar comb-marker${m.n === 0 ? ' comb-centre' : ''}`} data-testid={m.n === 0 ? 'comb-mark-centre' : `comb-mark-${m.n}`}
+            data-n={m.n} data-side={m.n < 0 ? 'left' : 'right'}
             style={{ left: freqToX(m.snappedHz, ctx.view, ctx.width) }}><span>{m.n === 0 ? 'C' : (m.n > 0 ? `+${m.n}` : `${m.n}`)}</span></div>
         ))}
         {t.tool === 'lm' && <LloydsOverlay ctx={ctx} st={t.lm} cpa={t.cpaGeom} nowS={simT} />}

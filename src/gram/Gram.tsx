@@ -436,7 +436,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const displayNow = viewNowS(nowS, scrollBackS)
   const ago = (y: number, h: number) => agoFromY(y, h, historyS, dir) + scrollBackS
   const showAt = (x: number, y: number, w: number, h: number, withCross: boolean) => {
-    const hz = xToFreq(x, view, w); setCursor(hz); onCursorHz?.(hz)
+    // Clamp to the configured band so off-canvas pointers never show negative Hz.
+    const hz = Math.max(fMin, Math.min(fMax, xToFreq(x, view, w))); setCursor(hz); onCursorHz?.(hz)
     const agoS = ago(y, h)
     if (horz) setHoverAgo(agoS)
     if (withCross) {
@@ -591,7 +592,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     }
     if (tap && (dragLocked || G.dragLockableAtDown) && onDragLockTap) { onDragLockTap(); return }
     if (cancel || G.moved || G.longFired) return
-    const hz = xToFreq(x, view, w), lt = G.lastTap
+    const hz = Math.max(fMin, Math.min(fMax, xToFreq(x, view, w))), lt = G.lastTap
     if (p.type !== 'mouse' && e.timeStamp - lt.t < DOUBLE_TAP_MS && !exceedsSlop(lt.x, lt.y, x, y, 24)) {
       G.lastTap = { t: 0, x: 0, y: 0, holdBefore: 'free' }
       if (!onPickPoint && !dragLockable) setCursorHold(lt.holdBefore)

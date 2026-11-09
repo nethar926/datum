@@ -43,6 +43,14 @@ describe('comb geometry', () => {
 })
 
 describe('comb peak snap', () => {
+  it('snaps a weak tonal via median fallback when not a strict local max', () => {
+    const fBin = 0.5, f0 = 0
+    const row = Float32Array.from({ length: 80 }, () => -20)
+    // Monotone rise across the window → no strict local max; argmax still elevated vs median.
+    for (let b = 36; b <= 44; b++) row[b] = -20 + (b - 36) * 0.5
+    expect(snapToPeakHz(row, f0, fBin, 20, 4)).toBeCloseTo(22, 5) // bin 44
+  })
+
   it('snaps to a local max in a synthetic row', () => {
     const bins = 64
     const f0 = 0
@@ -75,11 +83,13 @@ describe('comb peak snap', () => {
 })
 
 describe('comb readout', () => {
-  it('labels spacing as PSR est. and reports matched/slots', () => {
-    expect(combText(null, null, 5)).toMatch(/PIN CENTRE/)
-    expect(combText(120.5, null, 5)).toMatch(/CENTRE 120\.50 HZ/)
-    const t = combText(120.5, 7.25, 5, 6)
-    expect(t).toContain('PSR EST. 7.25 HZ')
-    expect(t).toContain(`6/${combSidebandSlots(5)} MATCHED`)
+  it('labels spacing as PSR est. and reports matched/slots (compact)', () => {
+    expect(combText(null, null, 5)).toMatch(/pin centre/i)
+    expect(combText(120.5, null, 5)).toMatch(/C 120\.50 Hz/)
+    const t = combText(120.5, 1.25, 5, 6)
+    expect(t).toContain('PSR est 1.25 Hz')
+    expect(t).toContain(`6/${combSidebandSlots(5)}`)
+    // Fits a phone strip without needing "SIDEBANDS" sprawl.
+    expect(t.length).toBeLessThan(56)
   })
 })

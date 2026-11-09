@@ -8,7 +8,7 @@ export const COMB_SIDEBANDS_DEFAULT = 5
 export const COMB_SIDEBANDS_MIN = 1
 export const COMB_SIDEBANDS_MAX = 10
 /** Peak search half-width in bins when snapping marks. */
-export const COMB_SNAP_BINS = 3
+export const COMB_SNAP_BINS = 5
 /** Minimum spacing (Hz) so marks do not collapse. */
 export const COMB_MIN_SPACING_HZ = 0.25
 
@@ -98,8 +98,23 @@ export function snapToPeakHz(
       best = b
     }
   }
-  if (best < 0) return null
-  return f0 + best * fBin
+  if (best >= 0) return f0 + best * fBin
+  // Weak tonals in noise often fail a strict 3-bin local-max. Fall back to the
+  // window argmax when it sits clearly above the window median (dB row).
+  let argmax = -1
+  let maxV = -Infinity
+  const vals: number[] = []
+  for (let b = lo; b <= hi; b++) {
+    const v = row[b]!
+    if (!Number.isFinite(v)) continue
+    vals.push(v)
+    if (v > maxV) { maxV = v; argmax = b }
+  }
+  if (argmax < 0 || vals.length < 3) return null
+  const sorted = vals.slice().sort((a, b) => a - b)
+  const med = sorted[Math.floor(sorted.length / 2)]!
+  if (!(maxV >= med + 1.25)) return null
+  return f0 + argmax * fBin
 }
 
 /**
@@ -138,21 +153,19 @@ export function combSidebandSlots(count: number): number {
   return 2 * clampSidebands(count)
 }
 
-/** Operator readout — no class/answer-key names. */
+/** Operator readout — no class/answer-key names. Compact so it fits at 382. */
 export function combText(
   centreHz: number | null,
   spacingHz: number | null,
   count: number,
   matched: number | null = null,
 ): string {
-  if (centreHz === null) return 'COMB  PIN CENTRE LINE, THEN DRAG TO SET SPACING'
+  if (centreHz === null) return 'COMB  pin centre, drag spacing'
   const N = clampSidebands(count)
   const slots = combSidebandSlots(N)
   if (spacingHz === null || !(spacingHz > 0)) {
-    return `COMB  CENTRE ${centreHz.toFixed(2)} HZ  DRAG A SIDEBAND  ±${N}`
+    return `C ${centreHz.toFixed(2)} Hz · drag sideband ±${N}`
   }
-  const matchPart = matched === null
-    ? `${slots} SIDEBANDS`
-    : `${matched}/${slots} MATCHED`
-  return `COMB  CENTRE ${centreHz.toFixed(2)} HZ  PSR EST. ${spacingHz.toFixed(2)} HZ  ${matchPart}`
+  const matchPart = matched === null ? `±${N}` : `${matched}/${slots}`
+  return `C ${centreHz.toFixed(2)} Hz · PSR est ${spacingHz.toFixed(2)} Hz · ${matchPart}`
 }

@@ -472,14 +472,68 @@ export default function App() {
 
   useEffect(() => {
     client.setGram(loadGram())
-    client.start()
     const q = new URLSearchParams(location.search)
     const gm = q.get('gram'); if (isGramMode(gm)) setGramMode(gm)
+    // Headless/shot hooks: ?scenario=generated&seed=N&speedLo=&speedHi= starts a procedural run
+    // before autoplay (scratch singing-prop shots need a speed window that keeps SINGING on).
+    const seedQ = Number(q.get('seed'))
+    const scnQ = q.get('scenario')
+    if (scnQ === 'generated' && Number.isFinite(seedQ) && seedQ >= 0 && acousticsV11.presetToParams) {
+      const diff = (q.get('diff') === 'regular' || q.get('diff') === 'difficult') ? q.get('diff') as 'regular' | 'difficult' : 'easy'
+      let p = acousticsV11.presetToParams(diff, seedQ >>> 0)
+      const slo = Number(q.get('speedLo')), shi = Number(q.get('speedHi'))
+      const op = { ...p.opState }
+      if (Number.isFinite(slo) && Number.isFinite(shi) && shi >= slo) op.speedKn = [slo, shi]
+      const clo = Number(q.get('cpaLo')), chi = Number(q.get('cpaHi'))
+      const cpa = (Number.isFinite(clo) && Number.isFinite(chi) && chi >= clo) ? [clo, chi] as [number, number] : p.cpaRangeKm
+      p = { ...p, seed: seedQ >>> 0, surfaceTraffic: q.has('traffic') ? p.surfaceTraffic : 0, opState: op, cpaRangeKm: cpa }
+      if (acousticsV11.clampParams) p = acousticsV11.clampParams(p)
+      client.start(seedQ >>> 0, 'generated', client.status.band, p)
+    } else {
+      client.start()
+    }
     if (q.has('autoplay')) { client.setRate(Number(q.get('rate')) || 16); client.setPlaying(true) }
     return () => client.dispose()
   }, [client])
 
-  const startCut = (cutId: string) => {
+  // Headless shot hook (?shot=1): allow scripts to set view / COMB without flaky wheel/pointer math.
+  useEffect(() => {
+    const q = new URLSearchParams(location.search)
+    if (!q.has('shot')) return
+    const w = window as unknown as {
+      __datumShot?: {
+        setView: (lo: number, hi: number) => void
+        setComb: (centreHz: number, spacingHz: number, sidebands?: number) => void
+        clearComb: () => void
+      }
+    }
+    w.__datumShot = {
+      setView: (lo, hi) => {
+        if (!(hi > lo)) return
+        setView(cfg ? clampView({ lo, hi }, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView({ lo, hi }, BAND_MAX[st.band]))
+      },
+      setComb: (centreHz, spacingHz, sidebands) => {
+        const n = sidebands !== undefined ? clampSidebands(sidebands) : COMB_SIDEBANDS_DEFAULT
+        setTool('comb')
+        setCombCentreHz(centreHz)
+        setCombSpacingHz(spacingHz)
+        setCombSidebands(n)
+        updateCombMatch(centreHz, spacingHz, n, 0)
+        // Cuts player shares the same view; mirror COMB onto the cut tool arm.
+        setCutArm((s) => ({
+          ...s,
+          tool: 'comb',
+          combCentreHz: centreHz,
+          combSpacingHz: spacingHz,
+          combSidebands: n,
+        }))
+      },
+      clearComb: () => { clearComb(); setCutArm((s) => ({ ...s, combCentreHz: null, combSpacingHz: null })) },
+    }
+    return () => { delete w.__datumShot }
+  })
+
+    const startCut = (cutId: string) => {
     // Nuclear starter cuts are Coming soon — listed but not openable/seekable.
     if (isNuclearCutId(cutId)) return
     clearCutArm()
@@ -1099,6 +1153,7 @@ export default function App() {
                     : [{ n: 0, hz: combCentreHz, snappedHz: combCentreHz, matched: true }]
                   ).filter((m) => m.snappedHz >= ctx.view.lo && m.snappedHz <= ctx.view.hi).map((m) => (
                     <div key={`c${m.n}`} className={`harm-marker lofar comb-marker${m.n === 0 ? ' comb-centre' : ''}`} data-testid={m.n === 0 ? 'comb-mark-centre' : `comb-mark-${m.n}`}
+                      data-n={m.n} data-side={m.n < 0 ? 'left' : 'right'}
                       style={{ left: freqToX(m.snappedHz, ctx.view, ctx.width) }}><span>{m.n === 0 ? 'C' : (m.n > 0 ? `+${m.n}` : `${m.n}`)}</span></div>
                   ))}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
