@@ -1,5 +1,5 @@
 {
- "note": "Post tonalRefDb/effective-depth/SNORK fix. Diesel/AIP starter cuts only (nuclear velvetshoal/twilightweft coming soon). Lesson lines clear 6 dB; masked HYDP stays masked. Procedural pools diesel-weighted.",
+ "note": "Post tonalRefDb/effective-depth/SNORK fix + gloamspiral stable-AIP/200 m CPA. Diesel/AIP starter cuts only (nuclear coming soon). Orbelune MSR ~44 dB and emberbraid SSMA/MESH ~49\u201352 dB kept (plausible vs Wenz+tonalRefDb; see docs/cut-visibility-plausibility.md). Gloamspiral AUX 14 Hz ~9.75 dB. Lesson lines clear 6 dB; masked HYDP stays masked.",
  "beforeBaseline": [
   [
    "cut-brindleflux-snork",
