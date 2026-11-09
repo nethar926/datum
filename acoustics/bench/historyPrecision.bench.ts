@@ -246,7 +246,7 @@ function runContrast(){
  for(const fmt of ['float16db','uint8db'] as const){
   const r=results[fmt] as any;
   const contrasts=ref.lessons.map((l:any,i:number)=>[l.contrastDb,r.lessons[i].contrastDb] as [number,number]);
-  const e=errStats(contrasts.map(x=>x[0]),contrasts.map(x=>x[1]));
+  const e=errStats(contrasts.map((x:number[])=>x[0]),contrasts.map((x:number[])=>x[1]));
   r.errorsVsFloat32={
    lessonContrastMaxDb:+e.max.toFixed(5),
    lessonContrastMeanDb:+e.mean.toFixed(5),

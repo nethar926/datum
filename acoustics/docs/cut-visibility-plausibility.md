@@ -23,8 +23,9 @@ Public / invented teaching ranges only — not measured platform spectra.
 
 ## Raised to ~10 dB (geometry + plant property, not gain)
 
-### cut-gloamspiral-aip — Stirling AUX 14 Hz ≈ 9.75 dB (was 6.4)
+### cut-gloamspiral-aip — Stirling generator shaft 14 Hz ≈ 9.75 dB (was 6.4)
 
-- Quiet gen4 Stirling AIP plant tones are **stable+discrete** regenerator-cycle lines, not DC AUX.
-- Previously they inherited Wilson ±1.5 Hz absolute AUX wander, which smeared the VLF peak on the 120-row mean window.
+- Quiet gen4 Stirling AIP: generator at 28 Hz electrical / **840 rpm**; shaft rotation **14 Hz** (= rpm/60) and h2 @ 28 Hz.
+- Tones are **stable+discrete** (fixed-speed plant), not DC AUX — previously they inherited Wilson ±1.5 Hz absolute AUX wander, which smeared the VLF peak on the 120-row mean window.
 - CPA 300→200 m adds spherical TL headroom. Combined: lesson line **9.75 dB** on the shared window (≥9.5 target). 6 dB bar unchanged.
+- Fuel-cell AIP classes do **not** emit shaft-rate tones (pumps / blower / inverter instead).

@@ -4,7 +4,7 @@ export const UINT8_FLOOR_DB=40;
 
 /** Round-to-nearest-even IEEE-754 binary16 (Math.f16round when available). */
 export function f16round(x:number):number{
- if(typeof Math.f16round==='function')return Math.f16round(x);
+ const native=(Math as unknown as {f16round?:(n:number)=>number}).f16round;if(typeof native==='function')return native(x);
  if(!Number.isFinite(x))return x;
  const sign=x<0||Object.is(x,-0)?-1:1;let ax=Math.abs(x);
  if(ax>65504)return sign*Infinity;

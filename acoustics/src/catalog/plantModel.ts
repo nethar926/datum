@@ -27,7 +27,18 @@ export function coupledErpmInBand(spec:VesselPlantSpec,shaftRpm:number,selected?
  for(let i=0;i<p.engines.length;i++){if(selected&&!selected[i])continue;const erpm=shaftRpm*ratio,e=p.engines[i].erpm;if(erpm<e.obsMin-1e-9||erpm>e.obsMax+1e-9)return false;}
  return p.engines.length>0;
 }
+/** Invented AIP plant rates (Hz). Stirling: generator electrical / 2nd harmonic of shaft.
+ * Fuel-cell: inverter switching (no rotating prime mover). Closed-cycle: engine-related. */
 const AIP_HZ={stirling:28,fuelcell:42,'closed-cycle':34} as const;
+/** Fictional fuel-cell plant giveaways (illustrative only — not platform data). */
+const FUELCELL_PLANT=[
+ {id:'fc-reactant-pump',hz:23,power:.28,harmonics:[1,2]},
+ {id:'fc-coolant-pump',hz:31,power:.22,harmonics:[1,2]},
+ {id:'fc-cathode-blower',hz:47,power:.25,harmonics:[1]},
+ {id:'fc-dcdc-inverter',hz:42,power:.18,harmonics:[1,2]},
+] as const;
+/** Closed-cycle diesel AIP: invented engine-firing fundamental (Hz). */
+const CLOSED_CYCLE_CFR_HZ=17;
 const NO_GATES:readonly import('./drivetrain.js').SpeedGated[]=[];
 const NO_SRCS:readonly number[]=[];
 
@@ -164,10 +175,23 @@ export function writePlantTonals(s:Signature,mode:ModeInput,electricalHarmonics:
  if(mode!=='AIP'&&(p.kind==='nuclearGR'||p.kind==='nuclearElectric')){const n=p.kind==='nuclearGR'?t.shafts.length:1;for(let shaft=0;shaft<n;shaft++){const rpm=p.kind==='nuclearGR'?t.shafts[shaft].rpm*t.ratio:p.mainTurbines.maxRpm;for(let h=1;h<=3;h++)put(s,i++,'turbine',rpm/60*h,rpm>0?.04*p.mainTurbines.count/n/(h*h):0,h,shaft);for(let h=1;h<=3;h++)put(s,i++,'turbine',vanePassHz(rpm/60,p.mainTurbines.vaneCount)*h,rpm>0?.02*p.mainTurbines.count/n/(h*h):0,h,shaft,undefined,undefined,undefined,'VANE');}}
  for(let shaft=0;shaft<t.shafts.length;shaft++){const ratio=t.shafts[0].hz>0?t.shafts[shaft].hz/t.shafts[0].hz:1;for(const g of t.stages)for(let h=1;h<=3;h++)put(s,i++,'gear',g.meshHz*ratio*h,g.meshHz>0?.035/(h*h):0,h,shaft);}
  if(mode!=='AIP'&&('reactorSets' in p))for(const r of p.reactorSets)for(let h=1;h<=3;h++){put(s,i++,'pump',r.coolantPumpHz*h,.04/(h*h),h,undefined,undefined,undefined,r.id,'COOLANT');put(s,i++,'turbine',r.turboGenerator.rpm/60*h,.025/(h*h),h,undefined,undefined,undefined,r.id,'TG');}
- // AIP plant giveaway: invented discrete tones at AIP_HZ/2. STABLE+discrete — Stirling/FC
- // regenerator cycle is a steady plant oscillator, not DC AUX (lineModel ±1.5 Hz wander is
- // for unstable DC/AUX teaching only). Relative powers invented; no per-cut gain.
- if(mode==='AIP'){const aipProfile:LineProfile={stability:'stable',width:'discrete'};for(let h=1;h<=2;h++)put(s,i++,'pump',AIP_HZ[spec.aip!.kind]*.5*h,.35/(h*h),h,undefined,undefined,aipProfile);}
+ // AIP plant giveaways (invented; stable+discrete — fixed-speed plant, not DC AUX wander).
+ // Stirling: generator runs at AIP_HZ (rpm=hz*60/2); shaft rotation = rpm/60 = AIP_HZ/2, plus h2.
+ // Fuel-cell: no rotating prime mover — reactant/coolant pumps, cathode blower, DC/DC inverter.
+ // Closed-cycle: engine-firing fundamental (+h2). Relative powers invented; no per-cut gain.
+ if(mode==='AIP'){
+  const aipProfile:LineProfile={stability:'stable',width:'discrete'},kind=spec.aip!.kind;
+  if(kind==='stirling'){
+   // basis rotation 'stirling-shaft': fixed-speed Stirling engine/generator shaft.
+   const shaftHz=AIP_HZ.stirling*.5; // === generators[0].rpm/60 after updatePropulsion
+   for(let h=1;h<=2;h++)put(s,i++,'pump',shaftHz*h,.35/(h*h),h,undefined,undefined,aipProfile);
+  }else if(kind==='fuelcell'){
+   for(const line of FUELCELL_PLANT)for(const h of line.harmonics)put(s,i++,'pump',line.hz*h,line.power/(h*h),h,undefined,undefined,aipProfile);
+  }else{
+   // closed-cycle diesel AIP: firing-rate family (invented CFR)
+   for(let h=1;h<=2;h++)put(s,i++,'pump',CLOSED_CYCLE_CFR_HZ*h,.35/(h*h),h,undefined,undefined,aipProfile);
+  }
+ }
  else for(const a of spec.aux)if(a.kind!=='hydp')for(const h of a.harmonics){const intermittent=a.duty==='intermittent',on=a.dutyOnS?(a.dutyOnS[0]+a.dutyOnS[1])/2:60,off=a.dutyOffS?(a.dutyOffS[0]+a.dutyOffS[1])/2:90,phase=intermittent?((a.id.length*17+h*3)%97):0,gain=intermittent?intermittentDutyGain(s.dutyClockS??0,on,off,phase,a.edge??'abrupt'):1;put(s,i++,a.kind==='acPump'||a.kind==='ssma'?'pump':'motor',a.fHz*h,.025/(h*h)*gain,h,undefined,undefined,a,undefined,intermittent?'INTERMITTENT':undefined);}
  // Lead: speed-window SRC is the source of truth. Legacy srcHzPerKn is a fallback only when
  // this plant has no speedWindows SRC (avoids dual emission of the same component family).

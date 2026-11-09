@@ -4,8 +4,9 @@ import {f16round,quantizeFloat16Db,quantizeUint8Db,quantizeFloat16Linear} from '
 
 describe('history precision cold-store helpers (Task A)',()=>{
  it('f16round matches Math.f16round when present',()=>{
+  const native=(Math as unknown as {f16round?:(n:number)=>number}).f16round;
   for(const x of [0,1,-1,60.5,120.25,65504,1e-7]){
-   const a=f16round(x),b=typeof Math.f16round==='function'?Math.f16round(x):a;
+   const a=f16round(x),b=typeof native==='function'?native(x):a;
    expect(Object.is(a,b)||a===b).toBe(true);
   }
  });

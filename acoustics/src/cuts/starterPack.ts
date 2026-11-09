@@ -102,12 +102,12 @@ export const STARTER_PACK:CutStarterPack={
   {
    v:1,modelVersion:CUT_MODEL_VERSION,id:'cut-gloamspiral-aip',seed:0xC0710009,durationS:480,richness:'sparse',
    classId:'red-gloamspiral',variantId:'base',hullId:hull('red-gloamspiral'),mode:'AIP',speedKn:4,depthM:80,
-   // Quiet gen4 Stirling AIP: plant tones are stable+discrete (not DC AUX wander). VLF still
-   // needs closer textbook CPA so 14/28 Hz clears shared window ≥~10 dB (geometry, not gain).
-   cpaM:200,cpaNote:'Quiet Stirling AIP: stable plant tones + 200 m CPA so 14/28 Hz clear shared window ~10 dB',
+   // Quiet gen4 Stirling AIP: fixed-speed generator shaft (840 rpm → 14 Hz) + h2 @ 28 Hz,
+   // stable+discrete (not DC AUX wander). Closer textbook CPA so VLF clears shared window ~10 dB.
+   cpaM:200,cpaNote:'Quiet Stirling AIP: stable shaft 14 Hz (gen 840 rpm) + 200 m CPA; ~10 dB on shared window',
    gramLooks:['compendium-truth'],
    classifyingLines:[
-    {lineFamily:'AUX',label:'AIP-quiet plant (engines off)',nominalHz:14,n:1,behaviour:'stable',giveaway:true},
+    {lineFamily:'AUX',label:'Stirling generator shaft (840 rpm → 14 Hz)',nominalHz:14,n:1,behaviour:'stable',giveaway:true},
     {lineFamily:'BR',label:'7-blade blade rate',n:1,harmonicOf:'PSR',behaviour:'stable',giveaway:false},
     {lineFamily:'HYDP',label:'HYDP pair',nominalHz:hydp('red-gloamspiral'),n:1,behaviour:'stable',giveaway:false},
    ],

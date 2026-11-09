@@ -15,7 +15,7 @@ import {ambientLevel} from '../src/ambientNoise.js';
 const SEEDS=[7,31,47,101,211];
 const DIFFS=['easy','regular','difficult'] as const;
 
-type LineSnap={family:string;n:number|undefined;hz:number|undefined;peakHz:number|undefined;contrastDb:number|undefined;window:string;masked:boolean;inWindow:boolean;giveaway:boolean};
+type LineSnap={family:string;n:number|undefined;hz:number|undefined;peakHz:number|undefined;contrastDb:number|null|undefined;window:string;masked:boolean;inWindow:boolean;giveaway:boolean};
 const NUCLEAR=new Set(['cut-velvetshoal-nuc','cut-twilightweft-nuc']);
 /** Diesel/AIP focus — nuclear cuts stay in pack but are 'coming soon' (Lead 2026-11-08). */
 const cutRows=STARTER_CUTS.filter(c=>!NUCLEAR.has(c.id)).map(c=>{

@@ -46,7 +46,7 @@ describe('DEMON carrier band weighting (spectrum-based envelope)',()=>{
   for(const band of BANDS){
    const run=()=>{
     const s=cpaScenario();s.contacts[0].params.modulation=.6;
-    const e=new AcousticEngine(s),id=e.subscribe({kind:'demon',buoyId:1,band});
+    const e=new AcousticEngine(s),id=e.subscribe({kind:'demon',buoyId:1,band:band as [number,number]});
     const rows:Float32Array[]=[];
     for(let i=0;i<24;i++){
      e.advance(.25);
@@ -67,7 +67,7 @@ describe('DEMON carrier band weighting (spectrum-based envelope)',()=>{
   for(const band of BANDS){
    const run=()=>{
     const s=cpaScenario();s.contacts[0].params.modulation=.55;
-    const e=new AcousticEngine(s,99),id=e.subscribe({kind:'demon',buoyId:1,band}),out:number[][]=[];
+    const e=new AcousticEngine(s,99),id=e.subscribe({kind:'demon',buoyId:1,band:band as [number,number]}),out:number[][]=[];
     for(let i=0;i<40;i++){e.advance(.25);while(e.rowsReady(id)>0){const row=new Float32Array(512);e.writeRow(id,row);out.push([...row]);}}
     return out;
    };
@@ -81,7 +81,7 @@ describe('DEMON carrier band weighting (spectrum-based envelope)',()=>{
   const s=cpaScenario();
   s.contacts=Array.from({length:2},(_,i)=>({...s.contacts[0],id:`contact-${i}`,x:0,y:1000,depth:50,speed:0,motion:[{at:0,course:0,speed:0,depth:50}],params:{...s.contacts[0].params,shaftHz:i?3:2,blades:i?4:5,modulation:.6}}));
   for(const band of BANDS){
-   const e=new AcousticEngine(s),id=e.subscribe({kind:'demon',buoyId:1,band}),row=new Float32Array(512);
+   const e=new AcousticEngine(s),id=e.subscribe({kind:'demon',buoyId:1,band:band as [number,number]}),row=new Float32Array(512);
    e.advance(.25);expect(e.writeRow(id,row)).toBe(0);
    const df=100/511;
    for(const f of [2,3,10,12,20,24]){

@@ -45,7 +45,7 @@ export function resolveLessonHz(cut:CutSeed,line:CutClassifyingLine,atS?:number)
 export interface LessonContrast{
  line:CutClassifyingLine;hz:number|undefined;peakHz:number|undefined;contrastDb:number|undefined;
  inWindow:boolean;/** Expect low contrast (masked fund / skipped harmonic). */expectMasked:boolean;
- /** Moment window used (HYDP burst), else shared mid-cut. */window:'mid'|'hydp-moment'|'broadband-skip';
+ /** Moment window used (HYDP burst), else shared mid-cut. */window:'mid'|'hydp-moment'|'broadband-skip'|'demon-skip';
 }
 /** Per classifying-line contrast on the shared mid window, or a HYDP moment window when needed. */
 export function lessonLineContrasts(cut:CutSeed|string):LessonContrast[]{

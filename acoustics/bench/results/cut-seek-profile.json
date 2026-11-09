@@ -1,55 +1,102 @@
 {
- "note": "Task D seek profile. ROW_DT=0.25 s. FE hot ring 600 rows @ 2 Hz display = 5 min. Budget 150 ms warm seek (~600 drain rows under parallel load).",
- "budgetMs": 150,
+ "note": "CutSession seek profile. ROW_DT=0.25 s (4 Hz drain). FE hot ring 600 rows @ 2 Hz display = 5 min → 1200 engine rows.",
  "ring": {
   "displayRows": 600,
   "displayHz": 2,
-  "historyS": 300
+  "historyS": 300,
+  "engineRows": 1200,
+  "estWarmSeekMs": 370.5,
+  "budgetMs": 150
  },
- "before": {
-  "note": "Pre-opt baseline (this tip start, ab9a91c era profile)",
-  "msPerRowWarm": {
-   "cut-brindleflux-snork": 0.4547,
-   "cut-cinderlilt-cav": 0.5624,
-   "cut-pebblewisp-demon": 0.2543,
-   "cut-mistacorn-batt": 0.2438,
-   "cut-orbelune-msr": 0.2567,
-   "cut-emberbraid-ssma": 0.4133,
-   "cut-gloamspiral-aip": 0.2705,
-   "cut-morrowcoil-hydp-masked": 0.2397
+ "cuts": [
+  {
+   "id": "cut-brindleflux-snork",
+   "durationS": 420,
+   "tonals": 51,
+   "constructMs": 46.98,
+   "coldMs": 438.38,
+   "warmMs": 363.32,
+   "rowsToMid": 840,
+   "msPerRowCold": 0.4659,
+   "msPerRowWarm": 0.4325
   },
-  "est600rowSeekMs": {
-   "cut-mistacorn-batt": 146.3,
-   "cut-orbelune-msr": 154.0,
-   "cut-gloamspiral-aip": 162.3,
-   "cut-emberbraid-ssma": 248.0
-  }
- },
- "after": {
-  "note": "Post: tonal Lloyd/abs hoist, quality early-out, fidelity looks cache, fluct inline log",
-  "msPerRowWarm": {
-   "cut-brindleflux-snork": 0.4382,
-   "cut-cinderlilt-cav": 0.5073,
-   "cut-pebblewisp-demon": 0.2397,
-   "cut-mistacorn-batt": 0.198,
-   "cut-orbelune-msr": 0.2218,
-   "cut-emberbraid-ssma": 0.3685,
-   "cut-gloamspiral-aip": 0.2422,
-   "cut-morrowcoil-hydp-masked": 0.2281
+  {
+   "id": "cut-cinderlilt-cav",
+   "durationS": 360,
+   "tonals": 43,
+   "constructMs": 25.85,
+   "coldMs": 436.3,
+   "warmMs": 370.09,
+   "rowsToMid": 720,
+   "msPerRowCold": 0.5701,
+   "msPerRowWarm": 0.514
   },
-  "est600rowSeekMs": {
-   "cut-mistacorn-batt": 118.8,
-   "cut-orbelune-msr": 133.1,
-   "cut-gloamspiral-aip": 145.3,
-   "cut-emberbraid-ssma": 221.1
+  {
+   "id": "cut-pebblewisp-demon",
+   "durationS": 480,
+   "tonals": 29,
+   "constructMs": 22.04,
+   "coldMs": 272.84,
+   "warmMs": 241.73,
+   "rowsToMid": 960,
+   "msPerRowCold": 0.2613,
+   "msPerRowWarm": 0.2518
+  },
+  {
+   "id": "cut-mistacorn-batt",
+   "durationS": 300,
+   "tonals": 27,
+   "constructMs": 20.46,
+   "coldMs": 145.77,
+   "warmMs": 121.45,
+   "rowsToMid": 600,
+   "msPerRowCold": 0.2089,
+   "msPerRowWarm": 0.2024
+  },
+  {
+   "id": "cut-orbelune-msr",
+   "durationS": 420,
+   "tonals": 26,
+   "constructMs": 17.13,
+   "coldMs": 214.77,
+   "warmMs": 197.23,
+   "rowsToMid": 840,
+   "msPerRowCold": 0.2353,
+   "msPerRowWarm": 0.2348
+  },
+  {
+   "id": "cut-emberbraid-ssma",
+   "durationS": 450,
+   "tonals": 53,
+   "constructMs": 19.22,
+   "coldMs": 378.59,
+   "warmMs": 334.23,
+   "rowsToMid": 900,
+   "msPerRowCold": 0.3993,
+   "msPerRowWarm": 0.3714
+  },
+  {
+   "id": "cut-gloamspiral-aip",
+   "durationS": 480,
+   "tonals": 20,
+   "constructMs": 22.13,
+   "coldMs": 262.53,
+   "warmMs": 234.2,
+   "rowsToMid": 960,
+   "msPerRowCold": 0.2504,
+   "msPerRowWarm": 0.244
+  },
+  {
+   "id": "cut-morrowcoil-hydp-masked",
+   "durationS": 300,
+   "tonals": 26,
+   "constructMs": 16.42,
+   "coldMs": 148.53,
+   "warmMs": 131.44,
+   "rowsToMid": 600,
+   "msPerRowCold": 0.2202,
+   "msPerRowWarm": 0.2191
   }
- },
- "opts": [
-  "lofar.ts: hoist Lloyd hypot/pathDiff once per contact/row (bit-identical to exactGain; thorp(f) kept)",
-  "lofar.ts: skip quality-rank walk when 8 stronger lines already held (bit-identical)",
-  "lofar.ts: sigma=0 broadband hot path; inline LN10 fluct (\u2261 powerToDb within 1e-13 dB)",
-  "cuts/render.ts: cache looksOf; skip applyRuntimeFidelity when cut has no runtime looks",
-  "cuts/render.ts: seekTo(targetS) advances + skipToLatest without intermediate gram regen (FE hot-ring warm seek)"
  ],
- "verdict": "Median diesel/AIP cuts now estimate \u2264150 ms for a 600-row warm drain (mistacorn/orbelune/gloam). Emberbraid (53 tonals + engine-harmonics fidelity) still ~221 ms \u2014 FE should prefer seekTo + ring window for heavy SNORK cuts under parallel load."
+ "avgMsPerRowWarm": 0.3087
 }
