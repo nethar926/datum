@@ -13,7 +13,7 @@
   --text-1: #f2f3f5;
   --text-2: #a4a7b0;
   --text-3: #6c707a;
-  --accent: #0a84ff;        /* system blue for chrome selection only */
+  --accent: #30d158;        /* DATUM green for chrome accents (Wilson 2026-11-08); selected buoy stays blue */
   --danger: #ff453a;
   --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 32px rgba(0, 0, 0, 0.45);
 
@@ -56,8 +56,10 @@
   --sys-label: #fff;
   --sys-label-2: rgba(235, 235, 245, 0.6);
   --sys-label-3: rgba(235, 235, 245, 0.3);
-  --tint: #0a84ff;
-  --tint-fill: rgba(10, 132, 255, 0.22);
+  --tint: #30d158;
+  --tint-fill: rgba(48, 209, 88, 0.22);
+  --select-blue: #0a84ff;   /* selected-buoy cue only */
+  --on-accent: #04140a;     /* text on green fills (white fails contrast on #30d158) */
   --switch-on: #30d158;
   /* Liquid Glass */
   --glass-tint: rgba(36, 36, 40, 0.46);
@@ -75,11 +77,11 @@
   --bg-0: #f2f2f7; --bg-1: #ffffff; --bg-2: #ffffff; --bg-3: #e5e5ea;
   --hairline: rgba(60, 60, 67, 0.14); --hairline-strong: rgba(60, 60, 67, 0.26);
   --text-1: #000000; --text-2: rgba(60, 60, 67, 0.72); --text-3: rgba(60, 60, 67, 0.45);
-  --accent: #007aff;
+  --accent: #248a3d;
   --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
   --sys-bg: #fff; --sys-grouped: #f2f2f7; --sys-cell: #fff; --sys-fill: rgba(118, 118, 128, 0.12); --sys-sep: rgba(60, 60, 67, 0.29);
   --sys-label: #000; --sys-label-2: rgba(60, 60, 67, 0.6); --sys-label-3: rgba(60, 60, 67, 0.3);
-  --tint: #007aff; --tint-fill: rgba(0, 122, 255, 0.14); --switch-on: #34c759;
+  --tint: #248a3d; --tint-fill: rgba(36, 138, 61, 0.14); --on-accent: #fff; --switch-on: #34c759;
   --glass-tint: rgba(255, 255, 255, 0.52);
   --glass-tint-reduced: rgba(249, 249, 251, 0.96);
   --glass-rim: rgba(255, 255, 255, 0.95);
@@ -95,5 +97,5 @@
   color-scheme: dark;
   --bg-0: #0b0c0e; --bg-1: #131418; --bg-2: #1b1d22; --bg-3: #24262d;
   --hairline: rgba(255, 255, 255, 0.08); --hairline-strong: rgba(255, 255, 255, 0.14);
-  --text-1: #f2f3f5; --text-2: #a4a7b0; --text-3: #6c707a; --accent: #0a84ff;
+  --text-1: #f2f3f5; --text-2: #a4a7b0; --text-3: #6c707a; --accent: #30d158;
 }

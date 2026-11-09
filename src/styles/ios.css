@@ -59,7 +59,7 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .navbar.title-hidden .nav-title { opacity: 0; transform: translateY(4px); }
 .nav-trail { display: flex; align-items: center; gap: 6px; }
 .play-btn { width: 44px; height: 44px; padding: 0; color: var(--sys-label); background: transparent; }
-.play-btn.primary { color: #fff; background: var(--tint); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+.play-btn.primary { color: var(--on-accent, #fff); background: var(--tint); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
 
 /* iOS segmented control (chrome). */
 .navbar .seg, .panel-head .seg, .ios-row .seg, .ios-seg { background: var(--sys-fill); border: 0; border-radius: 999px; padding: 2px; gap: 0; }
@@ -115,7 +115,7 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .app.ios .panel-head .btn.vernier { color: var(--sys-label); background: var(--sys-fill); border: 1px dashed var(--sys-label-3); font: 600 11px/1 var(--font-mono); }
 .app.ios .panel-head .btn.vernier.on { background: var(--tint-fill); border: 1px solid var(--tint); }
 .app.ios .panel-head .btn.vernier.pick { background: var(--tint-fill); border-style: solid; border-color: var(--tint); }
-.app.ios .panel-head .btn.center-btn { background: var(--tint); color: #fff; border: 0; }
+.app.ios .panel-head .btn.center-btn { background: var(--tint); color: var(--on-accent, #fff); border: 0; }
 .app.ios .res-step .res-read { color: var(--sys-label); }
 .app.ios .info-btn { width: 44px; padding: 0; display: inline-grid; place-items: center; color: var(--tint); background: transparent !important; }
 .app.ios .hz-field input { background: var(--sys-fill); color: var(--sys-label); border: 0; border-radius: 999px; padding: 0 14px; }
@@ -424,7 +424,7 @@ button.ios-row:active { background: var(--sys-fill); }
 
 .cut-bar { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; padding: 6px 10px; min-height: 56px; }
 .cut-bar .cut-transport { width: 44px; height: 44px; padding: 0; flex: 0 0 auto; }
-.cut-bar .cut-transport.primary { color: #fff; background: var(--tint); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+.cut-bar .cut-transport.primary { color: var(--on-accent, #fff); background: var(--tint); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
 .cut-scrub { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0 6px; }
 .cut-scrub .readout { font: 600 12px/1 var(--font-mono); color: var(--sys-label-2); font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 7.5rem; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .cut-scrub input[type=range] { flex: 1; min-width: 80px; height: 44px; accent-color: var(--tint); }
@@ -478,7 +478,7 @@ button.ios-row:active { background: var(--sys-fill); }
 .cut-reveal-lines .tag.miss { color: #c44; }
 .cut-reveal-actions { display: flex; gap: 8px; margin-top: 12px; }
 .cut-reveal-actions .btn { min-height: 44px; min-width: 44px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--sys-fill); color: var(--sys-label); font: 600 14px inherit; cursor: pointer; }
-.cut-reveal-actions .btn.primary { background: var(--tint); color: #fff; }
+.cut-reveal-actions .btn.primary { background: var(--tint); color: var(--on-accent, #fff); }
 @keyframes cut-fade { from { opacity: 0 } to { opacity: 1 } }
 
 /* ---------- Launch splash (per load) ---------- */
@@ -580,7 +580,7 @@ button.ios-row:active { background: var(--sys-fill); }
 .splash-continue {
   flex: none; width: 100%; min-height: 44px; height: 44px;
   border-radius: 999px; border: 0;
-  background: var(--tint); color: #fff; font: 600 15px/1 inherit; cursor: pointer;
+  background: var(--tint); color: var(--on-accent, #fff); font: 600 15px/1 inherit; cursor: pointer;
   padding: 0 16px; margin-top: 2px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
   transition: transform var(--t-fast, 160ms) var(--spring), opacity var(--t-fast, 160ms) ease;
@@ -642,7 +642,7 @@ button.ios-row:active { background: var(--sys-fill); }
 .chrome-bar .panel-head .btn.vernier { color: var(--sys-label); background: var(--sys-fill); border: 1px dashed var(--sys-label-3); font: 600 11px/1 var(--font-mono); }
 .chrome-bar .panel-head .btn.vernier.on { background: var(--tint-fill); border: 1px solid var(--tint); }
 .chrome-bar .panel-head .btn.vernier.pick { background: var(--tint-fill); border-style: solid; border-color: var(--tint); }
-.chrome-bar .panel-head .btn.center-btn { background: var(--tint); color: #fff; border: 0; }
+.chrome-bar .panel-head .btn.center-btn { background: var(--tint); color: var(--on-accent, #fff); border: 0; }
 .chrome-bar .info-btn { width: 44px; padding: 0; display: inline-grid; place-items: center; color: var(--tint); background: transparent !important; }
 .chrome-bar .hz-field input { background: var(--sys-fill); color: var(--sys-label); border: 0; border-radius: 999px; padding: 0 14px; }
 .app.ios.layout-phonePortrait .chrome-bar .panel-head h2,
@@ -747,10 +747,10 @@ button.ios-row:active { background: var(--sys-fill); }
 .buoy-seg button[aria-pressed=true] { background: #0061c7; color: #fff; box-shadow: inset 0 0 0 2px #61b1ff; }
 .buoy-seg button { min-width: 44px; min-height: 44px; }
 .buoy-ring { position: relative; width: min(272px, 100%); height: 236px; margin: 8px auto; isolation: isolate; }
-.buoy-ring-track { position: absolute; width: 172px; height: 172px; border: 2px solid #0a84ff; border-radius: 50%; top: 30px; left: 50%; transform: translateX(-50%); pointer-events: none; opacity: .65; }
+.buoy-ring-track { position: absolute; width: 172px; height: 172px; border: 2px solid var(--select-blue, #0a84ff); border-radius: 50%; top: 30px; left: 50%; transform: translateX(-50%); pointer-events: none; opacity: .65; }
 .buoy-ring-center { position: absolute; inset: 60px 64px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; color: #61b1ff; font-size: 12px; }
 .buoy-ring-center span { font-size: 11px; }
-.buoy-ring .btn { position: absolute; top: 94px; min-width: 76px; min-height: 44px; padding: 0 10px; background: var(--bg, #171719); border: 1px solid #0a84ff; border-radius: 22px; }
+.buoy-ring .btn { position: absolute; top: 94px; min-width: 76px; min-height: 44px; padding: 0 10px; background: var(--bg, #171719); border: 1px solid var(--select-blue, #0a84ff); border-radius: 22px; }
 .buoy-ring .buoy-ring-tune { left: 0; }
 .buoy-ring .buoy-ring-detune { right: 0; }
 .buoy-ring .btn:focus-visible, .buoy-seg button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
