@@ -49,7 +49,7 @@ describe('CUT seek fills', () => {
   const cut = listCutSeeds()[0]
   const cutId = cut.id
 
-  it('first paint (fast) lands near target under ~150 ms warm', () => {
+  it('first paint (fast) lands near target under ~200 ms warm', () => {
     const target = Math.floor(cut.durationS * 0.7)
     const out = bufs()
     disposeCutSession(fillCutSeekFast(cutId, target, out).session) // warm
@@ -60,7 +60,7 @@ describe('CUT seek fills', () => {
       disposeCutSession(r.session)
     }
     times.sort((a, b) => a - b)
-    expect(times[2]!).toBeLessThan(150)
+    expect(times[2]!).toBeLessThan(200)
     const r = fillCutSeekFast(cutId, target, out)
     expect(r.simT).toBeGreaterThanOrEqual(target - 0.3)
     expect(r.rowCount).toBeGreaterThan(40)

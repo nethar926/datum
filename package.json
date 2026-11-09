@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/build.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "shoot": "node scripts/shoot.mjs"
+    "shoot": "node scripts/shoot.mjs",
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "react": "^19.3.1",

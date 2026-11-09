@@ -24,7 +24,7 @@ const EXPECTED_IDS = [
   'cut-velvetshoal-nuc',
   'cut-twilightweft-nuc',
   'cut-gloamspiral-aip',
-  'cut-vellumwake-nuc',
+  'cut-morrowcoil-hydp-masked',
 ] as const
 
 describe('CUT acoustics API (m3-cuts)', () => {
