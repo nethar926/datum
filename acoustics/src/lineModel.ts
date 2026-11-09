@@ -3,7 +3,9 @@ import {sourceLines,type Signature,type TonalLine} from './sourceModel.js';
 /** Fictional oscillator drift, Gaussian stationary OU (tau=20 s) plus row jitter.
  * Stable (AC): bound <0.009% f0 — narrow/discrete, no visible wander.
  * Unstable plant: ~0.2% f0. Unstable AUX/DC: additional ~1.5 Hz absolute so DC
- * "wanders a few Hz" on LOFAR (Wilson AC/DC bar). Independent seed/contact/line streams. */
+ * "wanders a few Hz" on LOFAR (Wilson AC/DC bar). Does NOT apply to stable lines —
+ * AIP Stirling/FC plant tones are stable+discrete (see plantModel writePlantTonals).
+ * Independent seed/contact/line streams. */
 export class LineWander {
  readonly lines:TonalLine[];private readonly state:Float64Array;private readonly rng:Random[];
  constructor(signature:Signature,seed:number,contactId:string){

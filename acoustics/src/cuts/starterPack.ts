@@ -102,11 +102,12 @@ export const STARTER_PACK:CutStarterPack={
   {
    v:1,modelVersion:CUT_MODEL_VERSION,id:'cut-gloamspiral-aip',seed:0xC0710009,durationS:480,richness:'sparse',
    classId:'red-gloamspiral',variantId:'base',hullId:hull('red-gloamspiral'),mode:'AIP',speedKn:4,depthM:80,
-   // Quiet AIP: VLF plant giveaway needs a modest closer CPA so 14 Hz AUX clears ambient at 900 m TL.
-   cpaM:300,cpaNote:'Quiet AIP VLF AUX giveaway: 300 m textbook CPA so 14/28 Hz plant tones clear shared window',
+   // Quiet gen4 Stirling AIP: plant tones are stable+discrete (not DC AUX wander). VLF still
+   // needs closer textbook CPA so 14/28 Hz clears shared window ≥~10 dB (geometry, not gain).
+   cpaM:200,cpaNote:'Quiet Stirling AIP: stable plant tones + 200 m CPA so 14/28 Hz clear shared window ~10 dB',
    gramLooks:['compendium-truth'],
    classifyingLines:[
-    {lineFamily:'AUX',label:'AIP-quiet plant (engines off)',nominalHz:14,n:1,behaviour:'unstable',giveaway:true},
+    {lineFamily:'AUX',label:'AIP-quiet plant (engines off)',nominalHz:14,n:1,behaviour:'stable',giveaway:true},
     {lineFamily:'BR',label:'7-blade blade rate',n:1,harmonicOf:'PSR',behaviour:'stable',giveaway:false},
     {lineFamily:'HYDP',label:'HYDP pair',nominalHz:hydp('red-gloamspiral'),n:1,behaviour:'stable',giveaway:false},
    ],
