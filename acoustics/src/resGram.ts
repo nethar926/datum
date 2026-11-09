@@ -4,6 +4,7 @@ import {dbToPower,powerToDb} from './units.js';
 import {geometry,createGeometry} from './kinematics.js';
 import {doppler} from './doppler.js';
 import {exactGain,pathDifference,seaSurfaceSigma} from './lloydsMirror.js';
+import {acousticSourceDepthM} from './acousticSourceDepth.js';
 import {spreadingLoss,thorp} from './transmissionLoss.js';
 import {czPropagationGainLinear,czEstimateFor} from './convergenceZone.js';
 import type {WaterColumnProfile} from './waterColumn.js';
@@ -450,15 +451,15 @@ export class ResLofarGenerator {
    const prop=e.propagation,czOn=prop?.czEnabled===true;
    const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
    const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
-   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;const zs=acousticSourceDepthM(c.depth,item.contact?.params.draughtSurfacedM);const absTonals=item.contact?.params.tonalRefDb!==undefined;const tonalProp=item.gain*spread*czGain;
    const flow=Number.isNaN(item.flowDb)?0:dbToPower(item.flowDb)*(g.range<=1?1:spread*item.flowFrac);
-   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,c.depth+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+bt.depth)/imageRange)**2:0;
+   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,zs+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((zs+bt.depth)/imageRange)**2:0;
    const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing),keep=item.swaths.length>0;
    // Conservative broadband bound: max LM (1+q)², max envelope at bin 0 (Thorp/shape peak at LF).
    let skipBb=false;
    if(cullCeil>0){const maxEnv=se[0]!*Math.exp(AE[0]!*km),maxBb=(broadband*(1+q)*(1+q)+flow)*maxEnv;skipBb=maxBb<=cullCeil*minAmb;}
    if(!skipBb){
-    const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
+    const delta=pathDifference(g.horizontal,zs,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
     const q2=q*q,twoQ=2*q;
     for(let i0=0;i0<L;){const n=this.chunkWidth(i0,L,km,AE);let va:number,ra:number,rra:number,vc=1,rc=1,rrc=1;
      if(n<3){va=Math.exp(AE[i0]!*km);ra=n>1?Math.exp((AE[i0+1]!-AE[i0]!)*km):1;rra=1;if(coh){vc=Math.exp(CE[i0]!*grazing2);rc=n>1?Math.exp((CE[i0+1]!-CE[i0]!)*grazing2):1;}}
@@ -479,9 +480,10 @@ export class ResLofarGenerator {
     for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df)),lv=level*.0003*gs*enbw;for(let i=lo;i<=hi;i++){const contrib=lv*AB[i]!;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}
    }
    for(let k=0;k<item.frequencies.length;k++){
-    const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
-    if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
-    const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,bt.depth,e.soundSpeed,this.sigma);
+    const f0k=item.frequencies[k],pow=item.powers[k];if(!Number.isFinite(f0k)||f0k<1e-3||!(pow>0))continue;
+    const f=doppler(f0k,g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
+    if(!Number.isFinite(bin)||bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
+    const v=(absTonals?tonalProp*item.powers[k]:level*item.powers[k])*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,zs,bt.depth,e.soundSpeed,this.sigma);
     if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
    }
   }
@@ -500,10 +502,10 @@ export class ResLofarGenerator {
    const prop=e.propagation,czOn=prop?.czEnabled===true;
    const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
    const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
-   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;const zs=acousticSourceDepthM(c.depth,item.contact?.params.draughtSurfacedM);const absTonals=item.contact?.params.tonalRefDb!==undefined;const tonalProp=item.gain*spread*czGain;
    const flow=Number.isNaN(item.flowDb)?0:dbToPower(item.flowDb)*(g.range<=1?1:spread*item.flowFrac);
-   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,c.depth+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+bt.depth)/imageRange)**2:0;
-   const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed;
+   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,zs+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((zs+bt.depth)/imageRange)**2:0;
+   const delta=pathDifference(g.horizontal,zs,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed;
    const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
    wasmProcessContact({L,difar,coh,keepAb:false,broadband,flow,q,km,grazing2,phase,step,sinB,cosB});
   }
@@ -515,14 +517,15 @@ export class ResLofarGenerator {
    const prop=e.propagation,czOn=prop?.czEnabled===true;
    const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
    const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
-   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;const zs=acousticSourceDepthM(c.depth,item.contact?.params.draughtSurfacedM);const absTonals=item.contact?.params.tonalRefDb!==undefined;const tonalProp=item.gain*spread*czGain;
    const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
    if(item.swaths.length){for(let i=0;i<L;i++)AB[i]=Math.exp(AE[i]!*km);
     for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df)),lv=level*.0003*gs*enbw;for(let i=lo;i<=hi;i++){const contrib=lv*AB[i]!;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}}
    for(let k=0;k<item.frequencies.length;k++){
-    const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
-    if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
-    const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,bt.depth,e.soundSpeed,this.sigma);
+    const f0k=item.frequencies[k],pow=item.powers[k];if(!Number.isFinite(f0k)||f0k<1e-3||!(pow>0))continue;
+    const f=doppler(f0k,g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
+    if(!Number.isFinite(bin)||bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
+    const v=(absTonals?tonalProp*item.powers[k]:level*item.powers[k])*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,zs,bt.depth,e.soundSpeed,this.sigma);
     if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
    }
   }
@@ -542,10 +545,10 @@ export class ResLofarGenerator {
    const prop=e.propagation,czOn=prop?.czEnabled===true;
    const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
    const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
-   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;const zs=acousticSourceDepthM(c.depth,item.contact?.params.draughtSurfacedM);const absTonals=item.contact?.params.tonalRefDb!==undefined;const tonalProp=item.gain*spread*czGain;
    const flow=Number.isNaN(item.flowDb)?0:dbToPower(item.flowDb)*(g.range<=1?1:spread*item.flowFrac);
-   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,c.depth+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+bt.depth)/imageRange)**2:0;
-   const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
+   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,zs+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((zs+bt.depth)/imageRange)**2:0;
+   const delta=pathDifference(g.horizontal,zs,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
    const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing),keep=item.swaths.length>0;
    // Smooth envelope at nodes: S=(b(1−c)²+flow)·env (summed over contacts), O=2bc·env (per contact).
    for(let k=0;k<M;k++){const i=nd[k]!,env=se[i]!*Math.exp(AE[i]!*km),cc=q*(coh?Math.exp(CE[i]!*grazing2):1),sm=(broadband*(1-cc)*(1-cc)+flow)*env;
@@ -558,9 +561,10 @@ export class ResLofarGenerator {
    if(keep){for(let i=0;i<L;i++)AB[i]=Math.exp(AE[i]!*km);
     for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df)),lv=level*.0003*gs*enbw;for(let i=lo;i<=hi;i++){const contrib=lv*AB[i]!;P[i]+=contrib;if(difar){sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}}
    for(let k=0;k<item.frequencies.length;k++){
-    const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
-    if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
-    const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,bt.depth,e.soundSpeed,this.sigma);
+    const f0k=item.frequencies[k],pow=item.powers[k];if(!Number.isFinite(f0k)||f0k<1e-3||!(pow>0))continue;
+    const f=doppler(f0k,g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
+    if(!Number.isFinite(bin)||bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
+    const v=(absTonals?tonalProp*item.powers[k]:level*item.powers[k])*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,zs,bt.depth,e.soundSpeed,this.sigma);
     if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
    }
   }
@@ -604,17 +608,18 @@ export class ResLofarGenerator {
    const prop=e.propagation,czOn=prop?.czEnabled===true;
    const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,bt.depth):null;
    const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
-   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;
+   const level=dbToPower(item.srcDb)*item.gain*spread*czGain,km=Math.max(0,g.range-1)/1000;const zs=acousticSourceDepthM(c.depth,item.contact?.params.draughtSurfacedM);const absTonals=item.contact?.params.tonalRefDb!==undefined;const tonalProp=item.gain*spread*czGain;
    const flow=Number.isNaN(item.flowDb)?0:dbToPower(item.flowDb)*(g.range<=1?1:spread*item.flowFrac);
-   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,c.depth+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+bt.depth)/imageRange)**2:0;
-   const delta=pathDifference(g.horizontal,c.depth,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
+   const broadband=level*(.0001+item.cav),imageRange=Math.hypot(g.horizontal,zs+bt.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((zs+bt.depth)/imageRange)**2:0;
+   const delta=pathDifference(g.horizontal,zs,bt.depth),phase=2*Math.PI*f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
    const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
    for(let i=0;i<L;i++){const coherent=q*(this.sigma===0?1:Math.exp(this.coherenceExponent[i]*grazing2)),gain=Math.max(0,1+coherent*coherent-2*coherent*cp),contrib=(broadband*gain+flow)*this.shape[i]*Math.exp(this.absorptionExponent[i]*km)*enbw;P[i]+=contrib;if(difar){sP[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;}
    for(let s=0;s<item.swaths.length;s++){const gs=item.swG[s]!;if(gs>0){const lo=Math.max(0,Math.ceil((item.swLo[s]!-f0)/df)),hi=Math.min(L-1,Math.floor((item.swHi[s]!-f0)/df));for(let i=lo;i<=hi;i++){const contrib=level*.0003*gs*Math.exp(this.absorptionExponent[i]*km)*enbw;P[i]+=contrib;if(difar){sP[i]+=contrib;sE[i]+=contrib*sinB;sN[i]+=contrib*cosB;}}}}
    for(let k=0;k<item.frequencies.length;k++){
-    const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
-    if(bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
-    const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,bt.depth,e.soundSpeed,this.sigma);
+    const f0k=item.frequencies[k],pow=item.powers[k];if(!Number.isFinite(f0k)||f0k<1e-3||!(pow>0))continue;
+    const f=doppler(f0k,g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-f0)/df,sigmaBins=item.sigmaHz[k]/df;
+    if(!Number.isFinite(bin)||bin<-2-4*sigmaBins||bin>L+1+4*sigmaBins)continue;
+    const v=(absTonals?tonalProp*item.powers[k]:level*item.powers[k])*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,zs,bt.depth,e.soundSpeed,this.sigma);
     if(sigmaBins<1)depositHannLine(P,L,bin,v,difar,sE,sN,sP,sinB,cosB);else depositGaussianLine(P,L,bin,v,sigmaBins,difar,sE,sN,sP,sinB,cosB);
    }
   }

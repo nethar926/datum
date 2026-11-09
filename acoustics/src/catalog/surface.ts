@@ -1,3 +1,4 @@
+import {tonalRefDbFor} from '../tonalLevels.js';
 import {surfaceVesselPlant} from './plants.js';
 import {configurePropulsion,updatePropulsion,writePlantTonals} from './plantModel.js';
 import {deriveSeed,mulberry32} from '../prng.js';
@@ -45,7 +46,7 @@ export const SURFACE_VS_SUB_LEVEL_DB=8;
  * in place. Called at pool creation and by the engine whenever a ship's leg changes speed. */
 export function refreshSurfaceSignature(params:Signature,typeId:string,speedKn:number):void{
  const type=surfaceTypes.find(t=>t.id===typeId);if(!type)throw new Error(`Unknown surface type ${typeId}`);const v=clamp(speedKn,0,type.maxSpeedKn);
- params.levelDb=120+type.offsetDb+10*Math.log10(1+v/5);params.cavitationPower=.025+.04*(v/type.maxSpeedKn)**2;params.flowNoiseDb=v>0?85+55*Math.log10(v/5):-300;
+ params.levelDb=120+type.offsetDb+10*Math.log10(1+v/5);params.tonalRefDb=tonalRefDbFor(params.levelDb,'SURF','gen2');params.draughtSurfacedM=params.draughtSurfacedM??8;params.cavitationPower=.025+.04*(v/type.maxSpeedKn)**2;params.flowNoiseDb=v>0?85+55*Math.log10(v/5):-300;
  params.shaftHz=updatePropulsion(params,v/type.maxSpeedKn,'SURF').shafts[0].hz;params.tonalHz=params.shaftHz*params.blades;writePlantTonals(params,'SURF');
 }
 

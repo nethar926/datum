@@ -53,7 +53,7 @@ export function scenarioFromCut(cut:CutSeed):ScenarioInput {
  let sig=deriveSignature(klass,cut.variantId,state);
  sig={...sig,label:displayName(klass.name)};
  bakeFidelityParams(sig,cut);
- const v=knotsToMps(cut.speedKn),course=Math.PI/2,cpa=900,tCpa=Math.min(cut.durationS*.4,240);
+ const v=knotsToMps(cut.speedKn),course=Math.PI/2,cpa=cut.cpaM??900,tCpa=Math.min(cut.durationS*.4,240);
  const x=-tCpa*v*Math.sin(course)+cpa*Math.cos(course);
  const y=-tCpa*v*Math.cos(course)-cpa*Math.sin(course);
  const wantsHydp=cut.classifyingLines.some(l=>l.lineFamily==='HYDP')&&!!klass.hydp;
@@ -135,7 +135,7 @@ export class CutSession {
   this.lloyd=new LloydPassTracker({depthM:c0.depth,courseRad:c0.course,speedMps:c0.speed});
   if(cut.hydpShape){
    const st=c0.params.hydpTransient;
-   if(st){st.shape={orders:cut.hydpShape.orders,drownFundamental:cut.hydpShape.drownFundamental,fadeS:cut.hydpShape.fadeS};}
+   if(st){st.shape={orders:cut.hydpShape.orders,drownFundamental:cut.hydpShape.drownFundamental,fadeS:cut.hydpShape.fadeS,...(cut.hydpShape.powerScale!==undefined?{powerScale:cut.hydpShape.powerScale}:{})};}
   }
  }
  private get contact(){return this.engine.scenario.contacts.find(c=>c.category!=='surface')??this.engine.scenario.contacts[0];}

@@ -35,7 +35,9 @@ export function snortBroadbandLevel(erpm:number,erpmNormal:number,seaState:numbe
   if(!(erpm>0))return 0;
   const load=clamp(erpm/Math.max(1,erpmNormal),0,1.4);
   const sea=1+.12*clamp(seaState,0,6); // monotonic in sea state
-  return clamp(.15+.55*load,0,1)*sea;
+  // Invented: snort induction/exhaust broadband is a prominent teaching cue when diesels run;
+  // public RN texts describe large snort-vs-battery deltas (Ross/Urick); magnitude fictional.
+  return clamp(.35+.9*load,0,1.6)*sea;
 }
 
 /** Wave-slap level grows with speed and sea state. Zero when stopped in dead calm is near-zero. */

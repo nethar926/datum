@@ -4,6 +4,7 @@ import {powerToDb,dbToPower,C} from './units.js';
 import {sourceLevel,type Signature} from './sourceModel.js';
 import {spreadingLoss,thorp} from './transmissionLoss.js';
 import {exactGain,pathDifference,seaSurfaceSigma} from './lloydsMirror.js';
+import {acousticSourceDepthM} from './acousticSourceDepth.js';
 import {czPropagationGainLinear,czEstimateFor} from './convergenceZone.js';
 import type {WaterColumnProfile} from './waterColumn.js';
 import type {Contact,Environment} from './scenario.js';
@@ -154,7 +155,7 @@ export class DemonStream {
    if(w===undefined){
     const czEst=czOn||czForce!==undefined?czEstimateFor(this.waterColumn,c.depth,this.buoy.depth):null;
     const czGain=czForce!==undefined?czForce:czPropagationGainLinear(range,czEst,{enabled:czOn});
-    w=carrierBandWeight(this.bandLo,this.bandHi,sourceLevel(c.params,c.speed,c.depth),c.params.cavitationPower??0,range,horizontal,c.depth,this.buoy.depth,spreadMode,transition,czGain,cSpeed,sigma);
+    const zs=acousticSourceDepthM(c.depth,c.params.draughtSurfacedM);w=carrierBandWeight(this.bandLo,this.bandHi,sourceLevel(c.params,c.speed,c.depth),c.params.cavitationPower??0,range,horizontal,zs,this.buoy.depth,spreadMode,transition,czGain,cSpeed,sigma);
     demonWeightCache.set(cacheKey,w);
    }
    this.weights[j]=w;total+=w;refresh(c.params,this.tables[j]);

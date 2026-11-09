@@ -98,6 +98,11 @@ export interface CutSeed {
   scenario?:CutScenarioKind;
   /** Pin HYDP burst shape (drown fund / rich harmonics). Requires class.hydp. */
   hydpShape?:CutHydpShape;
+  /** Optional CPA range (m). Default 900. Textbook closer CPA is a cut-design choice
+   * (geometry), not a gain hack — document why in cpaNote when set. */
+  cpaM?:number;
+  /** Why cpaM differs from the default 900 m teaching CPA. */
+  cpaNote?:string;
 }
 
 export interface CutScenarioPack {
