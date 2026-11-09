@@ -10,7 +10,7 @@ export {looksOf,bakeFidelityParams,applyRuntimeFidelity,cutNeedsRuntimeFidelity,
 export {scenarioFromCut,CutSession,CUT_BINS,CUT_FMAX} from './render.js';
 export {
  CUT_LOFAR_NORM,CUT_LOFAR_NORM_PASS2,CUT_LOFAR_NORM_GAIN,CUT_LOFAR_NORM_RECIPE,
- DEMON_NORM,SplitWindowNormalizer,normalizeCutRow,normalizeCutLofarRow,normalizeDemonRow,
+ DEMON_NORM,DEMON_CARRIER_BAND,DEMON_DISPLAY_DB,SplitWindowNormalizer,normalizeCutRow,normalizeCutLofarRow,normalizeDemonRow,
  type NormParams,type DemonNormParams,type CutLofarNormRecipe,
 } from './norm.js';
 export {STARTER_PACK,STARTER_CUTS} from './starterPack.js';

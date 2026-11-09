@@ -80,9 +80,36 @@ export const CUT_LOFAR_NORM_RECIPE: CutLofarNormRecipe = {
 /**
  * DEMON NORM: rows are median-relative; prefer absolute map with floor/ceil 0/30
  * (matches GramConfig). If FE still whitens, use these window/guard + clampFloor.
- * Do **not** reuse live NB 1–22 — blade/shaft peaks routinely exceed 22 dB.
+ * Do **not** reuse live NB 1–22.
+ *
+ * m3-acoustics-demon-tune (seeded sweep, bench/demonTune.bench.ts): once DEMON has a physical
+ * envelope-noise floor, mean-24/3, mean-64/6, median-24/3, median-48/3, median-96/4 and no whitening
+ * all land within ±0.5 dB on shaft/BR/BR2 contrast with zero false lines, so window/guard stay 24/3.
+ * The old "24-bin window eats the shaft comb" effect only mattered on the leakage-dominated rows.
+ * For colour, prefer {@link DEMON_DISPLAY_DB} (0–20).
  */
 export const DEMON_NORM: DemonNormParams = {window: 24, guard: 3, floorDb: 0, ceilDb: 30, clampFloorDb: -5};
+
+/**
+ * Shared DEMON carrier (demodulation) band, Hz — ONE setting for Cuts and the live SIM
+ * (engine default when `subscribe({kind:'demon'})` omits `band`; CutSession subscribes it too).
+ *
+ * Physics (m3-acoustics-demon-tune): DEMON line-to-continuum ratio per bin ≈ a²·B_eff/(4·Δf·ENBW),
+ * B_eff = (∫S)²/∫S² of the carrier band. On the fictional broadband shape 1/(1+(f/400)²):
+ * [1000,2000] → B_eff≈877 Hz; [1000,4000] → ≈1803 Hz (+3.1 dB on every propulsion line), well
+ * above the machinery-tonal forest and the 0–100 Hz modulation axis. Cuts previously used
+ * [1000, min(4000, CUT_FMAX=2000)] — the LOFAR display limit is not a DEMON carrier limit.
+ */
+export const DEMON_CARRIER_BAND: readonly [number, number] = Object.freeze([1000, 4000] as [number, number]);
+
+/**
+ * Recommended DEMON colour LUT (dB above the row median / whitened background).
+ * With the physical envelope-noise floor, a cavitating contact's blade line sits ~10–17 dB and
+ * shaft / BR2 ~5–10 dB above the continuum (30 s averaged), so 0–20 dB maps lines to 30–85 %
+ * of the palette. Peaks above 20 dB are rare and just saturate. Replaces FE's 65 dB ceiling,
+ * which existed only to tame the old ~90 dB FFT-leakage smear. DEMON_NORM (0/30) stays for back-compat.
+ */
+export const DEMON_DISPLAY_DB: Readonly<{floorDb: number; ceilDb: number}> = Object.freeze({floorDb: 0, ceilDb: 20});
 
 /**
  * Split-window background normalization across frequency (classic LOFAR whitening):

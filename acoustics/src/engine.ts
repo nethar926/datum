@@ -3,6 +3,7 @@ import type {HydpSpec} from './catalog/drivetrain.js';
 import {LineWander} from './lineModel.js';
 import {surfaceCount,createSurfacePool,refreshSurfaceSignature} from './catalog/surface.js';
 import {DemonStream,bumpDemonWeightTick} from './demonStream.js';
+import {DEMON_CARRIER_BAND} from './cuts/norm.js';
 import {resolveReference,updateDerivedSignature} from './catalog/derive.js';
 import type {ClassParams} from './catalog/schema.js';
 import type {Contact} from './scenario.js';
@@ -115,7 +116,7 @@ export class AcousticEngine {
   subscribe(req:{channel?:number;buoyId?:number;kind?:'lofar'|'demon';bins?:number;band?:[number,number];bandPreset?:LofarBandPresetId;res?:number;filter?:GramFilter;vernierHz?:number;fullAxis?:boolean;visibleTileIndex?:number}):GramConfig|number {
     if(req.kind==='demon'){
       const i=this.scenario.buoys.findIndex((b,i)=>(Number(b.id.replace(/\D/g,''))||i+1)===req.buoyId);if(i<0)throw new Error('Unknown buoyId');
-      const band=req.band??[1000,4000];if(band.length!==2||!band.every(Number.isFinite)||band[0]<20||band[1]>6000||band[1]-band[0]<1e-6)throw new Error('Invalid DEMON carrier band (20..6000 Hz)');
+      const band=req.band??[DEMON_CARRIER_BAND[0],DEMON_CARRIER_BAND[1]];if(band.length!==2||!band.every(Number.isFinite)||band[0]<20||band[1]>6000||band[1]-band[0]<1e-6)throw new Error('Invalid DEMON carrier band (20..6000 Hz)');
       while(this.streams.has(this.nextStreamId))this.nextStreamId++;const id=this.nextStreamId++,b=this.scenario.buoys[i];if(!isTuned(b))throw new Error('Buoy detuned');this.registerStream(id,b.rfChannel);
       const renderer=new DemonStream(b,this.allContacts,this.scenario.seed,band,this.scenario.environment);renderer.setWaterColumn?.(this.scenario.waterColumn);const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId:id,kind:'demon',channel:b.rfChannel,bins:512,f0:0,fBin:renderer.fBin,rowRateHz:4,dbFloor:0,dbCeil:30,demodBandHz:[band[0],band[1]]};
       this.subscriptions.set(id,{config,start:Math.floor(this.time*4)/4,read:0,renderer});return id;

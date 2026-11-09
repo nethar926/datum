@@ -1,5 +1,5 @@
 import {FFT} from './demon.js';
-import {deriveSeed,mulberry32} from './prng.js';
+import {deriveSeed,mulberry32,gaussian} from './prng.js';
 import {powerToDb,dbToPower,C} from './units.js';
 import {sourceLevel,type Signature} from './sourceModel.js';
 import {spreadingLoss,thorp} from './transmissionLoss.js';
@@ -12,13 +12,43 @@ import type {Buoy} from './buoys.js';
 import {DEMON_NORM} from './cuts/norm.js';
 const DEMON_DB_FLOOR=DEMON_NORM.clampFloorDb;
 const SIZE=4096,FS=SIZE*100/511;
-interface Envelope {shaft:number;blades:number;modulation:number;table:Float32Array;phase:number}
+/** New envelope samples per 4 Hz row: rows slide a 5.1 s analysis window (≈95 % overlap), like a real DEMON STFT. */
+const HOP=Math.round(FS/4);
+/** Row-to-row AR(1) coefficient for the per-bin envelope noise. r(s)=Σw[n]w[n+s·HOP]/Σw² is the Hann
+ * overlap correlation at s rows; ρ is chosen so the AR(1) integral scale 1/(1−ρ) equals Σ_{s≥0} r(s)
+ * (≈ half the 5.1 s window in rows), i.e. the same number of independent looks per minute as a real STFT. */
+const ROW_RHO=(()=>{const w=(n:number)=>.5-.5*Math.cos(2*Math.PI*n/(SIZE-1));let den=0;for(let n=0;n<SIZE;n++)den+=w(n)**2;let S=0;for(let s=0;s*HOP<SIZE;s++){let num=0;for(let n=0;n+s*HOP<SIZE;n++)num+=w(n)*w(n+s*HOP);S+=num/den;}return 1-1/S;})();
+/** Introspection: the AR(1) coefficient actually used. */
+export const DEMON_ROW_NOISE_RHO=ROW_RHO;
+/** Broadband floor fraction that is *not* cavitation (matches LOFAR `.0001+cavitationPower`). Only the cavitation part is blade-modulated. */
+const BB_FLOOR=.0001;
+
+
+/**
+ * Fraction of a contact's carrier-band broadband that carries propeller (shaft/blade) amplitude modulation.
+ * Cavitation noise is modulated at shaft/blade rate; the non-cavitating hull/flow floor is not (Urick ch. 10;
+ * Kinsler/Frey cavitation framing). Legacy hand-written signatures without `cavitationPower` keep full modulation.
+ */
+export function modulatedFraction(s:Signature):number{const cav=s.cavitationPower;if(cav===undefined)return 1;return cav>0?cav/(BB_FLOOR+cav):0;}
+
+/**
+ * Square-law envelope of Gaussian band-limited noise: the fluctuation PSD (one-sided, f≪B, normalised by
+ * mean power²) is 2/B_eff, with B_eff=(∫S)²/∫S² the statistical bandwidth of the carrier. Sampled at FS this
+ * is a relative envelope-noise variance FS/B_eff. A line with relative modulation a therefore sits
+ * ≈ a²·B_eff/(4·Δf·ENBW) above the envelope continuum per Hann bin — the classic DEMON
+ * time-bandwidth gain. Public textbook result (e.g. Urick; Bendat & Piersol, square-law detector).
+ */
+export function envelopeNoiseVariance(bEffHz:number):number{return bEffHz>0?FS/bEffHz:Infinity;}
+interface Envelope {shaft:number;blades:number;modulation:number;br1:number;table:Float32Array;phase:number}
+/** Class `reinforceBr1` ("BR1 power boost on DEMON/LOFAR teaching"): same ×1.6 power as LOFAR plantModel → √1.6 in amplitude. */
+export const DEMON_BR1_REINFORCE_AMP=Math.sqrt(1.6);
 // The same physical source envelope is shared by all buoy receivers; tables refresh only on state changes.
 const envelopes=new WeakMap<Signature,Envelope>();
 function refresh(s:Signature,e:Envelope):void{
- if(e.shaft===s.shaftHz&&e.blades===s.blades&&e.modulation===s.modulation)return;
- e.shaft=s.shaftHz;e.blades=s.blades;e.modulation=s.modulation;const phase=e.phase;
- for(let i=0;i<SIZE;i++){let sum=0;const shafts=s.propulsion?.shafts,n=shafts?.length??1;for(let j=0;j<n;j++){const hz=shafts?shafts[j].hz:s.shaftHz,a=2*Math.PI*hz*i/FS+phase,b=2*Math.PI*hz*s.blades*i/FS+phase;sum+=.2*Math.cos(a)+.1*Math.cos(2*a)+.4*Math.cos(b)+.18*Math.cos(2*b)+.08*Math.cos(3*b)+.04*Math.cos(4*b);}e.table[i]=1+s.modulation*sum/n;}
+ const br1=s.reinforceBr1?.4*DEMON_BR1_REINFORCE_AMP:.4;
+ if(e.shaft===s.shaftHz&&e.blades===s.blades&&e.modulation===s.modulation&&e.br1===br1)return;
+ e.shaft=s.shaftHz;e.blades=s.blades;e.modulation=s.modulation;e.br1=br1;const phase=e.phase;
+ for(let i=0;i<SIZE;i++){let sum=0;const shafts=s.propulsion?.shafts,n=shafts?.length??1;for(let j=0;j<n;j++){const hz=shafts?shafts[j].hz:s.shaftHz,a=2*Math.PI*hz*i/FS+phase,b=2*Math.PI*hz*s.blades*i/FS+phase;sum+=.2*Math.cos(a)+.1*Math.cos(2*a)+br1*Math.cos(b)+.18*Math.cos(2*b)+.08*Math.cos(3*b)+.04*Math.cos(4*b);}e.table[i]=1+s.modulation*sum/n;}
 }
 function select(a:Float32Array,k:number):number{let lo=0,hi=a.length-1;while(lo<hi){const pivot=a[(lo+hi)>>>1];let i=lo,j=hi;while(i<=j){while(a[i]<pivot)i++;while(a[j]>pivot)j--;if(i<=j){const v=a[i];a[i++]=a[j];a[j--]=v;}}if(k<=j)hi=j;else if(k>=i)lo=i;else break;}return a[k];}
 
@@ -117,6 +147,13 @@ export function carrierBandWeight(
  return dbToPower(slDb)*(.0001+(cavitationPower||0))*spread*czGain*band;
 }
 
+const N_BAND=64;
+/** Statistical bandwidth B_eff=(∫S)²/∫S² of the fictional broadband shape over the carrier band (midpoint rule). */
+export function carrierStatBandwidth(lo:number,hi:number):number{
+ const df=(hi-lo)/N_BAND;let I1=0,I2=0;for(let i=0;i<N_BAND;i++){const sh=sourceShape(lo+(i+.5)*df);I1+=sh;I2+=sh*sh;}
+ return I2>0?I1*I1*df/I2:0;
+}
+
 /** Module-level per-tick cache: engine bumpDemonWeightTick() clears between ticks. */
 let demonWeightTick=0;
 const demonWeightCache=new Map<string,number>();
@@ -126,6 +163,9 @@ export function demonWeightCacheSize():number{return demonWeightCache.size;}
 /**
  * Spectrum-based envelope DEMON (Urick/Kinsler framing): incoherent sum of
  * band-integrated TL-weighted broadband power envelopes. Not waveform-derived DEMON.
+ * Only each contact's cavitation share is shaft/blade modulated; the square-law envelope
+ * continuum (var FS/B_eff of the carrier band) sets the DEMON noise floor,
+ * so line contrast follows the textbook a²·B_eff/(4·Δf·ENBW) rather than FFT leakage.
  * Carrier bands remain an approximation until source weighting is validated.
  */
 export class DemonStream {
@@ -134,9 +174,13 @@ export class DemonStream {
  private readonly tables:Envelope[];private readonly weights:Float64Array;private readonly rng;
  private readonly bandLo:number;private readonly bandHi:number;
  private waterColumn:WaterColumnProfile|undefined;
+ /** Unwindowed complex envelope-noise per bin (k=−1..512), AR(1) across rows; Hann applied as the 3-tap (−¼,½,−¼) kernel. */
+ private readonly uRe=new Float64Array(514);private readonly uIm=new Float64Array(514);private noiseInit=false;private readonly bEff:number;
+ /** Carrier statistics (introspection/tests). */
+ get bEffHz():number{return this.bEff;}
  constructor(private readonly buoy:Buoy,private readonly contacts:Contact[],seed:number,band:[number,number],private environment?:Environment){
-  this.bandLo=band[0];this.bandHi=band[1];this.weights=new Float64Array(contacts.length);this.rng=mulberry32(deriveSeed(seed,`demon:${buoy.id}`));
-  this.tables=contacts.map(c=>{let e=envelopes.get(c.params);if(!e){e={shaft:-1,blades:0,modulation:-1,table:new Float32Array(SIZE),phase:mulberry32(deriveSeed(seed,`envelope:${c.id}`))()*2*Math.PI};envelopes.set(c.params,e);}refresh(c.params,e);return e;});
+  this.bandLo=band[0];this.bandHi=band[1];this.bEff=carrierStatBandwidth(this.bandLo,this.bandHi);this.weights=new Float64Array(contacts.length);this.rng=mulberry32(deriveSeed(seed,`demon:${buoy.id}`));
+  this.tables=contacts.map(c=>{let e=envelopes.get(c.params);if(!e){e={shaft:-1,blades:0,modulation:-1,br1:-1,table:new Float32Array(SIZE),phase:mulberry32(deriveSeed(seed,`envelope:${c.id}`))()*2*Math.PI};envelopes.set(c.params,e);}refresh(c.params,e);return e;});
  }
  setEnvironment(e:Environment):void{this.environment=e;}
  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
@@ -161,9 +205,21 @@ export class DemonStream {
    this.weights[j]=w;total+=w;refresh(c.params,this.tables[j]);
   }
   if(total<=1e-30){out.fill(NaN,offset,offset+512);return;}
-  for(let j=0;j<this.contacts.length;j++){const w=this.weights[j]/total;if(w<=0)continue;const table=this.tables[j].table;for(let i=0;i<SIZE;i++)this.signal[i]+=w*table[i];}
-  let mean=0;for(let i=0;i<SIZE;i++){this.signal[i]+=.0001*(this.rng()-.5);mean+=this.signal[i];}mean/=SIZE;for(let i=0;i<SIZE;i++)this.signal[i]-=mean;
-  this.fft.transform(this.signal,true,true);for(let i=0;i<512;i++)this.median[i]=this.spectrum[i]=(this.fft.real[i]**2+this.fft.imag[i]**2)/(SIZE*SIZE);
+  // Weights stay relative between contacts (no ambient dilution; see m3-acoustics-demon-tune notes):
+  // only each contact's cavitation share carries shaft/blade modulation.
+  this.signal.fill(1);
+  for(let j=0;j<this.contacts.length;j++){const wm=this.weights[j]*modulatedFraction(this.contacts[j].params)/total;if(wm<=0)continue;const table=this.tables[j].table;for(let i=0;i<SIZE;i++)this.signal[i]+=wm*(table[i]-1);}
+  let mean=0;for(let i=0;i<SIZE;i++)mean+=this.signal[i];mean/=SIZE;for(let i=0;i<SIZE;i++)this.signal[i]-=mean;
+  this.fft.transform(this.signal,true,true);
+  // Envelope-noise continuum, added in the frequency domain (second-order model of the square-law
+  // fluctuation, var FS/B_eff per sample). Rows are 4 Hz hops of a 5.1 s window (≈95 % overlap), so
+  // each bin's noise is AR(1) across rows with the Hann overlap correlation — smooth, persistent
+  // texture like a real DEMON STFT, and a stable line/noise phase relation (no row-to-row beating).
+  const varU=envelopeNoiseVariance(this.bEff)*SIZE/2,uRe=this.uRe,uIm=this.uIm;
+  if(!this.noiseInit){const sd=Math.sqrt(varU);for(let k=0;k<514;k++){uRe[k]=sd*gaussian(this.rng);uIm[k]=sd*gaussian(this.rng);}this.noiseInit=true;}
+  else{const sd=Math.sqrt(varU*(1-ROW_RHO*ROW_RHO));for(let k=0;k<514;k++){uRe[k]=ROW_RHO*uRe[k]+sd*gaussian(this.rng);uIm[k]=ROW_RHO*uIm[k]+sd*gaussian(this.rng);}}
+  const re=this.fft.real,im=this.fft.imag;
+  for(let i=0;i<512;i++){const nr=.5*uRe[i+1]-.25*(uRe[i]+uRe[i+2]),ni=.5*uIm[i+1]-.25*(uIm[i]+uIm[i+2]),a=re[i]+nr,b=im[i]+ni;this.median[i]=this.spectrum[i]=(a*a+b*b)/(SIZE*SIZE);}
   const median=Math.max(1e-30,(select(this.median,255)+select(this.median,256))/2);
   for(let i=0;i<512;i++)out[offset+i]=Math.max(DEMON_DB_FLOOR,powerToDb(this.spectrum[i]/median));
  }

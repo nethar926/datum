@@ -6,6 +6,7 @@ import {loadScenario,type ScenarioInput,type ContactTransient} from '../scenario
 import type {GramConfig} from '../protocol.js';
 import type {TonalLine} from '../sourceModel.js';
 import {validateCutSeed} from './validate.js';
+import {DEMON_CARRIER_BAND} from './norm.js';
 import {bakeFidelityParams,applyRuntimeFidelity,looksOf,cutNeedsRuntimeFidelity} from './fidelity.js';
 import type {CutSeed,GramLookId} from './types.js';
 import {attachWaterColumn,buildWaterColumn} from '../waterColumn.js';
@@ -135,7 +136,8 @@ export class CutSession {
   }
   // Default wide LOFAR (MF) kept for back-compat; full stream set opened on demand via openStream.
   this.lofar=this.engine.subscribe({channel:1,kind:'lofar',bins:CUT_BINS,band:[0,CUT_FMAX]});
-  this.demonStreamId=this.engine.subscribe({kind:'demon',buoyId:1,band:[1000,Math.min(4000,CUT_FMAX)]});
+  // Shared Cuts+live DEMON carrier band (not clipped to the 2 kHz cut LOFAR display).
+  this.demonStreamId=this.engine.subscribe({kind:'demon',buoyId:1,band:[DEMON_CARRIER_BAND[0],DEMON_CARRIER_BAND[1]]});
   this.openStreams.set('demon',this.demonStreamId);
   this.lofarBuf=new Float32Array(this.lofar.bins);
   const c0=this.contact;

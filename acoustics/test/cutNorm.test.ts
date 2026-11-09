@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {
   renderCut,getCutSeed,
   CUT_BINS,CUT_FMAX,CUT_LOFAR_NORM,CUT_LOFAR_NORM_PASS2,CUT_LOFAR_NORM_GAIN,CUT_LOFAR_NORM_RECIPE,
-  DEMON_NORM,
+  DEMON_NORM,DEMON_DISPLAY_DB,
   SplitWindowNormalizer,normalizeCutRow,normalizeCutLofarRow,normalizeDemonRow,
   AcousticEngine,cpaScenario,
 } from '../src/index.js';
@@ -231,14 +231,15 @@ describe('DEMON_NORM + empty-bin floor clamp',()=>{
   expect(DEMON_NORM.clampFloorDb).toBeGreaterThanOrEqual(-10);
  });
 
- it('engine DEMON rows never fall below clampFloorDb; peaks still exceed 22 dB',()=>{
+ it('engine DEMON rows never fall below clampFloorDb; strong peaks clear the DEMON LUT mid-scale',()=>{
   const s=cpaScenario();s.contacts[0].params.modulation=.6;
   const e=new AcousticEngine(s),id=e.subscribe({kind:'demon',buoyId:1}),row=new Float32Array(512);
   e.advance(.25);expect(e.writeRow(id,row)).toBe(0);
   let min=Infinity,max=-Infinity;
   for(const v of row){if(v!==v)continue;min=Math.min(min,v);max=Math.max(max,v);}
   expect(min).toBeGreaterThanOrEqual(DEMON_NORM.clampFloorDb-1e-9);
-  expect(max).toBeGreaterThan(22); // why FE must not reuse 1–22 LUT
+  // demon-tune: physical envelope-noise floor → m=.6 blade line ≈ 20 dB above the row median (was ~90 dB of leakage).
+  expect(max).toBeGreaterThan(15);expect(max).toBeGreaterThan(DEMON_DISPLAY_DB.ceilDb*.6);
   expect(e.configs().find(c=>c.kind==='demon')).toMatchObject({dbFloor:0,dbCeil:30});
  });
 
