@@ -8,7 +8,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { catalog } from '@acoustics'
 import { CutPicker } from './CutPicker'
-import { listCutSeeds } from './api'
+import { listCutSeeds, listCutsForPicker } from './api'
 import { COMING_SOON_LABEL, isNuclearCut, nuclearStarterCuts } from './comingSoon'
 
 let root: Root, node: HTMLDivElement
@@ -68,5 +68,17 @@ describe('CutPicker nuclear Coming soon', () => {
     const btn = node.querySelector<HTMLButtonElement>(`[data-cut-id="${first.id}"]`)!
     act(() => btn.click())
     expect(onPick).toHaveBeenCalledExactlyOnceWith(first.id)
+  })
+})
+
+describe('CutPicker DEMON lesson order', () => {
+  it('lists cinderlilt-cav first, then brindleflux-cav and gloamspiral-cav', () => {
+    const ids = listCutsForPicker().map((c) => c.id)
+    expect(ids[0]).toBe('cut-cinderlilt-cav')
+    expect(ids).toContain('cut-brindleflux-cav')
+    expect(ids).toContain('cut-gloamspiral-cav')
+    expect(ids.indexOf('cut-brindleflux-cav')).toBeLessThan(ids.indexOf('cut-gloamspiral-cav'))
+    // Starter pack still present.
+    expect(listCutSeeds().map((c) => c.id)).toContain('cut-brindleflux-snork')
   })
 })

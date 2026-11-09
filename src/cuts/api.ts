@@ -7,6 +7,10 @@ export {
   listCutSeeds,
   getCutSeed,
   getCutStarterPack,
+  listDemonLessonCuts,
+  DEMON_LESSON_PACK,
+  DEMON_CUTS,
+  DEMON_LESSON_CUT_IDS,
   renderCut,
   scenarioFromCut,
   CUT_MODEL_VERSION,
@@ -19,7 +23,32 @@ export {
   type OperatingMode,
 } from '@acoustics'
 
-import { getCutSeed, type CutSeed } from '@acoustics'
+import {
+  getCutSeed, listCutSeeds, DEMON_LESSON_PACK, DEMON_CUTS, type CutSeed,
+} from '@acoustics'
+
+/**
+ * Cuts picker order: DEMON main lesson (cinderlilt-cav) first, then the two DEMON pack
+ * practice cuts, then the remaining starter-pack cuts (no duplicates).
+ */
+export function listCutsForPicker(): CutSeed[] {
+  const mainId = DEMON_LESSON_PACK.mainLessonCutId
+  const main = getCutSeed(mainId)
+  if (!main) throw new Error(`DEMON main lesson missing: ${mainId}`)
+  const seen = new Set<string>([mainId])
+  const out: CutSeed[] = [main]
+  for (const c of DEMON_CUTS) {
+    if (seen.has(c.id)) continue
+    seen.add(c.id)
+    out.push(c)
+  }
+  for (const c of listCutSeeds()) {
+    if (seen.has(c.id)) continue
+    seen.add(c.id)
+    out.push(c)
+  }
+  return out
+}
 
 /**
  * Deep clone of a CutSeed for UI draft edits. Starter-pack seeds from getCutSeed/listCutSeeds

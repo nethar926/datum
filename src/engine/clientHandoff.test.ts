@@ -50,21 +50,21 @@ describe('SimClient gram handoff', () => {
     expect(c.status.configs.filter((x) => x.kind === 'lofar').map((x) => x.streamId)).toEqual(p.to.map((x) => x.streamId))
     expect(c.status.configs[0].res).toBe(4)
     expect(c.status.handoff).toMatchObject({ active: false })
-    expect(host().liveStreamCount()).toBe(6) // old set unsubscribed in the worker
+    expect(host().liveStreamCount()).toBe(12) // 6 LOFAR + 6 always-on DEMON; old LOFAR set unsubscribed
     expect(host().lofarStreamIds().active).toEqual(p.to.map((x) => x.streamId))
   })
 
   it('rapid changes drop only the pending set and never leak worker streams; timeout swaps', () => {
     const { c, notes, step, host, clock } = setup(1000, 3000)
     const displayed = c.status.configs.filter((x) => x.kind === 'lofar').map((x) => x.streamId)
-    for (let i = 0; i < 20; i++) { clock(i * 50); c.setGram({ res: 1 + (i % 4) }); step(1); expect(host().liveStreamCount()).toBeLessThanOrEqual(12) }
+    for (let i = 0; i < 20; i++) { clock(i * 50); c.setGram({ res: 1 + (i % 4) }); step(1); expect(host().liveStreamCount()).toBeLessThanOrEqual(18) } // ≤12 LOFAR (active+pending) + 6 DEMON
     expect(c.status.configs.filter((x) => x.kind === 'lofar').map((x) => x.streamId)).toEqual(displayed) // display never touched
     expect(notes.filter((n) => n.type === 'drop').length).toBeGreaterThanOrEqual(18)
     clock(950 + 2999); c.pollHandoff(); expect(c.handoff.phase).toBe('pending')
     clock(950 + 3000); c.pollHandoff()
     expect(notes.at(-1)!.type).toBe('promote')
     expect(c.status.configs[0].res).toBe(4) // last request (i = 19 → res 4)
-    expect(host().liveStreamCount()).toBe(6)
+    expect(host().liveStreamCount()).toBe(12)
     expect(c.handoff.live.size).toBe(0)
   })
 
@@ -72,7 +72,7 @@ describe('SimClient gram handoff', () => {
     const { c, notes, host } = setup()
     c.setGram({ res: 3 }); c.setGram({ res: 5 })
     expect(notes.map((n) => n.type)).toEqual(['pending', 'drop'])
-    expect(c.handoff.phase).toBe('idle'); expect(host().liveStreamCount()).toBe(6)
+    expect(c.handoff.phase).toBe('idle'); expect(host().liveStreamCount()).toBe(12)
     c.setGram({ filter: 'BB' })
     c.start()
     expect(c.handoff.phase).toBe('idle'); expect(c.status.handoff).toBeUndefined()
@@ -105,7 +105,7 @@ describe('SimClient band presets', () => {
     expect(notes.at(-1)!.type).toBe('promote')
     expect(lofarOf(c)[0].bandPreset).toBe('MF')
     expect(lofarOf(c)[0].fBin * 2047).toBeCloseTo(2000)
-    expect(host().liveStreamCount()).toBe(6)
+    expect(host().liveStreamCount()).toBe(12)
   })
 
   it('NB/BB on a band gram is display-only (no new streams); RES −/+ hands back to RES', () => {
@@ -119,7 +119,7 @@ describe('SimClient band presets', () => {
     step(12); c.pollHandoff()
     expect(lofarOf(c)[0]).toMatchObject({ res: 4, filter: 'BB', bins: 1024 })
     expect(lofarOf(c)[0].bandPreset).toBeUndefined()
-    expect(host().liveStreamCount()).toBe(6)
+    expect(host().liveStreamCount()).toBe(12)
   })
 
   it('restart keeps the band family: init carries bandPreset, never res together with it', () => {

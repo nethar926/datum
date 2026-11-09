@@ -20,6 +20,7 @@ import { listCutSeeds } from './api'
 import type { CutController } from './session'
 import type { Band, GramConfig, Tactical } from '../engine/contract'
 import { DemonPane } from '../gram/DemonPane'
+import { cutsDemonHintForCut } from './demonExpectationUi'
 import { LloydsOverlay, lloydText, type CpaGeom, type LloydState } from '../gram/LloydsOverlay'
 import { DopplerOverlay, DopplerReadout } from '../gram/DopplerOverlay'
 import type { RulerStore } from '../gram/dopplerRuler'
@@ -164,13 +165,13 @@ export function CutsTab({
           {gramModeSeg}
         </div>
       )}
-      <div className="cut-gram panel gram-panel" data-testid="cut-gram">
+      <div className="cut-gram panel gram-panel" data-testid="cut-gram" hidden={gramMode === 'demon'} style={gramMode === 'demon' ? { display: 'none' } : undefined}>
         <div className="panel-body">
           {configs.length > 0 ? (
             <Gram client={client} configs={configs} streamIndex={0} view={view}
               onView={(v) => onView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[band]))}
               normalized={cfg?.filter !== 'BB'} palette={palette} contrast={contrast} wheel={wheel}
-              mode={gramMode} tactical={tactical ?? undefined} handoff={undefined}
+              mode={gramMode === 'demon' ? 'lofar' : gramMode} tactical={tactical ?? undefined} handoff={undefined}
               onCursorHz={t?.onCursorHz} cursorSuffix={t?.cursorSuffix ?? undefined}
               onPickPoint={t?.onPickPoint} onDragPoint={t?.onDragPoint}
               dragLocked={t?.dragLocked} dragLockable={t?.dragLockable} onDragLockTap={t?.onDragLockTap}
@@ -222,7 +223,10 @@ export function CutsTab({
         </div>
       </div>
       {demonConfigs.length > 0 && (
-        <DemonPane client={client} configs={demonConfigs} palette={palette} streamIndex={0} />
+        <DemonPane client={client} configs={demonConfigs} palette={palette} streamIndex={0}
+          context="cuts"
+          cutsHint={cutsDemonHintForCut(cut)}
+          visible={gramMode === 'demon'} />
       )}
       <CutBar cut={cut} simT={simT} playing={playing}
         onPlay={onPlay} onPause={onPause} onRestart={onRestart} onSeek={onSeek} />
@@ -243,7 +247,7 @@ export function CutsTab({
       )}
       {reveal && (
         <div className="cut-reveal-overlay">
-          <CutReveal result={reveal} onClose={onClearReveal} onNext={onNext} />
+          <CutReveal result={reveal} cut={cut} onClose={onClearReveal} onNext={onNext} />
         </div>
       )}
     </section>

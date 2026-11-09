@@ -1,6 +1,8 @@
 import { catalog } from '@acoustics'
 import { behaviourWording, identifyingLineText } from './api'
 import type { ScoreResult } from './types'
+import type { CutSeed } from '@acoustics'
+import { cutsDemonHintForCut } from './demonExpectationUi'
 
 function className(id: string): string {
   const c = catalog.classes.find((x) => x.id === id)
@@ -8,7 +10,16 @@ function className(id: string): string {
 }
 
 /** Post-submit reveal: correct/wrong, identifying line (incl. harmonics as `CFR ×3`), giveaways, lookalike. */
-export function CutReveal({ result, onClose, onNext }: { result: ScoreResult; onClose: () => void; onNext?: () => void }) {
+export function CutReveal({ result, cut, onClose, onNext }: {
+  result: ScoreResult
+  /** Cut seed for DEMON answer-key note (reveal-only). */
+  cut?: CutSeed | null
+  onClose: () => void
+  onNext?: () => void
+}) {
+  const demonHint = cut
+    ? cutsDemonHintForCut(cut)
+    : null
   return (
     <div className="cut-reveal" data-testid="cut-reveal" role="dialog" aria-label="Cut score reveal">
       <div className={`cut-reveal-banner ${result.correct ? 'ok' : 'bad'}`} data-testid="cut-reveal-banner">
@@ -46,6 +57,7 @@ export function CutReveal({ result, onClose, onNext }: { result: ScoreResult; on
           </li>
         ))}
       </ul>
+      {demonHint && <p className="demon-hint readout" data-testid="cut-reveal-demon-hint">{demonHint}</p>}
       <p className="readout">Giveaways marked {result.giveawaysHit}/{result.giveawaysTotal}</p>
       <div className="cut-reveal-actions">
         {onNext && <button className="btn primary" data-testid="cut-reveal-next" onClick={onNext}>Next cut</button>}

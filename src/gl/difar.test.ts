@@ -63,7 +63,7 @@ describe('interim per-bin bearings', () => {
     expect(out.every(Number.isNaN)).toBe(true)
   })
   it('validates the stored gram mode', () => {
-    expect(isGramMode('difar')).toBe(true); expect(isGramMode('demon')).toBe(false)
+    expect(isGramMode('difar')).toBe(true); expect(isGramMode('demon')).toBe(true); expect(isGramMode('lofar')).toBe(true)
   })
 })
 

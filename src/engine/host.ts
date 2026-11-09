@@ -2,6 +2,7 @@ import * as Acoustics from '@acoustics'
 import { Receiver } from './receiver'
 import { AcousticEngine, isAlive, renderCut, type CutSession } from '@acoustics'
 import type { Band, Bearing, DropSpec, FromWorker, GramConfig, GramRows, LofarBandPresetId, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
+import { DEMON_CARRIER_BAND } from '../gram/demonConfig'
 import { buildScenario } from '../scenarios/training'
 import { parseCutScenarioId } from '../cuts/api'
 import {
@@ -173,19 +174,19 @@ export class SimHost {
     this.tactical = this.makeTactical()
     const configs: GramConfig[] = this.active.configs.slice()
     this.demonIds = []; this.demonPool = []; this.demonBins = 0
-    const sub = (engine as unknown as { subscribe?: (r: { kind: 'demon'; buoyId: number }) => number }).subscribe
+    const sub = (engine as unknown as { subscribe?: (r: { kind: 'demon'; buoyId: number; band?: [number, number] }) => number }).subscribe
     const all = (engine as unknown as { configs?: () => GramConfig[] }).configs
     if (msg.demon !== false && typeof sub === 'function' && typeof all === 'function') {
       try {
         engine.scenario.buoys.forEach((b, i) => {
           const id = (b as { id?: string }).id
-          this.demonIds.push(sub.call(engine, { kind: 'demon', buoyId: Number(String(id ?? '').replace(/\D/g, '')) || i + 1 }))
+          this.demonIds.push(sub.call(engine, { kind: 'demon', buoyId: Number(String(id ?? '').replace(/\D/g, '')) || i + 1, band: [...DEMON_CARRIER_BAND] as [number, number] }))
         })
         const dc = all.call(engine).filter((c) => c.kind === 'demon' && this.demonIds.includes(c.streamId))
         if (dc.length === this.demonIds.length && dc.length) {
           this.demonBins = dc[0].bins
           // Rows are emitted once per host step, so the display's time axis uses the host row rate.
-          for (const c of dc) configs.push({ v: 1, type: 'gramConfig', streamId: c.streamId, kind: 'demon', channel: c.channel, bins: c.bins, f0: c.f0, fBin: c.fBin, rowRateHz: msg.rowRateHz, dbFloor: c.dbFloor, dbCeil: c.dbCeil })
+          for (const c of dc) configs.push({ v: 1, type: 'gramConfig', streamId: c.streamId, kind: 'demon', channel: c.channel, bins: c.bins, f0: c.f0, fBin: c.fBin, rowRateHz: msg.rowRateHz, dbFloor: c.dbFloor, dbCeil: c.dbCeil, ...(c.demodBandHz ? { demodBandHz: c.demodBandHz } : {}) })
           for (let k = 0; k < POOL_FRAMES; k++) this.demonPool.push(this.newDemonFrame())
         } else this.demonIds = []
       } catch { this.demonIds = []; this.demonBins = 0 }
@@ -329,12 +330,12 @@ export class SimHost {
     add(this.active)
     if (this.pending) add(this.pending)
     if (this.demonIds.length) {
-      const sub = (engine as unknown as { subscribe: (r: { kind: 'demon'; buoyId: number }) => number }).subscribe
+      const sub = (engine as unknown as { subscribe: (r: { kind: 'demon'; buoyId: number; band?: [number, number] }) => number }).subscribe
       const all = (engine as unknown as { configs: () => GramConfig[] }).configs
-      const id = sub.call(engine, { kind: 'demon', buoyId: Number(b.id.replace(/\D/g, '')) })
+      const id = sub.call(engine, { kind: 'demon', buoyId: Number(b.id.replace(/\D/g, '')), band: [...DEMON_CARRIER_BAND] as [number, number] })
       const dc = all.call(engine).find((c) => c.streamId === id)!
       this.demonIds.push(id)
-      this.demonConfigs = [...this.demonConfigs, { v: 1, type: 'gramConfig', streamId: id, kind: 'demon', channel: dc.channel, bins: dc.bins, f0: dc.f0, fBin: dc.fBin, rowRateHz: this.rowRateHz, dbFloor: dc.dbFloor, dbCeil: dc.dbCeil }]
+      this.demonConfigs = [...this.demonConfigs, { v: 1, type: 'gramConfig', streamId: id, kind: 'demon', channel: dc.channel, bins: dc.bins, f0: dc.f0, fBin: dc.fBin, rowRateHz: this.rowRateHz, dbFloor: dc.dbFloor, dbCeil: dc.dbCeil, ...(dc.demodBandHz ? { demodBandHz: dc.demodBandHz } : {}) }]
     }
     this.tactical!.buoys.push({ id: b.rfChannel, channel: b.rfChannel, kind: d.kind, x: b.x, y: b.y, hydrophoneDepthM: b.depth, batteryFrac: 1, lifeRemainingS: b.life, state: 'live' })
   }

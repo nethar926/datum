@@ -1,17 +1,19 @@
 import type { Bearing, GramConfig, TacticalBuoy } from '../engine/contract'
 
-export type GramMode = 'lofar' | 'difar'
-export const GRAM_MODES: readonly GramMode[] = ['lofar', 'difar']
-export const isGramMode = (v: unknown): v is GramMode => v === 'lofar' || v === 'difar'
+export type GramMode = 'lofar' | 'difar' | 'demon'
+export const GRAM_MODES: readonly GramMode[] = ['lofar', 'difar', 'demon']
+export const isGramMode = (v: unknown): v is GramMode => v === 'lofar' || v === 'difar' || v === 'demon'
 
 /**
  * Interim per-bin bearing row until the engine streams one (gram kind 'bearing').
  * Bins within ±spread of each tracked line on this buoy get that line's bearing; every other bin is NaN
  * (drawn neutral grey, i.e. no bearing / isotropic ambient). Returns false for non-DIFAR buoys.
  * No allocation: writes into `out` (length cfg.bins).
+ * DEMON streams never carry bearings (omni demod); callers must not paint DIFAR colour on demon view.
  */
 export function fillLineBearings(out: Float32Array, cfg: GramConfig, buoy: TacticalBuoy | undefined, bearings: readonly Bearing[] | undefined, spreadHz = 1.5): boolean {
   out.fill(NaN)
+  if (cfg.kind === 'demon') return false
   if (!buoy || buoy.kind !== 'difar' || !bearings) return false
   const half = Math.max(1, Math.round(spreadHz / cfg.fBin))
   for (const b of bearings) {

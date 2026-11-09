@@ -1,4 +1,4 @@
-import { listCutSeeds } from './api'
+import { listCutsForPicker } from './api'
 import type { CutRichness } from './types'
 import { IcChevron } from '../ui/icons'
 import { COMING_SOON_LABEL, isNuclearCut } from './comingSoon'
@@ -8,7 +8,7 @@ const RICH_LABEL: Record<CutRichness, string> = { sparse: 'Sparse', moderate: 'M
 /** Spoiler-free cut list: number + richness only, as an iOS grouped list.
  * Nuclear plant cuts stay listed as disabled "Coming soon" entries (Wilson). */
 export function CutPicker({ activeId, onPick }: { activeId: string | null; onPick: (id: string) => void }) {
-  const cuts = listCutSeeds()
+  const cuts = listCutsForPicker()
   return (
     <div className="ios-section" data-testid="cut-picker">
       <h3>Practice cuts</h3>
@@ -48,7 +48,7 @@ export function CutPicker({ activeId, onPick }: { activeId: string | null; onPic
       </div>
       <p className="ios-foot">
         Short recorded grams of fictional classes. Pick a cut, call the lines, then open the ID deck to score.
-        Nuclear cuts show as Coming soon until those grams ship. Scrubber seeks directly to the target time. No DEMON pane in CUT.
+        Nuclear cuts show as Coming soon until those grams ship. Scrubber seeks directly to the target time. DEMON lesson pack (cinderlilt first) plus starter cuts.
       </p>
     </div>
   )

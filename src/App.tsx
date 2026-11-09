@@ -433,6 +433,10 @@ export default function App() {
   const changeBand = (b: Band) => { client.setBand(b); setView({ lo: 0, hi: BAND_MAX[b] }); setSelHz(null) }
   const lofarCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'lofar'), [st.configs])
   const demonCfgs = useMemo(() => st.configs.filter((c) => c.kind === 'demon'), [st.configs])
+  // Persisted DEMON mode with no streams (cuts without ?demon=1, or pre-start): fall back to LOFAR.
+  useEffect(() => {
+    if (gramMode === 'demon' && demonCfgs.length === 0) setGramMode('lofar')
+  }, [gramMode, demonCfgs.length])
   const cfg = lofarCfgs[stream]
   const gram = st.gram
   const filter: GramFilter = cfg?.filter ?? gram?.filter ?? 'NB'
@@ -865,10 +869,11 @@ export default function App() {
       {tab === 'live' && (
         <div className="chrome-bar glass" role="toolbar" aria-label="Gram chrome" data-testid="chrome-bar">
           <div className="chrome-scroll panel-head gram-head">
-            <h2 data-testid="gram-title">{gramMode === 'difar' ? 'DIFAR' : 'LOFAR'} · {filter}</h2>
-            <div className="seg" role="group" aria-label="Gram mode">
-              <button aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')} title={`Amplitude as ${PALETTE_LABEL[palette].toLowerCase()} brightness`}>LOFAR</button>
-              <button aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
+            <h2 data-testid="gram-title">{gramMode === 'demon' ? 'DEMON' : gramMode === 'difar' ? 'DIFAR' : 'LOFAR'}{gramMode !== 'demon' ? ` · ${filter}` : ''}</h2>
+            <div className="seg" role="group" aria-label="Gram mode" data-testid="gram-mode-seg">
+              <button type="button" aria-pressed={gramMode === 'lofar'} data-testid="gram-mode-lofar" onClick={() => setGramMode('lofar')} title={`Amplitude as ${PALETTE_LABEL[palette].toLowerCase()} brightness`}>LOFAR</button>
+              <button type="button" aria-pressed={gramMode === 'difar'} data-testid="gram-mode-difar" onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
+              <button type="button" aria-pressed={gramMode === 'demon'} data-testid="gram-mode-demon" onClick={() => setGramMode('demon')} title="DEMON: shaft / blade rate (propulsion)" disabled={demonCfgs.length === 0}>DEMON</button>
             </div>
             <div className="wheel-slot" data-testid="wheel-slot">
               {gramMode === 'difar' && (
@@ -946,10 +951,11 @@ export default function App() {
         <section className="panel gram-panel gram-box">
           <div className="panel-body">
             {lofarCfgs.length > 0 && tab !== 'cuts' && (
+              <div data-testid="lofar-gram-wrap" hidden={gramMode === 'demon'} style={gramMode === 'demon' ? { display: 'none' } : undefined}>
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
-                mode={gramMode} tactical={st.tactical} handoff={st.handoff}
+                mode={gramMode === 'demon' ? 'lofar' : gramMode} tactical={st.tactical} handoff={st.handoff}
                 onCenterFreq={applyCenter} onCursorHz={setCursorHz} cursorSuffix={focusSuffix} bearingAtRef={bearingAtRef}
                 onPickPoint={isPickFreq(brgArm) ? (hz) => { sendBrgAtFreq(hz) }
                   : vernierPick ? (hz) => centerVernier(hz)
@@ -973,6 +979,7 @@ export default function App() {
                   )}
                   {(ruler.placed || dopMode) && <DopplerOverlay ctx={ctx} store={ruler} nowS={st.simT} active={dopMode} locked={locks.dop} onLockTap={() => flipLock('dop')} />}
                 </>) : undefined} />
+              </div>
             )}
             {(tool === 'harm' || harmF0 !== null) && <div className={`gram-note readout harm-note${locks.harm ? ' locked' : ''}`} data-testid="harm-readout" data-locked={locks.harm ? '1' : '0'}>{locks.harm && <IcLock size={11} className="cursor-lock-ic" />}{harmText(harmF0, harmK, cfg ? fullView(cfg).hi : BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
             {(dopMode || ruler.placed) && <DopplerReadout store={ruler} fBin={cfg?.fBin ?? 1} locked={locks.dop} />}
@@ -1029,6 +1036,8 @@ export default function App() {
         </section>
         {demonCfgs.length > 0 && tab !== 'cuts' && (
           <DemonPane client={client} configs={demonCfgs} palette={palette}
+            context="live"
+            visible={gramMode === 'demon'}
             streamIndex={Math.max(0, demonCfgs.findIndex((c) => c.channel === cfg?.channel))} />
         )}
         </div>
@@ -1112,8 +1121,9 @@ export default function App() {
           listenBtn={listenBtn}
           gramModeSeg={
             <div className="seg ios-seg cut-mode-seg" role="group" aria-label="Gram mode" data-testid="cut-gram-mode">
-              <button type="button" aria-pressed={gramMode === 'lofar'} onClick={() => setGramMode('lofar')}>LOFAR</button>
-              <button type="button" aria-pressed={gramMode === 'difar'} onClick={() => setGramMode('difar')}>DIFAR</button>
+              <button type="button" aria-pressed={gramMode === 'lofar'} data-testid="cut-gram-mode-lofar" onClick={() => setGramMode('lofar')}>LOFAR</button>
+              <button type="button" aria-pressed={gramMode === 'difar'} data-testid="cut-gram-mode-difar" onClick={() => setGramMode('difar')}>DIFAR</button>
+              <button type="button" aria-pressed={gramMode === 'demon'} data-testid="cut-gram-mode-demon" onClick={() => setGramMode('demon')} disabled={demonCfgs.length === 0}>DEMON</button>
             </div>
           }
           tools={cuts.session ? ({

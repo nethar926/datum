@@ -11,6 +11,8 @@ export interface GramConfig {
   rowPhaseS?: number
   /** m3-bands: named analytic LOFAR band, stamped only when the preset alone set the band edges. */
   bandPreset?: LofarBandPresetId
+  /** DEMON carrier band used at subscribe (Hz). */
+  demodBandHz?: [number, number]
 }
 /** m3-bands analytic LOFAR band presets (engine: ELF 0–50, VLF 0–200, LF 0–500, MF 0–2000 Hz). */
 export type LofarBandPresetId = 'ELF' | 'VLF' | 'LF' | 'MF'

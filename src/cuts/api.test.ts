@@ -8,6 +8,8 @@ import {
   getCutStarterPack,
   identifyingLineText,
   listCutSeeds,
+  listCutsForPicker,
+  DEMON_LESSON_PACK,
   openCutHandle,
   parseCutScenarioId,
   renderCut,
@@ -145,5 +147,17 @@ describe('behaviour / identify wording', () => {
     expect(identifyingLineText({
       lineFamily: 'CFR', label: 'CFR 2nd', wasHarmonic: true, harmonicOf: 'CFR', n: 3,
     })).toBe('CFR ×3')
+  })
+})
+
+
+describe('DEMON lesson pack in Cuts picker', () => {
+  it('main lesson first; pack practice cuts appear; getCutSeed resolves them', () => {
+    expect(DEMON_LESSON_PACK.mainLessonCutId).toBe('cut-cinderlilt-cav')
+    const ids = listCutsForPicker().map((c) => c.id)
+    expect(ids[0]).toBe('cut-cinderlilt-cav')
+    expect(ids).toEqual(expect.arrayContaining(['cut-brindleflux-cav', 'cut-gloamspiral-cav']))
+    expect(getCutSeed('cut-brindleflux-cav')?.id).toBe('cut-brindleflux-cav')
+    expect(getCutSeed('cut-gloamspiral-cav')?.id).toBe('cut-gloamspiral-cav')
   })
 })

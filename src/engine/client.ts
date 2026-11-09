@@ -86,8 +86,12 @@ export class SimClient {
     if (this.status.handoff) this.setStatus({ handoff: undefined })
     const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
     this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic, lastDrop: undefined })
-    // DEMON is opt-in via ?demon=1 (live and cuts). CUTDEMON does not force it on for every cut.
-    const demonOn = typeof location !== 'undefined' && new URLSearchParams(location.search).has('demon')
+    // Live DEMON: always subscribe (Sonya). Keep streams running under LOFAR view; FE history owns the buffer.
+    // Cuts still pass demon via startCut / ?demon=1 for the CutSession path.
+    const cutScenario = typeof scenarioId === 'string' && scenarioId.startsWith('cut:')
+    const demonOn = cutScenario
+      ? (typeof location !== 'undefined' && new URLSearchParams(location.search).has('demon'))
+      : true
     this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: demonOn,
       // Band gram (RES off) or RES gram: the engine keeps the two families exclusive, so send exactly one.
       ...(g0?.band ? { bandPreset: g0.band } : { gram: g0 ? { res: g0.res, filter: g0.filter } : undefined }) })
