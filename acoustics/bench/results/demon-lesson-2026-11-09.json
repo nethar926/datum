@@ -1,0 +1,791 @@
+{
+ "note": "BEFORE = d4156fb model + FE 24/3 clip 0-65 [1-2 kHz]; AFTER = HEAD shared settings (DEMON_CARRIER_BAND, DEMON_NORM, DEMON_DISPLAY_DB). Live cases use corrected valid mode-cap states.",
+ "before": [
+  {
+   "id": "cut-cinderlilt-cav",
+   "note": "MAIN DEMON LESSON: SURF 14 kn @0 m, 75 % past inception; rich traffic",
+   "expectLines": true,
+   "shaftHz": 6.263157894736842,
+   "blades": 5,
+   "modulation": 0.45000000000000007,
+   "cavitationPower": 0.01125,
+   "shaft": {
+    "hz": 6.263157894736842,
+    "contrastDb": 60.46166455745697
+   },
+   "br": {
+    "hz": 31.31578947368421,
+    "contrastDb": 65.00005340576172
+   },
+   "br2": {
+    "hz": 62.63157894736842,
+    "contrastDb": 65.00005340576172
+   },
+   "br3": {
+    "hz": 93.94736842105263,
+    "contrastDb": 65.00005340576172
+   },
+   "falseLines": 0,
+   "trafficLines": 24,
+   "litFraction": 0.236328125
+  },
+  {
+   "id": "cut-brindleflux-snork",
+   "note": "SNORK 12 kn @12 m, barely past inception; moderate traffic",
+   "expectLines": true,
+   "shaftHz": 5.333333333333333,
+   "blades": 5,
+   "modulation": 0.15331327302690728,
+   "cavitationPower": 0.0000013722222688539268,
+   "shaft": {
+    "hz": 5.333333333333333,
+    "contrastDb": 29.02099609375
+   },
+   "br": {
+    "hz": 26.666666666666664,
+    "contrastDb": 40.65427780151367
+   },
+   "br2": {
+    "hz": 53.33333333333333,
+    "contrastDb": 53.76746368408203
+   },
+   "br3": {
+    "hz": 80,
+    "contrastDb": 61.45536804199219
+   },
+   "falseLines": 0,
+   "trafficLines": 17,
+   "litFraction": 0.224609375
+  },
+  {
+   "id": "cut-emberbraid-ssma",
+   "note": "SNORK 14 kn @14 m, barely past inception; moderate traffic",
+   "expectLines": true,
+   "shaftHz": 5.490196078431372,
+   "blades": 6,
+   "modulation": 0.15036185417466585,
+   "cavitationPower": 1.6367305465388328e-8,
+   "shaft": {
+    "hz": 5.490196078431372,
+    "contrastDb": 51.47003936767578
+   },
+   "br": {
+    "hz": 32.94117647058823,
+    "contrastDb": 62.98763966560364
+   },
+   "br2": {
+    "hz": 65.88235294117646,
+    "contrastDb": 64.24952697753906
+   },
+   "br3": {
+    "hz": 98.8235294117647,
+    "contrastDb": 65.00005340576172
+   },
+   "falseLines": 0,
+   "trafficLines": 18,
+   "litFraction": 0.259765625
+  },
+  {
+   "id": "cut-gloamspiral-aip",
+   "note": "AIP 4 kn @80 m, non-cavitating",
+   "expectLines": false,
+   "shaftHz": 1.5555555555555556,
+   "blades": 7,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 1.5555555555555556,
+    "contrastDb": 0.29361939430236816
+   },
+   "br": {
+    "hz": 10.88888888888889,
+    "contrastDb": 0.4999040365219116
+   },
+   "br2": {
+    "hz": 21.77777777777778,
+    "contrastDb": 0.020823955535888672
+   },
+   "br3": {
+    "hz": 32.66666666666667,
+    "contrastDb": 0.1021578311920166
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "cut-orbelune-msr",
+   "note": "BATT 5 kn @80 m, non-cavitating",
+   "expectLines": false,
+   "shaftHz": 2.037037037037037,
+   "blades": 7,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 2.037037037037037,
+    "contrastDb": 0.1871885061264038
+   },
+   "br": {
+    "hz": 14.25925925925926,
+    "contrastDb": 0.08164358139038086
+   },
+   "br2": {
+    "hz": 28.51851851851852,
+    "contrastDb": 0.3343602418899536
+   },
+   "br3": {
+    "hz": 42.77777777777778,
+    "contrastDb": 0.16540324687957764
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "cut-mistacorn-batt",
+   "note": "BATT 3.5 kn @50 m, non-cavitating",
+   "expectLines": false,
+   "shaftHz": 4.375,
+   "blades": 4,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 4.375,
+    "contrastDb": 0.3033813238143921
+   },
+   "br": {
+    "hz": 17.5,
+    "contrastDb": 0.2459782361984253
+   },
+   "br2": {
+    "hz": 35,
+    "contrastDb": 0.011335253715515137
+   },
+   "br3": {
+    "hz": 52.5,
+    "contrastDb": -0.030719399452209473
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "cut-brindleflux-cav",
+   "note": "(DEMON pack) Brindleflux SURF 13 kn @0 m, 62.5 % past inception; moderate traffic; 900 s",
+   "expectLines": true,
+   "shaftHz": 5.777777777777778,
+   "blades": 5,
+   "modulation": 0.4,
+   "cavitationPower": 0.0078125,
+   "shaft": {
+    "hz": 5.777777777777778,
+    "contrastDb": 42.17476094420999
+   },
+   "br": {
+    "hz": 28.88888888888889,
+    "contrastDb": 65.00005340576172
+   },
+   "br2": {
+    "hz": 57.77777777777778,
+    "contrastDb": 65.00005340576172
+   },
+   "br3": {
+    "hz": 86.66666666666667,
+    "contrastDb": 65.00005340576172
+   },
+   "falseLines": 1,
+   "trafficLines": 12,
+   "litFraction": 0.216796875
+  },
+  {
+   "id": "cut-gloamspiral-cav",
+   "note": "(DEMON pack) Gloamspiral SURF 13.5 kn @0 m (surfaced cap), 35 % past inception; sparse; 900 s",
+   "expectLines": true,
+   "shaftHz": 5.25,
+   "blades": 7,
+   "modulation": 0.29000000000000004,
+   "cavitationPower": 0.0024500000000000012,
+   "shaft": {
+    "hz": 5.25,
+    "contrastDb": 65.00005340576172
+   },
+   "br": {
+    "hz": 36.75,
+    "contrastDb": 65.00005340576172
+   },
+   "br2": {
+    "hz": 73.5,
+    "contrastDb": 65.00005340576172
+   },
+   "br3": {
+    "hz": 110.25,
+    "contrastDb": null
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.109375
+  },
+  {
+   "id": "cut-pebblewisp-demon",
+   "note": "(extra) DEMON lesson cut: BATT 2.5 kn @60 m, non-cavitating",
+   "expectLines": false,
+   "shaftHz": 1.130952380952381,
+   "blades": 4,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 1.130952380952381,
+    "contrastDb": 0.0633549690246582
+   },
+   "br": {
+    "hz": 4.523809523809524,
+    "contrastDb": 0.0647125244140625
+   },
+   "br2": {
+    "hz": 9.047619047619047,
+    "contrastDb": 0.3201638460159302
+   },
+   "br3": {
+    "hz": 13.571428571428571,
+    "contrastDb": -0.09081459045410156
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "live-slow-batt",
+   "note": "Brindleflux BATT 5 kn @60 m, quiet sea, no traffic (control)",
+   "expectLines": false,
+   "shaftHz": 2.2222222222222223,
+   "blades": 5,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 2.2222222222222223,
+    "contrastDb": 0.08664870262145996
+   },
+   "br": {
+    "hz": 11.11111111111111,
+    "contrastDb": 0.2854795455932617
+   },
+   "br2": {
+    "hz": 22.22222222222222,
+    "contrastDb": -0.1696915626525879
+   },
+   "br3": {
+    "hz": 33.33333333333333,
+    "contrastDb": 0.19461357593536377
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "live-med-snork",
+   "note": "Brindleflux SNORK 11.5 kn @10 m (just cavitating), no traffic",
+   "expectLines": true,
+   "shaftHz": 5.111111111111111,
+   "blades": 5,
+   "modulation": 0.1554742437070357,
+   "cavitationPower": 0.000003745918020502477,
+   "shaft": {
+    "hz": 5.111111111111111,
+    "contrastDb": 65.00005340576172
+   },
+   "br": {
+    "hz": 25.555555555555554,
+    "contrastDb": 65.00005340576172
+   },
+   "br2": {
+    "hz": 51.11111111111111,
+    "contrastDb": 65.00005340576172
+   },
+   "br3": {
+    "hz": 76.66666666666666,
+    "contrastDb": 65.00005340576172
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.134765625
+  },
+  {
+   "id": "live-fast-cav",
+   "note": "Brindleflux SURF 13 kn @0 m (under 13.5 kn cap), cavitating, no traffic",
+   "expectLines": true,
+   "shaftHz": 5.777777777777778,
+   "blades": 5,
+   "modulation": 0.4,
+   "cavitationPower": 0.0078125,
+   "shaft": {
+    "hz": 5.777777777777778,
+    "contrastDb": 65.00005340576172
+   },
+   "br": {
+    "hz": 28.88888888888889,
+    "contrastDb": 65.00005340576172
+   },
+   "br2": {
+    "hz": 57.77777777777778,
+    "contrastDb": 65.00005340576172
+   },
+   "br3": {
+    "hz": 86.66666666666667,
+    "contrastDb": 65.00005340576172
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.142578125
+  },
+  {
+   "id": "live-gloam-surf",
+   "note": "Gloamspiral SURF 13.5 kn @0 m (surfaced cap), cavitating, 7 blades (dense low comb), no traffic",
+   "expectLines": true,
+   "shaftHz": 5.25,
+   "blades": 7,
+   "modulation": 0.29000000000000004,
+   "cavitationPower": 0.0024500000000000012,
+   "shaft": {
+    "hz": 5.25,
+    "contrastDb": 65.00005340576172
+   },
+   "br": {
+    "hz": 36.75,
+    "contrastDb": 65.00005340576172
+   },
+   "br2": {
+    "hz": 73.5,
+    "contrastDb": 65.00005340576172
+   },
+   "br3": {
+    "hz": 110.25,
+    "contrastDb": null
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.11328125
+  },
+  {
+   "id": "live-fast-traffic",
+   "note": "Brindleflux SURF 13 kn @0 m, cavitating, moderate traffic",
+   "expectLines": true,
+   "shaftHz": 5.777777777777778,
+   "blades": 5,
+   "modulation": 0.4,
+   "cavitationPower": 0.0078125,
+   "shaft": {
+    "hz": 5.777777777777778,
+    "contrastDb": 15.390074729919434
+   },
+   "br": {
+    "hz": 28.88888888888889,
+    "contrastDb": 22.2408447265625
+   },
+   "br2": {
+    "hz": 57.77777777777778,
+    "contrastDb": 64.88399505615234
+   },
+   "br3": {
+    "hz": 86.66666666666667,
+    "contrastDb": 42.0256462097168
+   },
+   "falseLines": 0,
+   "trafficLines": 27,
+   "litFraction": 0.265625
+  }
+ ],
+ "after": [
+  {
+   "id": "cut-cinderlilt-cav",
+   "note": "MAIN DEMON LESSON: SURF 14 kn @0 m, 75 % past inception; rich traffic",
+   "expectLines": true,
+   "shaftHz": 6.263157894736842,
+   "blades": 5,
+   "modulation": 0.45000000000000007,
+   "cavitationPower": 0.01125,
+   "shaft": {
+    "hz": 6.263157894736842,
+    "contrastDb": 10.073497772216797
+   },
+   "br": {
+    "hz": 31.31578947368421,
+    "contrastDb": 17.22495675086975
+   },
+   "br2": {
+    "hz": 62.63157894736842,
+    "contrastDb": 10.600513339042664
+   },
+   "br3": {
+    "hz": 93.94736842105263,
+    "contrastDb": 4.197664976119995
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.017578125
+  },
+  {
+   "id": "cut-brindleflux-snork",
+   "note": "SNORK 12 kn @12 m, barely past inception; moderate traffic",
+   "expectLines": true,
+   "shaftHz": 5.333333333333333,
+   "blades": 5,
+   "modulation": 0.15331327302690728,
+   "cavitationPower": 0.0000013722222688539268,
+   "shaft": {
+    "hz": 5.333333333333333,
+    "contrastDb": 0.34712302684783936
+   },
+   "br": {
+    "hz": 26.666666666666664,
+    "contrastDb": 1.9522690773010254
+   },
+   "br2": {
+    "hz": 53.33333333333333,
+    "contrastDb": 0.25952625274658203
+   },
+   "br3": {
+    "hz": 80,
+    "contrastDb": 0.26041507720947266
+   },
+   "falseLines": 0,
+   "trafficLines": 3,
+   "litFraction": 0.013671875
+  },
+  {
+   "id": "cut-emberbraid-ssma",
+   "note": "SNORK 14 kn @14 m, barely past inception; moderate traffic",
+   "expectLines": true,
+   "shaftHz": 5.490196078431372,
+   "blades": 6,
+   "modulation": 0.15036185417466585,
+   "cavitationPower": 1.6367305465388328e-8,
+   "shaft": {
+    "hz": 5.490196078431372,
+    "contrastDb": -0.007821202278137207
+   },
+   "br": {
+    "hz": 32.94117647058823,
+    "contrastDb": 0.2759263515472412
+   },
+   "br2": {
+    "hz": 65.88235294117646,
+    "contrastDb": 0.8917498588562012
+   },
+   "br3": {
+    "hz": 98.8235294117647,
+    "contrastDb": 0.012484073638916016
+   },
+   "falseLines": 0,
+   "trafficLines": 1,
+   "litFraction": 0.001953125
+  },
+  {
+   "id": "cut-gloamspiral-aip",
+   "note": "AIP 4 kn @80 m, non-cavitating",
+   "expectLines": false,
+   "shaftHz": 1.5555555555555556,
+   "blades": 7,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 1.5555555555555556,
+    "contrastDb": 1.6117422580718994
+   },
+   "br": {
+    "hz": 10.88888888888889,
+    "contrastDb": -0.3660362958908081
+   },
+   "br2": {
+    "hz": 21.77777777777778,
+    "contrastDb": 0.25949370861053467
+   },
+   "br3": {
+    "hz": 32.66666666666667,
+    "contrastDb": 0.5488035678863525
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "cut-orbelune-msr",
+   "note": "BATT 5 kn @80 m, non-cavitating",
+   "expectLines": false,
+   "shaftHz": 2.037037037037037,
+   "blades": 7,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 2.037037037037037,
+    "contrastDb": 1.6370787620544434
+   },
+   "br": {
+    "hz": 14.25925925925926,
+    "contrastDb": 1.2392607927322388
+   },
+   "br2": {
+    "hz": 28.51851851851852,
+    "contrastDb": -0.18437659740447998
+   },
+   "br3": {
+    "hz": 42.77777777777778,
+    "contrastDb": 0.7704969644546509
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "cut-mistacorn-batt",
+   "note": "BATT 3.5 kn @50 m, non-cavitating",
+   "expectLines": false,
+   "shaftHz": 4.375,
+   "blades": 4,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 4.375,
+    "contrastDb": 0.2921755313873291
+   },
+   "br": {
+    "hz": 17.5,
+    "contrastDb": -0.014377951622009277
+   },
+   "br2": {
+    "hz": 35,
+    "contrastDb": 0.24465715885162354
+   },
+   "br3": {
+    "hz": 52.5,
+    "contrastDb": 0.7103053331375122
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "cut-brindleflux-cav",
+   "note": "(DEMON pack) Brindleflux SURF 13 kn @0 m, 62.5 % past inception; moderate traffic; 900 s",
+   "expectLines": true,
+   "shaftHz": 5.777777777777778,
+   "blades": 5,
+   "modulation": 0.4,
+   "cavitationPower": 0.0078125,
+   "shaft": {
+    "hz": 5.777777777777778,
+    "contrastDb": 6.27621328830719
+   },
+   "br": {
+    "hz": 28.88888888888889,
+    "contrastDb": 12.548197865486145
+   },
+   "br2": {
+    "hz": 57.77777777777778,
+    "contrastDb": 5.008358359336853
+   },
+   "br3": {
+    "hz": 86.66666666666667,
+    "contrastDb": 0.27435803413391113
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.013671875
+  },
+  {
+   "id": "cut-gloamspiral-cav",
+   "note": "(DEMON pack) Gloamspiral SURF 13.5 kn @0 m (surfaced cap), 35 % past inception; sparse; 900 s",
+   "expectLines": true,
+   "shaftHz": 5.25,
+   "blades": 7,
+   "modulation": 0.29000000000000004,
+   "cavitationPower": 0.0024500000000000012,
+   "shaft": {
+    "hz": 5.25,
+    "contrastDb": 6.180554986000061
+   },
+   "br": {
+    "hz": 36.75,
+    "contrastDb": 13.26614773273468
+   },
+   "br2": {
+    "hz": 73.5,
+    "contrastDb": 7.3221248388290405
+   },
+   "br3": {
+    "hz": 110.25,
+    "contrastDb": null
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.01171875
+  },
+  {
+   "id": "cut-pebblewisp-demon",
+   "note": "(extra) DEMON lesson cut: BATT 2.5 kn @60 m, non-cavitating",
+   "expectLines": false,
+   "shaftHz": 1.130952380952381,
+   "blades": 4,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 1.130952380952381,
+    "contrastDb": 1.0280919075012207
+   },
+   "br": {
+    "hz": 4.523809523809524,
+    "contrastDb": -0.8804060816764832
+   },
+   "br2": {
+    "hz": 9.047619047619047,
+    "contrastDb": -0.07157063484191895
+   },
+   "br3": {
+    "hz": 13.571428571428571,
+    "contrastDb": -0.05781352519989014
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "live-slow-batt",
+   "note": "Brindleflux BATT 5 kn @60 m, quiet sea, no traffic (control)",
+   "expectLines": false,
+   "shaftHz": 2.2222222222222223,
+   "blades": 5,
+   "modulation": 0,
+   "cavitationPower": 0,
+   "shaft": {
+    "hz": 2.2222222222222223,
+    "contrastDb": 0.23277521133422852
+   },
+   "br": {
+    "hz": 11.11111111111111,
+    "contrastDb": 1.5914362668991089
+   },
+   "br2": {
+    "hz": 22.22222222222222,
+    "contrastDb": 0.926393985748291
+   },
+   "br3": {
+    "hz": 33.33333333333333,
+    "contrastDb": 0.1531970500946045
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "live-med-snork",
+   "note": "Brindleflux SNORK 11.5 kn @10 m (just cavitating), no traffic",
+   "expectLines": true,
+   "shaftHz": 5.111111111111111,
+   "blades": 5,
+   "modulation": 0.1554742437070357,
+   "cavitationPower": 0.000003745918020502477,
+   "shaft": {
+    "hz": 5.111111111111111,
+    "contrastDb": -0.2128976583480835
+   },
+   "br": {
+    "hz": 25.555555555555554,
+    "contrastDb": 0.1567617654800415
+   },
+   "br2": {
+    "hz": 51.11111111111111,
+    "contrastDb": 0.021234869956970215
+   },
+   "br3": {
+    "hz": 76.66666666666666,
+    "contrastDb": 1.2408424615859985
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0
+  },
+  {
+   "id": "live-fast-cav",
+   "note": "Brindleflux SURF 13 kn @0 m (under 13.5 kn cap), cavitating, no traffic",
+   "expectLines": true,
+   "shaftHz": 5.777777777777778,
+   "blades": 5,
+   "modulation": 0.4,
+   "cavitationPower": 0.0078125,
+   "shaft": {
+    "hz": 5.777777777777778,
+    "contrastDb": 8.953858375549316
+   },
+   "br": {
+    "hz": 28.88888888888889,
+    "contrastDb": 14.612160921096802
+   },
+   "br2": {
+    "hz": 57.77777777777778,
+    "contrastDb": 8.885579824447632
+   },
+   "br3": {
+    "hz": 86.66666666666667,
+    "contrastDb": 1.7000782489776611
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.013671875
+  },
+  {
+   "id": "live-gloam-surf",
+   "note": "Gloamspiral SURF 13.5 kn @0 m (surfaced cap), cavitating, 7 blades (dense low comb), no traffic",
+   "expectLines": true,
+   "shaftHz": 5.25,
+   "blades": 7,
+   "modulation": 0.29000000000000004,
+   "cavitationPower": 0.0024500000000000012,
+   "shaft": {
+    "hz": 5.25,
+    "contrastDb": 7.857581734657288
+   },
+   "br": {
+    "hz": 36.75,
+    "contrastDb": 12.93208372592926
+   },
+   "br2": {
+    "hz": 73.5,
+    "contrastDb": 6.214658260345459
+   },
+   "br3": {
+    "hz": 110.25,
+    "contrastDb": null
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.01171875
+  },
+  {
+   "id": "live-fast-traffic",
+   "note": "Brindleflux SURF 13 kn @0 m, cavitating, moderate traffic",
+   "expectLines": true,
+   "shaftHz": 5.777777777777778,
+   "blades": 5,
+   "modulation": 0.4,
+   "cavitationPower": 0.0078125,
+   "shaft": {
+    "hz": 5.777777777777778,
+    "contrastDb": 0.7693997621536255
+   },
+   "br": {
+    "hz": 28.88888888888889,
+    "contrastDb": 0.318040132522583
+   },
+   "br2": {
+    "hz": 57.77777777777778,
+    "contrastDb": 0.7582213878631592
+   },
+   "br3": {
+    "hz": 86.66666666666667,
+    "contrastDb": 0.6082391738891602
+   },
+   "falseLines": 0,
+   "trafficLines": 0,
+   "litFraction": 0.00390625
+  }
+ ]
+}

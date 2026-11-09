@@ -98,6 +98,11 @@ export interface CutSeed {
   scenario?:CutScenarioKind;
   /** Pin HYDP burst shape (drown fund / rich harmonics). Requires class.hydp. */
   hydpShape?:CutHydpShape;
+  /**
+   * Optional FE lesson blurb (cut metadata only). Answer-free: says what to look at, never the
+   * class name or whether DEMON lines are expected (that lives in `cutDemonExpectation`).
+   */
+  lessonNote?:string;
   /** Optional CPA range (m). Default 900. Textbook closer CPA is a cut-design choice
    * (geometry), not a gain hack — document why in cpaNote when set. */
   cpaM?:number;
@@ -127,3 +132,14 @@ export interface CutStarterPack {
 }
 
 export const CUT_MODEL_VERSION='m3-cuts-1';
+
+/** DEMON lesson pack: cinderlilt-cav is the main lesson; extra 15-min cavitating diesel cuts. */
+export interface CutDemonLessonPack {
+  packVersion:1;
+  modelVersion:string;
+  /** Main DEMON lesson cut id (lives in STARTER_PACK). */
+  mainLessonCutId:string;
+  /** Ordered lesson set: main lesson first, then `cuts`. */
+  lessonCutIds:readonly string[];
+  cuts:readonly CutSeed[];
+}

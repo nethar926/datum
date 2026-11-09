@@ -32,8 +32,10 @@ export const STARTER_PACK:CutStarterPack={
    // closer textbook CPA so GRID/BR tonals clear the shared window (geometry, not a gain hack).
    cpaM:400,cpaNote:'Surfaced Lloyd dipole + rich SS3 ambient: 400 m CPA so GRID/BR teach above 6 dB',
    gramLooks:['cavitation','engine-harmonics','compendium-truth'],
+   // Main DEMON lesson (DEMON_LESSON_PACK.mainLessonCutId): cavitating screw → shaft, BR, BR2 on DEMON.
+   lessonNote:'Main DEMON lesson: cavitating screw. On DEMON read shaft rate, blade rate (strongest) and BR harmonics; blade count = BR / shaft.',
    classifyingLines:[
-    {lineFamily:'BR',label:'5-blade rate; LOFAR shows cavitation broadband',n:1,harmonicOf:'PSR',behaviour:'broadband',giveaway:true},
+    {lineFamily:'BR',label:'5-blade rate; main DEMON example (shaft, BR, BR2 on DEMON); LOFAR shows cavitation broadband',n:1,harmonicOf:'PSR',behaviour:'broadband',giveaway:true},
     {lineFamily:'CFR',label:'Diesel firing rate (surfaced)',n:1,behaviour:'stable',giveaway:false},
     {lineFamily:'GRID',label:'AC bus 50 Hz (stable/discrete)',nominalHz:50,n:1,behaviour:'stable',giveaway:false},
    ],

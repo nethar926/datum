@@ -42,9 +42,12 @@ describe('shared DEMON settings',()=>{
 describe('DEMON propulsion contrast floors (AFTER, seeded)',()=>{
  // Floors sit ~2 dB under the measured AFTER values (bench/demonTune.bench.ts, shared settings).
  const FLOORS:Record<string,{shaft:number;br:number;br2:number}>={
-  'live-fast-cav':{shaft:4,br:11,br2:4},
-  'live-gloam-surf':{shaft:4,br:11,br2:4},
+  'live-fast-cav':{shaft:7,br:12.5,br2:7},
+  'live-gloam-surf':{shaft:6,br:11,br2:4.5},
   'cut-cinderlilt-cav':{shaft:8,br:14,br2:7.5},
+  // DEMON lesson pack (900 s, SURF diesel under class cap; no gain hacks): BR ≥ ~10 dB.
+  'cut-brindleflux-cav':{shaft:4.5,br:10.5,br2:3.5},
+  'cut-gloamspiral-cav':{shaft:4.5,br:11,br2:5},
  };
  for(const [id,f] of Object.entries(FLOORS))it(`${id}: shaft, blade rate and BR2 stand out; no false lines`,()=>{
   const r=measureCase(byId(id),shared());

@@ -1,4 +1,6 @@
 import {STARTER_CUTS,STARTER_PACK} from './starterPack.js';
+import {DEMON_CUTS,DEMON_LESSON_PACK} from './demonPack.js';
+import {validateDemonLessonPack} from './demonExpectation.js';
 import {CutSession,scenarioFromCut} from './render.js';
 import {validateCutSeed,validateStarterPack} from './validate.js';
 import {CUT_MODEL_VERSION,type CutSeed,type CutStarterPack} from './types.js';
@@ -14,6 +16,9 @@ export {
  type NormParams,type DemonNormParams,type CutLofarNormRecipe,
 } from './norm.js';
 export {STARTER_PACK,STARTER_CUTS} from './starterPack.js';
+export {DEMON_LESSON_PACK,DEMON_CUTS,DEMON_LESSON_CUT_IDS} from './demonPack.js';
+/** Reveal / answer-key only — never attached to live rows, subscriptions or live contact state. */
+export {cutDemonExpectation,contactDemonExpectation,scenarioDemonAnswerKey,validateDemonLessonPack,DEMON_REASONS,DEMON_EXPECTED_MIN_MOD_FRACTION,type DemonReason,type DemonExpectation,type ContactDemonExpectation,type CutDemonExpectation} from './demonExpectation.js';
 
 validateStarterPack(STARTER_PACK);
 
@@ -26,10 +31,16 @@ function deepFreeze<T>(value:T):T{
  return value;
 }
 deepFreeze(STARTER_PACK);
+validateDemonLessonPack(DEMON_LESSON_PACK,STARTER_CUTS);
+deepFreeze(DEMON_LESSON_PACK);
 
 export function listCutSeeds():readonly CutSeed[]{return STARTER_CUTS;}
 
-export function getCutSeed(id:string):CutSeed|undefined{return STARTER_CUTS.find(c=>c.id===id);}
+/** Starter-pack or DEMON-lesson-pack cut by id. */
+export function getCutSeed(id:string):CutSeed|undefined{return STARTER_CUTS.find(c=>c.id===id)??DEMON_CUTS.find(c=>c.id===id);}
+
+/** DEMON lesson set in teaching order: main lesson (cut-cinderlilt-cav) first. */
+export function listDemonLessonCuts():readonly CutSeed[]{return DEMON_LESSON_PACK.lessonCutIds.map(id=>getCutSeed(id)!);}
 
 export function getCutStarterPack():CutStarterPack{return STARTER_PACK;}
 

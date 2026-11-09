@@ -21,7 +21,8 @@ export interface CaseResult {id:string;note:string;expectLines:boolean;shaftHz:n
 
 /** 30 s of 4 Hz rows: ~6 independent 5.1 s DEMON windows, i.e. what persists as a line on the waterfall. */
 const CUT_SAMPLE_FRACTION=.4,ROWS=120;
-export const DEMON_CUT_IDS=['cut-brindleflux-snork','cut-emberbraid-ssma','cut-gloamspiral-aip','cut-orbelune-msr','cut-mistacorn-batt'] as const;
+/** DEMON starter set: main DEMON lesson (cut-cinderlilt-cav) first, then the five legacy starters. */
+export const DEMON_CUT_IDS=['cut-cinderlilt-cav','cut-brindleflux-snork','cut-emberbraid-ssma','cut-gloamspiral-aip','cut-orbelune-msr','cut-mistacorn-batt'] as const;
 
 function cutCase(id:string,note:string,expectLines:boolean):CaseSpec{
  return {id,kind:'cut',note,expectLines,make:(band)=>{
@@ -57,18 +58,20 @@ function liveCase(id:string,note:string,expectLines:boolean,o:{speedKn:number;de
 }
 
 export const DEMON_CASES:CaseSpec[]=[
+ cutCase('cut-cinderlilt-cav','MAIN DEMON LESSON: SURF 14 kn @0 m, 75 % past inception; rich traffic',true),
  cutCase('cut-brindleflux-snork','SNORK 12 kn @12 m, barely past inception; moderate traffic',true),
  cutCase('cut-emberbraid-ssma','SNORK 14 kn @14 m, barely past inception; moderate traffic',true),
  cutCase('cut-gloamspiral-aip','AIP 4 kn @80 m, non-cavitating',false),
  cutCase('cut-orbelune-msr','BATT 5 kn @80 m, non-cavitating',false),
  cutCase('cut-mistacorn-batt','BATT 3.5 kn @50 m, non-cavitating',false),
- cutCase('cut-cinderlilt-cav','(extra) SURF 14 kn, cavitating; rich traffic',true),
+ cutCase('cut-brindleflux-cav','(DEMON pack) Brindleflux SURF 13 kn @0 m, 62.5 % past inception; moderate traffic; 900 s',true),
+ cutCase('cut-gloamspiral-cav','(DEMON pack) Gloamspiral SURF 13.5 kn @0 m (surfaced cap), 35 % past inception; sparse; 900 s',true),
  cutCase('cut-pebblewisp-demon','(extra) DEMON lesson cut: BATT 2.5 kn @60 m, non-cavitating',false),
  liveCase('live-slow-batt','Brindleflux BATT 5 kn @60 m, quiet sea, no traffic (control)',false,{speedKn:5,depthM:60,mode:'BATT',traffic:0,sea:1,cpaM:1500,seed:9101}),
  liveCase('live-med-snork','Brindleflux SNORK 11.5 kn @10 m (just cavitating), no traffic',true,{speedKn:11.5,depthM:10,mode:'SNORK',traffic:0,sea:2,cpaM:2000,seed:9102}),
- liveCase('live-fast-cav','Brindleflux 17 kn @15 m, cavitating, no traffic',true,{speedKn:17,depthM:15,mode:'BATT',traffic:0,sea:2,cpaM:2500,seed:9103}),
- liveCase('live-gloam-surf','Gloamspiral SURF 14 kn @0 m, cavitating, 7 blades (dense low comb), no traffic',true,{speedKn:14,depthM:0,mode:'SURF',traffic:0,sea:2,cpaM:2000,seed:9105,classId:'red-gloamspiral'}),
- liveCase('live-fast-traffic','Brindleflux 17 kn @15 m, cavitating, moderate traffic',true,{speedKn:17,depthM:15,mode:'BATT',traffic:.35,sea:3,cpaM:3000,seed:9104}),
+ liveCase('live-fast-cav','Brindleflux SURF 13 kn @0 m (under 13.5 kn cap), cavitating, no traffic',true,{speedKn:13,depthM:0,mode:'SURF',traffic:0,sea:2,cpaM:2500,seed:9103}),
+ liveCase('live-gloam-surf','Gloamspiral SURF 13.5 kn @0 m (surfaced cap), cavitating, 7 blades (dense low comb), no traffic',true,{speedKn:13.5,depthM:0,mode:'SURF',traffic:0,sea:2,cpaM:2000,seed:9105,classId:'red-gloamspiral'}),
+ liveCase('live-fast-traffic','Brindleflux SURF 13 kn @0 m, cavitating, moderate traffic',true,{speedKn:13,depthM:0,mode:'SURF',traffic:.35,sea:3,cpaM:3000,seed:9104}),
 ];
 
 function shaftsOf(c:Contact):number[]{const s=c.params.propulsion?.shafts;return s?.length?s.map(x=>x.hz):[c.params.shaftHz];}
