@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { acousticsV11, trafficLabel, type Difficulty, type ScenarioParams } from '../scenarios/acousticsApi'
 import { applyPlant, loadSimStart, parseSeed, randomSeed, plantOfWeights, PLANT_PICKS, saveSimStart, type PlantPick, type SimStartPrefs } from './simStart'
 import { TrafficSlider } from './TrafficSlider'
+import { SCENARIOS, SCENARIO_LABEL } from '../scenarios/training'
 
 const DIFFS: { id: Difficulty; label: string }[] = [{ id: 'easy', label: 'Easy' }, { id: 'regular', label: 'Regular' }, { id: 'difficult', label: 'Difficult' }]
 
@@ -27,7 +28,9 @@ function Range({ label, value, min, max, step, unit, onChange }: { label: string
 
 /** New-sim screen. Random is the default: three difficulties and Diesel / Nuke / Any, then Start.
  * Advanced opens the full manual setup; the sliders show exactly what will run. */
-export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams) => void; onClose: () => void }) {
+export function NewScenario({ onStart, onStartTraining, onClose, activeRun = false }: { onStart: (p: ScenarioParams) => void; onStartTraining: (id: string, traffic: number) => void; onClose: () => void; activeRun?: boolean }) {
+  const [scenarioId, setScenarioId] = useState('generated')
+  const [trafficOn, setTrafficOn] = useState(true)
   const api = acousticsV11
   const [prefs, setPrefs] = useState<SimStartPrefs>(loadSimStart)
   const [seed, setSeedRaw] = useState(randomSeed)
@@ -38,10 +41,11 @@ export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams)
   const [adv, setAdv] = useState(false)
   const [custom, setCustom] = useState<ScenarioParams | null>(null)
   const preset = (d: Difficulty, pl: PlantPick, s: number) => api.presetToParams ? applyPlant(api.presetToParams(d, s), pl) : null
-  const p = custom ?? preset(prefs.diff, prefs.plant, seed)
+  const raw = custom ?? preset(prefs.diff, prefs.plant, seed)
+  const p = raw ? { ...raw, surfaceTraffic: trafficOn ? raw.surfaceTraffic : 0 } : null
   useEffect(() => saveSimStart(prefs), [prefs])
   const pick = (patch: Partial<SimStartPrefs>) => { setPrefs((v) => ({ ...v, ...patch })); setCustom(null) }
-  const edit = (patch: Partial<ScenarioParams>) => { if (p) setCustom(api.clampParams ? api.clampParams({ ...p, ...patch }) : { ...p, ...patch }) }
+  const edit = (patch: Partial<ScenarioParams>) => { if (raw) setCustom(api.clampParams ? api.clampParams({ ...raw, ...patch }) : { ...raw, ...patch }) }
   const editOp = (patch: Partial<ScenarioParams['opState']>) => p && edit({ opState: { ...p.opState, ...patch } })
   const plantNow = p ? plantOfWeights(p.rarityWeights) : prefs.plant
   const subs = p ? `${p.subCount} sub${p.subCount === 1 ? '' : 's'}` : ''
@@ -49,8 +53,18 @@ export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams)
   return (
     <div className="modal-scrim" role="dialog" aria-modal aria-labelledby="ns-title" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
       <div className="modal" data-testid="sim-start">
-        <div className="modal-head"><h2 id="ns-title">New sim</h2><button onClick={onClose} aria-label="Close">✕</button></div>
-        {!p ? (
+        <div className="modal-head"><h2 id="ns-title">Scenario</h2><button onClick={onClose} aria-label="Close">✕</button></div>
+        <p className="ns-seed-note" data-testid="ns-start-note">Changes apply only when you press Start.{activeRun ? ' Starting replaces the current run.' : ''}</p>
+        <label className="field">Scenario
+          <select className="ios-select" data-testid="scenario-select" aria-label="Scenario" value={scenarioId} onChange={(e) => setScenarioId(e.target.value)}>
+            <option value="generated">Procedural sim</option>
+            {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
+          </select>
+        </label>
+        <label className="ios-row"><span className="row-label">Surface traffic<small>For the next start, not the current run</small></span>
+          <input type="checkbox" role="switch" className="ios-switch" aria-label="Surface traffic" data-testid="ns-traffic-toggle" checked={trafficOn} onChange={(e) => setTrafficOn(e.target.checked)} />
+        </label>
+        {scenarioId !== 'generated' ? <p className="ns-summary">Preplanned training field. Press Start to load it.</p> : !p ? (
           <p className="empty-note static" data-testid="ns-pending">Difficulty presets arrive with the next acoustics update. Until then the training field scenario runs.</p>
         ) : (<>
           <div className="ns-group">
@@ -81,7 +95,7 @@ export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams)
           {adv && <div className="fields ns-adv" id="ns-adv" data-testid="ns-adv">
             <Num label="Submarines" value={p.subCount} min={1} max={6} step={1} onChange={(v) => edit({ subCount: v })} />
             <Num label="Sea state" value={p.seaState} min={0} max={6} step={1} onChange={(v) => edit({ seaState: v })} />
-            <TrafficSlider id="ns-traffic" value={p.surfaceTraffic} onChange={(v) => edit({ surfaceTraffic: v })} />
+            {trafficOn && <TrafficSlider id="ns-traffic" value={p.surfaceTraffic} onChange={(v) => edit({ surfaceTraffic: v })} />}
             <Range label="Speed" unit="kt" value={p.opState.speedKn} min={0} max={30} step={1} onChange={(v) => editOp({ speedKn: v })} />
             <Range label="Depth" unit="m" value={p.opState.depthM} min={0} max={400} step={5} onChange={(v) => editOp({ depthM: v })} />
             <Num label="Quiet running" value={p.opState.quietProb} min={0} max={1} step={0.05} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => editOp({ quietProb: v })} />
@@ -93,7 +107,7 @@ export function NewScenario({ onStart, onClose }: { onStart: (p: ScenarioParams)
         </>)}
         <div className="modal-foot">
           <button onClick={onClose}>Cancel</button>
-          <button className="primary" disabled={!p || seedBad} data-testid="ns-start" onClick={() => { if (!p || seedBad) return; setPrefs((v) => { const n = { ...v, lastSeed: seed }; saveSimStart(n); return n }); onStart({ ...p, seed }) }}>Start</button>
+          <button className="primary" disabled={scenarioId === 'generated' && (!p || seedBad)} data-testid="ns-start" onClick={() => { if (scenarioId !== 'generated') { onStartTraining(scenarioId, trafficOn ? raw?.surfaceTraffic ?? 0.5 : 0); return }; if (!p || seedBad) return; setPrefs((v) => { const n = { ...v, lastSeed: seed }; saveSimStart(n); return n }); onStart({ ...p, seed }) }}>{activeRun ? 'Start new run' : 'Start'}</button>
         </div>
       </div>
     </div>

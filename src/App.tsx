@@ -12,8 +12,6 @@ import { DifarApplet } from './gram/DifarApplet'
 import { loadWheel, saveWheel } from './gram/wheelSettings'
 import type { DifarWheelSettings } from './gl/colormap'
 import { NewScenario } from './settings/NewScenario'
-import { SeedChip } from './settings/SeedChip'
-import { TrafficSlider } from './settings/TrafficSlider'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
 import { DopplerOverlay, DopplerReadout } from './gram/DopplerOverlay'
 import { RulerStore } from './gram/dopplerRuler'
@@ -203,7 +201,6 @@ export default function App() {
   const layout = useLayout(), phone = layout !== 'wide'
   const [buoySheet, setBuoySheet] = useState(false)
   const [layersSheet, setLayersSheet] = useState(false)
-  const [trafficSheet, setTrafficSheet] = useState(false)
   // iOS app structure: tabs, appearance, glass strength, split, tab bar minimize.
   const [tab, setTab] = useState<Tab>(() => parseTab(new URLSearchParams(location.search).get('tab')))
   const appearance = useAppearance()
@@ -615,14 +612,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const scenarioSelect = (
-    <select className="ios-select scn-select" data-testid="scenario-select" aria-label="Scenario"
-      value={(SCENARIOS as readonly string[]).includes(st.scenarioId) ? st.scenarioId : ''}
-      onChange={(e) => { ruler.clear(); client.start(7, e.target.value, st.band, undefined); client.setPlaying(true) }}>
-      {!(SCENARIOS as readonly string[]).includes(st.scenarioId) && <option value="">Generated</option>}
-      {SCENARIOS.map((id) => <option key={id} value={id}>{SCENARIO_LABEL[id]}</option>)}
-    </select>
-  )
   const clearHarm = () => { setHarmF0(null); setHarmK(null); setHarmFam(null); setHarmProbe(null); setHarmProbeOn(false); setLocks((s) => s.harm ? { ...s, harm: false } : s) }
   const freshCount = st.tactical
     ? freshRays(manual, manualAges, st.tactical.buoys, st.tactical.simT, FRESH_WINDOW_S).length
@@ -819,10 +808,11 @@ export default function App() {
       data-tabbar={tabMin ? 'min' : 'full'} data-fix-armed={fixStore.armed ? '1' : '0'} data-demon={demonCfgs.length ? '1' : '0'}>
       <GlassDefs />
       <Splash />
-      {showNew && <NewScenario onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
+      {showNew && <NewScenario activeRun={st.configs.length > 0} onStartTraining={(id, traffic) => { setShowNew(false); ruler.clear(); client.setSurfaceTraffic(traffic); client.start(7, id, st.band, undefined); client.setPlaying(true) }} onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       {instrumentsVisible && (
         <NavBar title={tab === 'plot' ? 'Plot' : 'DATUM'} sub={phone ? undefined : navSub}
           trailing={<>
+            <button type="button" className="nav-btn glass-btn scenario-btn" data-testid="nav-scenario" aria-label="Scenario setup" onClick={() => setShowNew(true)}>Scenario</button>
             {listenBtn}{rateSeg}{playBtn}
             {standalone && (
               <button type="button" className="nav-btn glass-btn refresh-btn" data-testid="nav-reload"
@@ -1119,14 +1109,6 @@ export default function App() {
       {tab === 'settings' && (
         <LargeTitleScreen title="Settings" testId="settings">
           <div className="ios-section">
-            <h3>Scenario</h3>
-            <div className="ios-group">
-              <button className="ios-row" onClick={() => setShowNew(true)} data-testid="settings-new"><span className="row-label">New Scenario…</span><IcChevron className="chev" size={16} /></button>
-              <label className="ios-row"><span className="row-label">Scenario</span>{scenarioSelect}</label>
-              {st.scenarioId === 'generated' && <div className="ios-row"><span className="row-label">Seed</span><SeedChip seed={st.seed} /></div>}
-            </div>
-          </div>
-          <div className="ios-section">
             <h3>Appearance</h3>
             <div className="ios-group">
               <div className="ios-row"><span className="row-label">Appearance</span>
@@ -1169,7 +1151,6 @@ export default function App() {
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="reveal-switch" checked={reveal} onChange={(e) => setReveal(e.target.checked)} /></label>
               <label className="ios-row" title="Off = ideal receiver with unlimited dynamic range (for comparison)"><span className="row-label">Realistic receiver<small>AGC, limited dynamic range</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /></label>
-              <button className="ios-row" data-testid="traffic-open" onClick={() => setTrafficSheet(true)}><span className="row-label">Surface traffic</span><span className="row-value">{Math.round(st.surfaceTraffic * 100)}%</span><IcChevron className="chev" size={16} /></button>
             </div>
           </div>
           <div className="ios-section">
@@ -1284,10 +1265,7 @@ export default function App() {
           <p className="ios-foot">DETUNE frees the RX channel; TUNE re-acquires the lowest free. Red follows engine life; yellow is an FE/test hook until the engine exposes faults.</p>
         </div>
       </Sheet>
-      <Sheet open={trafficSheet} onClose={() => setTrafficSheet(false)} title="Surface traffic" testId="traffic-sheet" detents={['medium']}>
-        <div className="ios-group pad"><TrafficSlider value={st.surfaceTraffic} onChange={(v) => client.setSurfaceTraffic(v)} /></div>
-        <p className="ios-foot">Shipping noise from fictional merchant traffic. Heavier traffic raises the broadband floor and adds distant tonals.</p>
-      </Sheet>
+
     </div>
   )
 }

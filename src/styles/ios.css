@@ -756,3 +756,5 @@ button.ios-row:active { background: var(--sys-fill); }
 .buoy-ring .btn:focus-visible, .buoy-seg button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 
 .buoy-seg { min-width: 0; max-width: 100%; overflow-x: auto; }
+
+.scenario-btn { min-width: 76px; min-height: 44px; flex-shrink: 0; padding-inline: 8px; }

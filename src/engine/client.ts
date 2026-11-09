@@ -71,7 +71,7 @@ export class SimClient {
   constructor(private readonly makeWorker: () => Worker = () => new Worker(new URL('./sim.worker.ts', import.meta.url), { type: 'module' }),
     handoff?: HandoffMachine, private readonly now: () => number = () => performance.now()) { this.handoff = handoff ?? new HandoffMachine() }
 
-  start(seed = 7, scenarioId = 'ridgeline-field', band: Band = this.status.band, params: ScenarioParams | undefined = this.status.params): void {
+  start(seed = 7, scenarioId = 'ridgeline-field', band: Band = this.status.band, params: ScenarioParams | undefined = scenarioId === 'generated' ? this.status.params : undefined): void {
     this.stopWorker()
     this.track.clear()
     this.worker = this.makeWorker()
