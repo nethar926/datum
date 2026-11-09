@@ -10,7 +10,7 @@ describe('manual teaching plates (seeded, checked-in data)',()=>{
   expect(p.gramDb.length).toBe(p.axes.tS.length);expect(p.gramDb[0].length).toBe(p.axes.freqHz.length);
  });
  it('harmonic plate: shift scales with n and ratio stays n',()=>{
-  const p=j('harmonic-doppler-plate.json'),s1=p.perHarmonic[0].totalShiftHz;
-  for(const h of p.perHarmonic){expect(h.totalShiftHz/h.n).toBeCloseTo(s1,9);expect(h.ratioToFundamentalAtStart).toBeCloseTo(h.n,9);}
+  const p=j('harmonic-doppler-plate.json'),s1=p.perHarmonic[0].approachToRecedeSpreadHz;
+  for(const h of p.perHarmonic){expect(h.approachToRecedeSpreadHz/h.n).toBeCloseTo(s1,9);expect(h.ratioToFundamentalAtStart).toBeCloseTo(h.n,9);}
  });
 });
