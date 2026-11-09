@@ -4,6 +4,7 @@ import { dbToPower, powerToDb } from './units.js';
 import { geometry, createGeometry } from './kinematics.js';
 import { doppler } from './doppler.js';
 import { exactGain,pathDifference,seaSurfaceSigma } from './lloydsMirror.js';
+import { acousticSourceDepthM } from './acousticSourceDepth.js';
 import { spreadingLoss, thorp } from './transmissionLoss.js';
 import {czPropagationGainLinear,czEstimateFor} from './convergenceZone.js';
 import type {WaterColumnProfile} from './waterColumn.js';
@@ -68,20 +69,27 @@ export class LofarGenerator {
       const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,this.buoy.depth):null;
       const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
       const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread*czGain;
+      // Effective acoustic source depth (never zs=0 for surfaced hulls — see acousticSourceDepth.ts).
+      const zs=acousticSourceDepthM(c.depth,c.params.draughtSurfacedM);
+      const absTonals=c.params.tonalRefDb!==undefined;
+      const tonalProp=item.gain*spread*czGain; // used when powers are already absolute from fillTonals
       // Smooth fictional broadband PSD; absorption per bin cached, range factor updated.
       const km=Math.max(0,g.range-1)/1000;
       const flow=c.params.flowNoiseDb===undefined?0:dbToPower(c.params.flowNoiseDb)*(g.range<=1?1:spread*(c.params.flowRadiatedFraction??0));
-      const broadband=level*(.0001+(c.params.cavitationPower??0)),imageRange=Math.hypot(g.horizontal,c.depth+this.buoy.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((c.depth+this.buoy.depth)/imageRange)**2:0;
-      const delta=pathDifference(g.horizontal,c.depth,this.buoy.depth),phase=2*Math.PI*this.f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
+      const broadband=level*(.0001+(c.params.cavitationPower??0)),imageRange=Math.hypot(g.horizontal,zs+this.buoy.depth),q=imageRange>0?g.range/imageRange:1,grazing2=imageRange>0?((zs+this.buoy.depth)/imageRange)**2:0;
+      const delta=pathDifference(g.horizontal,zs,this.buoy.depth),phase=2*Math.PI*this.f0*delta/e.soundSpeed,step=2*Math.PI*df*delta/e.soundSpeed,dc=Math.cos(step),ds=Math.sin(step);let cp=Math.cos(phase),sp=Math.sin(phase);
       const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
       for(let i=0;i<this.bins;i++){const coherent=q*(this.sigma===0?1:Math.exp(this.coherenceExponent[i]*grazing2)),gain=Math.max(0,1+coherent*coherent-2*coherent*cp);const contrib=(broadband*gain+flow)*this.shape[i]*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;}
       for(const w of item.swaths)if(w.source.gain>0)for(let i=w.lo;i<=w.hi;i++){const contrib=level*.0003*w.source.gain*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}
       const sb=c.params.stateBroadband;if(sb){for(const band of [sb.snort,sb.waveSlap]){if(!band.active||!(band.level>0))continue;const lo=Math.max(0,Math.floor((band.loHz-this.f0)/df)),hi=Math.min(this.bins-1,Math.ceil((band.hiHz-this.f0)/df));for(let i=lo;i<=hi;i++){const contrib=level*.00025*band.level*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}}}
       for(let k=0;k<item.frequencies.length;k++){
-        const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-this.f0)/df;
-        if(bin<0||bin>this.bins-1)continue;
+        const f0k=item.frequencies[k],pow=item.powers[k];
+        if(!Number.isFinite(f0k)||f0k<1e-3||!(pow>0))continue;
+        const f=doppler(f0k,g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-this.f0)/df;
+        if(!Number.isFinite(bin)||bin<0||bin>this.bins-1)continue;
         const i=Math.floor(bin);
-        const v=level*item.powers[k]*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,c.depth,this.buoy.depth,e.soundSpeed,this.sigma);
+        // Absolute tonals: fillTonals already applied tonalRefDb; relative path keeps BB×weight.
+        const v=(absTonals?tonalProp*pow:level*pow)*10**(-thorp(f)*km/10)*exactGain(f,g.horizontal,zs,this.buoy.depth,e.soundSpeed,this.sigma);
         if(difar)item.kernels[k].depositBearing(this.power,this.signalEast,this.signalNorth,this.signalPower,bin,v/df,sinB,cosB);
         else item.kernels[k].deposit(this.power,bin,v/df);
         const quality=powerToDb(v/df/this.ambient[i]);
