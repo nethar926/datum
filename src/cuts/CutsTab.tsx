@@ -2,7 +2,7 @@
  * Cuts tab: spoiler-free picker → player with dark gram + glass transport + CUTTOOLS overlays.
  * Leaving the tab (caller) must dispose the cut session; this component only renders UI.
  */
-import type { ReactNode } from 'react'
+import type { MutableRefObject, ReactNode } from 'react'
 import { Gram } from '../gram/Gram'
 import type { SimClient } from '../engine/client'
 import { clampView, freqToX, type FreqView } from '../gram/axis'
@@ -25,7 +25,7 @@ import { LloydsOverlay, lloydText, type CpaGeom, type LloydState } from '../gram
 import { DopplerOverlay, DopplerReadout } from '../gram/DopplerOverlay'
 import type { RulerStore } from '../gram/dopplerRuler'
 import { harmonicSeries, harmText, ratioText } from '../gram/harmonics'
-import { combText, snapCombMarks } from '../gram/comb'
+import { combLabelStride, combLabelVisible, combText, evaluateComb } from '../gram/comb'
 import { DifarApplet } from '../gram/DifarApplet'
 import type { CursorLocks } from '../gram/cursorLock'
 
@@ -69,7 +69,7 @@ export function CutsTab({
   configs, demonConfigs = [], view, onView, palette, contrast, wheel, gramMode, gramDir, zuluOriginMs,
   harmF0, harmProbe, onPick, onPlay, onPause, onRestart, onSeek, onBackToList, onDeckOpen, onDeckClose,
   onGuess, onConfidence, onSubmit, onClearReveal, onNext,
-  tactical, tools, listenBtn, gramModeSeg,
+  tactical, tools, listenBtn, gramModeSeg, rowSamplerRef,
 }: {
   cuts: CutController
   client: SimClient
@@ -115,6 +115,8 @@ export function CutsTab({
   listenBtn?: ReactNode
   /** Optional LOFAR/DIFAR mode segment for the player nav. */
   gramModeSeg?: ReactNode
+  /** LevelHistory row sampler from the cut Gram (COMB MATCHED). */
+  rowSamplerRef?: MutableRefObject<((agoS: number, dest: Float32Array) => boolean) | null>
 }): ReactNode {
   const cut = session?.cut ?? null
   const cfg = configs[0]
@@ -137,14 +139,36 @@ export function CutsTab({
           <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
         {t.harmF0 !== null && t.harmProbe !== null && t.harmProbe >= ctx.view.lo && t.harmProbe <= ctx.view.hi && (
           <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(t.harmProbe, ctx.view, ctx.width) }}><span>×{(t.harmProbe / t.harmF0).toFixed(2)}</span></div>)}
-        {t.combCentreHz !== null && (t.combSpacingHz !== null && t.combSpacingHz > 0
-          ? snapCombMarks(t.combCentreHz, t.combSpacingHz, t.combSidebands, null, cfg?.f0 ?? 0, cfg?.fBin ?? 1, ctx.view.lo, ctx.view.hi)
-          : [{ n: 0, hz: t.combCentreHz, snappedHz: t.combCentreHz, matched: true }]
-        ).filter((m) => m.snappedHz >= ctx.view.lo && m.snappedHz <= ctx.view.hi).map((m) => (
-          <div key={`c${m.n}`} className={`harm-marker lofar comb-marker${m.n === 0 ? ' comb-centre' : ''}`} data-testid={m.n === 0 ? 'comb-mark-centre' : `comb-mark-${m.n}`}
-            data-n={m.n} data-side={m.n < 0 ? 'left' : 'right'}
-            style={{ left: freqToX(m.snappedHz, ctx.view, ctx.width) }}><span>{m.n === 0 ? 'C' : (m.n > 0 ? `+${m.n}` : `${m.n}`)}</span></div>
-        ))}
+        {t.combCentreHz !== null && (() => {
+          let row: Float32Array | null = null
+          if (rowSamplerRef?.current && cfg?.bins) {
+            const buf = new Float32Array(cfg.bins)
+            if (rowSamplerRef.current(0, buf)) row = buf
+          }
+          const marks = t.combSpacingHz !== null && t.combSpacingHz > 0
+            ? evaluateComb(t.combCentreHz, t.combSpacingHz, t.combSidebands, row, cfg?.f0 ?? 0, cfg?.fBin ?? 1, ctx.view.lo, ctx.view.hi)
+            : [{ n: 0, hz: t.combCentreHz, peakHz: null as number | null, matched: false }]
+          const span = Math.max(1e-6, ctx.view.hi - ctx.view.lo)
+          const stride = t.combSpacingHz && t.combSpacingHz > 0
+            ? combLabelStride(ctx.width / span, t.combSpacingHz)
+            : 1
+          return marks.filter((m) => m.hz >= ctx.view.lo && m.hz <= ctx.view.hi).flatMap((m) => {
+            const nodes = [
+              <div key={`c${m.n}`} className={`harm-marker lofar comb-marker${m.n === 0 ? ' comb-centre' : ''}`} data-testid={m.n === 0 ? 'comb-mark-centre' : `comb-mark-${m.n}`}
+                data-n={m.n} data-side={m.n < 0 ? 'left' : 'right'} data-matched={m.matched ? '1' : '0'}
+                style={{ left: freqToX(m.hz, ctx.view, ctx.width) }}>
+                {combLabelVisible(m.n, stride) && <span>{m.n === 0 ? 'C' : (m.n > 0 ? `+${m.n}` : `${m.n}`)}</span>}
+              </div>,
+            ]
+            if (m.peakHz !== null && m.matched && m.peakHz >= ctx.view.lo && m.peakHz <= ctx.view.hi) {
+              nodes.push(
+                <div key={`p${m.n}`} className="comb-peak-tick" data-testid={m.n === 0 ? 'comb-peak-centre' : `comb-peak-${m.n}`}
+                  style={{ left: freqToX(m.peakHz, ctx.view, ctx.width) }} aria-hidden />,
+              )
+            }
+            return nodes
+          })
+        })()}
         {t.tool === 'lm' && <LloydsOverlay ctx={ctx} st={t.lm} cpa={t.cpaGeom} nowS={simT} />}
         {(t.ruler.placed || t.dopMode) && <DopplerOverlay ctx={ctx} store={t.ruler} nowS={simT} active={t.dopMode} locked={t.locks.dop} onLockTap={() => t.flipLock('dop')} />}
       </>
@@ -188,7 +212,7 @@ export function CutsTab({
               onPickPoint={t?.onPickPoint} onDragPoint={t?.onDragPoint}
               dragLocked={t?.dragLocked} dragLockable={t?.dragLockable} onDragLockTap={t?.onDragLockTap}
               horz={t?.horzOn ?? false} nowS={simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
-              overlay={overlay}
+              overlay={overlay} rowSamplerRef={rowSamplerRef}
               testId="cut-lofar" />
           ) : (
             <div className="empty-state">

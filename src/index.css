@@ -252,6 +252,12 @@ button, select { font: inherit; color: inherit; }
 /* When COMB marks are up, park the cursor readout top-right so it never eats −N labels. */
 .gram:has(.comb-marker) .cursor-readout { left: auto; right: 36px; }
 .comb-note { color: var(--sys-label); white-space: normal; max-width: min(100% - 16px, 42ch); line-height: 1.3; overflow: visible; text-overflow: clip; }
+/* Matched peak indicator — separate from the geometric comb mark (does not move the mark). */
+.comb-peak-tick {
+  position: absolute; top: auto; bottom: 48px; width: 7px; height: 7px; margin-left: -3.5px;
+  border-radius: 50%; background: var(--tint, #30d158); box-shadow: 0 0 4px #000;
+  pointer-events: none; z-index: 3;
+}
 
 /* ---------- Touch (m3-fe-touch) ---------- */
 .seg button, .btn { -webkit-user-select: none; user-select: none; transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease); }

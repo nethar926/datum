@@ -71,6 +71,7 @@ export interface ToolArmState {
   combCentreHz: number | null
   combSpacingHz: number | null
   combSidebands: number
+  combMatched: number | null
   lm: LloydState
   brgArm: BearingArm
   vernierPick: boolean
@@ -88,6 +89,7 @@ export function emptyToolArm(): ToolArmState {
     combCentreHz: null,
     combSpacingHz: null,
     combSidebands: 5,
+    combMatched: null,
     lm: { ...DEFAULT_LM },
     brgArm: ARM_IDLE,
     vernierPick: false,

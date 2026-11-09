@@ -38,8 +38,8 @@ import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
 import {
-  COMB_SIDEBANDS_DEFAULT, clampSidebands, combMatchedCount, combText,
-  nearestCombOrder, snapCombMarks, spacingFromDrag,
+  COMB_SIDEBANDS_DEFAULT, clampSidebands, combLabelStride, combLabelVisible,
+  combMatchedCount, combText, evaluateComb, nearestCombOrder, spacingFromDrag,
 } from './gram/comb'
 import { EMPTY_LOCKS, toggleLock, type CursorKind } from './gram/cursorLock'
 import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
@@ -317,7 +317,7 @@ export default function App() {
     const row = sampleCombRow(agoS)
     const fMin = cfg?.f0 ?? 0
     const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1e9
-    const marks = snapCombMarks(centre, spacing, count, row, cfg?.f0 ?? 0, cfg?.fBin ?? 1, fMin, fMax)
+    const marks = evaluateComb(centre, spacing, count, row, cfg?.f0 ?? 0, cfg?.fBin ?? 1, fMin, fMax)
     setCombMatched(combMatchedCount(marks))
   }
   const combDrag = (phase: 'start' | 'move' | 'end', hz: number, agoS = 0, _shift = false) => {
@@ -434,11 +434,26 @@ export default function App() {
     cutHarmGrab.current = null
   }
   const cutCombGrab = useRef<number | null>(null)
-  const cutCombDrag = (phase: 'start' | 'move' | 'end', hz: number, _agoS = 0, _shift = false) => {
+  const cutRowSamplerRef = useRef<((agoS: number, dest: Float32Array) => boolean) | null>(null)
+  const cutCombRowBuf = useRef<Float32Array | null>(null)
+  const sampleCutCombRow = (agoS: number): Float32Array | null => {
+    const bins = cfg?.bins ?? 0
+    if (!bins || !cutRowSamplerRef.current) return null
+    if (!cutCombRowBuf.current || cutCombRowBuf.current.length !== bins) cutCombRowBuf.current = new Float32Array(bins)
+    return cutRowSamplerRef.current(agoS, cutCombRowBuf.current) ? cutCombRowBuf.current : null
+  }
+  const updateCutCombMatch = (centre: number, spacing: number, count: number, agoS = 0) => {
+    const row = sampleCutCombRow(agoS)
+    const fMin = cfg?.f0 ?? 0
+    const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1e9
+    const marks = evaluateComb(centre, spacing, count, row, cfg?.f0 ?? 0, cfg?.fBin ?? 1, fMin, fMax)
+    setCutArm((s) => ({ ...s, combMatched: combMatchedCount(marks) }))
+  }
+  const cutCombDrag = (phase: 'start' | 'move' | 'end', hz: number, agoS = 0, _shift = false) => {
     if (cutArm.locks.comb && phase !== 'end') return
     if (phase === 'start') {
       if (cutArm.combCentreHz === null) {
-        setCutArm((s) => ({ ...s, combCentreHz: hz, combSpacingHz: null }))
+        setCutArm((s) => ({ ...s, combCentreHz: hz, combSpacingHz: null, combMatched: null }))
         cutCombGrab.current = 0
         return
       }
@@ -447,6 +462,7 @@ export default function App() {
       if (k === 0) return
       const sp = spacingFromDrag(cutArm.combCentreHz, k, hz)
       setCutArm((s) => ({ ...s, combSpacingHz: sp }))
+      updateCutCombMatch(cutArm.combCentreHz, sp, cutArm.combSidebands, agoS)
       return
     }
     if (phase === 'move') {
@@ -454,12 +470,20 @@ export default function App() {
       if (k === null) return
       if (k === 0) {
         setCutArm((s) => ({ ...s, combCentreHz: hz }))
+        if (cutArm.combSpacingHz !== null && cutArm.combSpacingHz > 0) {
+          updateCutCombMatch(hz, cutArm.combSpacingHz, cutArm.combSidebands, agoS)
+        }
         return
       }
       setCutArm((s) => {
         if (s.combCentreHz === null) return s
-        return { ...s, combSpacingHz: spacingFromDrag(s.combCentreHz, k, hz) }
+        const sp = spacingFromDrag(s.combCentreHz, k, hz)
+        return { ...s, combSpacingHz: sp }
       })
+      if (cutArm.combCentreHz !== null) {
+        const sp = spacingFromDrag(cutArm.combCentreHz, k, hz)
+        updateCutCombMatch(cutArm.combCentreHz, sp, cutArm.combSidebands, agoS)
+      }
       return
     }
     cutCombGrab.current = null
@@ -527,8 +551,9 @@ export default function App() {
           combSpacingHz: spacingHz,
           combSidebands: n,
         }))
+        updateCutCombMatch(centreHz, spacingHz, n, 0)
       },
-      clearComb: () => { clearComb(); setCutArm((s) => ({ ...s, combCentreHz: null, combSpacingHz: null })) },
+      clearComb: () => { clearComb(); setCutArm((s) => ({ ...s, combCentreHz: null, combSpacingHz: null, combMatched: null })) },
     }
     return () => { delete w.__datumShot }
   })
@@ -856,9 +881,17 @@ export default function App() {
         setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('comb')
       }} title="COMB: pin the centre line, drag to set sideband spacing (PSR est.). Marks ±N sidebands and snap to nearby peaks."><IcComb /><span>COMB</span></button>
       {combCentreHz !== null && <button className="tool sub" data-testid="comb-sidebands-dec" aria-label="Fewer sidebands"
-        onClick={() => setCombSidebands((n) => clampSidebands(n - 1))} title="Fewer sidebands">−</button>}
+        onClick={() => setCombSidebands((n) => {
+          const next = clampSidebands(n - 1)
+          if (combSpacingHz !== null && combSpacingHz > 0) updateCombMatch(combCentreHz, combSpacingHz, next, 0)
+          return next
+        })} title="Fewer sidebands">−</button>}
       {combCentreHz !== null && <button className="tool sub" data-testid="comb-sidebands-inc" aria-label="More sidebands"
-        onClick={() => setCombSidebands((n) => clampSidebands(n + 1))} title="More sidebands">+</button>}
+        onClick={() => setCombSidebands((n) => {
+          const next = clampSidebands(n + 1)
+          if (combSpacingHz !== null && combSpacingHz > 0) updateCombMatch(combCentreHz, combSpacingHz, next, 0)
+          return next
+        })} title="More sidebands">+</button>}
       {combCentreHz !== null && <button className="tool sub" onClick={clearComb} aria-label="Clear COMB" data-testid="comb-clear"><IcTrash /><span>Clear</span></button>}
       <button className="tool" aria-pressed={tool === 'lm'} aria-label="LM" onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)"><IcLm /><span>LM</span></button>
       <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
@@ -947,10 +980,22 @@ export default function App() {
         title={cutAvail.comb.reason ?? 'COMB: pin centre, drag spacing (PSR est.) on the cut gram'}>
         <IcComb /><span>COMB</span></button>
       {cutArm.combCentreHz !== null && <button className="tool sub" data-testid="cut-comb-sidebands-dec" aria-label="Fewer sidebands"
-        onClick={() => setCutArm((s) => ({ ...s, combSidebands: clampSidebands(s.combSidebands - 1) }))}>−</button>}
+        onClick={() => {
+          const next = clampSidebands(cutArm.combSidebands - 1)
+          setCutArm((s) => ({ ...s, combSidebands: next }))
+          if (cutArm.combCentreHz !== null && cutArm.combSpacingHz !== null && cutArm.combSpacingHz > 0) {
+            updateCutCombMatch(cutArm.combCentreHz, cutArm.combSpacingHz, next, 0)
+          }
+        }}>−</button>}
       {cutArm.combCentreHz !== null && <button className="tool sub" data-testid="cut-comb-sidebands-inc" aria-label="More sidebands"
-        onClick={() => setCutArm((s) => ({ ...s, combSidebands: clampSidebands(s.combSidebands + 1) }))}>+</button>}
-      {cutArm.combCentreHz !== null && <button className="tool sub" onClick={() => setCutArm((s) => ({ ...s, combCentreHz: null, combSpacingHz: null, locks: s.locks.comb ? { ...s.locks, comb: false } : s.locks }))} aria-label="Clear COMB" data-testid="cut-comb-clear"><IcTrash /><span>Clear</span></button>}
+        onClick={() => {
+          const next = clampSidebands(cutArm.combSidebands + 1)
+          setCutArm((s) => ({ ...s, combSidebands: next }))
+          if (cutArm.combCentreHz !== null && cutArm.combSpacingHz !== null && cutArm.combSpacingHz > 0) {
+            updateCutCombMatch(cutArm.combCentreHz, cutArm.combSpacingHz, next, 0)
+          }
+        }}>+</button>}
+      {cutArm.combCentreHz !== null && <button className="tool sub" onClick={() => setCutArm((s) => ({ ...s, combCentreHz: null, combSpacingHz: null, combMatched: null, locks: s.locks.comb ? { ...s.locks, comb: false } : s.locks }))} aria-label="Clear COMB" data-testid="cut-comb-clear"><IcTrash /><span>Clear</span></button>}
       <button className="tool" aria-pressed={cutArm.tool === 'lm'} aria-label="LM" data-testid="cut-lm-tool"
         disabled={!cutAvail.lm.enabled}
         onClick={() => cutAvail.lm.enabled && toggleCutLm()}
@@ -1148,14 +1193,31 @@ export default function App() {
                     <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
                   {harmF0 !== null && harmProbe !== null && harmProbe >= ctx.view.lo && harmProbe <= ctx.view.hi && (
                     <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(harmProbe, ctx.view, ctx.width) }}><span>×{(harmProbe / harmF0).toFixed(2)}</span></div>)}
-                  {combCentreHz !== null && (combSpacingHz !== null && combSpacingHz > 0
-                    ? snapCombMarks(combCentreHz, combSpacingHz, combSidebands, sampleCombRow(0), cfg?.f0 ?? 0, cfg?.fBin ?? 1, ctx.view.lo, ctx.view.hi)
-                    : [{ n: 0, hz: combCentreHz, snappedHz: combCentreHz, matched: true }]
-                  ).filter((m) => m.snappedHz >= ctx.view.lo && m.snappedHz <= ctx.view.hi).map((m) => (
-                    <div key={`c${m.n}`} className={`harm-marker lofar comb-marker${m.n === 0 ? ' comb-centre' : ''}`} data-testid={m.n === 0 ? 'comb-mark-centre' : `comb-mark-${m.n}`}
-                      data-n={m.n} data-side={m.n < 0 ? 'left' : 'right'}
-                      style={{ left: freqToX(m.snappedHz, ctx.view, ctx.width) }}><span>{m.n === 0 ? 'C' : (m.n > 0 ? `+${m.n}` : `${m.n}`)}</span></div>
-                  ))}
+                  {combCentreHz !== null && (() => {
+                    const marks = combSpacingHz !== null && combSpacingHz > 0
+                      ? evaluateComb(combCentreHz, combSpacingHz, combSidebands, sampleCombRow(0), cfg?.f0 ?? 0, cfg?.fBin ?? 1, ctx.view.lo, ctx.view.hi)
+                      : [{ n: 0, hz: combCentreHz, peakHz: null, matched: false }]
+                    const span = Math.max(1e-6, ctx.view.hi - ctx.view.lo)
+                    const stride = combSpacingHz && combSpacingHz > 0
+                      ? combLabelStride(ctx.width / span, combSpacingHz)
+                      : 1
+                    return marks.filter((m) => m.hz >= ctx.view.lo && m.hz <= ctx.view.hi).flatMap((m) => {
+                      const nodes = [
+                        <div key={`c${m.n}`} className={`harm-marker lofar comb-marker${m.n === 0 ? ' comb-centre' : ''}`} data-testid={m.n === 0 ? 'comb-mark-centre' : `comb-mark-${m.n}`}
+                          data-n={m.n} data-side={m.n < 0 ? 'left' : 'right'} data-matched={m.matched ? '1' : '0'}
+                          style={{ left: freqToX(m.hz, ctx.view, ctx.width) }}>
+                          {combLabelVisible(m.n, stride) && <span>{m.n === 0 ? 'C' : (m.n > 0 ? `+${m.n}` : `${m.n}`)}</span>}
+                        </div>,
+                      ]
+                      if (m.peakHz !== null && m.matched && m.peakHz >= ctx.view.lo && m.peakHz <= ctx.view.hi) {
+                        nodes.push(
+                          <div key={`p${m.n}`} className="comb-peak-tick" data-testid={m.n === 0 ? 'comb-peak-centre' : `comb-peak-${m.n}`}
+                            style={{ left: freqToX(m.peakHz, ctx.view, ctx.width) }} aria-hidden />,
+                        )
+                      }
+                      return nodes
+                    })
+                  })()}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
                   {tool === 'lm' && lmIdealLabel && (
                     <div className="lm-ideal-badge" data-testid="lm-ideal-pass-label">{lmIdealLabel}</div>
@@ -1299,6 +1361,7 @@ export default function App() {
           gramMode={gramMode}
           gramDir={gramDir}
           zuluOriginMs={zuluOriginMs}
+          rowSamplerRef={cutRowSamplerRef}
           harmF0={cutArm.harmF0}
           harmProbe={cutArm.harmProbe}
           tactical={st.tactical}
@@ -1321,7 +1384,7 @@ export default function App() {
             combCentreHz: cutArm.combCentreHz,
             combSpacingHz: cutArm.combSpacingHz,
             combSidebands: cutArm.combSidebands,
-            combMatched: null,
+            combMatched: cutArm.combMatched,
             lm: cutArm.lm,
             cpaGeom: cutCpaGeom,
             ruler: cutRuler,

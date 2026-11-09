@@ -1,7 +1,7 @@
 /**
  * Headless COMB shots at 951 / 669 / 382 — live LOFAR (singing-prop scratch) + Cuts.
  * Label: headless capture, not touch/device validation.
- * Uses ?shot=1 window.__datumShot hooks for reliable view + COMB placement.
+ * Measures geometric mark pixel spacing (must be even) and MATCHED at drawn vs 1.5× spacing.
  */
 import { spawn, execSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -16,7 +16,7 @@ const LIVE_SEED = 90
 const LIVE_F0 = 313.3
 const LIVE_PSR = 2.257
 const LIVE_SIDEBANDS = 3
-const LIVE_VIEW = { lo: LIVE_F0 - 22, hi: LIVE_F0 + 22 } // ~44 Hz window around singing carrier
+const LIVE_VIEW = { lo: LIVE_F0 - 22, hi: LIVE_F0 + 22 }
 
 try { execSync(`fuser -k ${port}/tcp`, { stdio: 'ignore' }) } catch {}
 await new Promise((r) => setTimeout(r, 400))
@@ -62,32 +62,59 @@ async function placeViaHook(page, centreHz, spacingHz, sidebands, view) {
     window.__datumShot.setView(view.lo, view.hi)
     window.__datumShot.setComb(centreHz, spacingHz, sidebands)
   }, { centreHz, spacingHz, sidebands, view })
-  await page.waitForTimeout(400)
+  await page.waitForTimeout(500)
+}
+
+async function measureMarkSpacing(page) {
+  return page.evaluate(() => {
+    const marks = [...document.querySelectorAll('.comb-marker')]
+      .map((el) => {
+        const n = Number(el.getAttribute('data-n'))
+        const r = el.getBoundingClientRect()
+        return { n, x: r.left, hasLabel: !!el.querySelector('span'), label: el.querySelector('span')?.textContent ?? '' }
+      })
+      .filter((m) => Number.isFinite(m.n))
+      .sort((a, b) => a.n - b.n)
+    const gaps = []
+    for (let i = 1; i < marks.length; i++) {
+      gaps.push({ from: marks[i - 1].n, to: marks[i].n, px: marks[i].x - marks[i - 1].x })
+    }
+    const hasC = marks.some((m) => m.n === 0 && m.hasLabel && m.label === 'C')
+    const peaks = document.querySelectorAll('.comb-peak-tick').length
+    return { marks, gaps, hasC, peaks }
+  })
 }
 
 async function readCombState(page) {
   const readout = await page.locator('[data-testid=cuts-screen] [data-testid=comb-readout], [data-testid=live-gram-panel] [data-testid=comb-readout]').last().textContent().catch(() => '')
   const marks = await page.locator('.comb-marker').count()
   const cursor = await page.locator('[data-testid=lofar-cursor], [data-testid=cut-lofar-cursor]').first().textContent().catch(() => '')
-  const view = await page.evaluate(() => {
-    const axisEl = document.querySelector('[data-testid=lofar-freq-axis], [data-testid=cut-lofar-freq-axis]')
-    if (!axisEl) return null
-    const ticks = [...axisEl.querySelectorAll('span')].map((el) => parseFloat(el.textContent || '')).filter((n) => Number.isFinite(n))
-    if (!ticks.length) return null
-    return { lo: Math.min(...ticks), hi: Math.max(...ticks), span: Math.max(...ticks) - Math.min(...ticks) }
-  })
+  const spacing = await measureMarkSpacing(page)
   const matched = /·\s*(\d+)\s*\/\s*(\d+)/.exec(readout || '')
+  // Gap evenness: adjacent same-order-step gaps should be within ~2 px
+  const stepGaps = spacing.gaps.filter((g) => g.to - g.from === 1).map((g) => g.px)
+  const mean = stepGaps.length ? stepGaps.reduce((a, b) => a + b, 0) / stepGaps.length : 0
+  const maxDev = stepGaps.length ? Math.max(...stepGaps.map((g) => Math.abs(g - mean))) : 0
   return {
-    readout, marks, cursor, view,
+    readout, marks, cursor, spacing,
     matched: matched ? { n: Number(matched[1]), slots: Number(matched[2]) } : null,
+    evenSpacing: { meanPx: mean, maxDevPx: maxDev, ok: maxDev <= 2.5, stepGaps },
   }
 }
 
 async function parkCursor(page, testId) {
   const frame = page.locator(`[data-testid=${testId}]`).first()
   const box = await frame.boundingBox()
-  if (box) await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.62)
+  if (box) await page.mouse.move(box.x + box.width * 0.72, box.y + box.height * 0.55)
   await page.waitForTimeout(200)
+}
+
+async function matchedAtSpacing(page, centreHz, spacingHz, sidebands, view) {
+  await placeViaHook(page, centreHz, spacingHz, sidebands, view)
+  await page.waitForTimeout(300)
+  const readout = await page.locator('[data-testid=cuts-screen] [data-testid=comb-readout], [data-testid=live-gram-panel] [data-testid=comb-readout]').last().textContent().catch(() => '')
+  const matched = /·\s*(\d+)\s*\/\s*(\d+)/.exec(readout || '')
+  return matched ? { n: Number(matched[1]), slots: Number(matched[2]), readout } : { n: null, slots: null, readout }
 }
 
 async function shotLive(w, h) {
@@ -101,9 +128,10 @@ async function shotLive(w, h) {
   if (await page.locator('.play-btn.primary').count()) await page.getByTestId('play-btn').click({ force: true }).catch(() => {})
   await ensureGramDetent(page)
   await waitShotApi(page)
-  // Set view first so subsequent rows fill THIS window (geometry settle), then wait for height.
   await page.evaluate((view) => window.__datumShot.setView(view.lo, view.hi), LIVE_VIEW)
   await page.waitForTimeout(18000)
+  // Wrong spacing first (for MATCHED comparison), then drawn spacing for the screenshot.
+  const wrong = await matchedAtSpacing(page, LIVE_F0, LIVE_PSR * 1.5, LIVE_SIDEBANDS, LIVE_VIEW)
   await placeViaHook(page, LIVE_F0, LIVE_PSR, LIVE_SIDEBANDS, LIVE_VIEW)
   await parkCursor(page, 'lofar-frame')
   const state = await readCombState(page)
@@ -112,6 +140,8 @@ async function shotLive(w, h) {
   report.push({
     shot: path, kind: `live-lofar-${w}`, ...state, headless: true,
     drawn: { f0: LIVE_F0, psr: LIVE_PSR, sidebands: LIVE_SIDEBANDS, seed: LIVE_SEED },
+    matchedDrawn: state.matched,
+    matchedWrong15x: wrong,
   })
   await ctx.close()
 }
@@ -134,11 +164,13 @@ async function shotCuts(w, h) {
   const play = page.locator('[data-testid=cut-play]').first()
   if (await play.count() && (await play.getAttribute('aria-label')) !== 'Pause') await play.click({ force: true })
   await waitShotApi(page)
+  // Focus a band with visible structure; wait long enough for a tall waterfall.
   const cutCentre = 100
   const cutPsr = 1.2
   const cutView = { lo: 82, hi: 118 }
   await page.evaluate((view) => window.__datumShot.setView(view.lo, view.hi), cutView)
-  await page.waitForTimeout(16000)
+  await page.waitForTimeout(20000)
+  const wrong = await matchedAtSpacing(page, cutCentre, cutPsr * 1.5, 5, cutView)
   await placeViaHook(page, cutCentre, cutPsr, 5, cutView)
   await parkCursor(page, 'cut-lofar-frame')
   const state = await readCombState(page)
@@ -146,7 +178,9 @@ async function shotCuts(w, h) {
   await page.screenshot({ path, fullPage: false })
   report.push({
     shot: path, kind: `cuts-${w}`, title: (title || '').slice(0, 40), ...state, headless: true,
-    drawn: { f0: cutCentre, psr: cutPsr, note: 'cut focus ~1.2 Hz; singing not on this cut' },
+    drawn: { f0: cutCentre, psr: cutPsr, note: 'cut focus ~1.2 Hz' },
+    matchedDrawn: state.matched,
+    matchedWrong15x: wrong,
   })
   await ctx.close()
 }
@@ -160,6 +194,7 @@ writeFileSync(`${out}/comb-shots-report.json`, JSON.stringify({
   note: 'headless capture, not touch/device validation',
   scratchAcoustics: 'm3-acoustics-src-swath@6cc48c9 (not committed)',
   liveDrawn: { seed: LIVE_SEED, f0: LIVE_F0, psr: LIVE_PSR, sidebands: LIVE_SIDEBANDS },
+  matchGate: { peakDbOverMedian: 3, tolBins: 0.5, tolSpacingFrac: 0.15 },
   report,
 }, null, 2))
 console.log(JSON.stringify({ note: 'headless', report }, null, 2))
