@@ -16,7 +16,9 @@ const SEEDS=[7,31,47,101,211];
 const DIFFS=['easy','regular','difficult'] as const;
 
 type LineSnap={family:string;n:number|undefined;hz:number|undefined;peakHz:number|undefined;contrastDb:number|undefined;window:string;masked:boolean;inWindow:boolean;giveaway:boolean};
-const cutRows=STARTER_CUTS.map(c=>{
+const NUCLEAR=new Set(['cut-velvetshoal-nuc','cut-twilightweft-nuc']);
+/** Diesel/AIP focus — nuclear cuts stay in pack but are 'coming soon' (Lead 2026-11-08). */
+const cutRows=STARTER_CUTS.filter(c=>!NUCLEAR.has(c.id)).map(c=>{
  const lessons=lessonLineContrasts(c).map(r=>({
   family:r.line.lineFamily,n:r.line.n,hz:r.hz,peakHz:r.peakHz,
   contrastDb:r.contrastDb===undefined?null:+r.contrastDb.toFixed(2),
@@ -51,7 +53,7 @@ function poolCensus(difficulty:typeof DIFFS[number],seed:number){
 
 const pools=DIFFS.flatMap(d=>SEEDS.map(seed=>poolCensus(d,seed)));
 const summary={
- note:'Post tonalRefDb/effective-depth/SNORK fix. Starter cuts: lesson lines clear 6 dB (masked HYDP stays masked). Procedural: VLF/aux present without flooding detection.',
+ note:'Post tonalRefDb/effective-depth/SNORK fix. Diesel/AIP starter cuts only (nuclear velvetshoal/twilightweft coming soon). Lesson lines clear 6 dB; masked HYDP stays masked. Procedural pools diesel-weighted.',
  beforeBaseline:[[ 'cut-brindleflux-snork',1371.8,1.84],['cut-cinderlilt-cav',1811.4,1.83],['cut-pebblewisp-demon',1885.7,1.65],['cut-mistacorn-batt',1531,1.59],['cut-orbelune-msr',906.7,10.36],['cut-emberbraid-ssma',350.8,3.86],['cut-velvetshoal-nuc',388.9,1.69],['cut-twilightweft-nuc',1925.7,1.71],['cut-gloamspiral-aip',277.5,1.6],['cut-morrowcoil-hydp-masked',93.8,8.3]],
  afterBest:cutRows.map(c=>[c.id,c.bestHz,c.bestContrastDb]),
  window:W,

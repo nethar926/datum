@@ -1,5 +1,5 @@
 {
- "note": "Post tonalRefDb/effective-depth/SNORK fix. Starter cuts: lesson lines clear 6 dB (masked HYDP stays masked). Procedural: VLF/aux present without flooding detection.",
+ "note": "Post tonalRefDb/effective-depth/SNORK fix. Diesel/AIP starter cuts only (nuclear velvetshoal/twilightweft coming soon). Lesson lines clear 6 dB; masked HYDP stays masked. Procedural pools diesel-weighted.",
  "beforeBaseline": [
   [
    "cut-brindleflux-snork",
@@ -56,42 +56,32 @@
   [
    "cut-brindleflux-snork",
    179.8,
-   23.81
+   23.59
   ],
   [
    "cut-cinderlilt-cav",
    232.5,
-   35.42
+   34.69
   ],
   [
    "cut-pebblewisp-demon",
    99.7,
-   22.51
+   22.71
   ],
   [
    "cut-mistacorn-batt",
    99.7,
-   22.01
+   21.06
   ],
   [
    "cut-orbelune-msr",
    906.7,
-   44.78
+   43.72
   ],
   [
    "cut-emberbraid-ssma",
    350.8,
    55.74
-  ],
-  [
-   "cut-velvetshoal-nuc",
-   467,
-   14.87
-  ],
-  [
-   "cut-twilightweft-nuc",
-   956.5,
-   20.9
   ],
   [
    "cut-gloamspiral-aip",
@@ -101,7 +91,7 @@
   [
    "cut-morrowcoil-hydp-masked",
    94.8,
-   39.41
+   41.51
   ]
  ],
  "window": {
@@ -122,7 +112,7 @@
    "cpaM": 900,
    "cpaNote": null,
    "bestHz": 179.8,
-   "bestContrastDb": 23.81,
+   "bestContrastDb": 23.59,
    "lessons": [
     {
      "family": "CFR",
@@ -148,8 +138,8 @@
      "family": "EDA",
      "n": 1,
      "hz": 146.6481847620613,
-     "peakHz": 147.53297508549096,
-     "contrastDb": 14.14,
+     "peakHz": 146.55593551538837,
+     "contrastDb": 11.13,
      "window": "mid",
      "masked": false,
      "inWindow": true,
@@ -164,7 +154,7 @@
    "cpaM": 400,
    "cpaNote": "Surfaced Lloyd dipole + rich SS3 ambient: 400 m CPA so GRID/BR teach above 6 dB",
    "bestHz": 232.5,
-   "bestContrastDb": 35.42,
+   "bestContrastDb": 34.69,
    "lessons": [
     {
      "family": "BR",
@@ -192,7 +182,7 @@
      "n": 1,
      "hz": 50,
      "peakHz": 49.82901807523204,
-     "contrastDb": 11.82,
+     "contrastDb": 12.24,
      "window": "mid",
      "masked": false,
      "inWindow": true,
@@ -207,7 +197,7 @@
    "cpaM": 900,
    "cpaNote": null,
    "bestHz": 99.7,
-   "bestContrastDb": 22.51,
+   "bestContrastDb": 22.71,
    "lessons": [
     {
      "family": "BR",
@@ -225,7 +215,7 @@
      "n": 1,
      "hz": 1396.61,
      "peakHz": 1396.1895456766,
-     "contrastDb": 27.7,
+     "contrastDb": 27.95,
      "window": "hydp-moment",
      "masked": false,
      "inWindow": true,
@@ -240,14 +230,14 @@
    "cpaM": 900,
    "cpaNote": null,
    "bestHz": 99.7,
-   "bestContrastDb": 22.01,
+   "bestContrastDb": 21.06,
    "lessons": [
     {
      "family": "HYDP",
      "n": 1,
      "hz": 788.35,
      "peakHz": 788.4709330727894,
-     "contrastDb": 16.24,
+     "contrastDb": 20.84,
      "window": "hydp-moment",
      "masked": false,
      "inWindow": true,
@@ -273,14 +263,14 @@
    "cpaM": 900,
    "cpaNote": null,
    "bestHz": 906.7,
-   "bestContrastDb": 44.78,
+   "bestContrastDb": 43.72,
    "lessons": [
     {
      "family": "MSR",
      "n": 1,
      "hz": 907.0370370370371,
      "peakHz": 906.6927210552027,
-     "contrastDb": 44.78,
+     "contrastDb": 43.72,
      "window": "mid",
      "masked": false,
      "inWindow": true,
@@ -290,8 +280,8 @@
      "family": "GRID",
      "n": 1,
      "hz": 60,
-     "peakHz": 59.59941377625794,
-     "contrastDb": 19.03,
+     "peakHz": 72.3009281875916,
+     "contrastDb": 21.22,
      "window": "mid",
      "masked": false,
      "inWindow": true,
@@ -313,7 +303,7 @@
      "n": 2,
      "hz": 116,
      "peakHz": 134.8314606741573,
-     "contrastDb": 48.78,
+     "contrastDb": 48.68,
      "window": "mid",
      "masked": false,
      "inWindow": true,
@@ -334,92 +324,6 @@
      "family": "CFR",
      "n": 1,
      "hz": 8.473998294970162,
-     "contrastDb": null,
-     "window": "mid",
-     "masked": false,
-     "inWindow": false,
-     "giveaway": false
-    }
-   ]
-  },
-  {
-   "id": "cut-velvetshoal-nuc",
-   "mode": "NUC",
-   "depthM": 80,
-   "cpaM": 900,
-   "cpaNote": null,
-   "bestHz": 467,
-   "bestContrastDb": 14.87,
-   "lessons": [
-    {
-     "family": "HYDP",
-     "n": 1,
-     "hz": 334.34,
-     "peakHz": 335.1245725451881,
-     "contrastDb": 10.6,
-     "window": "hydp-moment",
-     "masked": false,
-     "inWindow": true,
-     "giveaway": true
-    },
-    {
-     "family": "BR",
-     "n": 2,
-     "hz": 70.66666666666667,
-     "peakHz": 70.34684904738641,
-     "contrastDb": 9.16,
-     "window": "mid",
-     "masked": false,
-     "inWindow": true,
-     "giveaway": false
-    },
-    {
-     "family": "PSR",
-     "n": 1,
-     "hz": 4.416666666666667,
-     "contrastDb": null,
-     "window": "mid",
-     "masked": false,
-     "inWindow": false,
-     "giveaway": false
-    }
-   ]
-  },
-  {
-   "id": "cut-twilightweft-nuc",
-   "mode": "NUC",
-   "depthM": 80,
-   "cpaM": 900,
-   "cpaNote": null,
-   "bestHz": 956.5,
-   "bestContrastDb": 20.9,
-   "lessons": [
-    {
-     "family": "HYDP",
-     "n": 1,
-     "hz": 1536.27,
-     "peakHz": 1540.791402051783,
-     "contrastDb": 10.02,
-     "window": "hydp-moment",
-     "masked": false,
-     "inWindow": true,
-     "giveaway": true
-    },
-    {
-     "family": "BR",
-     "n": 2,
-     "hz": 75.37777777777778,
-     "peakHz": 74.25500732779678,
-     "contrastDb": 9.15,
-     "window": "mid",
-     "masked": false,
-     "inWindow": true,
-     "giveaway": false
-    },
-    {
-     "family": "PSR",
-     "n": 1,
-     "hz": 4.711111111111111,
      "contrastDb": null,
      "window": "mid",
      "masked": false,
@@ -478,14 +382,14 @@
    "cpaM": 900,
    "cpaNote": null,
    "bestHz": 94.8,
-   "bestContrastDb": 39.41,
+   "bestContrastDb": 41.51,
    "lessons": [
     {
      "family": "HYDP",
      "n": 1,
      "hz": 303.94,
-     "peakHz": 300.92818759159746,
-     "contrastDb": 3.51,
+     "peakHz": 308.7445041524182,
+     "contrastDb": 1.83,
      "window": "hydp-moment",
      "masked": true,
      "inWindow": true,
@@ -496,7 +400,7 @@
      "n": 2,
      "hz": 607.88,
      "peakHz": 607.7186126038105,
-     "contrastDb": 27.6,
+     "contrastDb": 28.45,
      "window": "hydp-moment",
      "masked": false,
      "inWindow": true,
@@ -520,10 +424,10 @@
    "difficulty": "easy",
    "seed": 7,
    "contacts": 1,
-   "tonals": 61,
-   "vlfLines": 32,
-   "auxLikeLines": 6,
-   "approxLoudAt1km": 53,
+   "tonals": 65,
+   "vlfLines": 34,
+   "auxLikeLines": 10,
+   "approxLoudAt1km": 57,
    "ambient30Hz": 76.9,
    "surfaceTraffic": 0.2,
    "seaState": 2
@@ -532,10 +436,10 @@
    "difficulty": "easy",
    "seed": 31,
    "contacts": 1,
-   "tonals": 32,
-   "vlfLines": 11,
-   "auxLikeLines": 3,
-   "approxLoudAt1km": 32,
+   "tonals": 38,
+   "vlfLines": 12,
+   "auxLikeLines": 9,
+   "approxLoudAt1km": 38,
    "ambient30Hz": 76.9,
    "surfaceTraffic": 0.2,
    "seaState": 2
@@ -544,9 +448,9 @@
    "difficulty": "easy",
    "seed": 47,
    "contacts": 1,
-   "tonals": 17,
-   "vlfLines": 6,
-   "auxLikeLines": 6,
+   "tonals": 21,
+   "vlfLines": 8,
+   "auxLikeLines": 10,
    "approxLoudAt1km": 0,
    "ambient30Hz": 76.9,
    "surfaceTraffic": 0.2,
@@ -556,9 +460,9 @@
    "difficulty": "easy",
    "seed": 101,
    "contacts": 1,
-   "tonals": 45,
-   "vlfLines": 8,
-   "auxLikeLines": 3,
+   "tonals": 49,
+   "vlfLines": 9,
+   "auxLikeLines": 5,
    "approxLoudAt1km": 14,
    "ambient30Hz": 76.9,
    "surfaceTraffic": 0.2,
@@ -568,9 +472,9 @@
    "difficulty": "easy",
    "seed": 211,
    "contacts": 1,
-   "tonals": 59,
-   "vlfLines": 11,
-   "auxLikeLines": 3,
+   "tonals": 63,
+   "vlfLines": 13,
+   "auxLikeLines": 7,
    "approxLoudAt1km": 14,
    "ambient30Hz": 76.9,
    "surfaceTraffic": 0.2,
@@ -580,10 +484,10 @@
    "difficulty": "regular",
    "seed": 7,
    "contacts": 2,
-   "tonals": 100,
-   "vlfLines": 41,
-   "auxLikeLines": 12,
-   "approxLoudAt1km": 70,
+   "tonals": 110,
+   "vlfLines": 46,
+   "auxLikeLines": 22,
+   "approxLoudAt1km": 76,
    "ambient30Hz": 80.8,
    "surfaceTraffic": 0.5,
    "seaState": 3
@@ -592,10 +496,10 @@
    "difficulty": "regular",
    "seed": 31,
    "contacts": 2,
-   "tonals": 33,
-   "vlfLines": 21,
-   "auxLikeLines": 12,
-   "approxLoudAt1km": 9,
+   "tonals": 43,
+   "vlfLines": 26,
+   "auxLikeLines": 20,
+   "approxLoudAt1km": 11,
    "ambient30Hz": 80.8,
    "surfaceTraffic": 0.5,
    "seaState": 3
@@ -604,9 +508,9 @@
    "difficulty": "regular",
    "seed": 47,
    "contacts": 1,
-   "tonals": 17,
-   "vlfLines": 5,
-   "auxLikeLines": 6,
+   "tonals": 21,
+   "vlfLines": 7,
+   "auxLikeLines": 10,
    "approxLoudAt1km": 0,
    "ambient30Hz": 80.8,
    "surfaceTraffic": 0.5,
@@ -616,10 +520,10 @@
    "difficulty": "regular",
    "seed": 101,
    "contacts": 2,
-   "tonals": 121,
-   "vlfLines": 34,
-   "auxLikeLines": 9,
-   "approxLoudAt1km": 70,
+   "tonals": 129,
+   "vlfLines": 37,
+   "auxLikeLines": 15,
+   "approxLoudAt1km": 74,
    "ambient30Hz": 80.8,
    "surfaceTraffic": 0.5,
    "seaState": 3
@@ -628,9 +532,9 @@
    "difficulty": "regular",
    "seed": 211,
    "contacts": 1,
-   "tonals": 61,
-   "vlfLines": 16,
-   "auxLikeLines": 3,
+   "tonals": 65,
+   "vlfLines": 18,
+   "auxLikeLines": 7,
    "approxLoudAt1km": 2,
    "ambient30Hz": 80.8,
    "surfaceTraffic": 0.5,
@@ -640,10 +544,10 @@
    "difficulty": "difficult",
    "seed": 7,
    "contacts": 2,
-   "tonals": 95,
-   "vlfLines": 37,
-   "auxLikeLines": 12,
-   "approxLoudAt1km": 64,
+   "tonals": 105,
+   "vlfLines": 42,
+   "auxLikeLines": 22,
+   "approxLoudAt1km": 70,
    "ambient30Hz": 83.3,
    "surfaceTraffic": 0.9,
    "seaState": 5
@@ -652,10 +556,10 @@
    "difficulty": "difficult",
    "seed": 31,
    "contacts": 3,
-   "tonals": 86,
-   "vlfLines": 39,
-   "auxLikeLines": 15,
-   "approxLoudAt1km": 55,
+   "tonals": 100,
+   "vlfLines": 46,
+   "auxLikeLines": 27,
+   "approxLoudAt1km": 59,
    "ambient30Hz": 83.3,
    "surfaceTraffic": 0.9,
    "seaState": 5
@@ -664,9 +568,9 @@
    "difficulty": "difficult",
    "seed": 47,
    "contacts": 1,
-   "tonals": 17,
-   "vlfLines": 8,
-   "auxLikeLines": 6,
+   "tonals": 21,
+   "vlfLines": 10,
+   "auxLikeLines": 10,
    "approxLoudAt1km": 0,
    "ambient30Hz": 83.3,
    "surfaceTraffic": 0.9,
@@ -676,9 +580,9 @@
    "difficulty": "difficult",
    "seed": 101,
    "contacts": 3,
-   "tonals": 85,
-   "vlfLines": 29,
-   "auxLikeLines": 15,
+   "tonals": 99,
+   "vlfLines": 33,
+   "auxLikeLines": 25,
    "approxLoudAt1km": 2,
    "ambient30Hz": 83.3,
    "surfaceTraffic": 0.9,
@@ -688,9 +592,9 @@
    "difficulty": "difficult",
    "seed": 211,
    "contacts": 2,
-   "tonals": 94,
-   "vlfLines": 43,
-   "auxLikeLines": 6,
+   "tonals": 102,
+   "vlfLines": 48,
+   "auxLikeLines": 12,
    "approxLoudAt1km": 2,
    "ambient30Hz": 83.3,
    "surfaceTraffic": 0.9,
@@ -701,23 +605,23 @@
   {
    "difficulty": "easy",
    "avgContacts": 1,
-   "avgVlf": 13.6,
-   "avgAuxLike": 4.2,
-   "avgApproxLoud": 22.6
+   "avgVlf": 15.2,
+   "avgAuxLike": 8.2,
+   "avgApproxLoud": 24.6
   },
   {
    "difficulty": "regular",
    "avgContacts": 1.6,
-   "avgVlf": 23.4,
-   "avgAuxLike": 8.4,
-   "avgApproxLoud": 30.2
+   "avgVlf": 26.8,
+   "avgAuxLike": 14.8,
+   "avgApproxLoud": 32.6
   },
   {
    "difficulty": "difficult",
    "avgContacts": 2.2,
-   "avgVlf": 31.2,
-   "avgAuxLike": 10.8,
-   "avgApproxLoud": 24.6
+   "avgVlf": 35.8,
+   "avgAuxLike": 19.2,
+   "avgApproxLoud": 26.6
   }
  ]
 }
