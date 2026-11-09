@@ -19,11 +19,11 @@
 export const LOCK_TAP_SLOP_PX = 6
 export const LOCK_TAP_MAX_MS = 250
 
-export type CursorKind = 'default' | 'harm' | 'dop' | 'lm'
+export type CursorKind = 'default' | 'harm' | 'dop' | 'lm' | 'comb'
 
 export type CursorLocks = Record<CursorKind, boolean>
 
-export const EMPTY_LOCKS: CursorLocks = { default: false, harm: false, dop: false, lm: false }
+export const EMPTY_LOCKS: CursorLocks = { default: false, harm: false, dop: false, lm: false, comb: false }
 
 /** True when the gesture is a lock tap: little movement and short duration. */
 export function isLockTap(
@@ -43,11 +43,13 @@ export function toggleLock(locks: CursorLocks, kind: CursorKind): CursorLocks {
 }
 
 /** Which tool cursor a lock-tap should affect, given the live arming state. */
-export function lockKindForTool(tool: 'select' | 'dop' | 'lm' | 'harm', opts: {
+export function lockKindForTool(tool: 'select' | 'dop' | 'lm' | 'harm' | 'comb', opts: {
   harmPlaced: boolean
+  combPlaced?: boolean
   dopPlaced: boolean
 }): CursorKind {
   if (tool === 'harm' && opts.harmPlaced) return 'harm'
+  if (tool === 'comb' && opts.combPlaced) return 'comb'
   if (tool === 'lm') return 'lm'
   if (tool === 'dop' && opts.dopPlaced) return 'dop'
   return 'default'

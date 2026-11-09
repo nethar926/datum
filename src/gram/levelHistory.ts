@@ -21,4 +21,12 @@ export class LevelHistory {
     const row = (this.head - 1 - a + this.rows * 2) % this.rows
     return this.buf[row * this.bins + b]
   }
+  /** Copy one history row into dest (must be ≥ bins). Returns false if unavailable. */
+  copyRow(ago: number, dest: Float32Array): boolean {
+    const a = Math.round(ago)
+    if (a < 0 || a >= this.count || dest.length < this.bins) return false
+    const row = (this.head - 1 - a + this.rows * 2) % this.rows
+    dest.set(this.buf.subarray(row * this.bins, row * this.bins + this.bins))
+    return true
+  }
 }

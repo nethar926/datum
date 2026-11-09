@@ -16,7 +16,7 @@ import { CutPicker } from './CutPicker'
 import { CutBar } from './CutBar'
 import { IdDeck } from './IdDeck'
 import { CutReveal } from './CutReveal'
-import { listCutSeeds } from './api'
+import { cutPickerTitle } from './cutLabel'
 import type { CutController } from './session'
 import type { Band, GramConfig, Tactical } from '../engine/contract'
 import { DemonPane } from '../gram/DemonPane'
@@ -25,19 +25,24 @@ import { LloydsOverlay, lloydText, type CpaGeom, type LloydState } from '../gram
 import { DopplerOverlay, DopplerReadout } from '../gram/DopplerOverlay'
 import type { RulerStore } from '../gram/dopplerRuler'
 import { harmonicSeries, harmText, ratioText } from '../gram/harmonics'
+import { combText, snapCombMarks } from '../gram/comb'
 import { DifarApplet } from '../gram/DifarApplet'
 import type { CursorLocks } from '../gram/cursorLock'
 
 const BAND_MAX: Record<Band, number> = { lofar1k: 1000, lofar2k: 2000 }
 
 export interface CutsGramTools {
-  tool: 'select' | 'dop' | 'lm' | 'harm'
+  tool: 'select' | 'dop' | 'lm' | 'harm' | 'comb'
   locks: CursorLocks
   harmF0: number | null
   harmK: number | null
   harmFam: string | null
   harmProbe: number | null
   harmProbeOn: boolean
+  combCentreHz: number | null
+  combSpacingHz: number | null
+  combSidebands: number
+  combMatched: number | null
   lm: LloydState
   cpaGeom: CpaGeom | null
   ruler: RulerStore
@@ -50,7 +55,7 @@ export interface CutsGramTools {
   onDragPoint?: (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => void
   onCursorHz?: (hz: number | null) => void
   cursorSuffix?: string | null
-  flipLock: (kind: 'harm' | 'dop' | 'lm') => void
+  flipLock: (kind: 'harm' | 'dop' | 'lm' | 'comb') => void
   setLm: (lm: LloydState) => void
   buoyDepthM: number | null
   wheelOpen: boolean
@@ -113,8 +118,7 @@ export function CutsTab({
 }): ReactNode {
   const cut = session?.cut ?? null
   const cfg = configs[0]
-  const cutIndex = cutId ? listCutSeeds().findIndex((c) => c.id === cutId) : -1
-  const title = cutIndex >= 0 ? `Cut ${cutIndex + 1}` : 'Cuts'
+  const title = cutPickerTitle(cutId)
   const t = tools
 
   if (!cut) {
@@ -126,13 +130,20 @@ export function CutsTab({
     )
   }
 
-  const overlay = t && (t.ruler.placed || t.dopMode || t.tool === 'lm' || t.harmF0 !== null)
+  const overlay = t && (t.ruler.placed || t.dopMode || t.tool === 'lm' || t.harmF0 !== null || t.combCentreHz !== null)
     ? (ctx: Parameters<NonNullable<Parameters<typeof Gram>[0]['overlay']>>[0]) => (
       <>
         {t.harmF0 !== null && harmonicSeries(t.harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
           <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
         {t.harmF0 !== null && t.harmProbe !== null && t.harmProbe >= ctx.view.lo && t.harmProbe <= ctx.view.hi && (
           <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(t.harmProbe, ctx.view, ctx.width) }}><span>×{(t.harmProbe / t.harmF0).toFixed(2)}</span></div>)}
+        {t.combCentreHz !== null && (t.combSpacingHz !== null && t.combSpacingHz > 0
+          ? snapCombMarks(t.combCentreHz, t.combSpacingHz, t.combSidebands, null, cfg?.f0 ?? 0, cfg?.fBin ?? 1, ctx.view.lo, ctx.view.hi)
+          : [{ n: 0, hz: t.combCentreHz, snappedHz: t.combCentreHz, matched: true }]
+        ).filter((m) => m.snappedHz >= ctx.view.lo && m.snappedHz <= ctx.view.hi).map((m) => (
+          <div key={`c${m.n}`} className={`harm-marker lofar comb-marker${m.n === 0 ? ' comb-centre' : ''}`} data-testid={m.n === 0 ? 'comb-mark-centre' : `comb-mark-${m.n}`}
+            style={{ left: freqToX(m.snappedHz, ctx.view, ctx.width) }}><span>{m.n === 0 ? 'C' : (m.n > 0 ? `+${m.n}` : `${m.n}`)}</span></div>
+        ))}
         {t.tool === 'lm' && <LloydsOverlay ctx={ctx} st={t.lm} cpa={t.cpaGeom} nowS={simT} />}
         {(t.ruler.placed || t.dopMode) && <DopplerOverlay ctx={ctx} store={t.ruler} nowS={simT} active={t.dopMode} locked={t.locks.dop} onLockTap={() => t.flipLock('dop')} />}
       </>
@@ -189,6 +200,12 @@ export function CutsTab({
               {t.locks.harm && <IcLock size={11} className="cursor-lock-ic" />}
               {harmText(t.harmF0, t.harmK, cfg ? fullView(cfg).hi : BAND_MAX[band], t.harmFam ?? undefined)}
               {t.harmF0 !== null && t.harmProbe !== null && `   ${ratioText(t.harmF0, t.harmProbe)}${t.probeName ? '  ' + t.probeName : ''}`}
+            </div>
+          )}
+          {t && (t.tool === 'comb' || t.combCentreHz !== null) && (
+            <div className={`gram-note readout comb-note${t.locks.comb ? ' locked' : ''}`} data-testid="comb-readout" data-locked={t.locks.comb ? '1' : '0'}>
+              {t.locks.comb && <IcLock size={11} className="cursor-lock-ic" />}
+              {combText(t.combCentreHz, t.combSpacingHz, t.combSidebands, t.combMatched)}
             </div>
           )}
           {t && (t.dopMode || t.ruler.placed) && <DopplerReadout store={t.ruler} fBin={cfg?.fBin ?? 1} locked={t.locks.dop} />}

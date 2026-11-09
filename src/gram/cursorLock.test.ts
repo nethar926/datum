@@ -28,7 +28,7 @@ describe('toggleLock / lockKindForTool', () => {
   it('toggles each cursor kind independently', () => {
     let s = EMPTY_LOCKS
     s = toggleLock(s, 'default')
-    expect(s).toEqual({ default: true, harm: false, dop: false, lm: false })
+    expect(s).toEqual({ default: true, harm: false, dop: false, lm: false, comb: false })
     s = toggleLock(s, 'harm')
     expect(s.default).toBe(true)
     expect(s.harm).toBe(true)
@@ -43,5 +43,6 @@ describe('toggleLock / lockKindForTool', () => {
     expect(lockKindForTool('lm', { harmPlaced: true, dopPlaced: true })).toBe('lm')
     expect(lockKindForTool('dop', { harmPlaced: false, dopPlaced: false })).toBe('default')
     expect(lockKindForTool('dop', { harmPlaced: false, dopPlaced: true })).toBe('dop')
+    expect(lockKindForTool('comb', { harmPlaced: false, dopPlaced: false, combPlaced: true })).toBe('comb')
   })
 })

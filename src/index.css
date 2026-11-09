@@ -242,6 +242,11 @@ button, select { font: inherit; color: inherit; }
   .cmp-tag, .cmp-card dt, .cmp-card h4, .cmp-foot { color: #444; } .cmp-modes th { color: #000; }
 }
 .harm-marker.probe { border-left-style: dashed; border-left-color: #ffcc55; } .harm-marker.probe span { color: #ffcc55; }
+.harm-marker.comb-marker { border-left-style: solid; border-left-color: var(--on-glass-accent, #f2fff4); opacity: .9; }
+.harm-marker.comb-marker span { color: var(--on-glass-accent, #f2fff4); }
+.harm-marker.comb-centre { border-left-width: 2px; border-left-color: var(--glass-accent-tint, rgba(48,209,88,.85)); }
+.harm-marker.comb-centre span { color: var(--tint, #30d158); font-weight: 700; }
+.comb-note { color: var(--sys-label); }
 
 /* ---------- Touch (m3-fe-touch) ---------- */
 .seg button, .btn { -webkit-user-select: none; user-select: none; transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease); }

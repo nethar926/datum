@@ -27,7 +27,7 @@ describe('cutToolAvailability matrix', () => {
     const rows = cutToolAvailability({ ...difarCut, hasSession: false })
     expect(rows.every((r) => !r.enabled && r.reason === NO_SESSION_REASON)).toBe(true)
     expect(rows.map((r) => r.id)).toEqual([
-      'fix', 'brg', 'dop', 'harm', 'lm', 'horz', 'con', 'listen', 'difarWheel',
+      'fix', 'brg', 'dop', 'harm', 'comb', 'lm', 'horz', 'con', 'listen', 'difarWheel',
     ])
   })
 
@@ -70,7 +70,8 @@ describe('cutToolAvailability matrix', () => {
   it('keeps disabled tools in the matrix (never omit FIX)', () => {
     const ids = cutToolAvailability(difarCut).map((r) => r.id)
     expect(ids).toContain('fix')
-    expect(ids.length).toBe(9)
+    expect(ids.length).toBe(10)
+    expect(ids).toContain('comb')
   })
 })
 

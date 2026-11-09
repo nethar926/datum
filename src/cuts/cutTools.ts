@@ -17,6 +17,7 @@ export type CutToolId =
   | 'brg'
   | 'dop'
   | 'harm'
+  | 'comb'
   | 'lm'
   | 'horz'
   | 'con'
@@ -60,13 +61,16 @@ export const DEFAULT_LM: LloydState = {
 
 /** Armable / cursor state that must not leak across Live ↔ Cuts. */
 export interface ToolArmState {
-  tool: 'select' | 'dop' | 'lm' | 'harm'
+  tool: 'select' | 'dop' | 'lm' | 'harm' | 'comb'
   locks: CursorLocks
   harmF0: number | null
   harmK: number | null
   harmFam: string | null
   harmProbe: number | null
   harmProbeOn: boolean
+  combCentreHz: number | null
+  combSpacingHz: number | null
+  combSidebands: number
   lm: LloydState
   brgArm: BearingArm
   vernierPick: boolean
@@ -81,6 +85,9 @@ export function emptyToolArm(): ToolArmState {
     harmFam: null,
     harmProbe: null,
     harmProbeOn: false,
+    combCentreHz: null,
+    combSpacingHz: null,
+    combSidebands: 5,
     lm: { ...DEFAULT_LM },
     brgArm: ARM_IDLE,
     vernierPick: false,
@@ -98,7 +105,7 @@ export function clearToolArm(_prev?: ToolArmState): ToolArmState {
  */
 export function cutToolAvailability(ctx: CutToolContext): CutToolAvailability[] {
   if (!ctx.hasSession) {
-    return (['fix', 'brg', 'dop', 'harm', 'lm', 'horz', 'con', 'listen', 'difarWheel'] as const)
+    return (['fix', 'brg', 'dop', 'harm', 'comb', 'lm', 'horz', 'con', 'listen', 'difarWheel'] as const)
       .map((id) => ({ id, enabled: false, reason: NO_SESSION_REASON }))
   }
 
@@ -109,6 +116,7 @@ export function cutToolAvailability(ctx: CutToolContext): CutToolAvailability[] 
   const brgEnabled = difar
   const dopEnabled = geomOk
   const harmEnabled = true
+  const combEnabled = true
   const lmEnabled = geomOk
   const horzEnabled = true
   const conEnabled = true
@@ -132,6 +140,7 @@ export function cutToolAvailability(ctx: CutToolContext): CutToolAvailability[] 
       reason: dopEnabled ? undefined : NO_GEOM_REASON,
     },
     { id: 'harm', enabled: harmEnabled },
+    { id: 'comb', enabled: combEnabled },
     {
       id: 'lm',
       enabled: lmEnabled,

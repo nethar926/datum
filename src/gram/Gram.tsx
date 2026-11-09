@@ -64,6 +64,8 @@ interface Props {
   cursorSuffix?: string | null
   /** Filled each frame with a sampler: Hz → DIFAR bearing deg (circular mean over recent rows), or null. */
   bearingAtRef?: React.MutableRefObject<((hz: number) => number | null) | null>
+  /** Filled with a sampler that copies one LevelHistory row (agoS seconds) for COMB peak snap. */
+  rowSamplerRef?: React.MutableRefObject<((agoS: number, dest: Float32Array) => boolean) | null>
   /** Newest-at-bottom (default) or newest-at-top. */
   dir?: GramDir
   /** Wall-clock ms (UTC) corresponding to sim t=0; used for Zulu Y labels. */
@@ -93,7 +95,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap, paused = false, scrollBackS = 0, onScrollBack, onReturnToLive, preprocessRow, normKey = '' }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, rowSamplerRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap, paused = false, scrollBackS = 0, onScrollBack, onReturnToLive, preprocessRow, normKey = '' }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -228,6 +230,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     if (bearingAtRef) bearingAtRef.current = (hz) => {
       const c = viewRef.current.cfg; if (!c) return null
       return sampleBearingAt(rt.brgHist, c, hz)
+    }
+    if (rowSamplerRef) rowSamplerRef.current = (agoS, dest) => {
+      const c = viewRef.current.cfg; if (!c) return false
+      const agoRows = agoS * (c.rowRateHz || 2)
+      return rt.hist.copyRow(agoRows, dest)
     }
     const startPending = (cs: GramConfig[]) => {
       rt.pending = new Map(); cs.forEach((c, i) => rt.pending.set(c.streamId, i)); rt.pendingCfgs = cs
@@ -371,9 +378,11 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       cancelAnimationFrame(rt.raf); clearTimeout(rt.lostTimer); off(); offSeek(); offHandoff(); ro.disconnect()
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
       r.dispose(); rendererRef.current = null; histRef.current = null; brgHistRef.current = null
-      if (bearingAtRef) bearingAtRef.current = null; growRef.current = null
+      if (bearingAtRef) bearingAtRef.current = null
+      if (rowSamplerRef) rowSamplerRef.current = null
+      growRef.current = null
     }
-  }, [client, hasConfigs, rendererKey, HISTORY_ROWS, bearingAtRef])
+  }, [client, hasConfigs, rendererKey, HISTORY_ROWS, bearingAtRef, rowSamplerRef])
 
   useLayoutEffect(() => { const cs = growTo.current; if (cs && growRef.current) { growTo.current = null; growRef.current(cs) } }, [configs])
 

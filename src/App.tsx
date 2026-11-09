@@ -37,6 +37,10 @@ import { bearingTo, type FixSource, type ManualBearings } from './tactical/manua
 import { OperatorLog } from './log/operatorLog'
 import { SCENARIOS, SCENARIO_LABEL } from './scenarios/training'
 import { harmText, harmonicSeries, nearestHarmonic, ratioText } from './gram/harmonics'
+import {
+  COMB_SIDEBANDS_DEFAULT, clampSidebands, combMatchedCount, combText,
+  nearestCombOrder, snapCombMarks, spacingFromDrag,
+} from './gram/comb'
 import { EMPTY_LOCKS, toggleLock, type CursorKind } from './gram/cursorLock'
 import { familyFundamentals, familyLabel, snapToFamily, truthEdaName } from './gram/truthFamilies'
 import { freqToX } from './gram/axis'
@@ -61,7 +65,7 @@ import {
   availabilityMap, clearToolArm, emptyToolArm, FIX_DISABLED_REASON,
   type ToolArmState,
 } from './cuts/cutTools'
-import { IcBrg, IcChevron, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcLock, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
+import { IcBrg, IcChevron, IcComb, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcLock, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
 import { Splash } from './ui/Splash'
 import { hardReloadApp } from './ui/appReload'
 import { useStandalone, useUpdateAvailable } from './ui/useAppUpdate'
@@ -253,7 +257,7 @@ export default function App() {
   }
   useEffect(() => { if (!compact || tab !== 'live') setTabMin(false) }, [compact, tab])
   useEffect(() => installAudioUnlock(), [])
-  const [tool, setTool] = useState<'select' | 'dop' | 'lm' | 'harm'>('select')
+  const [tool, setTool] = useState<'select' | 'dop' | 'lm' | 'harm' | 'comb'>('select')
   // CURLOCK: session-only locks for HARM / DOP / LM (default scrub lock lives inside Gram).
   const [locks, setLocks] = useState(EMPTY_LOCKS)
   const flipLock = (kind: CursorKind) => setLocks((s) => toggleLock(s, kind))
@@ -294,6 +298,65 @@ export default function App() {
       return
     }
     harmGrab.current = null
+  }
+  // COMB: centre + evenly spaced sidebands (PSR est.); finger-exact centre/spacing, marks snap to peaks.
+  const [combCentreHz, setCombCentreHz] = useState<number | null>(null)
+  const [combSpacingHz, setCombSpacingHz] = useState<number | null>(null)
+  const [combSidebands, setCombSidebands] = useState(COMB_SIDEBANDS_DEFAULT)
+  const [combMatched, setCombMatched] = useState<number | null>(null)
+  const combGrab = useRef<number | null>(null)
+  const rowSamplerRef = useRef<((agoS: number, dest: Float32Array) => boolean) | null>(null)
+  const combRowBuf = useRef<Float32Array | null>(null)
+  const sampleCombRow = (agoS: number): Float32Array | null => {
+    const bins = cfg?.bins ?? 0
+    if (!bins || !rowSamplerRef.current) return null
+    if (!combRowBuf.current || combRowBuf.current.length !== bins) combRowBuf.current = new Float32Array(bins)
+    return rowSamplerRef.current(agoS, combRowBuf.current) ? combRowBuf.current : null
+  }
+  const updateCombMatch = (centre: number, spacing: number, count: number, agoS: number) => {
+    const row = sampleCombRow(agoS)
+    const fMin = cfg?.f0 ?? 0
+    const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1e9
+    const marks = snapCombMarks(centre, spacing, count, row, cfg?.f0 ?? 0, cfg?.fBin ?? 1, fMin, fMax)
+    setCombMatched(combMatchedCount(marks))
+  }
+  const combDrag = (phase: 'start' | 'move' | 'end', hz: number, agoS = 0, _shift = false) => {
+    if (locks.comb && phase !== 'end') return
+    if (phase === 'start') {
+      if (combCentreHz === null) {
+        setCombCentreHz(hz)
+        setCombSpacingHz(null)
+        setCombMatched(null)
+        combGrab.current = 0
+        return
+      }
+      const k = nearestCombOrder(combCentreHz, combSpacingHz, hz)
+      combGrab.current = k
+      if (k === 0) return
+      const sp = spacingFromDrag(combCentreHz, k, hz)
+      setCombSpacingHz(sp)
+      updateCombMatch(combCentreHz, sp, combSidebands, agoS)
+      return
+    }
+    if (phase === 'move') {
+      const k = combGrab.current
+      if (k === null) return
+      if (k === 0) {
+        setCombCentreHz(hz)
+        if (combSpacingHz !== null && combSpacingHz > 0) updateCombMatch(hz, combSpacingHz, combSidebands, agoS)
+        return
+      }
+      if (combCentreHz === null) return
+      const sp = spacingFromDrag(combCentreHz, k, hz)
+      setCombSpacingHz(sp)
+      updateCombMatch(combCentreHz, sp, combSidebands, agoS)
+      return
+    }
+    combGrab.current = null
+  }
+  const clearComb = () => {
+    setCombCentreHz(null); setCombSpacingHz(null); setCombMatched(null); combGrab.current = null
+    setLocks((s) => (s.comb ? { ...s, comb: false } : s))
   }
   const dopMode = tool === 'dop'
   // One gram arm at a time: DOP drops vernier/PROBE/BRG/drop; BRG/drop/HARM/LM/PROBE/vernier drop DOP.
@@ -370,6 +433,38 @@ export default function App() {
     }
     cutHarmGrab.current = null
   }
+  const cutCombGrab = useRef<number | null>(null)
+  const cutCombDrag = (phase: 'start' | 'move' | 'end', hz: number, _agoS = 0, _shift = false) => {
+    if (cutArm.locks.comb && phase !== 'end') return
+    if (phase === 'start') {
+      if (cutArm.combCentreHz === null) {
+        setCutArm((s) => ({ ...s, combCentreHz: hz, combSpacingHz: null }))
+        cutCombGrab.current = 0
+        return
+      }
+      const k = nearestCombOrder(cutArm.combCentreHz, cutArm.combSpacingHz, hz)
+      cutCombGrab.current = k
+      if (k === 0) return
+      const sp = spacingFromDrag(cutArm.combCentreHz, k, hz)
+      setCutArm((s) => ({ ...s, combSpacingHz: sp }))
+      return
+    }
+    if (phase === 'move') {
+      const k = cutCombGrab.current
+      if (k === null) return
+      if (k === 0) {
+        setCutArm((s) => ({ ...s, combCentreHz: hz }))
+        return
+      }
+      setCutArm((s) => {
+        if (s.combCentreHz === null) return s
+        return { ...s, combSpacingHz: spacingFromDrag(s.combCentreHz, k, hz) }
+      })
+      return
+    }
+    cutCombGrab.current = null
+  }
+
   const cutLmDrag = (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => {
     if (cutArm.locks.lm && phase !== 'end') return
     cutLmDragRaw(phase, hz, agoS, shift)
@@ -574,7 +669,7 @@ export default function App() {
     setShowManual(true)
     if (dropCapturesPlot(drop.state)) drop.dispatch({ type: 'disarm' })
     setVernierPick(false); setHarmProbeOn(false)
-    if (tool === 'dop' || tool === 'lm' || tool === 'harm') setTool('select')
+    if (tool === 'dop' || tool === 'lm' || tool === 'harm' || tool === 'comb') setTool('select')
     fixStore.setArmed(false)
   }
   /** Send a manual bearing from DIFAR per-bin data at hz for the current buoy. */
@@ -693,7 +788,7 @@ export default function App() {
       {ruler.placed && <button className="tool sub" onClick={() => applyCenter(ruler.s.f0Hz)} data-testid="dop-center" title="Center the gram on f0 (C while DOP is armed)."><IcTarget /><span>CTR f0</span></button>}
       {ruler.placed && !ruler.s.linked && <button className="tool sub" onClick={() => ruler.relink()} data-testid="dop-link" title="Re-link f2 to the mirror of f1"><IcLink /><span>Link</span></button>}
       {ruler.placed && <button className="tool sub" onClick={() => { ruler.clear(); setLocks((s) => s.dop ? { ...s, dop: false } : s) }} data-testid="dop-clear" aria-label="Clear Doppler ruler"><IcTrash /><span>Clear</span></button>}
-      <button className="tool" aria-pressed={tool === 'harm'} aria-label="HARM" onClick={() => {
+      <button className="tool" aria-pressed={tool === 'harm'} aria-label="HARM" data-testid="harm-tool" onClick={() => {
         if (tool === 'harm') { setTool('select'); return }
         setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('harm')
       }} title="Harmonic cursor: tap a line to set the fundamental, drag any marker to adjust, PROBE (or shift-click) another line for its ratio"><IcHarm /><span>HARM</span></button>
@@ -702,6 +797,15 @@ export default function App() {
         setHarmProbeOn((v) => !v)
       }} title="Next tap sets a ratio probe" data-testid="harm-probe-btn" aria-label="PROBE"><IcProbe /><span>PROBE</span></button>}
       {harmF0 !== null && <button className="tool sub" onClick={clearHarm} aria-label="Clear harmonics" data-testid="harm-clear"><IcTrash /><span>Clear</span></button>}
+      <button className="tool" aria-pressed={tool === 'comb'} aria-label="COMB" data-testid="comb-tool" onClick={() => {
+        if (tool === 'comb') { setTool('select'); return }
+        setBrgArm(ARM_IDLE); setVernierPick(false); setHarmProbeOn(false); setTool('comb')
+      }} title="COMB: pin the centre line, drag to set sideband spacing (PSR est.). Marks ±N sidebands and snap to nearby peaks."><IcComb /><span>COMB</span></button>
+      {combCentreHz !== null && <button className="tool sub" data-testid="comb-sidebands-dec" aria-label="Fewer sidebands"
+        onClick={() => setCombSidebands((n) => clampSidebands(n - 1))} title="Fewer sidebands">−</button>}
+      {combCentreHz !== null && <button className="tool sub" data-testid="comb-sidebands-inc" aria-label="More sidebands"
+        onClick={() => setCombSidebands((n) => clampSidebands(n + 1))} title="More sidebands">+</button>}
+      {combCentreHz !== null && <button className="tool sub" onClick={clearComb} aria-label="Clear COMB" data-testid="comb-clear"><IcTrash /><span>Clear</span></button>}
       <button className="tool" aria-pressed={tool === 'lm'} aria-label="LM" onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)"><IcLm /><span>LM</span></button>
       <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
         title="HORZ: horizontal hairline on the cursor with the Zulu time of the hover row"><IcHorz /><span>HORZ</span></button>
@@ -781,6 +885,18 @@ export default function App() {
         onClick={() => setCutArm((s) => ({ ...s, harmProbeOn: !s.harmProbeOn, tool: s.harmProbeOn ? s.tool : 'harm', brgArm: ARM_IDLE }))}
         title="Next tap sets a ratio probe"><IcProbe /><span>PROBE</span></button>}
       {cutArm.harmF0 !== null && <button className="tool sub" onClick={() => setCutArm((s) => ({ ...s, harmF0: null, harmK: null, harmFam: null, harmProbe: null, harmProbeOn: false }))} aria-label="Clear harmonics" data-testid="cut-harm-clear"><IcTrash /><span>Clear</span></button>}
+      <button className="tool" aria-pressed={cutArm.tool === 'comb'} aria-label="COMB" data-testid="cut-comb-tool"
+        disabled={!cutAvail.comb.enabled}
+        onClick={() => setCutArm((s) => s.tool === 'comb'
+          ? { ...s, tool: 'select' }
+          : { ...s, tool: 'comb', brgArm: ARM_IDLE, vernierPick: false, harmProbeOn: false })}
+        title={cutAvail.comb.reason ?? 'COMB: pin centre, drag spacing (PSR est.) on the cut gram'}>
+        <IcComb /><span>COMB</span></button>
+      {cutArm.combCentreHz !== null && <button className="tool sub" data-testid="cut-comb-sidebands-dec" aria-label="Fewer sidebands"
+        onClick={() => setCutArm((s) => ({ ...s, combSidebands: clampSidebands(s.combSidebands - 1) }))}>−</button>}
+      {cutArm.combCentreHz !== null && <button className="tool sub" data-testid="cut-comb-sidebands-inc" aria-label="More sidebands"
+        onClick={() => setCutArm((s) => ({ ...s, combSidebands: clampSidebands(s.combSidebands + 1) }))}>+</button>}
+      {cutArm.combCentreHz !== null && <button className="tool sub" onClick={() => setCutArm((s) => ({ ...s, combCentreHz: null, combSpacingHz: null, locks: s.locks.comb ? { ...s.locks, comb: false } : s.locks }))} aria-label="Clear COMB" data-testid="cut-comb-clear"><IcTrash /><span>Clear</span></button>}
       <button className="tool" aria-pressed={cutArm.tool === 'lm'} aria-label="LM" data-testid="cut-lm-tool"
         disabled={!cutAvail.lm.enabled}
         onClick={() => cutAvail.lm.enabled && toggleCutLm()}
@@ -960,23 +1076,31 @@ export default function App() {
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
                 mode={gramMode === 'demon' ? 'lofar' : gramMode} tactical={st.tactical} handoff={st.handoff}
-                onCenterFreq={applyCenter} onCursorHz={setCursorHz} cursorSuffix={focusSuffix} bearingAtRef={bearingAtRef}
+                onCenterFreq={applyCenter} onCursorHz={setCursorHz} cursorSuffix={focusSuffix} bearingAtRef={bearingAtRef} rowSamplerRef={rowSamplerRef}
                 onPickPoint={isPickFreq(brgArm) ? (hz) => { sendBrgAtFreq(hz) }
                   : vernierPick ? (hz) => centerVernier(hz)
                   : dopMode ? (hz, ago) => { if (locks.dop) { flipLock('dop'); return }; ruler.tap(hz, st.simT - ago) }
                   : harmProbeOn && harmF0 !== null ? (hz) => { setHarmProbe(hz); setHarmProbeOn(false) } : undefined}
-                onDragPoint={isPickFreq(brgArm) || vernierPick || (harmProbeOn && harmF0 !== null) ? undefined : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : undefined}
-                dragLocked={(tool === 'harm' && locks.harm) || (tool === 'lm' && locks.lm)}
-                dragLockable={(tool === 'harm' && harmF0 !== null) || tool === 'lm'}
-                onDragLockTap={() => flipLock(tool === 'lm' ? 'lm' : 'harm')}
+                onDragPoint={isPickFreq(brgArm) || vernierPick || (harmProbeOn && harmF0 !== null) ? undefined
+                  : tool === 'lm' ? lmDrag : tool === 'harm' ? harmDrag : tool === 'comb' ? combDrag : undefined}
+                dragLocked={(tool === 'harm' && locks.harm) || (tool === 'comb' && locks.comb) || (tool === 'lm' && locks.lm)}
+                dragLockable={(tool === 'harm' && harmF0 !== null) || (tool === 'comb' && combCentreHz !== null) || tool === 'lm'}
+                onDragLockTap={() => flipLock(tool === 'lm' ? 'lm' : tool === 'comb' ? 'comb' : 'harm')}
                 horz={horzOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
                 paused={!st.playing} scrollBackS={scrollBackS} onScrollBack={setScrollBackS}
                 onReturnToLive={() => setScrollBackS(returnToLive())}
-                overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null ? (ctx) => (<>
+                overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null || combCentreHz !== null ? (ctx) => (<>
                   {harmF0 !== null && harmonicSeries(harmF0, ctx.view.hi).map((f, i) => f >= ctx.view.lo && (
                     <div key={`h${i}`} className="harm-marker lofar" style={{ left: freqToX(f, ctx.view, ctx.width) }}><span>{i === 0 ? 'F' : i + 1}</span></div>))}
                   {harmF0 !== null && harmProbe !== null && harmProbe >= ctx.view.lo && harmProbe <= ctx.view.hi && (
                     <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(harmProbe, ctx.view, ctx.width) }}><span>×{(harmProbe / harmF0).toFixed(2)}</span></div>)}
+                  {combCentreHz !== null && (combSpacingHz !== null && combSpacingHz > 0
+                    ? snapCombMarks(combCentreHz, combSpacingHz, combSidebands, sampleCombRow(0), cfg?.f0 ?? 0, cfg?.fBin ?? 1, ctx.view.lo, ctx.view.hi)
+                    : [{ n: 0, hz: combCentreHz, snappedHz: combCentreHz, matched: true }]
+                  ).filter((m) => m.snappedHz >= ctx.view.lo && m.snappedHz <= ctx.view.hi).map((m) => (
+                    <div key={`c${m.n}`} className={`harm-marker lofar comb-marker${m.n === 0 ? ' comb-centre' : ''}`} data-testid={m.n === 0 ? 'comb-mark-centre' : `comb-mark-${m.n}`}
+                      style={{ left: freqToX(m.snappedHz, ctx.view, ctx.width) }}><span>{m.n === 0 ? 'C' : (m.n > 0 ? `+${m.n}` : `${m.n}`)}</span></div>
+                  ))}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
                   {tool === 'lm' && lmIdealLabel && (
                     <div className="lm-ideal-badge" data-testid="lm-ideal-pass-label">{lmIdealLabel}</div>
@@ -986,6 +1110,7 @@ export default function App() {
               </div>
             )}
             {(tool === 'harm' || harmF0 !== null) && <div className={`gram-note readout harm-note${locks.harm ? ' locked' : ''}`} data-testid="harm-readout" data-locked={locks.harm ? '1' : '0'}>{locks.harm && <IcLock size={11} className="cursor-lock-ic" />}{harmText(harmF0, harmK, cfg ? fullView(cfg).hi : BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
+            {(tool === 'comb' || combCentreHz !== null) && <div className={`gram-note readout comb-note${locks.comb ? ' locked' : ''}`} data-testid="comb-readout" data-locked={locks.comb ? '1' : '0'}>{locks.comb && <IcLock size={11} className="cursor-lock-ic" />}{combText(combCentreHz, combSpacingHz, combSidebands, combMatched)}</div>}
             {(dopMode || ruler.placed) && <DopplerReadout store={ruler} fBin={cfg?.fBin ?? 1} locked={locks.dop} />}
             {tool === 'lm' && (
               <div className="lm-panel" data-testid="lm-panel">
@@ -1138,19 +1263,23 @@ export default function App() {
             harmFam: cutArm.harmFam,
             harmProbe: cutArm.harmProbe,
             harmProbeOn: cutArm.harmProbeOn,
+            combCentreHz: cutArm.combCentreHz,
+            combSpacingHz: cutArm.combSpacingHz,
+            combSidebands: cutArm.combSidebands,
+            combMatched: null,
             lm: cutArm.lm,
             cpaGeom: cutCpaGeom,
             ruler: cutRuler,
             dopMode: cutDopMode,
             horzOn,
-            dragLocked: (cutArm.tool === 'harm' && cutArm.locks.harm) || (cutArm.tool === 'lm' && cutArm.locks.lm),
-            dragLockable: (cutArm.tool === 'harm' && cutArm.harmF0 !== null) || cutArm.tool === 'lm',
-            onDragLockTap: () => flipCutLock(cutArm.tool === 'lm' ? 'lm' : 'harm'),
+            dragLocked: (cutArm.tool === 'harm' && cutArm.locks.harm) || (cutArm.tool === 'comb' && cutArm.locks.comb) || (cutArm.tool === 'lm' && cutArm.locks.lm),
+            dragLockable: (cutArm.tool === 'harm' && cutArm.harmF0 !== null) || (cutArm.tool === 'comb' && cutArm.combCentreHz !== null) || cutArm.tool === 'lm',
+            onDragLockTap: () => flipCutLock(cutArm.tool === 'lm' ? 'lm' : cutArm.tool === 'comb' ? 'comb' : 'harm'),
             onPickPoint: isPickFreq(cutArm.brgArm) ? (hz) => { sendBrgAtFreq(hz); setCutArm((s) => ({ ...s, brgArm: ARM_IDLE })) }
               : cutDopMode ? (hz, ago) => { if (cutArm.locks.dop) { flipCutLock('dop'); return }; cutRuler.tap(hz, st.simT - ago) }
               : cutArm.harmProbeOn && cutArm.harmF0 !== null ? (hz) => setCutArm((s) => ({ ...s, harmProbe: hz, harmProbeOn: false })) : undefined,
             onDragPoint: isPickFreq(cutArm.brgArm) || (cutArm.harmProbeOn && cutArm.harmF0 !== null) ? undefined
-              : cutArm.tool === 'lm' ? cutLmDrag : cutArm.tool === 'harm' ? cutHarmDrag : undefined,
+              : cutArm.tool === 'lm' ? cutLmDrag : cutArm.tool === 'harm' ? cutHarmDrag : cutArm.tool === 'comb' ? cutCombDrag : undefined,
             onCursorHz: setCursorHz,
             cursorSuffix: focusSuffix,
             flipLock: (k) => flipCutLock(k),
