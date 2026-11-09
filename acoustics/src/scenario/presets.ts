@@ -14,7 +14,7 @@ import {placeContactSpawn,spawnLevelDb} from '../spawnGeometry.js';
 import {deriveSignature} from '../catalog/derive.js';
 export type Difficulty='easy'|'regular'|'difficult';
 /** v1.1 plain operator-editable data, not a hidden difficulty switch. surfaceTraffic controls a seeded ship prefix and ambient shipping. */
-export interface ScenarioParams {reactorOffline?:boolean;subCount:number;rarityWeights:RarityWeights;opState:{speedKn:[number,number];depthM:[number,number];quietProb:number;cavitationAllowed:boolean};seaState:number;surfaceTraffic:number;cpaRangeKm:[number,number];buoyLifeMin:number;seed:number;/** m3-events: optional sub behaviour pick weights (defaults subBehaviourWeights). */behaviourWeights?:Record<SubBehaviour,number>}
+export interface ScenarioParams {reactorOffline?:boolean;subCount:number;rarityWeights:RarityWeights;opState:{speedKn:[number,number];depthM:[number,number];quietProb:number;cavitationAllowed:boolean;/** Explicit training mixture: chance a diesel uses a shallow machinery encounter instead of the patrol depth range. Omitted = use patrol depth range subject to class limits. */shallowDieselProb?:number};seaState:number;surfaceTraffic:number;cpaRangeKm:[number,number];buoyLifeMin:number;seed:number;/** m3-events: optional sub behaviour pick weights (defaults subBehaviourWeights). */behaviourWeights?:Record<SubBehaviour,number>}
 const safe=(x:unknown,fallback:number,lo:number,hi:number):number=>typeof x==='number'&&Number.isFinite(x)?clamp(x,lo,hi):fallback;
 function range(x:unknown,fallback:[number,number],lo:number,hi:number):[number,number]{const a=Array.isArray(x)?x:[];const l=safe(a[0],fallback[0],lo,hi),h=safe(a[1],fallback[1],lo,hi);return l<=h?[l,h]:[h,l];}
 function clampBehaviourWeights(w:Partial<Record<SubBehaviour,number>>):Record<SubBehaviour,number>{const out={...subBehaviourWeights};for(const k of SUB_BEHAVIOURS)out[k]=safe(w[k],subBehaviourWeights[k],0,10000);if(!SUB_BEHAVIOURS.some(k=>out[k]>0))Object.assign(out,subBehaviourWeights);return out;}
@@ -30,14 +30,14 @@ export function subBehaviourLimits(klass:SubmarineClass,c:ClassParams,op:Operati
 export function clampParams(value:unknown):ScenarioParams {
  const p=(value&&typeof value==='object'?value:{}) as Partial<ScenarioParams>,o=p.opState;
  const weights={...rarityWeights};for(const k of rarityOrder)weights[k]=safe(p.rarityWeights?.[k],rarityWeights[k],0,10000);if(!rarityOrder.some(k=>weights[k]>0))Object.assign(weights,rarityWeights);
- return {reactorOffline:p.reactorOffline===true,subCount:Math.round(safe(p.subCount,1,1,250)),rarityWeights:weights,opState:{speedKn:range(o?.speedKn,[6,18],0,45),depthM:range(o?.depthM,[20,100],0,1000),quietProb:safe(o?.quietProb,.35,0,1),cavitationAllowed:typeof o?.cavitationAllowed==='boolean'?o.cavitationAllowed:true},seaState:Math.round(safe(p.seaState,3,0,6)),surfaceTraffic:safe(p.surfaceTraffic,.5,0,1),cpaRangeKm:range(p.cpaRangeKm,[1.5,3],.05,100),buoyLifeMin:safe(p.buoyLifeMin,240,1,1440),seed:Math.floor(safe(p.seed,42,0,4294967295)),...(p.behaviourWeights&&typeof p.behaviourWeights==='object'?{behaviourWeights:clampBehaviourWeights(p.behaviourWeights)}:{})};
+ return {reactorOffline:p.reactorOffline===true,subCount:Math.round(safe(p.subCount,1,1,250)),rarityWeights:weights,opState:{speedKn:range(o?.speedKn,[6,18],0,45),depthM:range(o?.depthM,[20,100],0,1000),quietProb:safe(o?.quietProb,.35,0,1),cavitationAllowed:typeof o?.cavitationAllowed==='boolean'?o.cavitationAllowed:true,...(o?.shallowDieselProb!==undefined?{shallowDieselProb:safe(o.shallowDieselProb,0,0,1)}:{})},seaState:Math.round(safe(p.seaState,3,0,6)),surfaceTraffic:safe(p.surfaceTraffic,.5,0,1),cpaRangeKm:range(p.cpaRangeKm,[1.5,3],.05,100),buoyLifeMin:safe(p.buoyLifeMin,240,1,1440),seed:Math.floor(safe(p.seed,42,0,4294967295)),...(p.behaviourWeights&&typeof p.behaviourWeights==='object'?{behaviourWeights:clampBehaviourWeights(p.behaviourWeights)}:{})};
 }
 export function presetToParams(difficulty:Difficulty,seed:number):ScenarioParams {
  if(!['easy','regular','difficult'].includes(difficulty))throw new Error('Unknown difficulty');seed=clampParams({seed}).seed;
  const rng=mulberry32(deriveSeed(seed,'difficulty-preset')),u=rng(),v=rng(),life=rng();const weights={...rarityWeights};
  if(difficulty==='easy')Object.assign(weights,{dieselDirect:.5,dieselGearReduction:8,dieselElectric:60,aip:.1,nuclearGearReduction:60,nuclearElectric:.1});
  if(difficulty==='difficult'){weights.dieselDirect*=3;weights.aip*=3;weights.nuclearElectric*=3;}
- return clampParams({seed,subCount:difficulty==='easy'?1:1+Math.floor(u*(difficulty==='regular'?2:3)),rarityWeights:weights,opState:difficulty==='easy'?{speedKn:[14,24],depthM:[0,12],quietProb:.05,cavitationAllowed:true}:difficulty==='regular'?{speedKn:[6,18],depthM:[20,100],quietProb:.35,cavitationAllowed:true}:{speedKn:[2,7],depthM:[120,300],quietProb:.9,cavitationAllowed:false},seaState:difficulty==='easy'?1+Math.floor(v*2):difficulty==='regular'?3:4+Math.floor(v*2),surfaceTraffic:difficulty==='easy'?.2:difficulty==='regular'?.5:.9,cpaRangeKm:difficulty==='easy'?[.3,1.2]:difficulty==='regular'?[1.5,3]:[4,8],buoyLifeMin:difficulty==='easy'?480:difficulty==='regular'?240:60+60*life});
+ return clampParams({seed,subCount:difficulty==='easy'?1:1+Math.floor(u*(difficulty==='regular'?2:3)),rarityWeights:weights,opState:difficulty==='easy'?{speedKn:[14,24],depthM:[0,12],quietProb:.05,cavitationAllowed:true}:difficulty==='regular'?{speedKn:[6,18],depthM:[20,100],quietProb:.35,cavitationAllowed:true,shallowDieselProb:.35}:{speedKn:[2,7],depthM:[120,300],quietProb:.9,cavitationAllowed:false,shallowDieselProb:.2},seaState:difficulty==='easy'?1+Math.floor(v*2):difficulty==='regular'?3:4+Math.floor(v*2),surfaceTraffic:difficulty==='easy'?.2:difficulty==='regular'?.5:.9,cpaRangeKm:difficulty==='easy'?[.3,1.2]:difficulty==='regular'?[1.5,3]:[4,8],buoyLifeMin:difficulty==='easy'?480:difficulty==='regular'?240:60+60*life});
 }
 /** Seeded catalog identity and operational state only; never mutates catalog class parameters. */
 export function generateScenario(params:ScenarioParams,seed=params.seed):Scenario {
@@ -47,7 +47,16 @@ export function generateScenario(params:ScenarioParams,seed=params.seed):Scenari
  const surfT=12+((p.seed>>>3)%10),sal=34+((p.seed>>>7)%3)*.5;s.environment.temperatureC=surfT;s.environment.salinityPsu=sal;
  s.waterColumn=attachWaterColumn(s.environment,buildWaterColumn({surfaceTempC:surfT,deepTempC:surfT-6-((p.seed>>>5)%5),salinityPsu:sal,maxDepthM:Math.max(300,p.opState.depthM[1]*1.5)}));
  for(let i=0;i<p.subCount;i++){const draw=randomizeSelection(select,p.rarityWeights),c=effectiveParams(draw.klass,draw.variantId),rng=mulberry32(deriveSeed(p.seed,`op-state:${i}`));
-  const quiet=rng()<p.opState.quietProb;let speed=p.opState.speedKn[0]+rng()*(p.opState.speedKn[1]-p.opState.speedKn[0]);const depth=clamp(p.opState.depthM[0]+rng()*(p.opState.depthM[1]-p.opState.depthM[0]),c.depthM[0],c.depthM[1]);
+  const quiet=rng()<p.opState.quietProb;let speed=p.opState.speedKn[0]+rng()*(p.opState.speedKn[1]-p.opState.speedKn[0]);let depth=clamp(p.opState.depthM[0]+rng()*(p.opState.depthM[1]-p.opState.depthM[0]),c.depthM[0],c.depthM[1]);
+  // Explicit preset mixture only; independent seed preserves catalog/traffic/behaviour draws.
+  // Modes still go through chooseOperatingState (engine-off remains valid at shallow depths).
+  const machineryRng=mulberry32(deriveSeed(p.seed,`shallow-machinery:${i}`));
+  if(draw.klass.plant==='diesel'&&machineryRng()<(p.opState.shallowDieselProb??0)){
+   const snorkMax=Math.min(draw.klass.snorkelDepthM,c.depthM[1]);
+   const shallowSpeed=Math.min(speed,c.maxSpeedKn,quiet?c.quietSpeedKn:Infinity,p.opState.cavitationAllowed?Infinity:.95*cavitationInceptionKn(c,0));
+   const surfWindow=commandSpeedWindowKn(draw.klass,'SURF'),surfAllowed=!surfWindow||shallowSpeed>=surfWindow.min*(1+1e-6);
+   if(snorkMax>0)depth=machineryRng()<.25&&surfAllowed?0:Math.min(snorkMax,Math.max(c.depthM[0],1+machineryRng()*Math.max(0,snorkMax-1)));
+  }
   speed=Math.min(speed,c.maxSpeedKn);if(quiet)speed=Math.min(speed,c.quietSpeedKn);if(!p.opState.cavitationAllowed)speed=Math.min(speed,.95*cavitationInceptionKn(c,depth));
   const op=chooseOperatingState(draw.klass,speed,depth,quiet,mulberry32(deriveSeed(p.seed,`static-mode:${i}`)),p.reactorOffline===true);speed=op.speedKn;const mode=op.mode,v=knotsToMps(speed);
   const brng=mulberry32(deriveSeed(p.seed,`behaviour:${i}`)),behaviour=pickSubBehaviour(brng,p.behaviourWeights??subBehaviourWeights),limits=subBehaviourLimits(draw.klass,c,op,p,quiet);
