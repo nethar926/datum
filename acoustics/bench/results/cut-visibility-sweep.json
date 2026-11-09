@@ -1,0 +1,723 @@
+{
+ "note": "Post tonalRefDb/effective-depth/SNORK fix. Starter cuts: lesson lines clear 6 dB (masked HYDP stays masked). Procedural: VLF/aux present without flooding detection.",
+ "beforeBaseline": [
+  [
+   "cut-brindleflux-snork",
+   1371.8,
+   1.84
+  ],
+  [
+   "cut-cinderlilt-cav",
+   1811.4,
+   1.83
+  ],
+  [
+   "cut-pebblewisp-demon",
+   1885.7,
+   1.65
+  ],
+  [
+   "cut-mistacorn-batt",
+   1531,
+   1.59
+  ],
+  [
+   "cut-orbelune-msr",
+   906.7,
+   10.36
+  ],
+  [
+   "cut-emberbraid-ssma",
+   350.8,
+   3.86
+  ],
+  [
+   "cut-velvetshoal-nuc",
+   388.9,
+   1.69
+  ],
+  [
+   "cut-twilightweft-nuc",
+   1925.7,
+   1.71
+  ],
+  [
+   "cut-gloamspiral-aip",
+   277.5,
+   1.6
+  ],
+  [
+   "cut-morrowcoil-hydp-masked",
+   93.8,
+   8.3
+  ]
+ ],
+ "afterBest": [
+  [
+   "cut-brindleflux-snork",
+   179.8,
+   23.81
+  ],
+  [
+   "cut-cinderlilt-cav",
+   232.5,
+   35.42
+  ],
+  [
+   "cut-pebblewisp-demon",
+   99.7,
+   22.51
+  ],
+  [
+   "cut-mistacorn-batt",
+   99.7,
+   22.01
+  ],
+  [
+   "cut-orbelune-msr",
+   906.7,
+   44.78
+  ],
+  [
+   "cut-emberbraid-ssma",
+   350.8,
+   55.74
+  ],
+  [
+   "cut-velvetshoal-nuc",
+   467,
+   14.87
+  ],
+  [
+   "cut-twilightweft-nuc",
+   956.5,
+   20.9
+  ],
+  [
+   "cut-gloamspiral-aip",
+   84,
+   10.31
+  ],
+  [
+   "cut-morrowcoil-hydp-masked",
+   94.8,
+   39.41
+  ]
+ ],
+ "window": {
+  "rows": 120,
+  "rowDtS": 0.25,
+  "centerFrac": 0.5,
+  "fLoHz": 12,
+  "fHiHz": 2000,
+  "guardBins": 3,
+  "sideBins": 8,
+  "minContrastDb": 6
+ },
+ "cuts": [
+  {
+   "id": "cut-brindleflux-snork",
+   "mode": "SNORK",
+   "depthM": 12,
+   "cpaM": 900,
+   "cpaNote": null,
+   "bestHz": 179.8,
+   "bestContrastDb": 23.81,
+   "lessons": [
+    {
+     "family": "CFR",
+     "n": 1,
+     "hz": 5.284619270704912,
+     "contrastDb": null,
+     "window": "mid",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    },
+    {
+     "family": "CFR",
+     "n": 2,
+     "hz": 10.569238541409824,
+     "contrastDb": null,
+     "window": "mid",
+     "masked": true,
+     "inWindow": false,
+     "giveaway": false
+    },
+    {
+     "family": "EDA",
+     "n": 1,
+     "hz": 146.6481847620613,
+     "peakHz": 147.53297508549096,
+     "contrastDb": 14.14,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    }
+   ]
+  },
+  {
+   "id": "cut-cinderlilt-cav",
+   "mode": "SURF",
+   "depthM": 0,
+   "cpaM": 400,
+   "cpaNote": "Surfaced Lloyd dipole + rich SS3 ambient: 400 m CPA so GRID/BR teach above 6 dB",
+   "bestHz": 232.5,
+   "bestContrastDb": 35.42,
+   "lessons": [
+    {
+     "family": "BR",
+     "n": 1,
+     "hz": 31.31578947368421,
+     "peakHz": 31.31578947368421,
+     "contrastDb": null,
+     "window": "broadband-skip",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    },
+    {
+     "family": "CFR",
+     "n": 1,
+     "hz": 6.263157894736842,
+     "contrastDb": null,
+     "window": "mid",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    },
+    {
+     "family": "GRID",
+     "n": 1,
+     "hz": 50,
+     "peakHz": 49.82901807523204,
+     "contrastDb": 11.82,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": false
+    }
+   ]
+  },
+  {
+   "id": "cut-pebblewisp-demon",
+   "mode": "BATT",
+   "depthM": 60,
+   "cpaM": 900,
+   "cpaNote": null,
+   "bestHz": 99.7,
+   "bestContrastDb": 22.51,
+   "lessons": [
+    {
+     "family": "BR",
+     "n": 1,
+     "hz": 4.523809523809524,
+     "peakHz": 4.523809523809524,
+     "contrastDb": null,
+     "window": "demon-skip",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    },
+    {
+     "family": "HYDP",
+     "n": 1,
+     "hz": 1396.61,
+     "peakHz": 1396.1895456766,
+     "contrastDb": 27.7,
+     "window": "hydp-moment",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    }
+   ]
+  },
+  {
+   "id": "cut-mistacorn-batt",
+   "mode": "BATT",
+   "depthM": 50,
+   "cpaM": 900,
+   "cpaNote": null,
+   "bestHz": 99.7,
+   "bestContrastDb": 22.01,
+   "lessons": [
+    {
+     "family": "HYDP",
+     "n": 1,
+     "hz": 788.35,
+     "peakHz": 788.4709330727894,
+     "contrastDb": 16.24,
+     "window": "hydp-moment",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    },
+    {
+     "family": "BR",
+     "n": 1,
+     "hz": 17.5,
+     "peakHz": 17.5,
+     "contrastDb": null,
+     "window": "demon-skip",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    }
+   ]
+  },
+  {
+   "id": "cut-orbelune-msr",
+   "mode": "BATT",
+   "depthM": 80,
+   "cpaM": 900,
+   "cpaNote": null,
+   "bestHz": 906.7,
+   "bestContrastDb": 44.78,
+   "lessons": [
+    {
+     "family": "MSR",
+     "n": 1,
+     "hz": 907.0370370370371,
+     "peakHz": 906.6927210552027,
+     "contrastDb": 44.78,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    },
+    {
+     "family": "GRID",
+     "n": 1,
+     "hz": 60,
+     "peakHz": 59.59941377625794,
+     "contrastDb": 19.03,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": false
+    }
+   ]
+  },
+  {
+   "id": "cut-emberbraid-ssma",
+   "mode": "SNORK",
+   "depthM": 14,
+   "cpaM": 900,
+   "cpaNote": null,
+   "bestHz": 350.8,
+   "bestContrastDb": 55.74,
+   "lessons": [
+    {
+     "family": "AUX",
+     "n": 2,
+     "hz": 116,
+     "peakHz": 134.8314606741573,
+     "contrastDb": 48.78,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    },
+    {
+     "family": "MESH",
+     "n": 1,
+     "hz": 389.80392156862735,
+     "peakHz": 388.8617489008305,
+     "contrastDb": 52.39,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": false
+    },
+    {
+     "family": "CFR",
+     "n": 1,
+     "hz": 8.473998294970162,
+     "contrastDb": null,
+     "window": "mid",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    }
+   ]
+  },
+  {
+   "id": "cut-velvetshoal-nuc",
+   "mode": "NUC",
+   "depthM": 80,
+   "cpaM": 900,
+   "cpaNote": null,
+   "bestHz": 467,
+   "bestContrastDb": 14.87,
+   "lessons": [
+    {
+     "family": "HYDP",
+     "n": 1,
+     "hz": 334.34,
+     "peakHz": 335.1245725451881,
+     "contrastDb": 10.6,
+     "window": "hydp-moment",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    },
+    {
+     "family": "BR",
+     "n": 2,
+     "hz": 70.66666666666667,
+     "peakHz": 70.34684904738641,
+     "contrastDb": 9.16,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": false
+    },
+    {
+     "family": "PSR",
+     "n": 1,
+     "hz": 4.416666666666667,
+     "contrastDb": null,
+     "window": "mid",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    }
+   ]
+  },
+  {
+   "id": "cut-twilightweft-nuc",
+   "mode": "NUC",
+   "depthM": 80,
+   "cpaM": 900,
+   "cpaNote": null,
+   "bestHz": 956.5,
+   "bestContrastDb": 20.9,
+   "lessons": [
+    {
+     "family": "HYDP",
+     "n": 1,
+     "hz": 1536.27,
+     "peakHz": 1540.791402051783,
+     "contrastDb": 10.02,
+     "window": "hydp-moment",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    },
+    {
+     "family": "BR",
+     "n": 2,
+     "hz": 75.37777777777778,
+     "peakHz": 74.25500732779678,
+     "contrastDb": 9.15,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": false
+    },
+    {
+     "family": "PSR",
+     "n": 1,
+     "hz": 4.711111111111111,
+     "contrastDb": null,
+     "window": "mid",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    }
+   ]
+  },
+  {
+   "id": "cut-gloamspiral-aip",
+   "mode": "AIP",
+   "depthM": 80,
+   "cpaM": 300,
+   "cpaNote": "Quiet AIP VLF AUX giveaway: 300 m textbook CPA so 14/28 Hz plant tones clear shared window",
+   "bestHz": 84,
+   "bestContrastDb": 10.31,
+   "lessons": [
+    {
+     "family": "AUX",
+     "n": 1,
+     "hz": 14,
+     "peakHz": 28.334147532975084,
+     "contrastDb": 6.37,
+     "window": "mid",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": true
+    },
+    {
+     "family": "BR",
+     "n": 1,
+     "hz": 10.88888888888889,
+     "contrastDb": null,
+     "window": "mid",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    },
+    {
+     "family": "HYDP",
+     "n": 1,
+     "hz": 207.6,
+     "peakHz": 208.10942843185148,
+     "contrastDb": 10.36,
+     "window": "hydp-moment",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": false
+    }
+   ]
+  },
+  {
+   "id": "cut-morrowcoil-hydp-masked",
+   "mode": "BATT",
+   "depthM": 55,
+   "cpaM": 900,
+   "cpaNote": null,
+   "bestHz": 94.8,
+   "bestContrastDb": 39.41,
+   "lessons": [
+    {
+     "family": "HYDP",
+     "n": 1,
+     "hz": 303.94,
+     "peakHz": 300.92818759159746,
+     "contrastDb": 3.51,
+     "window": "hydp-moment",
+     "masked": true,
+     "inWindow": true,
+     "giveaway": true
+    },
+    {
+     "family": "HYDP",
+     "n": 2,
+     "hz": 607.88,
+     "peakHz": 607.7186126038105,
+     "contrastDb": 27.6,
+     "window": "hydp-moment",
+     "masked": false,
+     "inWindow": true,
+     "giveaway": false
+    },
+    {
+     "family": "BR",
+     "n": 1,
+     "hz": 7.166666666666665,
+     "contrastDb": null,
+     "window": "mid",
+     "masked": false,
+     "inWindow": false,
+     "giveaway": false
+    }
+   ]
+  }
+ ],
+ "pools": [
+  {
+   "difficulty": "easy",
+   "seed": 7,
+   "contacts": 1,
+   "tonals": 61,
+   "vlfLines": 32,
+   "auxLikeLines": 6,
+   "approxLoudAt1km": 53,
+   "ambient30Hz": 76.9,
+   "surfaceTraffic": 0.2,
+   "seaState": 2
+  },
+  {
+   "difficulty": "easy",
+   "seed": 31,
+   "contacts": 1,
+   "tonals": 32,
+   "vlfLines": 11,
+   "auxLikeLines": 3,
+   "approxLoudAt1km": 32,
+   "ambient30Hz": 76.9,
+   "surfaceTraffic": 0.2,
+   "seaState": 2
+  },
+  {
+   "difficulty": "easy",
+   "seed": 47,
+   "contacts": 1,
+   "tonals": 17,
+   "vlfLines": 6,
+   "auxLikeLines": 6,
+   "approxLoudAt1km": 0,
+   "ambient30Hz": 76.9,
+   "surfaceTraffic": 0.2,
+   "seaState": 2
+  },
+  {
+   "difficulty": "easy",
+   "seed": 101,
+   "contacts": 1,
+   "tonals": 45,
+   "vlfLines": 8,
+   "auxLikeLines": 3,
+   "approxLoudAt1km": 14,
+   "ambient30Hz": 76.9,
+   "surfaceTraffic": 0.2,
+   "seaState": 2
+  },
+  {
+   "difficulty": "easy",
+   "seed": 211,
+   "contacts": 1,
+   "tonals": 59,
+   "vlfLines": 11,
+   "auxLikeLines": 3,
+   "approxLoudAt1km": 14,
+   "ambient30Hz": 76.9,
+   "surfaceTraffic": 0.2,
+   "seaState": 1
+  },
+  {
+   "difficulty": "regular",
+   "seed": 7,
+   "contacts": 2,
+   "tonals": 100,
+   "vlfLines": 41,
+   "auxLikeLines": 12,
+   "approxLoudAt1km": 70,
+   "ambient30Hz": 80.8,
+   "surfaceTraffic": 0.5,
+   "seaState": 3
+  },
+  {
+   "difficulty": "regular",
+   "seed": 31,
+   "contacts": 2,
+   "tonals": 33,
+   "vlfLines": 21,
+   "auxLikeLines": 12,
+   "approxLoudAt1km": 9,
+   "ambient30Hz": 80.8,
+   "surfaceTraffic": 0.5,
+   "seaState": 3
+  },
+  {
+   "difficulty": "regular",
+   "seed": 47,
+   "contacts": 1,
+   "tonals": 17,
+   "vlfLines": 5,
+   "auxLikeLines": 6,
+   "approxLoudAt1km": 0,
+   "ambient30Hz": 80.8,
+   "surfaceTraffic": 0.5,
+   "seaState": 3
+  },
+  {
+   "difficulty": "regular",
+   "seed": 101,
+   "contacts": 2,
+   "tonals": 121,
+   "vlfLines": 34,
+   "auxLikeLines": 9,
+   "approxLoudAt1km": 70,
+   "ambient30Hz": 80.8,
+   "surfaceTraffic": 0.5,
+   "seaState": 3
+  },
+  {
+   "difficulty": "regular",
+   "seed": 211,
+   "contacts": 1,
+   "tonals": 61,
+   "vlfLines": 16,
+   "auxLikeLines": 3,
+   "approxLoudAt1km": 2,
+   "ambient30Hz": 80.8,
+   "surfaceTraffic": 0.5,
+   "seaState": 3
+  },
+  {
+   "difficulty": "difficult",
+   "seed": 7,
+   "contacts": 2,
+   "tonals": 95,
+   "vlfLines": 37,
+   "auxLikeLines": 12,
+   "approxLoudAt1km": 64,
+   "ambient30Hz": 83.3,
+   "surfaceTraffic": 0.9,
+   "seaState": 5
+  },
+  {
+   "difficulty": "difficult",
+   "seed": 31,
+   "contacts": 3,
+   "tonals": 86,
+   "vlfLines": 39,
+   "auxLikeLines": 15,
+   "approxLoudAt1km": 55,
+   "ambient30Hz": 83.3,
+   "surfaceTraffic": 0.9,
+   "seaState": 5
+  },
+  {
+   "difficulty": "difficult",
+   "seed": 47,
+   "contacts": 1,
+   "tonals": 17,
+   "vlfLines": 8,
+   "auxLikeLines": 6,
+   "approxLoudAt1km": 0,
+   "ambient30Hz": 83.3,
+   "surfaceTraffic": 0.9,
+   "seaState": 5
+  },
+  {
+   "difficulty": "difficult",
+   "seed": 101,
+   "contacts": 3,
+   "tonals": 85,
+   "vlfLines": 29,
+   "auxLikeLines": 15,
+   "approxLoudAt1km": 2,
+   "ambient30Hz": 83.3,
+   "surfaceTraffic": 0.9,
+   "seaState": 5
+  },
+  {
+   "difficulty": "difficult",
+   "seed": 211,
+   "contacts": 2,
+   "tonals": 94,
+   "vlfLines": 43,
+   "auxLikeLines": 6,
+   "approxLoudAt1km": 2,
+   "ambient30Hz": 83.3,
+   "surfaceTraffic": 0.9,
+   "seaState": 4
+  }
+ ],
+ "poolSummary": [
+  {
+   "difficulty": "easy",
+   "avgContacts": 1,
+   "avgVlf": 13.6,
+   "avgAuxLike": 4.2,
+   "avgApproxLoud": 22.6
+  },
+  {
+   "difficulty": "regular",
+   "avgContacts": 1.6,
+   "avgVlf": 23.4,
+   "avgAuxLike": 8.4,
+   "avgApproxLoud": 30.2
+  },
+  {
+   "difficulty": "difficult",
+   "avgContacts": 2.2,
+   "avgVlf": 31.2,
+   "avgAuxLike": 10.8,
+   "avgApproxLoud": 24.6
+  }
+ ]
+}
