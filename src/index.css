@@ -723,3 +723,26 @@ button, select { font: inherit; color: inherit; }
 /* Scroll the tool row rather than clipping the added selector or shrinking targets. */
 .layout-phonePortrait .drop-bar .drop-tools, .layout-phoneLandscape .drop-bar .drop-tools { overflow-x: auto; }
 .layout-phonePortrait .drop-bar .drop-palette, .layout-phoneLandscape .drop-bar .drop-palette { flex: 0 0 auto; }
+
+
+/* Gesture / hold lock + paused scroll-back chrome */
+.cursor-lock-btn {
+  position: absolute; top: 6px; right: 8px; z-index: 4;
+  width: 36px; height: 36px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(10, 12, 14, .72); border: 1px solid rgba(255,255,255,.14);
+  color: var(--phosphor, #7CFFB2); pointer-events: auto; cursor: pointer;
+}
+.cursor-lock-btn.on { background: rgba(124, 255, 178, .18); border-color: rgba(124, 255, 178, .55); }
+.cursor-readout.held { opacity: .95; }
+.scrollback-bar {
+  position: absolute; left: 50%; bottom: 48px; transform: translateX(-50%);
+  z-index: 5; display: flex; gap: 10px; align-items: center;
+  padding: 6px 10px; border-radius: 12px;
+  background: rgba(8, 10, 12, .88); border: 1px solid rgba(255,255,255,.14);
+  pointer-events: auto;
+}
+.scrollback-zulu { font: 12px/1 var(--font-mono); color: var(--phosphor, #7CFFB2); letter-spacing: .04em; }
+.scrollback-live { font-size: 12px; padding: 6px 10px; }
+.lm-warn { color: #ffb4a2; }
+.lm-assume { display: block; font-size: 10px; opacity: .75; max-width: 280px; line-height: 1.3; margin-top: 4px; }
