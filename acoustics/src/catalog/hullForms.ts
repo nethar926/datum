@@ -29,9 +29,10 @@ export function classOperatorsFor(c:Pick<SubmarineClass,'id'|'operatorNationId'|
  return {designOriginNationId:c.operatorNationId,operators:[{nationId:c.operatorNationId,role:'origin',hullIds:own.map(h=>h.id)},...ex.map(x=>({nationId:x.nationId,role:'export' as const,hullIds:x.hulls.map(h=>h.id)}))],hulls:[...own,...ex.flatMap(x=>x.hulls)]};
 }
 /** Fictional propeller drawing sheet (for the two prop views); type and blade count come from the catalog. */
-export interface PropellerDrawing {fictional:true;type:'skewed'|'flat'|'cpp';blades:number;skewDeg:number;expandedAreaRatio:number;hubDiameterRatio:number;diameterM:number}
+/** Pitch (fixed/controllable) and blade form (skewed/flat) are independent; catalogType is the legacy acoustic-model key. */
+export interface PropellerDrawing {fictional:true;catalogType:'skewed'|'flat'|'cpp';pitch:'fixed'|'controllable';bladeForm:'skewed'|'flat';blades:number;skewDeg:number;expandedAreaRatio:number;hubDiameterRatio:number;diameterM:number}
 export function propellerDrawingFor(c:Pick<SubmarineClass,'id'|'propellerType'|'propeller'>,beamM:number):PropellerDrawing{
  const rng=mulberry32(deriveSeed(0x9a0b,c.id)),u=()=>rng(),t=c.propellerType;
- const skewDeg=round(t==='skewed'?25+u()*20:t==='cpp'?5+u()*10:u()*8,0);
- return {fictional:true,type:t,blades:c.propeller.blades,skewDeg,expandedAreaRatio:round(.55+u()*.25,2),hubDiameterRatio:round(t==='cpp'?.3+u()*.06:.18+u()*.06,2),diameterM:round(beamM*(.42+u()*.12))};
+ const bladeForm:'skewed'|'flat'=t==='cpp'?(u()<.5?'skewed':'flat'):t,skewDeg=round(bladeForm==='skewed'?25+u()*20:u()*8,0);
+ return {fictional:true,catalogType:t,pitch:t==='cpp'?'controllable':'fixed',bladeForm,blades:c.propeller.blades,skewDeg,expandedAreaRatio:round(.55+u()*.25,2),hubDiameterRatio:round(t==='cpp'?.3+u()*.06:.18+u()*.06,2),diameterM:round(beamM*(.42+u()*.12))};
 }

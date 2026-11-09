@@ -39,7 +39,7 @@ describe('class profiles (manual / reveal)',()=>{
   for(const p of profiles){const h=p.hullForm;expect(h.fictional).toBe(true);expect(h.lengthM/h.beamM).toBeGreaterThan(6.5);expect(h.lengthM/h.beamM).toBeLessThan(12);
    expect(h.sail.fromBowFrac).toBeGreaterThan(.2);expect(h.sail.fromBowFrac+h.sail.lengthM/h.lengthM).toBeLessThan(.6);
    if(p.aip)expect(h.aipPlugM).toBeGreaterThan(0);
-   const d=p.hull.propellerDrawing;expect(d.blades).toBe(p.hull.propeller.blades);expect(d.type).toBe(p.hull.propeller.type);if(d.type==='skewed')expect(d.skewDeg).toBeGreaterThanOrEqual(25);else expect(d.skewDeg).toBeLessThan(16);expect(d.diameterM).toBeLessThan(h.beamM);}
+   const d=p.hull.propellerDrawing;expect(d.blades).toBe(p.hull.propeller.blades);expect(d.catalogType).toBe(p.hull.propeller.type);expect(d.pitch).toBe(d.catalogType==='cpp'?'controllable':'fixed');if(d.bladeForm==='skewed')expect(d.skewDeg).toBeGreaterThanOrEqual(25);else expect(d.skewDeg).toBeLessThan(16);expect(d.diameterM).toBeLessThan(h.beamM);}
   expect(buildClassProfiles()).toEqual(profiles);
  });
  it('operators: origin separate from exports; each hull has exactly one operator; scenario pool unchanged',()=>{
