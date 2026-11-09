@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { acousticsV11, trafficLabel, type Difficulty, type ScenarioParams } from '../scenarios/acousticsApi'
-import { applyPlant, loadSimStart, parseSeed, randomSeed, plantOfWeights, PLANT_PICKS, saveSimStart, type PlantPick, type SimStartPrefs } from './simStart'
+import { applyPlant, loadSimStart, parseSeed, randomSeed, plantOfWeights, PLANT_PICKS, saveSimStart, COMING_SOON_LABEL, isPlantComingSoon, type PlantPick, type SimStartPrefs } from './simStart'
 import { TrafficSlider } from './TrafficSlider'
 import { SCENARIOS, SCENARIO_LABEL } from '../scenarios/training'
 
@@ -26,8 +26,8 @@ function Range({ label, value, min, max, step, unit, onChange }: { label: string
   )
 }
 
-/** New-sim screen. Random is the default: three difficulties and Diesel / Nuke / Any, then Start.
- * Advanced opens the full manual setup; the sliders show exactly what will run. */
+/** New-sim screen. Random is the default: three difficulties and Diesel / Any, then Start.
+ * Nuke stays listed as Coming soon (disabled). Advanced opens the full manual setup. */
 export function NewScenario({ onStart, onStartTraining, onClose, activeRun = false }: { onStart: (p: ScenarioParams) => void; onStartTraining: (id: string, traffic: number) => void; onClose: () => void; activeRun?: boolean }) {
   const [scenarioId, setScenarioId] = useState('generated')
   const [trafficOn, setTrafficOn] = useState(true)
@@ -47,7 +47,9 @@ export function NewScenario({ onStart, onStartTraining, onClose, activeRun = fal
   const pick = (patch: Partial<SimStartPrefs>) => { setPrefs((v) => ({ ...v, ...patch })); setCustom(null) }
   const edit = (patch: Partial<ScenarioParams>) => { if (raw) setCustom(api.clampParams ? api.clampParams({ ...raw, ...patch }) : { ...raw, ...patch }) }
   const editOp = (patch: Partial<ScenarioParams['opState']>) => p && edit({ opState: { ...p.opState, ...patch } })
-  const plantNow = p ? plantOfWeights(p.rarityWeights) : prefs.plant
+  // Radiogroup follows the trainee pick; weights alone look like diesel after nuclear is zeroed.
+  const plantSelRaw = custom && p ? plantOfWeights(p.rarityWeights) : prefs.plant
+  const plantNow = isPlantComingSoon(plantSelRaw) ? 'any' : plantSelRaw
   const subs = p ? `${p.subCount} sub${p.subCount === 1 ? '' : 's'}` : ''
 
   return (
@@ -74,14 +76,35 @@ export function NewScenario({ onStart, onStartTraining, onClose, activeRun = fal
             </div>
             <span className="seg-label">BOATS</span>
             <div className="seg big" role="radiogroup" aria-label="Boats" data-testid="ns-plant">
-              {PLANT_PICKS.map((d) => <button key={d.id} role="radio" aria-checked={plantNow === d.id} aria-pressed={plantNow === d.id}
-                onClick={() => custom ? setCustom(applyPlant({ ...custom, rarityWeights: preset(prefs.diff, 'any', seed)!.rarityWeights }, d.id)) : pick({ plant: d.id })}>{d.label}</button>)}
+              {PLANT_PICKS.map((d) => {
+                const soon = !!d.comingSoon || isPlantComingSoon(d.id)
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={!soon && plantNow === d.id}
+                    aria-pressed={!soon && plantNow === d.id}
+                    aria-disabled={soon || undefined}
+                    disabled={soon}
+                    className={soon ? 'coming-soon' : undefined}
+                    data-coming-soon={soon ? '1' : undefined}
+                    data-testid={d.id === 'nuclear' ? 'ns-plant-nuclear' : undefined}
+                    onClick={soon ? undefined : () => custom
+                      ? setCustom(applyPlant({ ...custom, rarityWeights: preset(prefs.diff, 'any', seed)!.rarityWeights }, d.id))
+                      : pick({ plant: d.id })}
+                  >
+                    {d.label}
+                    {soon && <span className="ns-coming-soon" data-testid="ns-plant-coming-soon">{COMING_SOON_LABEL}</span>}
+                  </button>
+                )
+              })}
             </div>
             <label className="seg-label" htmlFor="ns-seed">SEED</label>
             <div className="ns-seed">
               <input id="ns-seed" data-testid="ns-seed" className={seedBad ? 'bad' : ''} inputMode="numeric" autoComplete="off" spellCheck={false} value={seedText}
                 aria-invalid={seedBad} aria-describedby="ns-seed-note" onChange={(e) => typeSeed(e.target.value)} onFocus={(e) => e.target.select()} />
-              <button className="btn ns-randomize" data-testid="ns-seed-new" aria-label={`Randomize within ${plantNow === 'any' ? 'any plant' : plantNow === 'diesel' ? 'diesel' : 'nuclear'}`} title="New random scenario, same plant filter" onClick={() => setSeed(randomSeed())}>⚄ Randomize</button>
+              <button className="btn ns-randomize" data-testid="ns-seed-new" aria-label={`Randomize within ${plantNow === 'any' ? 'any plant' : 'diesel'}`} title="New random scenario, same plant filter" onClick={() => setSeed(randomSeed())}>⚄ Randomize</button>
               {prefs.lastSeed !== undefined && prefs.lastSeed !== seed && <button className="btn" data-testid="ns-seed-last" onClick={() => setSeed(prefs.lastSeed!)}>Last {prefs.lastSeed}</button>}
             </div>
             <p id="ns-seed-note" className={`ns-seed-note${seedBad ? ' bad' : ''}`}>{seedBad ? 'Seed is a whole number, 0 to 4294967295' : 'Same seed and settings replay the same scenario'}</p>

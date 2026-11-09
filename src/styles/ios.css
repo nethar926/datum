@@ -441,6 +441,21 @@ button.ios-row:active { background: var(--sys-fill); }
   .cut-row .cut-coming-soon { font-size: 11px; padding: 5px 9px; }
 }
 
+.modal .seg button.coming-soon,
+.modal .seg button[aria-disabled='true'],
+.modal .seg button:disabled {
+  opacity: .48; cursor: default; pointer-events: none;
+}
+.modal .seg button .ns-coming-soon {
+  display: inline-flex; align-items: center; margin-left: 6px;
+  padding: 2px 7px; border-radius: 999px;
+  font: 600 9px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--tint, var(--accent, #30d158));
+  background: var(--tint-fill, rgba(48, 209, 88, 0.22));
+  border: 1px solid rgba(48, 209, 88, 0.45);
+  white-space: nowrap;
+}
+
 
 .cut-bar { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; padding: 6px 10px; min-height: 56px; }
 .cut-bar .cut-transport { width: 44px; height: 44px; padding: 0; flex: 0 0 auto; }
