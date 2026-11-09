@@ -197,7 +197,10 @@ DEMON subscriptions with buoyId, and sends separately pooled gramRows for each d
 bin count (1024 LOFAR, 512 DEMON); return each batch's three buffers through release.
 All live contacts contribute TL-weighted, modulated broadband power envelopes, including ships.
 The square-law envelopes are summed directly, then DC removal/Hann/FFT yields median-relative
-dB. Shared source tables contain shaft and blade harmonics; only state changes rebuild them.
+dB. **DEMON ambient (sea-state) noise is not yet modelled**: the carrier is contact broadband only,
+so sea state and range do not dilute DEMON lines (only other contacts mask them); DEMON contrast is
+a best case, unlike LOFAR. See `docs/demon-tune-2026-11-09.md`. Answer-key `demonExpected`/`demonReason`
+are reveal-only (`cutDemonExpectation`, `scenarioDemonAnswerKey`), never on live streams. Shared source tables contain shaft and blade harmonics; only state changes rebuild them.
 4096 envelope samples span 5.11 s; no ultrasonic carrier waveform or overlapping-block phase
 continuity is modeled. Buffers, weights and FFT tables are preallocated; no row allocation.
 Seek with DEMON currently errors pending window replay; LOFAR-only seek is unchanged.

@@ -30,10 +30,25 @@ contrast only in the dense-traffic case (shaft 12 → 19 dB with a median window
    `DEMON_NORM` (24/3, 0/30, clamp −5) stays the same. Mean 24/3, mean 64/6, median 24/48/96 and
    no whitening all landed within ±0.5 dB of each other once the floor became physical.
 
-Ambient dilution of the carrier is **not** modelled. Under the current LOFAR broadband calibration,
-catalog sub cavitation at 1–4 kHz sits about 29 dB below ambient at 2.5 km (17 kn, 15 m), so honest
-ambient dilution would blank DEMON for every catalog sub. Fixing that needs the broadband to be
-recalibrated first, which is a team decision.
+### Limitation: DEMON ambient (sea-state) noise is not yet modelled
+
+DEMON's carrier is built **only from contact broadband** (target + traffic). Sea-state / wind /
+distant-shipping ambient in the 1–4 kHz carrier band is **not** added to the DEMON carrier yet.
+What that means:
+
+- **Sea state does not change DEMON.** A cavitating target shows the same shaft/BR/BR2 contrast at
+  SS0 and SS6, and at 400 m or 3 km, as long as it is the dominant *contact* in the band.
+  In reality unmodulated ambient dilutes the modulation depth (contrast falls roughly as
+  (S/(S+N))² of the carrier) and lines fade with range and sea state.
+- **Only other contacts mask a target.** Surface traffic (itself cavitating, own combs) is the
+  only thing that dilutes a sub's comb — see `live-fast-traffic` and `cut-gloamspiral-cav`
+  (sparse, because moderate traffic masks its weaker 7-blade comb to ~6 dB).
+- **DEMON is optimistic at range / high sea state**; LOFAR is not (LOFAR has ambient).
+  Treat DEMON contrast as "best case for the contact mix", not a detection-range predictor.
+- Why not just add it: under the current LOFAR broadband calibration, catalog sub cavitation at
+  1–4 kHz sits about 29 dB below ambient at 2.5 km (17 kn, 15 m), so honest ambient dilution would
+  blank DEMON for every catalog sub. Fixing that needs the broadband to be recalibrated first,
+  which is a team decision.
 
 ## Before → after (30 s row-averaged display, contrast in dB above the ±25-bin median)
 
@@ -64,3 +79,39 @@ mistacorn) has a cavitating target. Brindleflux and emberbraid are only 0–1 % 
 after the change they show no target propulsion in DEMON. `cut-pebblewisp-demon` (the DEMON lesson)
 was blank before and is still blank. `cut-cinderlilt-cav` (SURF 14 kn) is the cut where DEMON
 teaches well.
+
+## Follow-up (same day): DEMON lesson pack + answer key
+
+- **Main DEMON lesson:** `cut-cinderlilt-cav` (starter pack) — `DEMON_LESSON_PACK.mainLessonCutId`,
+  `lessonNote` + BR label say it is the DEMON example; first in `DEMON_CUT_IDS` / `DEMON_LESSON_CUT_IDS`.
+- **New 900 s cavitating diesel cuts** (`src/cuts/demonPack.ts`, `DEMON_CUTS`; resolvable via
+  `getCutSeed`/`renderCut`). Snorting cannot cavitate inside either class's snorkel cap and battery
+  caps sit below surface inception, so the only physically valid cavitating diesel state is
+  surfaced transit (SURF, 0 m, prime mover on), under `modeSpeedCap(SURF)` = 13.5 kn.
+
+| cut | class | mode | speed | depth | inception | past inception | richness | seed |
+|---|---|---|---|---|---|---|---|---|
+| cut-brindleflux-cav | blue-brindleflux (diesel-direct, 5 blades) | SURF | 13 kn | 0 m | 8.0 kn | 62.5 % | moderate | 0xC0710010 |
+| cut-gloamspiral-cav | red-gloamspiral (diesel-electric + AIP, 7 blades) | SURF | 13.5 kn (cap) | 0 m | 10.0 kn | 35 % | sparse | 0xC0710011 |
+
+Contrast (same 30 s method; BEFORE = d4156fb model, FE 24/3 clip 0–65 / [1–2 kHz]; AFTER = shared settings):
+
+| case | shaft B→A | BR B→A | BR2 B→A | BR3 B→A | false A |
+|---|---|---|---|---|---|
+| cut-brindleflux-cav | 42.2 → 6.3 | 65.0 → 12.5 | 65.0 → 5.0 | 65.0 → 0.3 | 0 |
+| cut-gloamspiral-cav | 65.0 → 6.2 | 65.0 → 13.3 | 65.0 → 7.3 | n/a | 0 |
+
+- **Live bench states corrected** to valid mode caps (were BATT 17 kn > 7 kn battery cap; SURF 14 > 13.5):
+  `live-fast-cav` SURF 13 kn @0 m → shaft 9.0 / BR 14.6 / BR2 8.9; `live-gloam-surf` SURF 13.5 kn →
+  7.9 / 12.9 / 6.2; `live-fast-traffic` SURF 13 kn + traffic .35 → BR 0.3 (masked). The live rows in
+  the table above are the old invalid states.
+- **Answer key (reveal only):** `src/cuts/demonExpectation.ts` — `cutDemonExpectation(cut)` (per cut +
+  per contact), `scenarioDemonAnswerKey(scenario)` (live reveal), fields `demonExpected:boolean`,
+  `demonReason:'cavitating'|'not-cavitating'`, plus `pastInceptionPct`, `pastInceptionFraction`,
+  `modulatedFraction`. Derived from the rendered Signature: expected iff modulation > 0 and
+  `modulatedFraction ≥ 0.5` (cavitationPower ≥ 1e-4, ≈7 % past inception). Never on GramConfig,
+  rows, subscribe results, `tactical()` or live contacts (`test/demonLesson.test.ts`); live FE shows
+  a fixed generic hint. Legacy starters brindleflux-snork / emberbraid-ssma are 0.8 % / 0.1 % past
+  inception (cavitation < 2 % of the modulated mix) → `not-cavitating`.
+- **Goldens:** LOFAR checksums for the two new cuts are pinned in `test/demonLesson.test.ts`; all 26
+  existing starter + scenario cut checksums (first 16 rows + 4 rows at mid-cut) are byte-identical to db2de08.
