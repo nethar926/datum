@@ -58,8 +58,14 @@
   --sys-label-3: rgba(235, 235, 245, 0.3);
   --tint: #30d158;
   --tint-fill: rgba(48, 209, 88, 0.22);
-  --select-blue: #0a84ff;   /* selected-buoy cue only */
-  --on-accent: #04140a;     /* text on green fills (white fails contrast on #30d158) */
+  /* Selected chrome (Play / tool / buoy / plot ring): green Liquid Glass, not blue. */
+  --select: #30d158;
+  --select-fill: rgba(48, 209, 88, 0.22);
+  --select-ring: rgba(94, 230, 130, 0.85);
+  --glass-accent-tint: rgba(48, 209, 88, 0.36);
+  --glass-accent-tint-reduced: rgba(30, 110, 50, 0.94);
+  --on-glass-accent: #f2fff4; /* text on green glass over dark (≥4.5:1) */
+  --on-accent: #04140a;     /* text on solid green fills (white fails contrast on #30d158) */
   --switch-on: #30d158;
   /* Liquid Glass */
   --glass-tint: rgba(36, 36, 40, 0.46);
@@ -82,6 +88,9 @@
   --sys-bg: #fff; --sys-grouped: #f2f2f7; --sys-cell: #fff; --sys-fill: rgba(118, 118, 128, 0.12); --sys-sep: rgba(60, 60, 67, 0.29);
   --sys-label: #000; --sys-label-2: rgba(60, 60, 67, 0.6); --sys-label-3: rgba(60, 60, 67, 0.3);
   --tint: #248a3d; --tint-fill: rgba(36, 138, 61, 0.14); --on-accent: #fff; --switch-on: #34c759;
+  --select: #248a3d; --select-fill: rgba(36, 138, 61, 0.18); --select-ring: rgba(36, 138, 61, 0.75);
+  --glass-accent-tint: rgba(36, 138, 61, 0.28); --glass-accent-tint-reduced: rgba(36, 138, 61, 0.88);
+  --on-glass-accent: #04140a;
   --glass-tint: rgba(255, 255, 255, 0.52);
   --glass-tint-reduced: rgba(249, 249, 251, 0.96);
   --glass-rim: rgba(255, 255, 255, 0.95);

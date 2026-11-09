@@ -104,7 +104,7 @@ button, select { font: inherit; color: inherit; }
   width: 44px; height: 44px; min-width: 44px; min-height: 44px;
   margin: 0; padding: 0;
   display: grid; place-items: center; place-content: center;
-  flex-shrink: 0; border-radius: 10px; line-height: 0; font-size: 0;
+  flex-shrink: 0; border-radius: 50%; line-height: 0; font-size: 0; /* circular glass chip */
   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 .wheel-btn.custom { border-color: var(--accent, #5cff7a); }

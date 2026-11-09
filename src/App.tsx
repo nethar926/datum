@@ -675,8 +675,15 @@ export default function App() {
       onClick={onFixTool}
       title="FIX: with ≥2 fresh DIFAR bearings, tap to lay a cross-fix (error ellipse + CSE/SPD legs)"><IcFix /><span>FIX</span></button>
   )
+  const contrastControl = (
+    <div className="contrast tool-contrast tool-contrast-pin" data-testid="contrast">
+      <button className="tool contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label={`Reset contrast to 1.0 (now ${contrast.toFixed(2)}×)`} title="Gram contrast (tap to reset to 1.0×)" data-testid="contrast-reset"><IcContrast /><span className="contrast-value">{contrast.toFixed(2)}×</span></button>
+      <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="contrast-slider"
+        onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
+    </div>
+  )
   const toolsRow = (
-    <ToolsToolbar testId="gram-tools" full={fullTools} leading={fixToolBtn}>
+    <ToolsToolbar testId="gram-tools" full={fullTools} leading={fixToolBtn} trailing={contrastControl}>
       <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)} onClick={onBrgButton}
         title="Hover a DIFAR gram line and press B to send that bearing. On touch: BRG then tap the gram (or a buoy on the plot to aim). Esc cancels.">
         <IcBrg /><span>{armLabel(brgArm)}</span></button>
@@ -698,11 +705,6 @@ export default function App() {
       <button className="tool" aria-pressed={tool === 'lm'} aria-label="LM" onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)"><IcLm /><span>LM</span></button>
       <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
         title="HORZ: horizontal hairline on the cursor with the Zulu time of the hover row"><IcHorz /><span>HORZ</span></button>
-      <div className="contrast tool-contrast" data-testid="contrast">
-        <button className="tool contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label="Reset contrast to 1.0" title="Gram contrast (tap to reset to 1.0×)" data-testid="contrast-reset"><IcContrast /><span>CON {contrast.toFixed(2)}×</span></button>
-        <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="contrast-slider"
-          onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
-      </div>
     </ToolsToolbar>
   )
   // CUTTOOLS: availability matrix + Cuts toolbar (same ToolsToolbar; FIX disabled with reason).
@@ -739,8 +741,16 @@ export default function App() {
       brgArm: s.brgArm.phase === 'idle' ? togglePickFreq(s.brgArm) : ARM_IDLE,
     }))
   }
+  const cutContrastControl = (
+    <div className="contrast tool-contrast tool-contrast-pin" data-testid="cut-contrast">
+      <button className="tool contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label={`Reset contrast to 1.0 (now ${contrast.toFixed(2)}×)`} title="Gram contrast (tap to reset to 1.0×)" data-testid="cut-contrast-reset" disabled={!cutAvail.con.enabled}><IcContrast /><span className="contrast-value">{contrast.toFixed(2)}×</span></button>
+      <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="cut-contrast-slider"
+        disabled={!cutAvail.con.enabled}
+        onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
+    </div>
+  )
   const cutsToolsRow = (
-    <ToolsToolbar testId="cut-gram-tools" label="Cut gram tools" full={fullTools} leading={
+    <ToolsToolbar testId="cut-gram-tools" label="Cut gram tools" full={fullTools} trailing={cutContrastControl} leading={
       <button className="tool fix-pin" aria-pressed={false} aria-label="FIX" data-testid="cut-fix-tool"
         disabled={!cutAvail.fix.enabled}
         title={cutAvail.fix.reason ?? FIX_DISABLED_REASON}
@@ -781,12 +791,6 @@ export default function App() {
         onClick={() => setHorzOn(!horzOn)}
         title={cutAvail.horz.reason ?? 'HORZ: horizontal hairline with Zulu time of the cut row'}>
         <IcHorz /><span>HORZ</span></button>
-      <div className="contrast tool-contrast" data-testid="cut-contrast">
-        <button className="tool contrast-label" onClick={() => setContrast(CONTRAST_DEFAULT)} aria-label="Reset contrast to 1.0" title="Gram contrast (tap to reset to 1.0×)" data-testid="cut-contrast-reset" disabled={!cutAvail.con.enabled}><IcContrast /><span>CON {contrast.toFixed(2)}×</span></button>
-        <input type="range" min={CONTRAST_MIN} max={CONTRAST_MAX} step={CONTRAST_STEP} value={contrast} aria-label="Gram contrast" data-testid="cut-contrast-slider"
-          disabled={!cutAvail.con.enabled}
-          onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
-      </div>
       {gramMode === 'difar' && (
         <DifarWheelButton omni={!!cutBuoy && cutBuoy.kind !== 'difar'} wheel={wheel} open={wheelOpen}
           onOpen={() => cutAvail.difarWheel.enabled && setWheelOpen(true)} />

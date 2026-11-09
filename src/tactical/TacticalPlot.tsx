@@ -66,7 +66,7 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
     if (!ctx) return
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim() || '#888'
-    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), reveal: col('--plot-reveal') || col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim'), stWork: col('--plot-buoy-working') || BUOY_STATUS_COLOR.working, stDet: col('--plot-buoy-detuned') || BUOY_STATUS_COLOR.detuned, stDead: col('--plot-buoy-dead-hi') || BUOY_STATUS_COLOR.dead, stErr: col('--plot-buoy-error') || BUOY_STATUS_COLOR.error }
+    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), reveal: col('--plot-reveal') || col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim'), stWork: col('--plot-buoy-working') || BUOY_STATUS_COLOR.working, stDet: col('--plot-buoy-detuned') || BUOY_STATUS_COLOR.detuned, stDead: col('--plot-buoy-dead-hi') || BUOY_STATUS_COLOR.dead, stErr: col('--plot-buoy-error') || BUOY_STATUS_COLOR.error, sel: col('--select') || '#30d158', selFill: col('--select-fill') || 'rgba(48,209,88,0.2)' }
     const p = { x: 0, y: 0 }
     let raf = 0, lastT = -1, lastKey = '', lastGhost = -1
     // Splash start times per buoy index (typed, preallocated); known = buoys already on the plot.
@@ -200,7 +200,7 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
         const label = health === 'detuned' ? 'DT' : feCh != null ? String(feCh) : String(b.channel)
         const selected = b.channel === sel || feCh === sel
         if (selected) {
-          ctx.save(); ctx.strokeStyle = '#0a84ff'; ctx.fillStyle = 'rgba(10,132,255,0.2)'; ctx.lineWidth = 3 * dpr
+          ctx.save(); ctx.strokeStyle = C.sel || '#30d158'; ctx.fillStyle = C.selFill || 'rgba(48,209,88,0.2)'; ctx.lineWidth = 3 * dpr
           ctx.beginPath(); ctx.arc(sx, sy, 11 * dpr, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore()
         }
         ctx.strokeStyle = colS; ctx.fillStyle = colS; ctx.lineWidth = (selected ? 2.5 : 1.5) * dpr

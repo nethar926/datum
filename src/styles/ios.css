@@ -59,7 +59,34 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .navbar.title-hidden .nav-title { opacity: 0; transform: translateY(4px); }
 .nav-trail { display: flex; align-items: center; gap: 6px; }
 .play-btn { width: 44px; height: 44px; padding: 0; color: var(--sys-label); background: transparent; }
-.play-btn.primary { color: var(--on-accent, #fff); background: var(--tint); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+/* Play idle→ready: green-tinted Liquid Glass (reuse accent glass tokens; not a solid tint fill). */
+.play-btn.primary {
+  position: relative; isolation: isolate;
+  color: var(--on-glass-accent, #f2fff4);
+  background: transparent;
+  --glass-tint: var(--glass-accent-tint);
+  --glass-tint-reduced: var(--glass-accent-tint-reduced);
+  box-shadow: var(--glass-shadow);
+}
+.play-btn.primary::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(14px) saturate(190%) brightness(1.04);
+  backdrop-filter: blur(14px) saturate(190%) brightness(1.04);
+}
+.play-btn.primary::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background:
+    radial-gradient(140% 120% at 18% -30%, var(--glass-spec), transparent 42%),
+    radial-gradient(90% 90% at 100% 130%, rgba(255, 255, 255, .10), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, .10), transparent 30%, transparent 72%, rgba(255, 255, 255, .05));
+  box-shadow: inset 0 1px 0 var(--glass-rim), inset 0 -1px 0 var(--glass-rim-lo), inset 0 0 0 .5px var(--glass-edge),
+    inset 0 0 12px rgba(255, 255, 255, .05), inset 0 0 2px 1px rgba(255, 255, 255, .06);
+}
+:root[data-glass='reduced'] .play-btn.primary::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-glass='full']) .play-btn.primary::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
 
 /* iOS segmented control (chrome). */
 .navbar .seg, .panel-head .seg, .ios-row .seg, .ios-seg { background: var(--sys-fill); border: 0; border-radius: 999px; padding: 2px; gap: 0; }
@@ -169,14 +196,47 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
   transition: background-color var(--t-fast) ease, color var(--t-fast) ease, transform var(--t-fast) var(--spring); }
 .tool .ic { flex: none; }
 .tool:active { transform: scale(.94); }
-.tool[aria-pressed='true'], .tool.armed { color: var(--tint); background: var(--tint-fill); }
+.tool[aria-pressed='true'], .tool.armed {
+  position: relative; isolation: isolate;
+  color: var(--on-glass-accent, #f2fff4);
+  background: transparent;
+  --glass-tint: var(--glass-accent-tint);
+  --glass-tint-reduced: var(--glass-accent-tint-reduced);
+}
+.tool[aria-pressed='true']::before, .tool.armed::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(10px) saturate(180%) brightness(1.03);
+  backdrop-filter: blur(10px) saturate(180%) brightness(1.03);
+}
+.tool[aria-pressed='true']::after, .tool.armed::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 1px 0 var(--glass-rim), inset 0 -1px 0 var(--glass-rim-lo), inset 0 0 0 .5px var(--glass-edge);
+}
+.tool.brg-btn.armed { color: #ff9f0a; background: rgba(255, 159, 10, .2); }
+.tool.brg-btn.armed::before, .tool.brg-btn.armed::after { content: none; display: none; }
+:root[data-glass='reduced'] .tool[aria-pressed='true']::before,
+:root[data-glass='reduced'] .tool.armed::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .tool.sub { color: var(--sys-label-2); padding-inline: 10px; }
 .tool.brg-btn { min-height: 44px; font: 600 12px/1 inherit; background: transparent; border: 0; animation: none; box-shadow: none; }
-.tool.brg-btn.armed { color: #ff9f0a; background: rgba(255, 159, 10, .2); }
-.tool-contrast { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; padding-right: 10px; }
-.tool-contrast .contrast-label { border: 0; min-width: 0; font-variant-numeric: tabular-nums; }
-.tool-contrast input[type=range] { width: 96px; height: 44px; accent-color: var(--tint); }
-.layout-wide .tool-contrast input[type=range] { width: 140px; }
+.tool-contrast { display: inline-flex; align-items: center; gap: 0; min-height: 44px; min-width: 44px; padding-right: 4px; flex: 0 0 auto; max-width: 100%; }
+.tool-contrast .contrast-label { border: 0; min-width: 0; padding-inline: 8px 6px; font-variant-numeric: tabular-nums; }
+.tool-contrast input[type=range] { width: 72px; max-width: 12vw; height: 44px; accent-color: var(--tint); flex: 0 1 72px; }
+.layout-wide .tool-contrast input[type=range] { width: 96px; max-width: 96px; flex-basis: 96px; }
+.app.ios.layout-phoneLandscape .tool-contrast input[type=range],
+.app.ios.layout-phonePortrait .tool-contrast input[type=range] { width: 56px; max-width: 56px; flex-basis: 56px; }
+/* Trailing CON pin: stays in the toolbar row (does not wrap under the dock). */
+.tool-trailing { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0; min-height: 44px; max-width: min(160px, 40%); }
+/* Pinned CON: compact value + short slider so Duo 951 fits FIX…HORZ without mid-clipping LM. */
+.tool-contrast-pin { padding-right: 2px; }
+.tool-contrast-pin .contrast-label { padding-inline: 6px 4px; gap: 4px; }
+.tool-contrast-pin .contrast-value { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.tool-contrast-pin input[type=range] { width: 56px; max-width: 56px; flex: 0 0 56px; height: 44px; }
+.layout-wide .tool-contrast-pin input[type=range] { width: 64px; max-width: 64px; flex-basis: 64px; }
+/* With CON pinned, slightly tighter tool chips (still ≥44px targets) so the row fits at 951. */
+.toolbar-glass.has-trailing .tool { padding-inline: 8px; gap: 4px; }
+.toolbar-glass.has-trailing { overflow: hidden; } /* clip only at the scroll wrap / trailing boundary, not mid-dock */
+.toolbar-glass.has-trailing .tool-scroll-wrap { flex: 1 1 auto; min-width: 0; }
 
 /* ---------- Large title screens (Settings, Cuts) ---------- */
 .screen { position: absolute; inset: 0; z-index: 5; display: grid; grid-template-rows: minmax(0, 1fr); background: var(--sys-grouped); }
@@ -691,8 +751,9 @@ button.ios-row:active { background: var(--sys-fill); }
 .toolbar-glass.full { overflow: visible; }
 .toolbar-glass.full .tool-scroll-full {
   display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0;
-  height: 100%; flex-wrap: wrap; overflow: visible;
+  height: 100%; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
+.toolbar-glass.full .tool-scroll-full::-webkit-scrollbar { display: none; }
 
 /* ---------- LAY1: phone-portrait plot detents (translate push) ---------- */
 .app.ios .workspace.detent-stack {
@@ -778,14 +839,31 @@ button.ios-row:active { background: var(--sys-fill); }
 .app.ios[data-split='x'] .workspace[data-plot-hidden='1'] { grid-template-columns: minmax(0, 1fr); }
 .app.ios .workspace[data-plot-hidden='1'] > .tac-panel { display: none; }
 .plot-visibility { min-width: 88px; min-height: 44px; }
-/* BUOYSEL: blue means selected; health remains a separate status colour. */
-.buoy-seg button[aria-pressed=true] { background: #0061c7; color: #fff; box-shadow: inset 0 0 0 2px #61b1ff; }
+/* BUOYSEL: green Liquid Glass means selected; health remains a separate status colour. */
+.buoy-seg button[aria-pressed=true] {
+  position: relative; isolation: isolate;
+  color: var(--on-glass-accent, #f2fff4);
+  background: transparent;
+  --glass-tint: var(--glass-accent-tint);
+  --glass-tint-reduced: var(--glass-accent-tint-reduced);
+  box-shadow: none;
+}
+.buoy-seg button[aria-pressed=true]::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(10px) saturate(180%) brightness(1.03);
+  backdrop-filter: blur(10px) saturate(180%) brightness(1.03);
+}
+.buoy-seg button[aria-pressed=true]::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 1px 0 var(--glass-rim), inset 0 -1px 0 var(--glass-rim-lo), inset 0 0 0 1.5px var(--select-ring, rgba(94, 230, 130, 0.85));
+}
 .buoy-seg button { min-width: 44px; min-height: 44px; }
 .buoy-ring { position: relative; width: min(272px, 100%); height: 236px; margin: 8px auto; isolation: isolate; }
-.buoy-ring-track { position: absolute; width: 172px; height: 172px; border: 2px solid var(--select-blue, #0a84ff); border-radius: 50%; top: 30px; left: 50%; transform: translateX(-50%); pointer-events: none; opacity: .65; }
-.buoy-ring-center { position: absolute; inset: 60px 64px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; color: #61b1ff; font-size: 12px; }
+.buoy-ring-track { position: absolute; width: 172px; height: 172px; border: 2px solid var(--select, #30d158); border-radius: 50%; top: 30px; left: 50%; transform: translateX(-50%); pointer-events: none; opacity: .7; }
+.buoy-ring-center { position: absolute; inset: 60px 64px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; color: var(--select, #30d158); font-size: 12px; }
 .buoy-ring-center span { font-size: 11px; }
-.buoy-ring .btn { position: absolute; top: 94px; min-width: 76px; min-height: 44px; padding: 0 10px; background: var(--bg, #171719); border: 1px solid var(--select-blue, #0a84ff); border-radius: 22px; }
+.buoy-ring .btn { position: absolute; top: 94px; min-width: 76px; min-height: 44px; padding: 0 10px; background: var(--bg, #171719); border: 1px solid var(--select, #30d158); border-radius: 22px; }
 .buoy-ring .buoy-ring-tune { left: 0; }
 .buoy-ring .buoy-ring-detune { right: 0; }
 .buoy-ring .btn:focus-visible, .buoy-seg button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
