@@ -85,9 +85,17 @@ async function readMatched(page) {
 }
 
 /** Place once, wait for MATCHED to climb, then pause playback so the shot freezes on the peak. */
-async function waitForMatched(page, { minMatched = 5, tries = 40, gapMs = 400, playTestId = 'play-btn' } = {}) {
+async function waitForMatched(page, { minMatched = 5, tries = 40, gapMs = 400, playTestId = 'play-btn',
+  centreHz, spacingHz, sidebands, view, onHit = null } = {}) {
   let best = { n: -1, slots: null, readout: '' }
   const attempts = []
+  const pause = async () => {
+    const btn = page.getByTestId(playTestId).first()
+    if (await btn.count()) {
+      const label = await btn.getAttribute('aria-label')
+      if (label === 'Pause') await btn.click({ force: true }).catch(() => {})
+    }
+  }
   for (let i = 0; i < tries; i++) {
     await page.waitForTimeout(gapMs)
     const cur = await readMatched(page)
@@ -95,29 +103,15 @@ async function waitForMatched(page, { minMatched = 5, tries = 40, gapMs = 400, p
     attempts.push({ i, n, readout: cur.readout })
     if (n > best.n) best = { n, slots: cur.matched?.slots ?? null, readout: cur.readout }
     if (n >= minMatched) {
-      const btn = page.getByTestId(playTestId).first()
-      if (await btn.count()) {
-        const label = await btn.getAttribute('aria-label')
-        if (label === 'Pause') await btn.click({ force: true }).catch(() => {})
-      }
-      await page.waitForTimeout(200)
-      // Re-read after pause (row sampler still current).
-      const frozen = await readMatched(page)
-      return {
-        n: frozen.matched?.n ?? best.n,
-        slots: frozen.matched?.slots ?? best.slots,
-        readout: frozen.readout || best.readout,
-        attempts, paused: true,
-      }
+      // Capture while the good row is still current, then freeze playback.
+      if (onHit) await onHit({ ...best, attempts })
+      await pause()
+      return { ...best, attempts, paused: true, capturedOnHit: !!onHit }
     }
   }
-  // Freeze anyway so the screenshot does not drift further.
-  const btn = page.getByTestId(playTestId).first()
-  if (await btn.count()) {
-    const label = await btn.getAttribute('aria-label')
-    if (label === 'Pause') await btn.click({ force: true }).catch(() => {})
-  }
-  return { ...best, attempts, paused: false }
+  if (onHit) await onHit({ ...best, attempts })
+  await pause()
+  return { ...best, attempts, paused: false, capturedOnHit: !!onHit }
 }
 
 async function measureMarkSpacing(page) {
@@ -138,14 +132,32 @@ async function measureMarkSpacing(page) {
   })
 }
 
-async function diagnoseGeometry(page, trueLines, view) {
-  return page.evaluate(({ trueLines, view }) => {
-    const canvas = document.querySelector('.gram canvas')
+function aabbOverlap(a, b) {
+  const ox = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+  const oy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
+  return { overlap: ox > 0 && oy > 0, ox, oy, area: ox * oy }
+}
+
+async function diagnoseGeometry(page, trueLines, view, frameTestId) {
+  return page.evaluate(({ trueLines, view, frameTestId }) => {
+    const aabbOverlap = (a, b) => {
+      const ox = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+      const oy = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
+      return { overlap: ox > 0 && oy > 0, ox, oy, area: ox * oy }
+    }
+    const visible = (el) => {
+      if (!el) return false
+      const r = el.getBoundingClientRect()
+      const st = getComputedStyle(el)
+      return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none' && st.opacity !== '0'
+    }
+    const root = document.querySelector(`[data-testid="${frameTestId}"]`) || document
+    const canvas = root.querySelector('.gram canvas') || root.querySelector('canvas')
     const frame = canvas?.getBoundingClientRect()
     const width = frame?.width || 1
     const left = frame?.left || 0
     const freqToX = (f) => ((f - view.lo) / (view.hi - view.lo)) * width
-    const marks = [...document.querySelectorAll('.comb-marker')]
+    const marks = [...root.querySelectorAll('.comb-marker')]
       .map((el) => {
         const n = Number(el.getAttribute('data-n'))
         const r = el.getBoundingClientRect()
@@ -163,19 +175,47 @@ async function diagnoseGeometry(page, trueLines, view) {
         absOffsetPx: markPx == null ? null : Math.abs(markPx - linePx),
       }
     })
-    const cursor = document.querySelector('[data-testid$="-cursor"]')
-    const axisY = document.querySelector('.axis-y')
-    let cursorClear = null
-    if (cursor && axisY && frame) {
+    // Cursor + axes scoped to this gram frame (live + cuts both mount comb-readout).
+    const cursor = [...root.querySelectorAll('[data-testid$="-cursor"]')].find(visible)
+      || [...document.querySelectorAll('[data-testid$="-cursor"]')].find(visible)
+      || null
+    const zuluTicks = [...root.querySelectorAll('.axis-y span')].filter(visible).map((el) => {
+      const r = el.getBoundingClientRect()
+      return { text: el.textContent, left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+    })
+    const hzTicks = [...root.querySelectorAll('.axis-x span')].filter(visible).map((el) => {
+      const r = el.getBoundingClientRect()
+      return { text: el.textContent?.trim(), left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+    })
+    const note = [...root.querySelectorAll('[data-testid=comb-readout], .gram-note.comb-note')].find(visible)
+      || [...document.querySelectorAll('[data-testid=comb-readout], .gram-note.comb-note')].find(visible)
+      || null
+    let cursorVsZulu = []
+    let cursorBox = null
+    if (cursor) {
       const cr = cursor.getBoundingClientRect()
-      const ar = axisY.getBoundingClientRect()
-      cursorClear = {
-        cursorRight: cr.right, axisLeft: ar.left, gapPx: ar.left - cr.right,
-        clippedPastGram: cr.right > frame.right + ar.width + 2, text: cursor.textContent,
-      }
+      cursorBox = { left: cr.left, top: cr.top, right: cr.right, bottom: cr.bottom, text: cursor.textContent?.trim() }
+      cursorVsZulu = zuluTicks.map((z) => ({ zulu: z.text, ...aabbOverlap(cr, z) }))
     }
-    return { width, rows, maxAbsOffsetPx: Math.max(0, ...rows.map((r) => r.absOffsetPx ?? 0)), cursorClear }
-  }, { trueLines, view })
+    let noteVsHz = []
+    let noteBox = null
+    if (note) {
+      const nr = note.getBoundingClientRect()
+      noteBox = { left: nr.left, top: nr.top, right: nr.right, bottom: nr.bottom, text: note.textContent?.trim() }
+      noteVsHz = hzTicks.map((h) => ({ hz: h.text, ...aabbOverlap(nr, h) }))
+    }
+    const cursorZuluOverlaps = cursorVsZulu.filter((x) => x.overlap)
+    const noteHzOverlaps = noteVsHz.filter((x) => x.overlap)
+    return {
+      width, frameTestId, zuluTickCount: zuluTicks.length, hzTickCount: hzTicks.length, rows,
+      maxAbsOffsetPx: Math.max(0, ...rows.map((r) => r.absOffsetPx ?? 0)),
+      cursorBox, noteBox,
+      cursorVsZulu, noteVsHz,
+      cursorZuluOverlapCount: cursorZuluOverlaps.length,
+      noteHzOverlapCount: noteHzOverlaps.length,
+      cursorZuluOverlaps, noteHzOverlaps,
+    }
+  }, { trueLines, view, frameTestId })
 }
 
 async function readCombState(page) {
@@ -195,8 +235,17 @@ async function readCombState(page) {
 async function parkCursor(page, testId) {
   const frame = page.locator(`[data-testid=${testId}]`).first()
   const box = await frame.boundingBox()
-  if (box) await page.mouse.move(box.x + box.width * 0.58, box.y + box.height * 0.45)
-  await page.waitForTimeout(150)
+  if (!box) return false
+  // One quick hover mid-left — keeps MATCHED from decaying while we still populate the readout.
+  await page.mouse.move(box.x + Math.min(110, box.width * 0.28), box.y + box.height * 0.4)
+  const cursorName = testId.replace('-frame', '') + '-cursor'
+  const cursor = page.locator(`[data-testid="${cursorName}"]`).first()
+  for (let i = 0; i < 5; i++) {
+    const t = (await cursor.textContent().catch(() => '')) || ''
+    if (t.includes('Hz')) return true
+    await page.waitForTimeout(40)
+  }
+  return false
 }
 
 async function shotLive(w, h) {
@@ -217,13 +266,22 @@ async function shotLive(w, h) {
   await page.waitForTimeout(300)
   const wrong = await readMatched(page)
   await setComb(page, LIVE_F0, LIVE_PSR, LIVE_SIDEBANDS, LIVE_VIEW)
-  const best = await waitForMatched(page, { minMatched: 5, tries: 45, gapMs: 350, playTestId: 'play-btn' })
-  log(`live ${w} best MATCHED ${best.n} paused=${best.paused}`)
-  await parkCursor(page, 'lofar-frame')
-  const state = await readCombState(page)
-  const geometry = await diagnoseGeometry(page, LIVE_TRUE_LINES, LIVE_VIEW)
   const path = `${out}/comb-live-lofar-${w}.png`
-  await page.screenshot({ path, fullPage: false })
+  let capture = { state: null, geometry: null }
+  const best = await waitForMatched(page, {
+    minMatched: 5, tries: 45, gapMs: 350, playTestId: 'play-btn',
+    centreHz: LIVE_F0, spacingHz: LIVE_PSR, sidebands: LIVE_SIDEBANDS, view: LIVE_VIEW,
+    onHit: async () => {
+      const parked = await parkCursor(page, 'lofar-frame')
+      await page.screenshot({ path, fullPage: false })
+      capture.state = await readCombState(page)
+      capture.geometry = await diagnoseGeometry(page, LIVE_TRUE_LINES, LIVE_VIEW, 'lofar-frame')
+      capture.geometry.cursorParked = parked
+    },
+  })
+  log(`live ${w} best MATCHED ${best.n} paused=${best.paused} shotMatched=${capture.state?.matched?.n}`)
+  const state = capture.state ?? await readCombState(page)
+  const geometry = capture.geometry ?? await diagnoseGeometry(page, LIVE_TRUE_LINES, LIVE_VIEW, 'lofar-frame')
   report.push({
     shot: path, kind: `live-lofar-${w}`, ...state, geometry, headless: true,
     drawn: { f0: LIVE_F0, psr: LIVE_PSR, sidebands: LIVE_SIDEBANDS, seed: LIVE_SEED },
@@ -254,18 +312,27 @@ async function shotCuts(w, h) {
   await waitShotApi(page)
   await page.evaluate((view) => window.__datumShot.setView(view.lo, view.hi), CUT_VIEW)
   log(`cuts ${w} wait SNR`)
-  await page.waitForTimeout(20000)
+  await page.waitForTimeout(24000)
   await setComb(page, CUT_F0, CUT_PSR * 1.5, CUT_SIDEBANDS, CUT_VIEW)
   await page.waitForTimeout(300)
   const wrong = await readMatched(page)
   await setComb(page, CUT_F0, CUT_PSR, CUT_SIDEBANDS, CUT_VIEW)
-  const best = await waitForMatched(page, { minMatched: 5, tries: 40, gapMs: 350, playTestId: 'cut-play' })
-  log(`cuts ${w} best MATCHED ${best.n} paused=${best.paused}`)
-  await parkCursor(page, 'cut-lofar-frame')
-  const state = await readCombState(page)
-  const geometry = await diagnoseGeometry(page, CUT_TRUE_LINES, CUT_VIEW)
   const path = `${out}/comb-cuts-${w}.png`
-  await page.screenshot({ path, fullPage: false })
+  let capture = { state: null, geometry: null }
+  const best = await waitForMatched(page, {
+    minMatched: 5, tries: 55, gapMs: 350, playTestId: 'cut-play',
+    centreHz: CUT_F0, spacingHz: CUT_PSR, sidebands: CUT_SIDEBANDS, view: CUT_VIEW,
+    onHit: async () => {
+      const parked = await parkCursor(page, 'cut-lofar-frame')
+      await page.screenshot({ path, fullPage: false })
+      capture.state = await readCombState(page)
+      capture.geometry = await diagnoseGeometry(page, CUT_TRUE_LINES, CUT_VIEW, 'cut-lofar-frame')
+      capture.geometry.cursorParked = parked
+    },
+  })
+  log(`cuts ${w} best MATCHED ${best.n} paused=${best.paused} shotMatched=${capture.state?.matched?.n}`)
+  const state = capture.state ?? await readCombState(page)
+  const geometry = capture.geometry ?? await diagnoseGeometry(page, CUT_TRUE_LINES, CUT_VIEW, 'cut-lofar-frame')
   report.push({
     shot: path, kind: `cuts-${w}`, title: (title || '').slice(0, 40), ...state, geometry, headless: true,
     drawn: { f0: CUT_F0, psr: CUT_PSR, sidebands: CUT_SIDEBANDS, cutId: CUT_ID, note: CUT_NOTE },
@@ -291,9 +358,20 @@ writeFileSync(`${out}/comb-shots-report.json`, JSON.stringify({
 log('ALL DONE')
 console.log(JSON.stringify({ note: 'headless', summary: report.map((r) => ({
   kind: r.kind, matched: r.matched, pollBest: r.bestMatchedPoll?.n,
-  maxAbsOffsetPx: r.geometry?.maxAbsOffsetPx, cursorGap: r.geometry?.cursorClear?.gapPx,
+  maxAbsOffsetPx: r.geometry?.maxAbsOffsetPx,
+  cursorZuluOverlaps: r.geometry?.cursorZuluOverlapCount,
+  noteHzOverlaps: r.geometry?.noteHzOverlapCount,
+  cursorParked: r.geometry?.cursorParked,
+  cursorBox: r.geometry?.cursorBox,
+  noteBox: r.geometry?.noteBox && { text: r.geometry.noteBox.text, top: r.geometry.noteBox.top, bottom: r.geometry.noteBox.bottom },
   even: r.evenSpacing?.ok, readout: r.readout,
 })) }, null, 2))
+for (const r of report) {
+  const g = r.geometry || {}
+  const cb = g.cursorBox
+  log(`${r.kind}: MATCHED=${JSON.stringify(r.matched)} poll=${r.bestMatchedPoll?.n} zuluOv=${g.cursorZuluOverlapCount} hzOv=${g.noteHzOverlapCount} ${r.readout}`)
+  log(`  cursor left=${cb?.left ?? null} right=${cb?.right ?? null} top=${cb?.top ?? null} text=${cb?.text ?? null}`)
+}
 await browser.close()
 try { process.kill(-srv.pid, 'SIGTERM') } catch {}
 try { execSync(`fuser -k ${port}/tcp`, { stdio: 'ignore' }) } catch {}
