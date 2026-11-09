@@ -250,7 +250,15 @@ button, select { font: inherit; color: inherit; }
 .harm-marker.comb-centre { border-left-width: 2px; border-left-color: var(--glass-accent-tint, rgba(48,209,88,.85)); }
 .harm-marker.comb-centre span { color: var(--tint, #30d158); font-weight: 700; top: auto; bottom: 10px; }
 /* When COMB marks are up, park the cursor readout top-right so it never eats −N labels. */
-.gram:has(.comb-marker) .cursor-readout { left: auto; right: 36px; }
+.gram:has(.comb-marker) .cursor-readout {
+  left: auto;
+  /* Stay left of the 44px time axis so Zulu labels and the readout never collide. */
+  right: calc(44px + 8px);
+  max-width: calc(100% - 56px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .comb-note { color: var(--sys-label); white-space: normal; max-width: min(100% - 16px, 42ch); line-height: 1.3; overflow: visible; text-overflow: clip; }
 /* Matched peak indicator — separate from the geometric comb mark (does not move the mark). */
 .comb-peak-tick {
