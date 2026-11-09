@@ -5,7 +5,7 @@ import {createSurfacePool,surfaceCount} from '../catalog/surface.js';
 import {deriveSeed,mulberry32} from '../prng.js';
 import {clamp,knotsToMps,mpsToKnots} from '../units.js';
 import {cpaScenario,loadScenario,type Scenario,type ScenarioInput,type ContactTransient} from '../scenario.js';
-import {randomizeSelection,rarityWeights,rarityOrder,type RarityWeights} from '../catalog/randomize.js';
+import {randomizeSelection,rarityWeights,rarityOrder,scenarioPoolWeights,type RarityWeights} from '../catalog/randomize.js';
 import {effectiveParams} from '../catalog/schema.js';
 import {cavitationInceptionKn} from '../catalog/derive.js';
 import {planBehaviour,pickSubBehaviour,maneuverTransients,subBehaviourWeights,SUB_BEHAVIOURS,BEHAVIOUR_HORIZON_S,type SubBehaviour,type BehaviourLimits} from '../behaviours.js';
@@ -29,7 +29,7 @@ export function subBehaviourLimits(klass:SubmarineClass,c:ClassParams,op:Operati
 }
 export function clampParams(value:unknown):ScenarioParams {
  const p=(value&&typeof value==='object'?value:{}) as Partial<ScenarioParams>,o=p.opState;
- const weights={...rarityWeights};for(const k of rarityOrder)weights[k]=safe(p.rarityWeights?.[k],rarityWeights[k],0,10000);if(!rarityOrder.some(k=>weights[k]>0))Object.assign(weights,rarityWeights);
+ const weights={...rarityWeights};for(const k of rarityOrder)weights[k]=safe(p.rarityWeights?.[k],rarityWeights[k],0,10000);Object.assign(weights,scenarioPoolWeights(weights));
  return {reactorOffline:p.reactorOffline===true,subCount:Math.round(safe(p.subCount,1,1,250)),rarityWeights:weights,opState:{speedKn:range(o?.speedKn,[6,18],0,45),depthM:range(o?.depthM,[20,100],0,1000),quietProb:safe(o?.quietProb,.35,0,1),cavitationAllowed:typeof o?.cavitationAllowed==='boolean'?o.cavitationAllowed:true,...(o?.shallowDieselProb!==undefined?{shallowDieselProb:safe(o.shallowDieselProb,0,0,1)}:{}),...(o?.allowedDepthM!==undefined?{allowedDepthM:range(o.allowedDepthM,[0,1000],0,1000)}:{})},seaState:Math.round(safe(p.seaState,3,0,6)),surfaceTraffic:safe(p.surfaceTraffic,.5,0,1),cpaRangeKm:range(p.cpaRangeKm,[1.5,3],.05,100),buoyLifeMin:safe(p.buoyLifeMin,240,1,1440),seed:Math.floor(safe(p.seed,42,0,4294967295)),...(p.behaviourWeights&&typeof p.behaviourWeights==='object'?{behaviourWeights:clampBehaviourWeights(p.behaviourWeights)}:{})};
 }
 export function presetToParams(difficulty:Difficulty,seed:number):ScenarioParams {
