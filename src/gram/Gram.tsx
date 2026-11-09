@@ -19,6 +19,7 @@ import { isLockTap } from './cursorLock'
 import { holdAfterThreeFingerSwipe, isCursorFrozen, nextHoldOnTap, showLockIcon, toggleLockButton, type CursorHold } from './cursorState'
 import { IcLock } from '../ui/icons'
 import { agoFromY, formatZulu, formatZuluSec, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
+import { AXIS_Y_EDGE_CLAMP_PX } from './lockVsTimeAxis'
 import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
 
@@ -661,7 +662,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           const label = t < 1e-6
             ? (isReviewing(scrollBackS) ? formatZuluHms(sim, zuluOrigin) : 'now')
             : (isReviewing(scrollBackS) ? formatZuluHms(sim, zuluOrigin) : formatZulu(sim, zuluOrigin))
-          return <span key={t} style={{ top: `clamp(7px, ${top}%, calc(100% - 7px))` }}>{label}</span>
+          return <span key={t} style={{ top: `clamp(${AXIS_Y_EDGE_CLAMP_PX}px, ${top}%, calc(100% - ${AXIS_Y_EDGE_CLAMP_PX}px)` }}>{label}</span>
         })}
       </div>
       <div className="axis axis-x" data-testid={`${testId}-freq-axis`} role="slider" aria-label="Frequency axis · tap to center"

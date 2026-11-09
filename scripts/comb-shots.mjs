@@ -217,10 +217,20 @@ async function diagnoseGeometry(page, trueLines, view, frameTestId) {
     const cursorZuluOverlaps = cursorVsZulu.filter((x) => x.overlap)
     const noteHzOverlaps = noteVsHz.filter((x) => x.overlap)
     const lockZuluOverlaps = lockVsZulu.filter((x) => x.overlap)
+    // Topmost Zulu label vs axis clip edge (0 = fully inside).
+    const axisY = root.querySelector('.axis-y')
+    const axisBox = axisY ? axisY.getBoundingClientRect() : null
+    const topZulu = zuluTicks.length
+      ? zuluTicks.reduce((a, b) => (a.top <= b.top ? a : b))
+      : null
+    const topLabelClipPx = (axisBox && topZulu)
+      ? Math.max(0, axisBox.top - topZulu.top)
+      : null
     return {
       width, frameTestId, zuluTickCount: zuluTicks.length, hzTickCount: hzTicks.length, rows,
       maxAbsOffsetPx: Math.max(0, ...rows.map((r) => r.absOffsetPx ?? 0)),
       cursorBox, noteBox, lockBox,
+      topZulu, topLabelClipPx, axisTop: axisBox?.top ?? null,
       cursorVsZulu, noteVsHz, lockVsZulu,
       cursorZuluOverlapCount: cursorZuluOverlaps.length,
       noteHzOverlapCount: noteHzOverlaps.length,
@@ -374,6 +384,7 @@ console.log(JSON.stringify({ note: 'headless', summary: report.map((r) => ({
   cursorZuluOverlaps: r.geometry?.cursorZuluOverlapCount,
   noteHzOverlaps: r.geometry?.noteHzOverlapCount,
   lockZuluOverlaps: r.geometry?.lockZuluOverlapCount,
+  topLabelClipPx: r.geometry?.topLabelClipPx,
   lockBox: r.geometry?.lockBox,
   cursorParked: r.geometry?.cursorParked,
   cursorBox: r.geometry?.cursorBox,
@@ -384,7 +395,7 @@ for (const r of report) {
   const g = r.geometry || {}
   const cb = g.cursorBox
   const lb = g.lockBox
-  log(`${r.kind}: MATCHED=${JSON.stringify(r.matched)} poll=${r.bestMatchedPoll?.n} zuluOv=${g.cursorZuluOverlapCount} hzOv=${g.noteHzOverlapCount} lockOv=${g.lockZuluOverlapCount} ${r.readout}`)
+  log(`${r.kind}: MATCHED=${JSON.stringify(r.matched)} poll=${r.bestMatchedPoll?.n} zuluOv=${g.cursorZuluOverlapCount} hzOv=${g.noteHzOverlapCount} lockOv=${g.lockZuluOverlapCount} topClip=${g.topLabelClipPx} ${r.readout}`)
   log(`  cursor left=${cb?.left ?? null} right=${cb?.right ?? null} top=${cb?.top ?? null} text=${cb?.text ?? null}`)
   log(`  lock left=${lb?.left ?? null} right=${lb?.right ?? null} top=${lb?.top ?? null} bottom=${lb?.bottom ?? null}`)
 }
