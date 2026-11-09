@@ -810,8 +810,9 @@ button, select { font: inherit; color: inherit; }
 
 
 /* Gesture / hold lock + paused scroll-back chrome */
+/* Sit left of the 44px time-axis column so the lock never covers a Zulu tick. */
 .cursor-lock-btn {
-  position: absolute; top: 6px; right: 8px; z-index: 4;
+  position: absolute; top: 6px; right: calc(44px + 8px); z-index: 4;
   width: 36px; height: 36px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(10, 12, 14, .72); border: 1px solid rgba(255,255,255,.14);

@@ -204,16 +204,28 @@ async function diagnoseGeometry(page, trueLines, view, frameTestId) {
       noteBox = { left: nr.left, top: nr.top, right: nr.right, bottom: nr.bottom, text: note.textContent?.trim() }
       noteVsHz = hzTicks.map((h) => ({ hz: h.text, ...aabbOverlap(nr, h) }))
     }
+    const lockBtn = [...root.querySelectorAll('[data-testid$="-lock-btn"]')].find(visible)
+      || [...document.querySelectorAll('[data-testid$="-lock-btn"]')].find(visible)
+      || null
+    let lockVsZulu = []
+    let lockBox = null
+    if (lockBtn) {
+      const lr = lockBtn.getBoundingClientRect()
+      lockBox = { left: lr.left, top: lr.top, right: lr.right, bottom: lr.bottom }
+      lockVsZulu = zuluTicks.map((z) => ({ zulu: z.text, ...aabbOverlap(lr, z) }))
+    }
     const cursorZuluOverlaps = cursorVsZulu.filter((x) => x.overlap)
     const noteHzOverlaps = noteVsHz.filter((x) => x.overlap)
+    const lockZuluOverlaps = lockVsZulu.filter((x) => x.overlap)
     return {
       width, frameTestId, zuluTickCount: zuluTicks.length, hzTickCount: hzTicks.length, rows,
       maxAbsOffsetPx: Math.max(0, ...rows.map((r) => r.absOffsetPx ?? 0)),
-      cursorBox, noteBox,
-      cursorVsZulu, noteVsHz,
+      cursorBox, noteBox, lockBox,
+      cursorVsZulu, noteVsHz, lockVsZulu,
       cursorZuluOverlapCount: cursorZuluOverlaps.length,
       noteHzOverlapCount: noteHzOverlaps.length,
-      cursorZuluOverlaps, noteHzOverlaps,
+      lockZuluOverlapCount: lockZuluOverlaps.length,
+      cursorZuluOverlaps, noteHzOverlaps, lockZuluOverlaps,
     }
   }, { trueLines, view, frameTestId })
 }
@@ -361,6 +373,8 @@ console.log(JSON.stringify({ note: 'headless', summary: report.map((r) => ({
   maxAbsOffsetPx: r.geometry?.maxAbsOffsetPx,
   cursorZuluOverlaps: r.geometry?.cursorZuluOverlapCount,
   noteHzOverlaps: r.geometry?.noteHzOverlapCount,
+  lockZuluOverlaps: r.geometry?.lockZuluOverlapCount,
+  lockBox: r.geometry?.lockBox,
   cursorParked: r.geometry?.cursorParked,
   cursorBox: r.geometry?.cursorBox,
   noteBox: r.geometry?.noteBox && { text: r.geometry.noteBox.text, top: r.geometry.noteBox.top, bottom: r.geometry.noteBox.bottom },
@@ -369,8 +383,10 @@ console.log(JSON.stringify({ note: 'headless', summary: report.map((r) => ({
 for (const r of report) {
   const g = r.geometry || {}
   const cb = g.cursorBox
-  log(`${r.kind}: MATCHED=${JSON.stringify(r.matched)} poll=${r.bestMatchedPoll?.n} zuluOv=${g.cursorZuluOverlapCount} hzOv=${g.noteHzOverlapCount} ${r.readout}`)
+  const lb = g.lockBox
+  log(`${r.kind}: MATCHED=${JSON.stringify(r.matched)} poll=${r.bestMatchedPoll?.n} zuluOv=${g.cursorZuluOverlapCount} hzOv=${g.noteHzOverlapCount} lockOv=${g.lockZuluOverlapCount} ${r.readout}`)
   log(`  cursor left=${cb?.left ?? null} right=${cb?.right ?? null} top=${cb?.top ?? null} text=${cb?.text ?? null}`)
+  log(`  lock left=${lb?.left ?? null} right=${lb?.right ?? null} top=${lb?.top ?? null} bottom=${lb?.bottom ?? null}`)
 }
 await browser.close()
 try { process.kill(-srv.pid, 'SIGTERM') } catch {}
