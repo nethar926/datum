@@ -77,10 +77,13 @@ export interface HydpTrigger {courseDeg?:number;depthM?:number}
 /** Rudder/hydroplane proxy: a leg that turns ≥courseDeg (default 10°) or changes depth ≥depthM
  * (default 5 m) schedules HYDP bursts. Burst count is seeded: usually 1, sometimes 2, rarely 3
  * (Wilson hydraulic bar — not fixed pairs). Optional `rng` makes counts deterministic. */
-export function maneuverTransients(legs:readonly MotionLeg[],trigger:HydpTrigger={},rng?:Random):{at:number;kind:'hydp';params:Record<string,number>}[] {
- const minC=(trigger.courseDeg??10)*DEG,minD=trigger.depthM??5,out:{at:number;kind:'hydp';params:Record<string,number>}[]=[];
+export function maneuverTransients(legs:readonly MotionLeg[],trigger:HydpTrigger={},rng?:Random):{at:number;kind:'hydp'|'swath'|'transient';params:Record<string,number>}[] {
+ const minC=(trigger.courseDeg??10)*DEG,minD=trigger.depthM??5,out:{at:number;kind:'hydp'|'swath'|'transient';params:Record<string,number>}[]=[];
  const roll=()=>{if(!rng)return 1;const u=rng();return u<.7?1:u<.95?2:3;};
  for(let i=1;i<legs.length;i++){const a=legs[i-1],b=legs[i],dc=Math.abs(wrap(b.course-a.course+Math.PI)-Math.PI);if(dc<minC&&Math.abs(b.depth-a.depth)<minD)continue;
-  const n=roll(),burstDur=1.2+(rng?rng()*2.5:1.5);for(let k=0;k<n;k++)out.push({at:b.at+k*.4,kind:'hydp',params:{durationS:Number(burstDur.toFixed(2))}});}
+  const n=roll(),burstDur=1.2+(rng?rng()*2.5:1.5);for(let k=0;k<n;k++)out.push({at:b.at+k*.4,kind:'hydp',params:{durationS:Number(burstDur.toFixed(2))}});
+  // Short broadband swath flash (rudder/planes/periscope proxy) — Wilson transient swaths.
+  const swDur=.3+(rng?rng()*.9:.5),lo=40+(rng?rng()*80:50),hi=lo+120+(rng?rng()*400:200);
+  out.push({at:b.at,kind:'swath',params:{durationS:Number(swDur.toFixed(2)),loHz:Number(lo.toFixed(1)),hiHz:Number(hi.toFixed(1))}});}
  return out;
 }

@@ -1,0 +1,176 @@
+{
+ "df": 0.9770395701025891,
+ "rows": 120,
+ "note": "contrast = mean raw row value at line peak minus local median (same units as engine rows)",
+ "cuts": [
+  {
+   "id": "cut-brindleflux-snork",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": -0.15,
+   "rowMax": 86.81,
+   "lines": []
+  },
+  {
+   "id": "cut-cinderlilt-cav",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": 10.69,
+   "rowMax": 89.3,
+   "lines": [
+    {
+     "label": "AC bus 50 Hz (stable/discrete)",
+     "family": "GRID",
+     "hz": 50,
+     "peakBinHz": 46.9,
+     "contrast": 0.41
+    }
+   ]
+  },
+  {
+   "id": "cut-pebblewisp-demon",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": -25.37,
+   "rowMax": 85.01,
+   "lines": [
+    {
+     "label": "HYDP pair (Dorhan coastal giveaway)",
+     "family": "HYDP",
+     "hz": 1396.61,
+     "peakBinHz": 1395.21,
+     "contrast": 0.29
+    }
+   ]
+  },
+  {
+   "id": "cut-mistacorn-batt",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": -16.14,
+   "rowMax": 86.75,
+   "lines": [
+    {
+     "label": "HYDP pair (Dorhan coastal giveaway)",
+     "family": "HYDP",
+     "hz": 788.35,
+     "peakBinHz": 791.4,
+     "contrast": 0.77
+    }
+   ]
+  },
+  {
+   "id": "cut-orbelune-msr",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": -11.69,
+   "rowMax": 85.73,
+   "lines": [
+    {
+     "label": "AC bus 60 Hz",
+     "family": "GRID",
+     "hz": 60,
+     "peakBinHz": 59.6,
+     "contrast": 1.53
+    }
+   ]
+  },
+  {
+   "id": "cut-emberbraid-ssma",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": 8.14,
+   "rowMax": 87.29,
+   "lines": [
+    {
+     "label": "SSMA 2nd harmonic (no fundamental)",
+     "family": "AUX",
+     "hz": 116,
+     "peakBinHz": 115.29,
+     "contrast": 0.28
+    }
+   ]
+  },
+  {
+   "id": "cut-velvetshoal-nuc",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": 9.74,
+   "rowMax": 87.53,
+   "lines": [
+    {
+     "label": "HYDP pair (Kaelun twin-shaft giveaway)",
+     "family": "HYDP",
+     "hz": 334.34,
+     "peakBinHz": 335.12,
+     "contrast": 0.61
+    }
+   ]
+  },
+  {
+   "id": "cut-twilightweft-nuc",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": -2.23,
+   "rowMax": 87.12,
+   "lines": [
+    {
+     "label": "HYDP pair (Kaelun twin-shaft giveaway)",
+     "family": "HYDP",
+     "hz": 1536.27,
+     "peakBinHz": 1535.91,
+     "contrast": 0.45
+    }
+   ]
+  },
+  {
+   "id": "cut-gloamspiral-aip",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": -20.6,
+   "rowMax": 85.58,
+   "lines": [
+    {
+     "label": "HYDP pair",
+     "family": "HYDP",
+     "hz": 207.6,
+     "peakBinHz": 205.18,
+     "contrast": 0.66
+    }
+   ]
+  },
+  {
+   "id": "cut-morrowcoil-hydp-masked",
+   "rows": 120,
+   "nonFinite": 0,
+   "flatRows": 0,
+   "rowMin": -17.64,
+   "rowMax": 86.16,
+   "lines": [
+    {
+     "label": "HYDP harmonics, fundamental masked",
+     "family": "HYDP",
+     "hz": 303.94,
+     "peakBinHz": 301.91,
+     "contrast": 0.94
+    },
+    {
+     "label": "HYDP 2nd harmonic (visible)",
+     "family": "HYDP",
+     "hz": 607.88,
+     "peakBinHz": 607.72,
+     "contrast": 1.05
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,5510 @@
+{
+ "note": "All fictional. Acoustic figures are ranges/maximums from the generator catalog; no fixed per-contact values.",
+ "engineProducts": [
+  {
+   "productId": "fx-engine-1",
+   "productName": "Halvard 6T-480",
+   "stroke": 2,
+   "cylinders": 6,
+   "erpmBand": [
+    150,
+    480
+   ],
+   "usedByClassIds": [
+    "blue-brindleflux"
+   ]
+  },
+  {
+   "productId": "fx-engine-2",
+   "productName": "Corvane 8V-1500",
+   "stroke": 4,
+   "cylinders": 8,
+   "erpmBand": [
+    850,
+    1500
+   ],
+   "usedByClassIds": [
+    "blue-orbelune"
+   ]
+  },
+  {
+   "productId": "fx-engine-3",
+   "productName": "Dunmere 16V-1309",
+   "stroke": 4,
+   "cylinders": 16,
+   "erpmBand": [
+    300,
+    1308.7
+   ],
+   "usedByClassIds": [
+    "green-morrowcoil"
+   ]
+  },
+  {
+   "productId": "fx-engine-4",
+   "productName": "Pellor 6V-1500",
+   "stroke": 4,
+   "cylinders": 6,
+   "erpmBand": [
+    850,
+    1500
+   ],
+   "usedByClassIds": [
+    "green-fennelglint"
+   ]
+  },
+  {
+   "productId": "fx-engine-5",
+   "productName": "Ashgrove 10V-1500",
+   "stroke": 4,
+   "cylinders": 10,
+   "erpmBand": [
+    850,
+    1500
+   ],
+   "usedByClassIds": [
+    "green-opalweft"
+   ]
+  },
+  {
+   "productId": "fx-engine-6",
+   "productName": "Tamsin 6T-510",
+   "stroke": 2,
+   "cylinders": 6,
+   "erpmBand": [
+    150,
+    510
+   ],
+   "usedByClassIds": [
+    "red-cinderlilt"
+   ]
+  },
+  {
+   "productId": "fx-engine-7",
+   "productName": "Orrin 16V-1235",
+   "stroke": 4,
+   "cylinders": 16,
+   "erpmBand": [
+    300,
+    1234.8
+   ],
+   "usedByClassIds": [
+    "red-emberbraid"
+   ]
+  },
+  {
+   "productId": "fx-engine-8",
+   "productName": "Veskel 6V-850",
+   "stroke": 4,
+   "cylinders": 6,
+   "erpmBand": [
+    300,
+    850
+   ],
+   "usedByClassIds": [
+    "red-gloamspiral",
+    "red-dorhan-pebblewisp",
+    "red-dorhan-mistacorn"
+   ]
+  },
+  {
+   "productId": "fx-engine-9",
+   "productName": "Brannoc 6V-1373",
+   "stroke": 4,
+   "cylinders": 6,
+   "erpmBand": [
+    300,
+    1372.7
+   ],
+   "usedByClassIds": [
+    "green-russetwake"
+   ]
+  },
+  {
+   "productId": "fx-engine-10",
+   "productName": "Quillon 12V-850",
+   "stroke": 4,
+   "cylinders": 12,
+   "erpmBand": [
+    300,
+    850
+   ],
+   "usedByClassIds": [
+    "red-marigoldrift"
+   ]
+  },
+  {
+   "productId": "fx-engine-11",
+   "productName": "Merrow 8V-850",
+   "stroke": 4,
+   "cylinders": 8,
+   "erpmBand": [
+    300,
+    850
+   ],
+   "usedByClassIds": [
+    "red-lanternmoss"
+   ]
+  }
+ ],
+ "classes": [
+  {
+   "id": "blue-brindleflux",
+   "name": "Fictional Brindleflux",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 58.1,
+    "beamM": 6.5,
+    "draughtSurfacedM": 5.2,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.25,
+     "lengthM": 6.1,
+     "heightM": 6.4
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "ostmark-league",
+    "operators": [
+     {
+      "nationId": "ostmark-league",
+      "role": "origin",
+      "hullIds": [
+       "fx-brindleflux-1",
+       "fx-brindleflux-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-brindleflux-1",
+      "number": "FX-BQ-01-1",
+      "name": "Brindleflux Wisp",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-brindleflux-2",
+      "number": "FX-BQ-01-2",
+      "name": "Brindleflux Glimmer",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Ostmark League",
+    "operatorNames": [
+     "Ostmark League"
+    ]
+   },
+   "operatorNation": "Ostmark League",
+   "force": "Blue",
+   "alliedNations": [
+    "Norrland Union"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "D/D",
+   "era": 2005,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-BQ-01-1",
+     "name": "Brindleflux Wisp"
+    },
+    {
+     "number": "FX-BQ-01-2",
+     "name": "Brindleflux Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "cpp",
+     "blades": 5
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "cpp",
+     "pitch": "controllable",
+     "bladeForm": "flat",
+     "blades": 5,
+     "skewDeg": 0,
+     "expandedAreaRatio": 0.62,
+     "hubDiameterRatio": 0.3,
+     "diameterM": 2.9
+    }
+   },
+   "speedKts": {
+    "surfaced": 13.5,
+    "submerged": 18,
+    "snorkel": 11.700000000000001,
+    "battery": 7,
+    "quiet": [
+     3.6,
+     6
+    ]
+   },
+   "depthM": {
+    "periscope": 12,
+    "typicalPatrol": [
+     45,
+     165
+    ],
+    "maxOperating": 255,
+    "test": 300
+   },
+   "shaft": {
+    "psrHzMax": 8,
+    "psrHzQuiet": [
+     1.6,
+     2.667
+    ],
+    "brHzMax": 40,
+    "brHzQuiet": [
+     8,
+     13.333
+    ],
+    "psrHarmonicsStopAtBlades": true,
+    "propResonanceOrders": [
+     12,
+     16
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-1",
+     "productName": "Halvard 6T-480",
+     "count": 1,
+     "csrHz": [
+      2.5,
+      8
+     ],
+     "cfrHz": [
+      2.5,
+      8
+     ],
+     "efrHz": [
+      15,
+      48
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 480
+   },
+   "edas": [
+    {
+     "name": "LOP",
+     "cfrMultiple": [
+      27.195,
+      28.305
+     ],
+     "hzRange": [
+      67.99,
+      226.44
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Ventilation drive",
+     "cfrMultiple": [
+      24.745,
+      25.755
+     ],
+     "hzRange": [
+      61.86,
+      206.04
+     ],
+     "harmonics": []
+    },
+    {
+     "name": "Cooling pump",
+     "cfrMultiple": [
+      36.75,
+      38.25
+     ],
+     "hzRange": [
+      91.88,
+      306
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 45.88,
+     "wander1SigmaHz": 0.004,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 18.81,
+     "wander1SigmaHz": 1.538,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ac-compressor",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 76.63,
+     "wander1SigmaHz": 0.006,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     360.4,
+     375.1
+    ],
+    "pairSpacingHz": [
+     1.303,
+     1.357
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 22.65,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      8.1,
+      16.4
+     ],
+     "hz": [
+      146,
+      160
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "blue-orbelune",
+   "name": "Fictional Orbelune",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 71.2,
+    "beamM": 9.3,
+    "draughtSurfacedM": 8,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.39,
+     "lengthM": 7.1,
+     "heightM": 4.6
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "ostmark-league",
+    "operators": [
+     {
+      "nationId": "ostmark-league",
+      "role": "origin",
+      "hullIds": [
+       "fx-orbelune-1",
+       "fx-orbelune-2"
+      ]
+     },
+     {
+      "nationId": "tarsian-republic",
+      "role": "export",
+      "hullIds": [
+       "blue-orbelune-export-1-1"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-orbelune-1",
+      "number": "FX-BQ-02-1",
+      "name": "Orbelune Wisp",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-orbelune-2",
+      "number": "FX-BQ-02-2",
+      "name": "Orbelune Glimmer",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     },
+     {
+      "id": "blue-orbelune-export-1-1",
+      "number": "FX-TQ-02E-1",
+      "name": "Orbelune Tide",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": false
+     }
+    ],
+    "designOrigin": "Ostmark League",
+    "operatorNames": [
+     "Ostmark League",
+     "Tarsian Republic"
+    ]
+   },
+   "operatorNation": "Ostmark League",
+   "force": "Blue",
+   "alliedNations": [
+    "Norrland Union"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "DIESEL ELECTRIC",
+   "era": 2006,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-BQ-02-1",
+     "name": "Orbelune Wisp"
+    },
+    {
+     "number": "FX-BQ-02-2",
+     "name": "Orbelune Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "skewed",
+     "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 7,
+     "skewDeg": 33,
+     "expandedAreaRatio": 0.68,
+     "hubDiameterRatio": 0.23,
+     "diameterM": 4.3
+    }
+   },
+   "speedKts": {
+    "surfaced": 13.5,
+    "submerged": 18,
+    "snorkel": 11.700000000000001,
+    "battery": 7,
+    "quiet": [
+     3.6,
+     6
+    ]
+   },
+   "depthM": {
+    "periscope": 14,
+    "typicalPatrol": [
+     52.5,
+     192.5
+    ],
+    "maxOperating": 298,
+    "test": 350
+   },
+   "shaft": {
+    "psrHzMax": 7.333,
+    "psrHzQuiet": [
+     1.467,
+     2.444
+    ],
+    "brHzMax": 51.333,
+    "brHzQuiet": [
+     10.267,
+     17.111
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-2",
+     "productName": "Corvane 8V-1500",
+     "count": 3,
+     "csrHz": [
+      14.167,
+      25
+     ],
+     "cfrHz": [
+      7.083,
+      12.5
+     ],
+     "efrHz": [
+      56.667,
+      100
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 440
+   },
+   "edas": [
+    {
+     "name": "Freshwater pump",
+     "cfrMultiple": [
+      14.945,
+      15.555
+     ],
+     "hzRange": [
+      105.86,
+      194.44
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Ventilation drive",
+     "cfrMultiple": [
+      33.075,
+      34.425
+     ],
+     "hzRange": [
+      234.28,
+      430.31
+     ],
+     "harmonics": []
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "continuous",
+     "nominalHz": 64.54,
+     "wander1SigmaHz": 0.005,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 72.44,
+     "wander1SigmaHz": 1.645,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ssma",
+     "kind": "ssma",
+     "duty": "continuous",
+     "nominalHz": 59.78,
+     "wander1SigmaHz": 1.62,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     1028.3,
+     1070.3
+    ],
+    "pairSpacingHz": [
+     2.029,
+     2.111
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 17.78,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      7,
+      15.8
+     ],
+     "hz": [
+      377,
+      391
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "blue-vellumwake",
+   "name": "Fictional Vellumwake",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 107.4,
+    "beamM": 11.3,
+    "draughtSurfacedM": 9,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.25,
+     "lengthM": 13.7,
+     "heightM": 5
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "norrland-union",
+    "operators": [
+     {
+      "nationId": "norrland-union",
+      "role": "origin",
+      "hullIds": [
+       "fx-vellumwake-1",
+       "fx-vellumwake-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-vellumwake-1",
+      "number": "FX-BQ-03-1",
+      "name": "Vellumwake Wisp",
+      "operatorNationId": "norrland-union",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-vellumwake-2",
+      "number": "FX-BQ-03-2",
+      "name": "Vellumwake Glimmer",
+      "operatorNationId": "norrland-union",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Norrland Union",
+    "operatorNames": [
+     "Norrland Union"
+    ]
+   },
+   "operatorNation": "Norrland Union",
+   "force": "Blue",
+   "alliedNations": [
+    "Ostmark League"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "N/GR",
+   "era": 2007,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-BQ-03-1",
+     "name": "Vellumwake Wisp"
+    },
+    {
+     "number": "FX-BQ-03-2",
+     "name": "Vellumwake Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "skewed",
+     "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 7,
+     "skewDeg": 42,
+     "expandedAreaRatio": 0.71,
+     "hubDiameterRatio": 0.24,
+     "diameterM": 5.5
+    }
+   },
+   "speedKts": {
+    "surfaced": 20.8,
+    "submerged": 32,
+    "snorkel": 32,
+    "battery": 32,
+    "quiet": [
+     5.4,
+     9
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     60,
+     220
+    ],
+    "maxOperating": 340,
+    "test": 400
+   },
+   "shaft": {
+    "psrHzMax": 8.667,
+    "psrHzQuiet": [
+     1.462,
+     2.438
+    ],
+    "brHzMax": 60.667,
+    "brHzQuiet": [
+     10.237,
+     17.063
+    ],
+    "psrHarmonicsStopAtBlades": false,
+    "propResonanceOrders": [
+     27,
+     33
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 114.52,
+     "vaneCount": 44,
+     "vanePassHzMax": 5038.9
+    }
+   ],
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 89.59,
+     "wander1SigmaHz": 0.007,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ssma",
+     "kind": "ssma",
+     "duty": "continuous",
+     "nominalHz": 72.98,
+     "wander1SigmaHz": 1.646,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     396.5,
+     412.6
+    ],
+    "pairSpacingHz": [
+     1.058,
+     1.102
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 21.4,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      10.8,
+      27.3
+     ],
+     "hz": [
+      167,
+      181
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "blue-quartzwhorl",
+   "name": "Fictional Quartzwhorl",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 109.7,
+    "beamM": 10.8,
+    "draughtSurfacedM": 8.8,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.29,
+     "lengthM": 14.8,
+     "heightM": 6.7
+    },
+    "planes": "bow",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "norrland-union",
+    "operators": [
+     {
+      "nationId": "norrland-union",
+      "role": "origin",
+      "hullIds": [
+       "fx-quartzwhorl-1",
+       "fx-quartzwhorl-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-quartzwhorl-1",
+      "number": "FX-BQ-04-1",
+      "name": "Quartzwhorl Wisp",
+      "operatorNationId": "norrland-union",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-quartzwhorl-2",
+      "number": "FX-BQ-04-2",
+      "name": "Quartzwhorl Glimmer",
+      "operatorNationId": "norrland-union",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Norrland Union",
+    "operatorNames": [
+     "Norrland Union"
+    ]
+   },
+   "operatorNation": "Norrland Union",
+   "force": "Blue",
+   "alliedNations": [
+    "Ostmark League"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "NEL",
+   "era": 2008,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-BQ-04-1",
+     "name": "Quartzwhorl Wisp"
+    },
+    {
+     "number": "FX-BQ-04-2",
+     "name": "Quartzwhorl Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "flat",
+     "blades": 9
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "flat",
+     "pitch": "fixed",
+     "bladeForm": "flat",
+     "blades": 9,
+     "skewDeg": 3,
+     "expandedAreaRatio": 0.67,
+     "hubDiameterRatio": 0.18,
+     "diameterM": 5.2
+    }
+   },
+   "speedKts": {
+    "surfaced": 18.2,
+    "submerged": 28,
+    "snorkel": 28,
+    "battery": 28,
+    "quiet": [
+     4.8,
+     8
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     67.5,
+     247.5
+    ],
+    "maxOperating": 383,
+    "test": 450
+   },
+   "shaft": {
+    "psrHzMax": 7.5,
+    "psrHzQuiet": [
+     1.286,
+     2.143
+    ],
+    "brHzMax": 67.5,
+    "brHzQuiet": [
+     11.571,
+     19.286
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 60,
+     "vaneCount": 20,
+     "vanePassHzMax": 1200
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 450
+   },
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 14.17,
+     "wander1SigmaHz": 0.001,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ac-compressor",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 94.8,
+     "wander1SigmaHz": 0.008,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 32.95,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      9.3,
+      25.9
+     ],
+     "hz": [
+      209,
+      223
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "green-morrowcoil",
+   "name": "Fictional Morrowcoil",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 62.7,
+    "beamM": 8.3,
+    "draughtSurfacedM": 6.8,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.33,
+     "lengthM": 8.5,
+     "heightM": 5.9
+    },
+    "planes": "bow",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "tarsian-republic",
+    "operators": [
+     {
+      "nationId": "tarsian-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-morrowcoil-1",
+       "fx-morrowcoil-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-morrowcoil-1",
+      "number": "FX-GQ-05-1",
+      "name": "Morrowcoil Wisp",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-morrowcoil-2",
+      "number": "FX-GQ-05-2",
+      "name": "Morrowcoil Glimmer",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Tarsian Republic",
+    "operatorNames": [
+     "Tarsian Republic"
+    ]
+   },
+   "operatorNation": "Tarsian Republic",
+   "force": "Green",
+   "alliedNations": [
+    "Meridia"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "D/GR",
+   "era": 2009,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-GQ-05-1",
+     "name": "Morrowcoil Wisp"
+    },
+    {
+     "number": "FX-GQ-05-2",
+     "name": "Morrowcoil Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "skewed",
+     "blades": 6
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 6,
+     "skewDeg": 31,
+     "expandedAreaRatio": 0.75,
+     "hubDiameterRatio": 0.23,
+     "diameterM": 3.8
+    }
+   },
+   "speedKts": {
+    "surfaced": 13.5,
+    "submerged": 18,
+    "snorkel": 11.700000000000001,
+    "battery": 7,
+    "quiet": [
+     3.6,
+     6
+    ]
+   },
+   "depthM": {
+    "periscope": 20,
+    "typicalPatrol": [
+     45,
+     165
+    ],
+    "maxOperating": 255,
+    "test": 300
+   },
+   "shaft": {
+    "psrHzMax": 7.167,
+    "psrHzQuiet": [
+     1.433,
+     2.389
+    ],
+    "brHzMax": 43,
+    "brHzQuiet": [
+     8.6,
+     14.333
+    ],
+    "psrHarmonicsStopAtBlades": true
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-3",
+     "productName": "Dunmere 16V-1309",
+     "count": 1,
+     "csrHz": [
+      5,
+      21.812
+     ],
+     "cfrHz": [
+      2.5,
+      10.906
+     ],
+     "efrHz": [
+      40,
+      174.493
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 430
+   },
+   "edas": [
+    {
+     "name": "Ventilation drive",
+     "cfrMultiple": [
+      28.665,
+      29.835
+     ],
+     "hzRange": [
+      71.66,
+      325.37
+     ],
+     "harmonics": [
+      1
+     ]
+    },
+    {
+     "name": "Freshwater pump",
+     "cfrMultiple": [
+      16.905,
+      17.595
+     ],
+     "hzRange": [
+      42.26,
+      191.89
+     ],
+     "harmonics": []
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "continuous",
+     "nominalHz": 39.77,
+     "wander1SigmaHz": 0.003,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 62.04,
+     "wander1SigmaHz": 1.624,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ac-compressor",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 121.89,
+     "wander1SigmaHz": 0.01,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     297.9,
+     310
+    ],
+    "pairSpacingHz": [
+     1.225,
+     1.275
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 34.41,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      7.9,
+      16.4
+     ],
+     "hz": [
+      104,
+      118
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "green-fennelglint",
+   "name": "Fictional Fennelglint",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 65.6,
+    "beamM": 7.8,
+    "draughtSurfacedM": 6.1,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.28,
+     "lengthM": 8,
+     "heightM": 6.4
+    },
+    "planes": "bow",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "tarsian-republic",
+    "operators": [
+     {
+      "nationId": "tarsian-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-fennelglint-1",
+       "fx-fennelglint-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-fennelglint-1",
+      "number": "FX-GQ-06-1",
+      "name": "Fennelglint Wisp",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-fennelglint-2",
+      "number": "FX-GQ-06-2",
+      "name": "Fennelglint Glimmer",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Tarsian Republic",
+    "operatorNames": [
+     "Tarsian Republic"
+    ]
+   },
+   "operatorNation": "Tarsian Republic",
+   "force": "Green",
+   "alliedNations": [
+    "Meridia"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "DIESEL ELECTRIC",
+   "era": 2010,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-GQ-06-1",
+     "name": "Fennelglint Wisp"
+    },
+    {
+     "number": "FX-GQ-06-2",
+     "name": "Fennelglint Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "cpp",
+     "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "cpp",
+     "pitch": "controllable",
+     "bladeForm": "flat",
+     "blades": 7,
+     "skewDeg": 1,
+     "expandedAreaRatio": 0.62,
+     "hubDiameterRatio": 0.34,
+     "diameterM": 3.9
+    }
+   },
+   "speedKts": {
+    "surfaced": 14.25,
+    "submerged": 19,
+    "snorkel": 12.35,
+    "battery": 7,
+    "quiet": [
+     3.6,
+     6
+    ]
+   },
+   "depthM": {
+    "periscope": 12,
+    "typicalPatrol": [
+     52.5,
+     192.5
+    ],
+    "maxOperating": 298,
+    "test": 350
+   },
+   "shaft": {
+    "psrHzMax": 7.667,
+    "psrHzQuiet": [
+     1.453,
+     2.421
+    ],
+    "brHzMax": 53.667,
+    "brHzQuiet": [
+     10.168,
+     16.947
+    ],
+    "psrHarmonicsStopAtBlades": false,
+    "propResonanceOrders": [
+     19,
+     25
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-4",
+     "productName": "Pellor 6V-1500",
+     "count": 3,
+     "csrHz": [
+      14.167,
+      25
+     ],
+     "cfrHz": [
+      7.083,
+      12.5
+     ],
+     "efrHz": [
+      42.5,
+      75
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 460
+   },
+   "edas": [
+    {
+     "name": "Cooling pump",
+     "cfrMultiple": [
+      31.605,
+      32.895
+     ],
+     "hzRange": [
+      223.87,
+      411.19
+     ],
+     "harmonics": [
+      1,
+      2,
+      3,
+      4,
+      5
+     ]
+    },
+    {
+     "name": "Lube scavenger",
+     "cfrMultiple": [
+      13.475,
+      14.025
+     ],
+     "hzRange": [
+      95.45,
+      175.31
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Fuel transfer",
+     "cfrMultiple": [
+      17.15,
+      17.85
+     ],
+     "hzRange": [
+      121.48,
+      223.13
+     ],
+     "harmonics": [
+      1
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 73.39,
+     "wander1SigmaHz": 0.006,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 15.12,
+     "wander1SigmaHz": 1.53,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ssma",
+     "kind": "ssma",
+     "duty": "continuous",
+     "nominalHz": 85.53,
+     "wander1SigmaHz": 1.671,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 30.46,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      6.8,
+      17.6
+     ],
+     "hz": [
+      272,
+      286
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "green-thistledrift",
+   "name": "Fictional Thistledrift",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 104.2,
+    "beamM": 11.8,
+    "draughtSurfacedM": 10.1,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.35,
+     "lengthM": 11.8,
+     "heightM": 4.7
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "tarsian-republic",
+    "operators": [
+     {
+      "nationId": "tarsian-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-thistledrift-1",
+       "fx-thistledrift-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-thistledrift-1",
+      "number": "FX-GQ-07-1",
+      "name": "Thistledrift Wisp",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-thistledrift-2",
+      "number": "FX-GQ-07-2",
+      "name": "Thistledrift Glimmer",
+      "operatorNationId": "tarsian-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Tarsian Republic",
+    "operatorNames": [
+     "Tarsian Republic"
+    ]
+   },
+   "operatorNation": "Tarsian Republic",
+   "force": "Green",
+   "alliedNations": [
+    "Meridia"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "N/GR",
+   "era": 2011,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-GQ-07-1",
+     "name": "Thistledrift Wisp"
+    },
+    {
+     "number": "FX-GQ-07-2",
+     "name": "Thistledrift Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "flat",
+     "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "flat",
+     "pitch": "fixed",
+     "bladeForm": "flat",
+     "blades": 8,
+     "skewDeg": 4,
+     "expandedAreaRatio": 0.63,
+     "hubDiameterRatio": 0.21,
+     "diameterM": 5.5
+    }
+   },
+   "speedKts": {
+    "surfaced": 21.45,
+    "submerged": 33,
+    "snorkel": 33,
+    "battery": 33,
+    "quiet": [
+     5.4,
+     9
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     60,
+     220
+    ],
+    "maxOperating": 340,
+    "test": 400
+   },
+   "shaft": {
+    "psrHzMax": 9,
+    "psrHzQuiet": [
+     1.473,
+     2.455
+    ],
+    "brHzMax": 72,
+    "brHzQuiet": [
+     11.782,
+     19.636
+    ],
+    "psrHarmonicsStopAtBlades": false,
+    "propResonanceOrders": [
+     41,
+     49
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 159.075,
+     "vaneCount": 70,
+     "vanePassHzMax": 11135.3
+    }
+   ],
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 72.88,
+     "wander1SigmaHz": 0.006,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ssma",
+     "kind": "ssma",
+     "duty": "continuous",
+     "nominalHz": 49.65,
+     "wander1SigmaHz": 1.599,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 17.19,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      11.1,
+      27.9
+     ],
+     "hz": [
+      335,
+      349
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "green-opalweft",
+   "name": "Fictional Opalweft",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 73.8,
+    "beamM": 8.2,
+    "draughtSurfacedM": 6.4,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.37,
+     "lengthM": 8.2,
+     "heightM": 4.5
+    },
+    "planes": "bow",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "meridia",
+    "operators": [
+     {
+      "nationId": "meridia",
+      "role": "origin",
+      "hullIds": [
+       "fx-opalweft-1",
+       "fx-opalweft-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-opalweft-1",
+      "number": "FX-GQ-08-1",
+      "name": "Opalweft Wisp",
+      "operatorNationId": "meridia",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-opalweft-2",
+      "number": "FX-GQ-08-2",
+      "name": "Opalweft Glimmer",
+      "operatorNationId": "meridia",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Meridia",
+    "operatorNames": [
+     "Meridia"
+    ]
+   },
+   "operatorNation": "Meridia",
+   "force": "Green",
+   "alliedNations": [
+    "Tarsian Republic"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "DIESEL ELECTRIC",
+   "era": 2012,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-GQ-08-1",
+     "name": "Opalweft Wisp"
+    },
+    {
+     "number": "FX-GQ-08-2",
+     "name": "Opalweft Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "skewed",
+     "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 7,
+     "skewDeg": 40,
+     "expandedAreaRatio": 0.7,
+     "hubDiameterRatio": 0.18,
+     "diameterM": 4.3
+    }
+   },
+   "speedKts": {
+    "surfaced": 14.25,
+    "submerged": 19,
+    "snorkel": 12.35,
+    "battery": 7,
+    "quiet": [
+     3.6,
+     6
+    ]
+   },
+   "depthM": {
+    "periscope": 16,
+    "typicalPatrol": [
+     52.5,
+     192.5
+    ],
+    "maxOperating": 298,
+    "test": 350
+   },
+   "shaft": {
+    "psrHzMax": 7.667,
+    "psrHzQuiet": [
+     1.453,
+     2.421
+    ],
+    "brHzMax": 53.667,
+    "brHzQuiet": [
+     10.168,
+     16.947
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-5",
+     "productName": "Ashgrove 10V-1500",
+     "count": 3,
+     "csrHz": [
+      14.167,
+      25
+     ],
+     "cfrHz": [
+      7.083,
+      12.5
+     ],
+     "efrHz": [
+      70.833,
+      125
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 460
+   },
+   "edas": [
+    {
+     "name": "Lube scavenger",
+     "cfrMultiple": [
+      31.115,
+      32.385
+     ],
+     "hzRange": [
+      220.4,
+      404.81
+     ],
+     "harmonics": [
+      1,
+      2,
+      3
+     ]
+    },
+    {
+     "name": "Cooling pump",
+     "cfrMultiple": [
+      28.175,
+      29.325
+     ],
+     "hzRange": [
+      199.57,
+      366.56
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "continuous",
+     "nominalHz": 27.79,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 45.91,
+     "wander1SigmaHz": 1.592,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ac-compressor",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 68.78,
+     "wander1SigmaHz": 0.006,
+     "stability": "stable",
+     "harmonics": [
+      1
+     ]
+    }
+   ],
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 32.29,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      7.5,
+      16.8
+     ],
+     "hz": [
+      62,
+      76
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "red-cinderlilt",
+   "name": "Fictional Cinderlilt",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 73.6,
+    "beamM": 9.2,
+    "draughtSurfacedM": 7.8,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.27,
+     "lengthM": 9.1,
+     "heightM": 6.4
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "zahrestan",
+    "operators": [
+     {
+      "nationId": "zahrestan",
+      "role": "origin",
+      "hullIds": [
+       "fx-cinderlilt-1",
+       "fx-cinderlilt-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-cinderlilt-1",
+      "number": "FX-RQ-09-1",
+      "name": "Cinderlilt Wisp",
+      "operatorNationId": "zahrestan",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-cinderlilt-2",
+      "number": "FX-RQ-09-2",
+      "name": "Cinderlilt Glimmer",
+      "operatorNationId": "zahrestan",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Zahrestan",
+    "operatorNames": [
+     "Zahrestan"
+    ]
+   },
+   "operatorNation": "Zahrestan",
+   "force": "Red",
+   "alliedNations": [
+    "Varkeshna Federation",
+    "Kaelun Republic",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "D/D",
+   "era": 2013,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-RQ-09-1",
+     "name": "Cinderlilt Wisp"
+    },
+    {
+     "number": "FX-RQ-09-2",
+     "name": "Cinderlilt Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "skewed",
+     "blades": 5
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 5,
+     "skewDeg": 31,
+     "expandedAreaRatio": 0.78,
+     "hubDiameterRatio": 0.21,
+     "diameterM": 4.6
+    }
+   },
+   "speedKts": {
+    "surfaced": 14.25,
+    "submerged": 19,
+    "snorkel": 12.35,
+    "battery": 7,
+    "quiet": [
+     3.6,
+     6
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     45,
+     165
+    ],
+    "maxOperating": 255,
+    "test": 300
+   },
+   "shaft": {
+    "psrHzMax": 8.5,
+    "psrHzQuiet": [
+     1.611,
+     2.684
+    ],
+    "brHzMax": 42.5,
+    "brHzQuiet": [
+     8.053,
+     13.421
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-6",
+     "productName": "Tamsin 6T-510",
+     "count": 1,
+     "csrHz": [
+      2.5,
+      8.5
+     ],
+     "cfrHz": [
+      2.5,
+      8.5
+     ],
+     "efrHz": [
+      15,
+      51
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 510
+   },
+   "edas": [
+    {
+     "name": "Cooling pump",
+     "cfrMultiple": [
+      16.17,
+      16.83
+     ],
+     "hzRange": [
+      40.42,
+      143.06
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Lube scavenger",
+     "cfrMultiple": [
+      40.67,
+      42.33
+     ],
+     "hzRange": [
+      101.68,
+      359.81
+     ],
+     "harmonics": []
+    },
+    {
+     "name": "Fuel transfer",
+     "cfrMultiple": [
+      36.505,
+      37.995
+     ],
+     "hzRange": [
+      91.26,
+      322.96
+     ],
+     "harmonics": [
+      1
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 58.52,
+     "wander1SigmaHz": 0.005,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 35.04,
+     "wander1SigmaHz": 1.57,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ac-compressor",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 97.08,
+     "wander1SigmaHz": 0.008,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 25.74,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      7.9,
+      16.9
+     ],
+     "hz": [
+      356,
+      370
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-emberbraid",
+   "name": "Fictional Emberbraid",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 56.3,
+    "beamM": 6.6,
+    "draughtSurfacedM": 5.8,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.28,
+     "lengthM": 7.7,
+     "heightM": 5.2
+    },
+    "planes": "bow",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "zahrestan",
+    "operators": [
+     {
+      "nationId": "zahrestan",
+      "role": "origin",
+      "hullIds": [
+       "fx-emberbraid-1",
+       "fx-emberbraid-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-emberbraid-1",
+      "number": "FX-RQ-10-1",
+      "name": "Emberbraid Wisp",
+      "operatorNationId": "zahrestan",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-emberbraid-2",
+      "number": "FX-RQ-10-2",
+      "name": "Emberbraid Glimmer",
+      "operatorNationId": "zahrestan",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Zahrestan",
+    "operatorNames": [
+     "Zahrestan"
+    ]
+   },
+   "operatorNation": "Zahrestan",
+   "force": "Red",
+   "alliedNations": [
+    "Varkeshna Federation",
+    "Kaelun Republic",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "D/GR",
+   "era": 2014,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-RQ-10-1",
+     "name": "Emberbraid Wisp"
+    },
+    {
+     "number": "FX-RQ-10-2",
+     "name": "Emberbraid Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "flat",
+     "blades": 6
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "flat",
+     "pitch": "fixed",
+     "bladeForm": "flat",
+     "blades": 6,
+     "skewDeg": 3,
+     "expandedAreaRatio": 0.55,
+     "hubDiameterRatio": 0.21,
+     "diameterM": 3.1
+    }
+   },
+   "speedKts": {
+    "surfaced": 12.75,
+    "submerged": 17,
+    "snorkel": 11.05,
+    "battery": 7,
+    "quiet": [
+     3.6,
+     6
+    ]
+   },
+   "depthM": {
+    "periscope": 20,
+    "typicalPatrol": [
+     52.5,
+     192.5
+    ],
+    "maxOperating": 298,
+    "test": 350
+   },
+   "shaft": {
+    "psrHzMax": 6.667,
+    "psrHzQuiet": [
+     1.412,
+     2.353
+    ],
+    "brHzMax": 40,
+    "brHzQuiet": [
+     8.471,
+     14.118
+    ],
+    "psrHarmonicsStopAtBlades": true,
+    "propResonanceOrders": [
+     9,
+     13
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-7",
+     "productName": "Orrin 16V-1235",
+     "count": 1,
+     "csrHz": [
+      5,
+      20.58
+     ],
+     "cfrHz": [
+      2.5,
+      10.29
+     ],
+     "efrHz": [
+      40,
+      164.638
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 400
+   },
+   "edas": [
+    {
+     "name": "Lube scavenger",
+     "cfrMultiple": [
+      40.67,
+      42.33
+     ],
+     "hzRange": [
+      101.68,
+      435.57
+     ],
+     "harmonics": [
+      1,
+      2,
+      3
+     ]
+    },
+    {
+     "name": "Cooling pump",
+     "cfrMultiple": [
+      39.445,
+      41.055
+     ],
+     "hzRange": [
+      98.61,
+      422.45
+     ],
+     "harmonics": []
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 34.57,
+     "wander1SigmaHz": 0.003,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 61.59,
+     "wander1SigmaHz": 1.623,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ssma",
+     "kind": "ssma",
+     "duty": "continuous",
+     "nominalHz": 56.21,
+     "wander1SigmaHz": 1.612,
+     "stability": "unstable",
+     "harmonics": [
+      2,
+      3
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     580.5,
+     604.1
+    ],
+    "pairSpacingHz": [
+     1.127,
+     1.173
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 20.99,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      6.9,
+      14.6
+     ],
+     "hz": [
+      251,
+      265
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-gloamspiral",
+   "name": "Fictional Gloamspiral",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 72,
+    "beamM": 9.3,
+    "draughtSurfacedM": 7.9,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.36,
+     "lengthM": 8,
+     "heightM": 6.9
+    },
+    "planes": "bow",
+    "stern": "x-form",
+    "aipPlugM": 9.8
+   },
+   "operators": {
+    "designOriginNationId": "kaelun-republic",
+    "operators": [
+     {
+      "nationId": "kaelun-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-gloamspiral-1",
+       "fx-gloamspiral-2"
+      ]
+     },
+     {
+      "nationId": "dorhan-commonwealth",
+      "role": "export",
+      "hullIds": [
+       "red-gloamspiral-export-1-1"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-gloamspiral-1",
+      "number": "FX-RQ-11-1",
+      "name": "Gloamspiral Wisp",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-gloamspiral-2",
+      "number": "FX-RQ-11-2",
+      "name": "Gloamspiral Glimmer",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "red-gloamspiral-export-1-1",
+      "number": "FX-DQ-11E-1",
+      "name": "Gloamspiral Ember",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": false
+     }
+    ],
+    "designOrigin": "Kaelun Republic",
+    "operatorNames": [
+     "Kaelun Republic",
+     "Dorhan Commonwealth"
+    ]
+   },
+   "operatorNation": "Kaelun Republic",
+   "force": "Red",
+   "alliedNations": [
+    "Varkeshna Federation",
+    "Zahrestan",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [
+    "Dorhan Commonwealth"
+   ],
+   "plant": "diesel",
+   "drivetrain": "DIESEL ELECTRIC",
+   "aip": {
+    "kind": "stirling",
+    "maxSpeedKts": 5
+   },
+   "era": 2005,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-RQ-11-1",
+     "name": "Gloamspiral Wisp"
+    },
+    {
+     "number": "FX-RQ-11-2",
+     "name": "Gloamspiral Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "cpp",
+     "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "cpp",
+     "pitch": "controllable",
+     "bladeForm": "flat",
+     "blades": 7,
+     "skewDeg": 8,
+     "expandedAreaRatio": 0.7,
+     "hubDiameterRatio": 0.33,
+     "diameterM": 4.8
+    }
+   },
+   "speedKts": {
+    "surfaced": 13.5,
+    "submerged": 18,
+    "snorkel": 11.700000000000001,
+    "battery": 8,
+    "quiet": [
+     4.2,
+     7
+    ]
+   },
+   "depthM": {
+    "periscope": 12,
+    "typicalPatrol": [
+     60,
+     220
+    ],
+    "maxOperating": 340,
+    "test": 400
+   },
+   "shaft": {
+    "psrHzMax": 7,
+    "psrHzQuiet": [
+     1.633,
+     2.722
+    ],
+    "brHzMax": 49,
+    "brHzQuiet": [
+     11.433,
+     19.056
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-8",
+     "productName": "Veskel 6V-850",
+     "count": 2,
+     "csrHz": [
+      5,
+      14.167
+     ],
+     "cfrHz": [
+      2.5,
+      7.083
+     ],
+     "efrHz": [
+      15,
+      42.5
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 420
+   },
+   "edas": [
+    {
+     "name": "Freshwater pump",
+     "cfrMultiple": [
+      29.155,
+      30.345
+     ],
+     "hzRange": [
+      72.89,
+      214.94
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Fuel transfer",
+     "cfrMultiple": [
+      16.905,
+      17.595
+     ],
+     "hzRange": [
+      42.26,
+      124.63
+     ],
+     "harmonics": [
+      1
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "continuous",
+     "nominalHz": 69.15,
+     "wander1SigmaHz": 0.006,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 66.37,
+     "wander1SigmaHz": 1.633,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ssma",
+     "kind": "ssma",
+     "duty": "continuous",
+     "nominalHz": 58.2,
+     "wander1SigmaHz": 1.616,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     203.4,
+     211.8
+    ],
+    "pairSpacingHz": [
+     2.117,
+     2.203
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 18.25,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      7.9,
+      15.8
+     ],
+     "hz": [
+      20,
+      34
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-sablequill",
+   "name": "Fictional Sablequill",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 103.1,
+    "beamM": 10,
+    "draughtSurfacedM": 8.1,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.37,
+     "lengthM": 12.1,
+     "heightM": 6.4
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "varkeshna-federation",
+    "operators": [
+     {
+      "nationId": "varkeshna-federation",
+      "role": "origin",
+      "hullIds": [
+       "fx-sablequill-1",
+       "fx-sablequill-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-sablequill-1",
+      "number": "FX-RQ-12-1",
+      "name": "Sablequill Wisp",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-sablequill-2",
+      "number": "FX-RQ-12-2",
+      "name": "Sablequill Glimmer",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Varkeshna Federation",
+    "operatorNames": [
+     "Varkeshna Federation"
+    ]
+   },
+   "operatorNation": "Varkeshna Federation",
+   "force": "Red",
+   "alliedNations": [
+    "Kaelun Republic",
+    "Zahrestan",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "N/GR",
+   "era": 2006,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-RQ-12-1",
+     "name": "Sablequill Wisp"
+    },
+    {
+     "number": "FX-RQ-12-2",
+     "name": "Sablequill Glimmer"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "skewed",
+     "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 8,
+     "skewDeg": 38,
+     "expandedAreaRatio": 0.77,
+     "hubDiameterRatio": 0.24,
+     "diameterM": 4.2
+    }
+   },
+   "speedKts": {
+    "surfaced": 22.1,
+    "submerged": 34,
+    "snorkel": 34,
+    "battery": 34,
+    "quiet": [
+     6,
+     10
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     67.5,
+     247.5
+    ],
+    "maxOperating": 383,
+    "test": 450
+   },
+   "shaft": {
+    "psrHzMax": 8.833,
+    "psrHzQuiet": [
+     1.559,
+     2.598
+    ],
+    "brHzMax": 70.667,
+    "brHzQuiet": [
+     12.471,
+     20.784
+    ],
+    "psrHarmonicsStopAtBlades": false,
+    "propResonanceOrders": [
+     57,
+     63
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 31.72,
+     "vaneCount": 72,
+     "vanePassHzMax": 2283.8
+    }
+   ],
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 27.31,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ac-compressor",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 75.56,
+     "wander1SigmaHz": 0.006,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     702.3,
+     731
+    ],
+    "pairSpacingHz": [
+     0.657,
+     0.683
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 25.78,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      12.3,
+      30.2
+     ],
+     "hz": [
+      293,
+      307
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-dorhan-pebblewisp",
+   "name": "Fictional Pebblewisp",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 65.4,
+    "beamM": 8.2,
+    "draughtSurfacedM": 7.2,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.28,
+     "lengthM": 6.7,
+     "heightM": 6.9
+    },
+    "planes": "bow",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "dorhan-commonwealth",
+    "operators": [
+     {
+      "nationId": "dorhan-commonwealth",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-dorhan-pebblewisp-1",
+       "fx-red-dorhan-pebblewisp-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-dorhan-pebblewisp-1",
+      "number": "FX-DH-PE-1",
+      "name": "Pebblewisp Lantern 1",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-dorhan-pebblewisp-2",
+      "number": "FX-DH-PE-2",
+      "name": "Pebblewisp Lantern 2",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Dorhan Commonwealth",
+    "operatorNames": [
+     "Dorhan Commonwealth"
+    ]
+   },
+   "operatorNation": "Dorhan Commonwealth",
+   "force": "Red",
+   "alliedNations": [
+    "Varkeshna Federation",
+    "Kaelun Republic",
+    "Zahrestan"
+   ],
+   "engineSharedWithNations": [
+    "Kaelun Republic"
+   ],
+   "plant": "diesel",
+   "drivetrain": "DIESEL ELECTRIC",
+   "era": 2007,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-DH-PE-1",
+     "name": "Pebblewisp Lantern 1"
+    },
+    {
+     "number": "FX-DH-PE-2",
+     "name": "Pebblewisp Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "flat",
+     "blades": 4
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "flat",
+     "pitch": "fixed",
+     "bladeForm": "flat",
+     "blades": 4,
+     "skewDeg": 2,
+     "expandedAreaRatio": 0.79,
+     "hubDiameterRatio": 0.24,
+     "diameterM": 4.3
+    }
+   },
+   "speedKts": {
+    "surfaced": 10.5,
+    "submerged": 14,
+    "snorkel": 9.1,
+    "battery": 5,
+    "quiet": [
+     2.4,
+     4
+    ]
+   },
+   "depthM": {
+    "periscope": 16,
+    "typicalPatrol": [
+     21,
+     135
+    ],
+    "maxOperating": 153,
+    "test": 180
+   },
+   "shaft": {
+    "psrHzMax": 6.333,
+    "psrHzQuiet": [
+     1.086,
+     1.81
+    ],
+    "brHzMax": 25.333,
+    "brHzQuiet": [
+     4.343,
+     7.238
+    ],
+    "psrHarmonicsStopAtBlades": false,
+    "propResonanceOrders": [
+     7,
+     11
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-8",
+     "productName": "Veskel 6V-850",
+     "count": 2,
+     "csrHz": [
+      5,
+      14.167
+     ],
+     "cfrHz": [
+      2.5,
+      7.083
+     ],
+     "efrHz": [
+      15,
+      42.5
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 380
+   },
+   "edas": [
+    {
+     "name": "Lube scavenger",
+     "cfrMultiple": [
+      41.65,
+      43.35
+     ],
+     "hzRange": [
+      104.13,
+      307.06
+     ],
+     "harmonics": [
+      1
+     ]
+    },
+    {
+     "name": "Ventilation drive",
+     "cfrMultiple": [
+      25.97,
+      27.03
+     ],
+     "hzRange": [
+      64.92,
+      191.46
+     ],
+     "harmonics": [
+      1
+     ]
+    },
+    {
+     "name": "Fuel transfer",
+     "cfrMultiple": [
+      10.535,
+      10.965
+     ],
+     "hzRange": [
+      26.34,
+      77.67
+     ],
+     "harmonics": [
+      1
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 35.34,
+     "wander1SigmaHz": 0.003,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 75.57,
+     "wander1SigmaHz": 1.651,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     1368.7,
+     1424.5
+    ],
+    "pairSpacingHz": [
+     1.891,
+     1.969
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 36.24,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      4.7,
+      11.7
+     ],
+     "hz": [
+      440,
+      454
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-dorhan-mistacorn",
+   "name": "Fictional Mistacorn",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 73.3,
+    "beamM": 9.6,
+    "draughtSurfacedM": 8.4,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.35,
+     "lengthM": 9,
+     "heightM": 5.2
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "dorhan-commonwealth",
+    "operators": [
+     {
+      "nationId": "dorhan-commonwealth",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-dorhan-mistacorn-1",
+       "fx-red-dorhan-mistacorn-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-dorhan-mistacorn-1",
+      "number": "FX-DH-MI-1",
+      "name": "Mistacorn Lantern 1",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-dorhan-mistacorn-2",
+      "number": "FX-DH-MI-2",
+      "name": "Mistacorn Lantern 2",
+      "operatorNationId": "dorhan-commonwealth",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Dorhan Commonwealth",
+    "operatorNames": [
+     "Dorhan Commonwealth"
+    ]
+   },
+   "operatorNation": "Dorhan Commonwealth",
+   "force": "Red",
+   "alliedNations": [
+    "Varkeshna Federation",
+    "Kaelun Republic",
+    "Zahrestan"
+   ],
+   "engineSharedWithNations": [
+    "Kaelun Republic"
+   ],
+   "plant": "diesel",
+   "drivetrain": "DIESEL ELECTRIC",
+   "era": 2008,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-DH-MI-1",
+     "name": "Mistacorn Lantern 1"
+    },
+    {
+     "number": "FX-DH-MI-2",
+     "name": "Mistacorn Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "skewed",
+     "blades": 4
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 4,
+     "skewDeg": 42,
+     "expandedAreaRatio": 0.62,
+     "hubDiameterRatio": 0.2,
+     "diameterM": 5.1
+    }
+   },
+   "speedKts": {
+    "surfaced": 9,
+    "submerged": 12,
+    "snorkel": 7.800000000000001,
+    "battery": 4.5,
+    "quiet": [
+     2.1,
+     3.5
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     22.5,
+     67.5
+    ],
+    "maxOperating": 77,
+    "test": 90
+   },
+   "shaft": {
+    "psrHzMax": 15,
+    "psrHzQuiet": [
+     2.625,
+     4.375
+    ],
+    "brHzMax": 60,
+    "brHzQuiet": [
+     10.5,
+     17.5
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-8",
+     "productName": "Veskel 6V-850",
+     "count": 1,
+     "csrHz": [
+      5,
+      14.167
+     ],
+     "cfrHz": [
+      2.5,
+      7.083
+     ],
+     "efrHz": [
+      15,
+      42.5
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 900
+   },
+   "edas": [
+    {
+     "name": "Lube scavenger",
+     "cfrMultiple": [
+      8.085,
+      8.415
+     ],
+     "hzRange": [
+      20.21,
+      59.61
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "LOP",
+     "cfrMultiple": [
+      20.335,
+      21.165
+     ],
+     "hzRange": [
+      50.84,
+      149.92
+     ],
+     "harmonics": [
+      1
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "continuous",
+     "nominalHz": 33.32,
+     "wander1SigmaHz": 0.003,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 70.79,
+     "wander1SigmaHz": 1.642,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     772.6,
+     804.1
+    ],
+    "pairSpacingHz": [
+     2.724,
+     2.836
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 30,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      4,
+      11
+     ],
+     "hz": [
+      314,
+      328
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "blue-copperlune",
+   "name": "Fictional Copperlune",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 118.6,
+    "beamM": 12.1,
+    "draughtSurfacedM": 10,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.25,
+     "lengthM": 14.9,
+     "heightM": 5.2
+    },
+    "planes": "bow",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "ostmark-league",
+    "operators": [
+     {
+      "nationId": "ostmark-league",
+      "role": "origin",
+      "hullIds": [
+       "fx-blue-copperlune-1",
+       "fx-blue-copperlune-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-blue-copperlune-1",
+      "number": "FX-NV-COP-1",
+      "name": "Copperlune Lantern 1",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-blue-copperlune-2",
+      "number": "FX-NV-COP-2",
+      "name": "Copperlune Lantern 2",
+      "operatorNationId": "ostmark-league",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Ostmark League",
+    "operatorNames": [
+     "Ostmark League"
+    ]
+   },
+   "operatorNation": "Ostmark League",
+   "force": "Blue",
+   "alliedNations": [
+    "Norrland Union"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "N/GR",
+   "era": 2009,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-NV-COP-1",
+     "name": "Copperlune Lantern 1"
+    },
+    {
+     "number": "FX-NV-COP-2",
+     "name": "Copperlune Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "skewed",
+     "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 7,
+     "skewDeg": 28,
+     "expandedAreaRatio": 0.65,
+     "hubDiameterRatio": 0.22,
+     "diameterM": 6.5
+    }
+   },
+   "speedKts": {
+    "surfaced": 20.150000000000002,
+    "submerged": 31,
+    "snorkel": 31,
+    "battery": 31,
+    "quiet": [
+     5.4,
+     9
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     60,
+     220
+    ],
+    "maxOperating": 340,
+    "test": 400
+   },
+   "shaft": {
+    "psrHzMax": 8.667,
+    "psrHzQuiet": [
+     1.51,
+     2.516
+    ],
+    "brHzMax": 60.667,
+    "brHzQuiet": [
+     10.568,
+     17.613
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 125.592,
+     "vaneCount": 61,
+     "vanePassHzMax": 7661.1
+    }
+   ],
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 18.24,
+     "wander1SigmaHz": 0.001,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     1131.1,
+     1177.3
+    ],
+    "pairSpacingHz": [
+     2.509,
+     2.611
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 17.61,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      11.1,
+      28.7
+     ],
+     "hz": [
+      398,
+      412
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "green-russetwake",
+   "name": "Fictional Russetwake",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 62.3,
+    "beamM": 6.9,
+    "draughtSurfacedM": 5.7,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.36,
+     "lengthM": 7.8,
+     "heightM": 4.7
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "meridia",
+    "operators": [
+     {
+      "nationId": "meridia",
+      "role": "origin",
+      "hullIds": [
+       "fx-green-russetwake-1",
+       "fx-green-russetwake-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-green-russetwake-1",
+      "number": "FX-NV-RUS-1",
+      "name": "Russetwake Lantern 1",
+      "operatorNationId": "meridia",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-green-russetwake-2",
+      "number": "FX-NV-RUS-2",
+      "name": "Russetwake Lantern 2",
+      "operatorNationId": "meridia",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Meridia",
+    "operatorNames": [
+     "Meridia"
+    ]
+   },
+   "operatorNation": "Meridia",
+   "force": "Green",
+   "alliedNations": [
+    "Tarsian Republic"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "D/GR",
+   "era": 2010,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-NV-RUS-1",
+     "name": "Russetwake Lantern 1"
+    },
+    {
+     "number": "FX-NV-RUS-2",
+     "name": "Russetwake Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "cpp",
+     "blades": 6
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "cpp",
+     "pitch": "controllable",
+     "bladeForm": "flat",
+     "blades": 6,
+     "skewDeg": 3,
+     "expandedAreaRatio": 0.67,
+     "hubDiameterRatio": 0.32,
+     "diameterM": 3
+    }
+   },
+   "speedKts": {
+    "surfaced": 13.5,
+    "submerged": 18,
+    "snorkel": 11.700000000000001,
+    "battery": 7,
+    "quiet": [
+     3.6,
+     6
+    ]
+   },
+   "depthM": {
+    "periscope": 12,
+    "typicalPatrol": [
+     45,
+     165
+    ],
+    "maxOperating": 255,
+    "test": 300
+   },
+   "shaft": {
+    "psrHzMax": 7.167,
+    "psrHzQuiet": [
+     1.433,
+     2.389
+    ],
+    "brHzMax": 43,
+    "brHzQuiet": [
+     8.6,
+     14.333
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-9",
+     "productName": "Brannoc 6V-1373",
+     "count": 1,
+     "csrHz": [
+      5,
+      22.878
+     ],
+     "cfrHz": [
+      2.5,
+      11.439
+     ],
+     "efrHz": [
+      15,
+      68.635
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 430
+   },
+   "edas": [
+    {
+     "name": "LOP",
+     "cfrMultiple": [
+      19.355,
+      20.145
+     ],
+     "hzRange": [
+      48.39,
+      230.44
+     ],
+     "harmonics": [
+      1
+     ]
+    },
+    {
+     "name": "Lube scavenger",
+     "cfrMultiple": [
+      36.505,
+      37.995
+     ],
+     "hzRange": [
+      91.26,
+      434.63
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 64.98,
+     "wander1SigmaHz": 0.005,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 30,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 48.12,
+     "wander1SigmaHz": 1.596,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 35.91,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      8,
+      16.2
+     ],
+     "hz": [
+      41,
+      55
+     ]
+    }
+   ],
+   "electricalHz": 60
+  },
+  {
+   "id": "red-ivorycoil",
+   "name": "Fictional Ivorycoil",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 111.8,
+    "beamM": 10.9,
+    "draughtSurfacedM": 9.6,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.36,
+     "lengthM": 13.6,
+     "heightM": 6.2
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "varkeshna-federation",
+    "operators": [
+     {
+      "nationId": "varkeshna-federation",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-ivorycoil-1",
+       "fx-red-ivorycoil-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-ivorycoil-1",
+      "number": "FX-NV-IVO-1",
+      "name": "Ivorycoil Lantern 1",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-ivorycoil-2",
+      "number": "FX-NV-IVO-2",
+      "name": "Ivorycoil Lantern 2",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Varkeshna Federation",
+    "operatorNames": [
+     "Varkeshna Federation"
+    ]
+   },
+   "operatorNation": "Varkeshna Federation",
+   "force": "Red",
+   "alliedNations": [
+    "Kaelun Republic",
+    "Zahrestan",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "N/GR",
+   "era": 1980,
+   "quietingTier": "gen2",
+   "hulls": [
+    {
+     "number": "FX-NV-IVO-1",
+     "name": "Ivorycoil Lantern 1"
+    },
+    {
+     "number": "FX-NV-IVO-2",
+     "name": "Ivorycoil Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "skewed",
+     "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 8,
+     "skewDeg": 26,
+     "expandedAreaRatio": 0.66,
+     "hubDiameterRatio": 0.22,
+     "diameterM": 5.5
+    }
+   },
+   "speedKts": {
+    "surfaced": 22.75,
+    "submerged": 35,
+    "snorkel": 35,
+    "battery": 35,
+    "quiet": [
+     6,
+     10
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     67.5,
+     247.5
+    ],
+    "maxOperating": 383,
+    "test": 450
+   },
+   "shaft": {
+    "psrHzMax": 8.833,
+    "psrHzQuiet": [
+     1.514,
+     2.524
+    ],
+    "brHzMax": 70.667,
+    "brHzQuiet": [
+     12.114,
+     20.19
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 103.17,
+     "vaneCount": 74,
+     "vanePassHzMax": 7634.6
+    }
+   ],
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "continuous",
+     "nominalHz": 18.97,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 25.92,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      11.3,
+      32.4
+     ],
+     "hz": [
+      188,
+      202
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-frostwhorl",
+   "name": "Fictional Frostwhorl",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 113,
+    "beamM": 11.5,
+    "draughtSurfacedM": 10.1,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.36,
+     "lengthM": 11.3,
+     "heightM": 5.4
+    },
+    "planes": "bow",
+    "stern": "x-form",
+    "aipPlugM": 6.5
+   },
+   "operators": {
+    "designOriginNationId": "varkeshna-federation",
+    "operators": [
+     {
+      "nationId": "varkeshna-federation",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-frostwhorl-1",
+       "fx-red-frostwhorl-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-frostwhorl-1",
+      "number": "FX-NV-FRO-1",
+      "name": "Frostwhorl Lantern 1",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-frostwhorl-2",
+      "number": "FX-NV-FRO-2",
+      "name": "Frostwhorl Lantern 2",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Varkeshna Federation",
+    "operatorNames": [
+     "Varkeshna Federation"
+    ]
+   },
+   "operatorNation": "Varkeshna Federation",
+   "force": "Red",
+   "alliedNations": [
+    "Kaelun Republic",
+    "Zahrestan",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "NEL",
+   "aip": {
+    "kind": "fuelcell",
+    "maxSpeedKts": 4
+   },
+   "era": 2012,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-NV-FRO-1",
+     "name": "Frostwhorl Lantern 1"
+    },
+    {
+     "number": "FX-NV-FRO-2",
+     "name": "Frostwhorl Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "skewed",
+     "blades": 9
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 9,
+     "skewDeg": 43,
+     "expandedAreaRatio": 0.63,
+     "hubDiameterRatio": 0.18,
+     "diameterM": 5.8
+    }
+   },
+   "speedKts": {
+    "surfaced": 16.900000000000002,
+    "submerged": 26,
+    "snorkel": 26,
+    "battery": 26,
+    "quiet": [
+     4.8,
+     8
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     67.5,
+     247.5
+    ],
+    "maxOperating": 383,
+    "test": 450
+   },
+   "shaft": {
+    "psrHzMax": 7.5,
+    "psrHzQuiet": [
+     1.385,
+     2.308
+    ],
+    "brHzMax": 67.5,
+    "brHzQuiet": [
+     12.462,
+     20.769
+    ],
+    "psrHarmonicsStopAtBlades": false,
+    "propResonanceOrders": [
+     34,
+     42
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 50,
+     "vaneCount": 50,
+     "vanePassHzMax": 2500
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 450
+   },
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 95.82,
+     "wander1SigmaHz": 0.008,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-ssma",
+     "kind": "ssma",
+     "duty": "continuous",
+     "nominalHz": 68.64,
+     "wander1SigmaHz": 1.637,
+     "stability": "unstable",
+     "harmonics": [
+      2,
+      3
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     527.7,
+     549.2
+    ],
+    "pairSpacingHz": [
+     2.519,
+     2.621
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 21.3,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      9.3,
+      23.3
+     ],
+     "hz": [
+      230,
+      244
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-marigoldrift",
+   "name": "Fictional Marigoldrift",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 62.7,
+    "beamM": 7.4,
+    "draughtSurfacedM": 5.8,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.4,
+     "lengthM": 7.1,
+     "heightM": 5.6
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "varkeshna-federation",
+    "operators": [
+     {
+      "nationId": "varkeshna-federation",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-marigoldrift-1",
+       "fx-red-marigoldrift-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-marigoldrift-1",
+      "number": "FX-NV-MAR-1",
+      "name": "Marigoldrift Lantern 1",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-marigoldrift-2",
+      "number": "FX-NV-MAR-2",
+      "name": "Marigoldrift Lantern 2",
+      "operatorNationId": "varkeshna-federation",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Varkeshna Federation",
+    "operatorNames": [
+     "Varkeshna Federation"
+    ]
+   },
+   "operatorNation": "Varkeshna Federation",
+   "force": "Red",
+   "alliedNations": [
+    "Kaelun Republic",
+    "Zahrestan",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "DIESEL ELECTRIC",
+   "era": 2013,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-NV-MAR-1",
+     "name": "Marigoldrift Lantern 1"
+    },
+    {
+     "number": "FX-NV-MAR-2",
+     "name": "Marigoldrift Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "flat",
+     "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "flat",
+     "pitch": "fixed",
+     "bladeForm": "flat",
+     "blades": 7,
+     "skewDeg": 0,
+     "expandedAreaRatio": 0.58,
+     "hubDiameterRatio": 0.23,
+     "diameterM": 3.9
+    }
+   },
+   "speedKts": {
+    "surfaced": 13.5,
+    "submerged": 18,
+    "snorkel": 11.700000000000001,
+    "battery": 8,
+    "quiet": [
+     4.2,
+     7
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     60,
+     220
+    ],
+    "maxOperating": 340,
+    "test": 400
+   },
+   "shaft": {
+    "psrHzMax": 7,
+    "psrHzQuiet": [
+     1.633,
+     2.722
+    ],
+    "brHzMax": 49,
+    "brHzQuiet": [
+     11.433,
+     19.056
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-10",
+     "productName": "Quillon 12V-850",
+     "count": 2,
+     "csrHz": [
+      5,
+      14.167
+     ],
+     "cfrHz": [
+      2.5,
+      7.083
+     ],
+     "efrHz": [
+      30,
+      85
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 420
+   },
+   "edas": [
+    {
+     "name": "LOP",
+     "cfrMultiple": [
+      11.515,
+      11.985
+     ],
+     "hzRange": [
+      28.79,
+      84.89
+     ],
+     "harmonics": [
+      1,
+      2,
+      3,
+      4
+     ]
+    },
+    {
+     "name": "Freshwater pump",
+     "cfrMultiple": [
+      40.425,
+      42.075
+     ],
+     "hzRange": [
+      101.06,
+      298.03
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Cooling pump",
+     "cfrMultiple": [
+      20.825,
+      21.675
+     ],
+     "hzRange": [
+      52.06,
+      153.53
+     ],
+     "harmonics": [
+      1
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 80.33,
+     "wander1SigmaHz": 0.006,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 62.24,
+     "wander1SigmaHz": 1.624,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 38.21,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      7.9,
+      15.3
+     ],
+     "hz": [
+      83,
+      97
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-velvetshoal",
+   "name": "Fictional Velvetshoal",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 118.1,
+    "beamM": 11.9,
+    "draughtSurfacedM": 9.9,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.34,
+     "lengthM": 12.3,
+     "heightM": 6.7
+    },
+    "planes": "sail",
+    "stern": "cruciform"
+   },
+   "operators": {
+    "designOriginNationId": "kaelun-republic",
+    "operators": [
+     {
+      "nationId": "kaelun-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-velvetshoal-1",
+       "fx-red-velvetshoal-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-velvetshoal-1",
+      "number": "FX-NV-VEL-1",
+      "name": "Velvetshoal Lantern 1",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-velvetshoal-2",
+      "number": "FX-NV-VEL-2",
+      "name": "Velvetshoal Lantern 2",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Kaelun Republic",
+    "operatorNames": [
+     "Kaelun Republic"
+    ]
+   },
+   "operatorNation": "Kaelun Republic",
+   "force": "Red",
+   "alliedNations": [
+    "Varkeshna Federation",
+    "Zahrestan",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "N/GR",
+   "era": 2014,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-NV-VEL-1",
+     "name": "Velvetshoal Lantern 1"
+    },
+    {
+     "number": "FX-NV-VEL-2",
+     "name": "Velvetshoal Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "skewed",
+     "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "skewed",
+     "pitch": "fixed",
+     "bladeForm": "skewed",
+     "blades": 8,
+     "skewDeg": 35,
+     "expandedAreaRatio": 0.76,
+     "hubDiameterRatio": 0.2,
+     "diameterM": 6.3
+    }
+   },
+   "speedKts": {
+    "surfaced": 20.8,
+    "submerged": 32,
+    "snorkel": 32,
+    "battery": 32,
+    "quiet": [
+     5.4,
+     9
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     67.5,
+     247.5
+    ],
+    "maxOperating": 383,
+    "test": 450
+   },
+   "shaft": {
+    "psrHzMax": 8.833,
+    "psrHzQuiet": [
+     1.491,
+     2.484
+    ],
+    "brHzMax": 70.667,
+    "brHzQuiet": [
+     11.925,
+     19.875
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 27.539,
+     "vaneCount": 63,
+     "vanePassHzMax": 1735
+    }
+   ],
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "continuous",
+     "nominalHz": 20.09,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     327.7,
+     341
+    ],
+    "pairSpacingHz": [
+     1.901,
+     1.979
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 23.61,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      11.2,
+      26.6
+     ],
+     "hz": [
+      125,
+      139
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-twilightweft",
+   "name": "Fictional Twilightweft",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 108.6,
+    "beamM": 10,
+    "draughtSurfacedM": 8.5,
+    "hullShape": "parallel-midbody",
+    "sail": {
+     "fromBowFrac": 0.28,
+     "lengthM": 13,
+     "heightM": 5.2
+    },
+    "planes": "bow",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "kaelun-republic",
+    "operators": [
+     {
+      "nationId": "kaelun-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-twilightweft-1",
+       "fx-red-twilightweft-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-twilightweft-1",
+      "number": "FX-NV-TWI-1",
+      "name": "Twilightweft Lantern 1",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-twilightweft-2",
+      "number": "FX-NV-TWI-2",
+      "name": "Twilightweft Lantern 2",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Kaelun Republic",
+    "operatorNames": [
+     "Kaelun Republic"
+    ]
+   },
+   "operatorNation": "Kaelun Republic",
+   "force": "Red",
+   "alliedNations": [
+    "Varkeshna Federation",
+    "Zahrestan",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "nuclear",
+   "drivetrain": "N/GR",
+   "era": 2005,
+   "quietingTier": "gen4",
+   "hulls": [
+    {
+     "number": "FX-NV-TWI-1",
+     "name": "Twilightweft Lantern 1"
+    },
+    {
+     "number": "FX-NV-TWI-2",
+     "name": "Twilightweft Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 2,
+    "propeller": {
+     "type": "cpp",
+     "blades": 8
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "cpp",
+     "pitch": "controllable",
+     "bladeForm": "flat",
+     "blades": 8,
+     "skewDeg": 4,
+     "expandedAreaRatio": 0.69,
+     "hubDiameterRatio": 0.33,
+     "diameterM": 4.2
+    }
+   },
+   "speedKts": {
+    "surfaced": 19.5,
+    "submerged": 30,
+    "snorkel": 30,
+    "battery": 30,
+    "quiet": [
+     5.4,
+     9
+    ]
+   },
+   "depthM": {
+    "periscope": 18,
+    "typicalPatrol": [
+     67.5,
+     247.5
+    ],
+    "maxOperating": 383,
+    "test": 450
+   },
+   "shaft": {
+    "psrHzMax": 8.833,
+    "psrHzQuiet": [
+     1.59,
+     2.65
+    ],
+    "brHzMax": 70.667,
+    "brHzQuiet": [
+     12.72,
+     21.2
+    ],
+    "psrHarmonicsStopAtBlades": false
+   },
+   "primeMovers": [
+    {
+     "kind": "turbine",
+     "count": 2,
+     "rotorHzMax": 105.858,
+     "vaneCount": 39,
+     "vanePassHzMax": 4128.5
+    }
+   ],
+   "edas": [],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 63.29,
+     "wander1SigmaHz": 0.005,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     1505.5,
+     1567
+    ],
+    "pairSpacingHz": [
+     2.695,
+     2.805
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 34.23,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      11.1,
+      27
+     ],
+     "hz": [
+      461,
+      475
+     ]
+    }
+   ],
+   "electricalHz": 50
+  },
+  {
+   "id": "red-lanternmoss",
+   "name": "Fictional Lanternmoss",
+   "hullForm": {
+    "fictional": true,
+    "lengthM": 55.9,
+    "beamM": 6.3,
+    "draughtSurfacedM": 5.1,
+    "hullShape": "teardrop",
+    "sail": {
+     "fromBowFrac": 0.33,
+     "lengthM": 6.9,
+     "heightM": 5.6
+    },
+    "planes": "sail",
+    "stern": "x-form"
+   },
+   "operators": {
+    "designOriginNationId": "kaelun-republic",
+    "operators": [
+     {
+      "nationId": "kaelun-republic",
+      "role": "origin",
+      "hullIds": [
+       "fx-red-lanternmoss-1",
+       "fx-red-lanternmoss-2"
+      ]
+     }
+    ],
+    "hulls": [
+     {
+      "id": "fx-red-lanternmoss-1",
+      "number": "FX-NV-LAN-1",
+      "name": "Lanternmoss Lantern 1",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     },
+     {
+      "id": "fx-red-lanternmoss-2",
+      "number": "FX-NV-LAN-2",
+      "name": "Lanternmoss Lantern 2",
+      "operatorNationId": "kaelun-republic",
+      "inScenarioPool": true
+     }
+    ],
+    "designOrigin": "Kaelun Republic",
+    "operatorNames": [
+     "Kaelun Republic"
+    ]
+   },
+   "operatorNation": "Kaelun Republic",
+   "force": "Red",
+   "alliedNations": [
+    "Varkeshna Federation",
+    "Zahrestan",
+    "Dorhan Commonwealth"
+   ],
+   "engineSharedWithNations": [],
+   "plant": "diesel",
+   "drivetrain": "DIESEL ELECTRIC",
+   "era": 2006,
+   "quietingTier": "gen3",
+   "hulls": [
+    {
+     "number": "FX-NV-LAN-1",
+     "name": "Lanternmoss Lantern 1"
+    },
+    {
+     "number": "FX-NV-LAN-2",
+     "name": "Lanternmoss Lantern 2"
+    }
+   ],
+   "variants": [
+    "Fictional standard",
+    "Fictional auxiliary refit"
+   ],
+   "hull": {
+    "shafts": 1,
+    "propeller": {
+     "type": "flat",
+     "blades": 7
+    },
+    "propellerDrawing": {
+     "fictional": true,
+     "catalogType": "flat",
+     "pitch": "fixed",
+     "bladeForm": "flat",
+     "blades": 7,
+     "skewDeg": 7,
+     "expandedAreaRatio": 0.67,
+     "hubDiameterRatio": 0.23,
+     "diameterM": 2.9
+    }
+   },
+   "speedKts": {
+    "surfaced": 14.25,
+    "submerged": 19,
+    "snorkel": 12.35,
+    "battery": 8,
+    "quiet": [
+     4.2,
+     7
+    ]
+   },
+   "depthM": {
+    "periscope": 14,
+    "typicalPatrol": [
+     60,
+     220
+    ],
+    "maxOperating": 340,
+    "test": 400
+   },
+   "shaft": {
+    "psrHzMax": 12,
+    "psrHzQuiet": [
+     2.653,
+     4.421
+    ],
+    "brHzMax": 84,
+    "brHzQuiet": [
+     18.568,
+     30.947
+    ],
+    "psrHarmonicsStopAtBlades": false,
+    "propResonanceOrders": [
+     15,
+     21
+    ]
+   },
+   "primeMovers": [
+    {
+     "kind": "diesel",
+     "productId": "fx-engine-11",
+     "productName": "Merrow 8V-850",
+     "count": 3,
+     "csrHz": [
+      5,
+      14.167
+     ],
+     "cfrHz": [
+      2.5,
+      7.083
+     ],
+     "efrHz": [
+      20,
+      56.667
+     ]
+    }
+   ],
+   "propulsionMotor": {
+    "maxShaftRpm": 720
+   },
+   "edas": [
+    {
+     "name": "Cooling pump",
+     "cfrMultiple": [
+      11.025,
+      11.475
+     ],
+     "hzRange": [
+      27.56,
+      81.28
+     ],
+     "harmonics": [
+      1
+     ]
+    },
+    {
+     "name": "Lube scavenger",
+     "cfrMultiple": [
+      6.37,
+      6.63
+     ],
+     "hzRange": [
+      15.93,
+      46.96
+     ],
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "name": "Freshwater pump",
+     "cfrMultiple": [
+      6.615,
+      6.885
+     ],
+     "hzRange": [
+      16.54,
+      48.77
+     ],
+     "harmonics": [
+      1,
+      2,
+      3,
+      4,
+      5
+     ]
+    }
+   ],
+   "independentAux": [
+    {
+     "id": "circulation-pump",
+     "kind": "acPump",
+     "duty": "intermittent",
+     "nominalHz": 80.48,
+     "wander1SigmaHz": 0.006,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "motor-generator",
+     "kind": "electrical",
+     "duty": "continuous",
+     "nominalHz": 25,
+     "wander1SigmaHz": 0.002,
+     "stability": "stable",
+     "harmonics": [
+      1,
+      2
+     ]
+    },
+    {
+     "id": "fictional-dc-bus",
+     "kind": "dcvr",
+     "duty": "continuous",
+     "nominalHz": 61.25,
+     "wander1SigmaHz": 1.623,
+     "stability": "unstable",
+     "harmonics": [
+      1,
+      2
+     ]
+    }
+   ],
+   "hydp": {
+    "nominalHz": [
+     1244.2,
+     1295
+    ],
+    "pairSpacingHz": [
+     0.657,
+     0.683
+    ]
+   },
+   "speedRelated": [
+    {
+     "name": "SRC-1",
+     "kind": "SRC",
+     "speedKts": [
+      2,
+      10
+     ],
+     "hz": {
+      "fixedHz": 35.84,
+      "scalesWithSpeed": false
+     }
+    },
+    {
+     "name": "SWATH-1",
+     "kind": "SWATH",
+     "speedKts": [
+      9.1,
+      16.6
+     ],
+     "hz": [
+      419,
+      433
+     ]
+    }
+   ],
+   "electricalHz": 50
+  }
+ ]
+}

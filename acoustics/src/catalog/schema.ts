@@ -19,7 +19,7 @@ export interface ClassParams {
  lineProfiles?:LineProfiles;
  propulsion:Propulsion;aipCapable:boolean;shafts:number;reductionRatio:number;gearTeeth:number;maxShaftRpm:number;blades:number;
  maxSpeedKn:number;quietSpeedKn:number;depthM:[number,number];electricalHz:50|60;electricalHarmonics:number[];
- dieselCylinders:number;dieselRpm:number;srcHzPerKn:number[];levelDb:number;
+ dieselCylinders:number;/** Per-class diesel ERPM teaching band (RPM). Nuclear classes use 0,0. Live engine sheets mirror this for D/D/GR; D/E is bus-locked around erpm.normal. */erpmMin:number;erpmMax:number;srcHzPerKn:number[];levelDb:number;
  aux:{id:string;kind:'pump'|'motor-generator';basis:'rotation'|'electrical';rate:number;harmonics:number[];stability?:LineProfile['stability'];width?:LineProfile['width'];sigmaBins?:number}[];
  cavitation:{surfaceInceptionKn:number;depthCoefficient:number};
  flowNoise:{referenceKn:number;levelDb:number;slopeDb:number;radiatedFraction:number};emitters:{id:string;kind:string}[];
@@ -31,7 +31,7 @@ export const forceElectricalHz=(force:Force):50|60=>force==='Red'?50:60;
 export const isGeared=(p:Propulsion):boolean=>p==='dieselGearReduction'||p==='nuclearGearReduction';
 export const isDiesel=(p:Propulsion):boolean=>p.startsWith('diesel');
 export function effectiveParams(c:SubmarineClass,variantId?:string):ClassParams {
- const v=variantId===undefined?undefined:c.variants.find(v=>v.id===variantId);if(variantId!==undefined&&!v)throw new Error(`Unknown variant ${variantId}`);const p={...c.params,...v?.overrides};return {...p,plantSpec:{maxPsrpm:p.maxShaftRpm,shafts:p.shafts,shaftMismatchPct:c.shaftMismatchPct,machinery:c.machinery,edas:c.edas,propeller:c.propeller,...(c.hydp?{hydp:c.hydp}:{}),tpk:c.tpk,...(c.tpkMinKts?{tpkMinKts:c.tpkMinKts}:{}),speedWindows:c.speedWindows,...(c.emergencyPropulsor?{emergencyPropulsor:c.emergencyPropulsor}:{}),...(c.motorSlots?{motorSlots:c.motorSlots}:{}),...(c.aip?{aip:c.aip}:{}),aux:v?.overrides.aux?legacyAux(p):c.aux}};
+ const v=variantId===undefined?undefined:c.variants.find(v=>v.id===variantId);if(variantId!==undefined&&!v)throw new Error(`Unknown variant ${variantId}`);const p={...c.params,...v?.overrides};return {...p,plantSpec:{maxPsrpm:p.maxShaftRpm,shafts:p.shafts,shaftMismatchPct:c.shaftMismatchPct,machinery:c.machinery,edas:c.edas,propeller:c.propeller,...(c.hydp?{hydp:c.hydp}:{}),...(c.propResonance?{propResonance:c.propResonance}:{}),...(c.declutchToMotor?{declutchToMotor:true}:{}),...(c.classTransients?.length?{classTransients:c.classTransients}:{}),...(c.reinforceBr1?{reinforceBr1:true}:{}),...(c.psrHarmonicsStopAtBlades?{psrHarmonicsStopAtBlades:true}:{}),tpk:c.tpk,...(c.tpkMinKts?{tpkMinKts:c.tpkMinKts}:{}),speedWindows:c.speedWindows,...(c.emergencyPropulsor?{emergencyPropulsor:c.emergencyPropulsor}:{}),...(c.motorSlots?{motorSlots:c.motorSlots}:{}),...(c.aip?{aip:c.aip}:{}),aux:v?.overrides.aux?legacyAux(p):c.aux}};
 }
 const number=(v:unknown,lo:number,hi:number):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=lo&&v<=hi;
 const positiveInts=(a:unknown):a is number[]=>Array.isArray(a)&&a.length>0&&a.every(x=>Number.isInteger(x)&&x>0&&x<=20);
@@ -39,8 +39,11 @@ function validProfile(p:Partial<LineProfile>):boolean{return ['stable','unstable
 function validateParams(p:ClassParams,force:Force):void{
  if(p?.lineProfiles)for(const profile of Object.values(p.lineProfiles))if(!profile||!validProfile(profile))throw new Error('Invalid line profile');
  if(!p||!['dieselDirect','dieselGearReduction','dieselElectric','nuclearGearReduction','nuclearElectric'].includes(p.propulsion)||typeof p.aipCapable!=='boolean')throw new Error('Invalid propulsion/AIP flag');
- for(const [k,lo,hi] of [['shafts',1,4],['reductionRatio',1,30],['gearTeeth',1,300],['maxShaftRpm',30,600],['blades',2,12],['maxSpeedKn',5,45],['quietSpeedKn',0,30],['dieselCylinders',0,24],['dieselRpm',0,2000],['levelDb',60,200]] as const)if(!number(p[k],lo,hi))throw new Error(`Invalid ${k}`);
+ for(const [k,lo,hi] of [['shafts',1,4],['reductionRatio',1,30],['gearTeeth',1,300],['maxShaftRpm',30,1200],['blades',2,12],['maxSpeedKn',5,45],['quietSpeedKn',0,30],['dieselCylinders',0,24],['erpmMin',0,2000],['erpmMax',0,2000],['levelDb',60,200]] as const)if(!number(p[k],lo,hi))throw new Error(`Invalid ${k}`);
  for(const k of ['shafts','gearTeeth','blades','dieselCylinders'] as const)if(!Number.isInteger(p[k]))throw new Error(`Noninteger ${k}`);
+ if(p.erpmMin>p.erpmMax)throw new Error('Invalid ERPM band');
+ if(isDiesel(p.propulsion)){if(!number(p.erpmMin,150,2000)||!number(p.erpmMax,p.erpmMin,2000))throw new Error('Diesel ERPM band must sit in 150–2000 RPM');if(p.propulsion==='dieselDirect'&&(p.erpmMax!==p.maxShaftRpm||p.reductionRatio!==1))throw new Error('Diesel-direct ERPM max must equal maxShaftRpm at ratio 1');}
+ else if(p.erpmMin!==0||p.erpmMax!==0)throw new Error('Nuclear classes carry no diesel ERPM band');
  if(p.quietSpeedKn>p.maxSpeedKn||(!isGeared(p.propulsion)&&p.reductionRatio!==1)||!Array.isArray(p.depthM)||p.depthM.length!==2||!number(p.depthM[0],0,1000)||!number(p.depthM[1],p.depthM[0],1000)||p.electricalHz!==forceElectricalHz(force)||!positiveInts(p.electricalHarmonics))throw new Error('Invalid envelope/electrical plant');
  if(!Array.isArray(p.srcHzPerKn)||!p.srcHzPerKn.length||!p.srcHzPerKn.every(x=>number(x,.01,100)))throw new Error('Invalid SRC rates');
  if(!Array.isArray(p.aux)||p.aux.length>8||new Set(p.aux.map(a=>a?.id)).size!==p.aux.length)throw new Error('Invalid auxiliaries');

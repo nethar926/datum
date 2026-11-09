@@ -1,6 +1,6 @@
 import {getClass,resolveReference,validateOperatingState} from '../catalog/derive.js';
 import {OPERATING_MODES,type OperatingMode} from '../catalog/schema.js';
-import {CUT_MODEL_VERSION,CUT_LINE_BEHAVIOURS,GRAM_LOOK_IDS,type CutClassifyingLine,type CutLookalikePair,type CutRichness,type CutSeed,type CutStarterPack,type GramLookId} from './types.js';
+import {CUT_MODEL_VERSION,CUT_LINE_BEHAVIOURS,CUT_SCENARIO_KINDS,GRAM_LOOK_IDS,type CutClassifyingLine,type CutLookalikePair,type CutRichness,type CutSeed,type CutStarterPack,type CutScenarioPack,type GramLookId} from './types.js';
 
 const RICHNESS:readonly CutRichness[]=['sparse','moderate','rich'];
 const finite=(x:unknown,lo:number,hi:number):x is number=>typeof x==='number'&&Number.isFinite(x)&&x>=lo&&x<=hi;
@@ -40,6 +40,8 @@ export function validateCutSeed(value:unknown):asserts value is CutSeed {
   if(!Array.isArray(c.gramLooks))throw new Error('CutSeed.gramLooks invalid');
   for(const g of c.gramLooks)if(!(GRAM_LOOK_IDS as readonly string[]).includes(g))throw new Error(`Unknown gramLook ${g}`);
  }
+ if(c.scenario!==undefined&&!(CUT_SCENARIO_KINDS as readonly string[]).includes(c.scenario))throw new Error(`Unknown cut scenario ${c.scenario}`);
+ if(c.hydpShape!==undefined){const h=c.hydpShape;if(!h||typeof h!=='object'||!Number.isInteger(h.orders)||h.orders<1||h.orders>32||typeof h.drownFundamental!=='boolean'||typeof h.fadeS!=='number'||!(h.fadeS>=0&&h.fadeS<=2)||(h.powerScale!==undefined&&!(typeof h.powerScale==='number'&&h.powerScale>0&&h.powerScale<=20)))throw new Error('CutSeed.hydpShape invalid');}
  const klass=getClass(c.classId);
  let resolved;try{resolved=resolveReference({classId:c.classId,variantId:c.variantId,hullId:c.hullId});}catch(e){throw new Error(`CutSeed catalogRef invalid: ${e instanceof Error?e.message:e}`);}
  const reactorOffline=c.mode==='AIP'&&klass.plant==='nuclear';
@@ -81,4 +83,19 @@ export function validateStarterPack(pack:CutStarterPack):void {
  for(const need of ['cavitation','slow-demon-blade','harmonic-skip','ssma-harmonics-only','msr-dominant','propulsion-ramp','engine-knee','eda-locked','blade-harmonics-reinforced','engine-harmonics','compendium-truth'] as GramLookId[]){
   if(!covered.has(need))throw new Error(`starter pack missing gramLook ${need}`);
  }
+}
+
+/** 15-min scenario pack: every cut 900 s, full scenario-kind coverage, no duplicates. */
+export function validateScenarioPack(pack:CutScenarioPack):void {
+ if(pack.packVersion!==1)throw new Error('scenario packVersion must be 1');
+ if(pack.modelVersion!==CUT_MODEL_VERSION)throw new Error(`scenario pack modelVersion must be ${CUT_MODEL_VERSION}`);
+ if(!Array.isArray(pack.cuts)||pack.cuts.length<CUT_SCENARIO_KINDS.length)throw new Error(`scenario pack needs ≥${CUT_SCENARIO_KINDS.length} cuts`);
+ const ids=new Set<string>(),kinds=new Set<string>();
+ for(const c of pack.cuts){
+  validateCutSeed(c);
+  if(c.durationS!==900)throw new Error(`scenario cut ${c.id} must be durationS=900`);
+  if(!c.scenario)throw new Error(`scenario cut ${c.id} missing scenario kind`);
+  if(ids.has(c.id))throw new Error(`duplicate cut id ${c.id}`);ids.add(c.id);kinds.add(c.scenario);
+ }
+ for(const k of CUT_SCENARIO_KINDS)if(!kinds.has(k))throw new Error(`scenario pack missing kind ${k}`);
 }

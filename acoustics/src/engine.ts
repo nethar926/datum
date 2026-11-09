@@ -1,8 +1,8 @@
-import {configurePropulsion,updatePropulsion,writePlantTonals,writeHydpBurst,pickHydpShape,HYDP_MAX_ORDERS} from './catalog/plantModel.js';
+import {configurePropulsion,updatePropulsion,writePlantTonals,writeHydpBurst,pickHydpShape,HYDP_MAX_ORDERS,applyIntermittentAuxPowers} from './catalog/plantModel.js';
 import type {HydpSpec} from './catalog/drivetrain.js';
 import {LineWander} from './lineModel.js';
 import {surfaceCount,createSurfacePool,refreshSurfaceSignature} from './catalog/surface.js';
-import {DemonStream} from './demonStream.js';
+import {DemonStream,bumpDemonWeightTick} from './demonStream.js';
 import {resolveReference,updateDerivedSignature} from './catalog/derive.js';
 import type {ClassParams} from './catalog/schema.js';
 import type {Contact} from './scenario.js';
@@ -16,6 +16,8 @@ import {RES_BINS,RES_FRAME_S,TILE_BINS,tileCountFor,tileIndexForHz,priorityTileO
 import type {GramFilter,LofarBandPresetId} from './protocol.js';
 import type {GramConfig,Tactical,DropBuoy,TruthContact} from './protocol.js';
 import {isLofarBandPresetId,resolveLofarBand} from './bands.js';
+import {StateHistory} from './stateHistory.js';
+import {sharedScratchBytes,invalidateSpanCache} from './resGram.js';
 /** @deprecated Retained for API compat; HYDP no longer curves high→fixed (Wilson squally bar). */
 export const HYDP_START_OFFSET_PCT=1.5;
 /** Simultaneous tuned RF channels (= FE field cap / bench budget). */
@@ -28,6 +30,8 @@ export class AcousticEngine {
   private readonly lineWanders:LineWander[]=[];
   private readonly truthState:{contacts:TruthContact[]};
   private readonly allContacts:Contact[];
+  /** Engine-wide source-state history shared by every RES stream. */
+  readonly history:StateHistory;private historyOn=false;
   private readonly baseContacts:Contact[];
   private readonly catalogStates:{contact:Contact;params:ClassParams;speed:number;depth:number}[]=[];
   private readonly streams=new Map<number,number>();
@@ -35,6 +39,10 @@ export class AcousticEngine {
   private readonly hydpStates:{contact:Contact;spec:HydpSpec;index:number;at:Float64Array;durationS:Float64Array}[]=[];
   /** m3 diesel-dyn: ratio-locked engine RPM knees (plantRpmScale lerp). */
   private readonly engineRampStates:{contact:Contact;catalog?:ClassParams;baseFraction:number;at:Float64Array;durationS:Float64Array;fromScale:Float64Array;toScale:Float64Array;lastScale:number}[]=[];
+  /** Short broadband swath flashes (Wilson). */
+  private readonly swathStates:{contact:Contact;at:Float64Array;durationS:Float64Array;loHz:Float64Array;hiHz:Float64Array}[]=[];
+  /** Class-specific narrowband TRANSIENT arm windows. */
+  private readonly narrowTransientStates:{contact:Contact;index:number;hz:number;harmonics:number;at:Float64Array;durationS:Float64Array}[]=[];
   /** m3-events: pool ships whose leg speed changes refresh their fictional signature in place. */
   private readonly surfaceStates:{contact:Contact;type:string;speed:number}[]=[];
   private readonly subscriptions=new Map<number,{config:GramConfig;start:number;read:number;renderer?:DemonStream;lofar?:LofarGenerator;res?:ResLofarGenerator;bandKey?:string;fullAxis?:{tileBins:number;tileCount:number;visibleTileIndex:number;viewFLo?:number;viewFHi?:number;scheduled:number;queue:{tileIndex:number;rowKey:number;hot:boolean;filled:boolean}[];lastTile:{tileIndex:number;tileBins:number;f0:number;fBin:number;liveBins:number;filled:boolean}}}>();
@@ -55,23 +63,47 @@ export class AcousticEngine {
     for(const c of this.allContacts){if(c.surface&&!c.catalogRef&&c.params.plantSpec&&c.motion.length>1){this.surfaceStates.push({contact:c,type:c.surface.type,speed:c.speed});}
       const spec=c.params.plantSpec?.hydp;if(c.params.hydpTransient&&spec){const list=c.transients!.filter(x=>x.kind==='hydp').sort((a,b)=>a.at-b.at);
       this.hydpStates.push({contact:c,spec,index:c.params.tonals!.findIndex(l=>l.lineFamily==='HYDP'),at:Float64Array.from(list,x=>x.at),durationS:Float64Array.from(list,x=>typeof x.params.durationS==='number'?x.params.durationS:spec.durationS)});}
-      const ramps=(c.transients??[]).filter(x=>x.kind==='engine-ramp').sort((a,b)=>a.at-b.at);if(ramps.length&&c.params.plantSpec){const cat=this.catalogStates.find(s=>s.contact===c)?.params;const baseFraction=Math.max(0,c.params.shaftHz*60/c.params.plantSpec.maxPsrpm);this.engineRampStates.push({contact:c,catalog:cat,baseFraction,at:Float64Array.from(ramps,x=>x.at),durationS:Float64Array.from(ramps,x=>Number(x.params.durationS)),fromScale:Float64Array.from(ramps,x=>typeof x.params.fromScale==='number'?x.params.fromScale:1),toScale:Float64Array.from(ramps,x=>Number(x.params.toScale)),lastScale:NaN});c.params.plantRpmScale=1;}}
-    this.updateHydp();this.updateEngineRamps(true);
+      const ramps=(c.transients??[]).filter(x=>x.kind==='engine-ramp').sort((a,b)=>a.at-b.at);if(ramps.length&&c.params.plantSpec){const cat=this.catalogStates.find(s=>s.contact===c)?.params;const baseFraction=Math.max(0,c.params.shaftHz*60/c.params.plantSpec.maxPsrpm);this.engineRampStates.push({contact:c,catalog:cat,baseFraction,at:Float64Array.from(ramps,x=>x.at),durationS:Float64Array.from(ramps,x=>Number(x.params.durationS)),fromScale:Float64Array.from(ramps,x=>typeof x.params.fromScale==='number'?x.params.fromScale:1),toScale:Float64Array.from(ramps,x=>Number(x.params.toScale)),lastScale:NaN});c.params.plantRpmScale=1;}
+      const swaths=(c.transients??[]).filter(x=>x.kind==='swath').sort((a,b)=>a.at-b.at);if(swaths.length){c.params.eventSwaths=swaths.map((x,i)=>({name:`SWATH-EVT-${i+1}`,kind:'SWATH' as const,loHz:Number(x.params.loHz),hiHz:Number(x.params.hiHz),active:false,gain:0}));this.swathStates.push({contact:c,at:Float64Array.from(swaths,x=>x.at),durationS:Float64Array.from(swaths,x=>Number(x.params.durationS)),loHz:Float64Array.from(swaths,x=>Number(x.params.loHz)),hiHz:Float64Array.from(swaths,x=>Number(x.params.hiHz))});}
+      // Arm class-specific TRANSIENT slots from scheduled 'transient' events (or auto-seed one from sheet).
+      const narrow=(c.transients??[]).filter(x=>x.kind==='transient').sort((a,b)=>a.at-b.at);const sheet=c.params.plantSpec?.classTransients??[];
+      if(sheet.length){const idx=c.params.tonals!.findIndex(l=>l.lineFamily==='TRANSIENT');if(idx>=0){const events=narrow.length?narrow:[{at:90,kind:'transient' as const,params:{durationS:sheet[0].durationS,hz:sheet[0].hz,harmonics:sheet[0].harmonics.length}}];this.narrowTransientStates.push({contact:c,index:idx,hz:sheet[0].hz,harmonics:sheet[0].harmonics.length,at:Float64Array.from(events,x=>x.at),durationS:Float64Array.from(events,x=>Number(x.params.durationS))});}}
+    }
+    for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(true);this.updateSwaths();this.updateNarrowTransients();
     this.truthState={contacts:this.allContacts.map((c,i)=>({speedGated:c.params.speedGated??[],id:i+1,sourceId:c.id,label:c.catalogRef?`${c.params.label} ${resolveReference(c.catalogRef).klass.hulls.find(h=>h.id===c.catalogRef!.hullId)?.number??c.id}`:`${c.params.label} ${c.id}`,propulsion:c.params.propulsion!,spdKts:mpsToKnots(c.speed),active:c.active!==false,category:c.category??'subsurface',...(c.behaviour?{behaviour:c.behaviour}:{}),classificationTarget:c.category!=='surface'&&c.classificationTarget!==false,x:c.x,y:c.y,depthM:c.depth,crsDeg:c.course*180/Math.PI,spdMps:c.speed,lines:c.lines!.map(l=>({eda:l.eda,reactorId:l.reactorId,lineFamily:l.lineFamily,fundamentalHz:l.fundamentalHz,harmonic:l.harmonic,engineId:l.engineId,shaftIndex:l.shaftIndex,id:l.id!,family:l.family,f0Hz:l.hz,freqHz:l.frequencyHz??l.hz,power:l.power,stability:l.stability!,width:l.width!,sigmaBins:l.sigmaBins??0}))}))};this.tacticalState.truth=this.truthState;
     this.generators=s.buoys.map(b=>new LofarGenerator(b,this.allContacts,s.bins,s.band?.[1]??s.fMax??s.fmax,s.seed,s.environment,s.band?.[0]??0));
+    this.syncPropagationContext();
     s.buoys.forEach((_,i)=>{this.streams.set(i+1,i);this.legacyIndices.set(i+1,0);});
     this.rows=s.buoys.map((b,i)=>({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:this.generators[i].row}));
     s.classificationTargets??=this.baseContacts.filter(c=>c.category!=='surface'&&c.classificationTarget!==false).map(c=>c.id);this.syncTacticalBuoys();
+    this.history=new StateHistory(this.allContacts);invalidateSpanCache();
+  }
+  /** Acoustics-side retained bytes for RES streams: shared state history + shared render scratch +
+   * each RES generator's own tables/rows/AR state. Excludes FE-held row history. */
+  retainedBytes():{history:number;scratch:number;streams:number;total:number;perStream:number[]}{
+    const per:number[]=[];for(const sub of this.subscriptions.values())if(sub.res)per.push(sub.res.retainedBytes());
+    const history=this.historyOn?this.history.bytes:0,scratch=sharedScratchBytes(),streams=per.reduce((a,b)=>a+b,0);return {history,scratch,streams,total:history+scratch+streams,perStream:per};
   }
   get simT():number{return this.time;}
   get time():number {return this.scenario.time;}
-  setEnvironment(environment:Environment):void {
+  /** Push water-column context into LOFAR/DEMON/RES so CZ gain (when enabled) can evaluate. */
+  private syncPropagationContext():void{
+    const wc=this.scenario.waterColumn;
+    for(const g of this.generators)g.setWaterColumn?.(wc);
+    for(const sub of this.subscriptions.values()){
+      sub.lofar?.setWaterColumn?.(wc);
+      sub.res?.setWaterColumn?.(wc);
+      sub.renderer?.setWaterColumn?.(wc);
+    }
+  }
+    setEnvironment(environment:Environment):void {
     const next={...this.scenario,environment};validateScenario(next);
     this.scenario.environment={...environment};for(const generator of this.generators)generator.setEnvironment(environment);for(const sub of this.subscriptions.values()){sub.lofar?.setEnvironment(environment);sub.res?.setEnvironment(environment);sub.renderer?.setEnvironment(environment);}
+    this.syncPropagationContext();
   }
   setSurfaceTraffic(v:number):void{v=Number.isFinite(v)?clamp(v,0,1):.5;this.scenario.surfaceTraffic=v;const pool=this.scenario.surfacePool;if(pool){const n=surfaceCount(v,pool.length),contacts=this.scenario.contacts;contacts.length=this.baseContacts.length;for(let i=0;i<pool.length;i++){pool[i].active=i<n;if(i<n)contacts.push(pool[i]);}}this.setEnvironment({...this.scenario.environment,shippingDensity:v,shipping:v<.33?'light':v<.67?'moderate':'heavy'});}
   registerStream(id:number,channel:number):void {if(!(channel>0))throw new Error('Unknown RF channel');const i=this.scenario.buoys.findIndex(b=>b.rfChannel===channel);if(i<0)throw new Error('Unknown RF channel');this.streams.set(id,i);if(!this.legacyIndices.has(id))this.legacyIndices.set(id,0);}
-  addBuoy(b:Buoy):void {const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:g.row});this.syncTacticalBuoys();}
+  addBuoy(b:Buoy):void {const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);g.setWaterColumn?.(this.scenario.waterColumn);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:g.row});invalidateSpanCache();this.syncTacticalBuoys();}
   /** Subscription rows are ready at 4 Hz since subscribe; legacy registered streams remain pull-based.
    * If multiple rows accumulate, each is rendered using current geometry (no historical snapshot queue). */
   subscribe(req:{kind:'demon';buoyId:number;band?:[number,number]}):number;
@@ -85,7 +117,7 @@ export class AcousticEngine {
       const i=this.scenario.buoys.findIndex((b,i)=>(Number(b.id.replace(/\D/g,''))||i+1)===req.buoyId);if(i<0)throw new Error('Unknown buoyId');
       const band=req.band??[1000,4000];if(band.length!==2||!band.every(Number.isFinite)||band[0]<20||band[1]>6000||band[1]-band[0]<1e-6)throw new Error('Invalid DEMON carrier band (20..6000 Hz)');
       while(this.streams.has(this.nextStreamId))this.nextStreamId++;const id=this.nextStreamId++,b=this.scenario.buoys[i];if(!isTuned(b))throw new Error('Buoy detuned');this.registerStream(id,b.rfChannel);
-      const renderer=new DemonStream(b,this.allContacts,this.scenario.seed,band,this.scenario.environment),config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId:id,kind:'demon',channel:b.rfChannel,bins:512,f0:0,fBin:renderer.fBin,rowRateHz:4,dbFloor:0,dbCeil:30,demodBandHz:[band[0],band[1]]};
+      const renderer=new DemonStream(b,this.allContacts,this.scenario.seed,band,this.scenario.environment);renderer.setWaterColumn?.(this.scenario.waterColumn);const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId:id,kind:'demon',channel:b.rfChannel,bins:512,f0:0,fBin:renderer.fBin,rowRateHz:4,dbFloor:0,dbCeil:30,demodBandHz:[band[0],band[1]]};
       this.subscriptions.set(id,{config,start:Math.floor(this.time*4)/4,read:0,renderer});return id;
     }
 
@@ -115,7 +147,7 @@ export class AcousticEngine {
     else{
       bandKey=`${index}:${band[0]}:${band[1]}`;
       let entry=this.lofarBandCache.get(bandKey);
-      if(!entry){entry={gen:new LofarGenerator(s.buoys[index],this.allContacts,s.bins,band[1],s.seed,s.environment,band[0]),refs:0};this.lofarBandCache.set(bandKey,entry);}
+      if(!entry){const gen=new LofarGenerator(s.buoys[index],this.allContacts,s.bins,band[1],s.seed,s.environment,band[0]);gen.setWaterColumn?.(s.waterColumn);entry={gen,refs:0};this.lofarBandCache.set(bandKey,entry);}
       entry.refs++;lofar=entry.gen;
     }
     this.subscriptions.set(streamId,{config,start:Math.floor(this.time*4)/4,read:0,lofar,bandKey});return config;
@@ -159,8 +191,10 @@ export class AcousticEngine {
     // Recreate generator when capacity must change (vernier 1024 ↔ FULLBAND 4096).
     const needCap=fullAxis?TILE_BINS:RES_BINS;
     let gen=old?.res;
-    if(!gen||gen.capacity!==needCap)gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);
-    else gen.configure(settings);
+    if(!gen||gen.capacity!==needCap){gen?.dispose();gen=new ResLofarGenerator(b,this.allContacts,fmax,s.seed,s.environment,settings,needCap);gen.setWaterColumn?.(s.waterColumn);gen.setHistory(this.history);}
+    // History starts with the first RES stream (pre-filled with the state at that instant).
+    if(!this.historyOn){this.historyOn=true;this.history.record(this.time);}
+    else{gen.configure(settings);invalidateSpanCache();}
     const p=gen.params,frames=Math.round(p.rowPeriodS/RES_FRAME_S),phase=Math.floor(i*frames/s.buoys.length)*RES_FRAME_S;
     if(fullAxis){
       const tileBins=TILE_BINS,tileCount=tileCountFor(fmax,p.fBin,tileBins);
@@ -169,7 +203,7 @@ export class AcousticEngine {
       if(visible===undefined)visible=old?.fullAxis?.visibleTileIndex??0;
       visible=Math.max(0,Math.min(tileCount-1,visible|0));
       const t0=tileBand(settings.res,visible,fmax,tileBins);
-      gen.prepareFullAxis(tileCount);gen.selectTile(visible,tileBins);
+      gen.prepareFullAxis(tileCount,visible);gen.selectTile(visible,tileBins);
       const viewFLo=old?.fullAxis?.viewFLo,viewFHi=old?.fullAxis?.viewFHi;
       const config:GramConfig={v:1,type:'gramConfig',simT:this.time,streamId,kind:'lofar',channel:b.rfChannel,bins:tileBins,f0:0,fBin:p.fBin,rowRateHz:p.rowRateHz,dbFloor:settings.filter==='NB'?0:40,dbCeil:settings.filter==='NB'?30:110,res:settings.res,filter:settings.filter,bandHz:fmax,enbwHz:p.enbwHz,bandLimited:t0.bandLimited,liveBins:t0.liveBins,rowPhaseS:phase,fullAxis:true,tileBins,tileCount,visibleTileIndex:visible,...(viewFLo!==undefined&&viewFHi!==undefined?{viewFLo,viewFHi}:{})};
       const start=Math.floor((this.time-phase)/p.rowPeriodS+1e-9)*p.rowPeriodS+phase;
@@ -192,8 +226,8 @@ export class AcousticEngine {
     }
   }
   unsubscribe(streamId:number):void{
-    const sub=this.subscriptions.get(streamId);if(sub?.bandKey){const entry=this.lofarBandCache.get(sub.bandKey);if(entry&&--entry.refs<=0)this.lofarBandCache.delete(sub.bandKey);}
-    this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);
+    const sub=this.subscriptions.get(streamId);sub?.res?.dispose();if(sub?.bandKey){const entry=this.lofarBandCache.get(sub.bandKey);if(entry&&--entry.refs<=0)this.lofarBandCache.delete(sub.bandKey);}
+    this.subscriptions.delete(streamId);this.streams.delete(streamId);this.legacyIndices.delete(streamId);if(sub?.res)invalidateSpanCache();
   }
   /** Active subscribed legacy-LOFAR buoy×band pairs (one entry per stream). Unused combinations
    * are not rendered: only these pairs have a cached renderer, and writeRow generates a row only
@@ -235,14 +269,15 @@ export class AcousticEngine {
     if(sub?.fullAxis&&sub.res){
       const fa=sub.fullAxis,job=fa.queue.shift()!;
       if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);sub.res.bearingRow.fill(NaN);fa.lastTile={tileIndex:job.tileIndex,tileBins:fa.tileBins,f0:job.tileIndex*fa.tileBins*sub.config.fBin,fBin:sub.config.fBin,liveBins:0,filled:false};return rowIndex;}
+      const tEnd=sub.start+(job.rowKey+1)/sub.config.rowRateHz;
       const t=tileBand(sub.config.res!,job.tileIndex,this.scenario.fMax??this.scenario.fmax,fa.tileBins);
-      sub.res.renderTile(job.tileIndex,job.rowKey,out,offset,fa.tileBins);
+      sub.res.renderTileAt(job.tileIndex,job.rowKey,tEnd,out,offset,fa.tileBins);
       fa.lastTile={tileIndex:t.tileIndex,tileBins:t.tileBins,f0:t.f0,fBin:t.fBin,liveBins:t.liveBins,filled:true};
       // Mirror current tile on gramConfig so FE peeking config sees the last emitted slice.
       sub.config={...sub.config,f0:t.f0,liveBins:t.liveBins,bandLimited:t.bandLimited,simT:this.time};
       return rowIndex;
     }
-    if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);sub?.res?.bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else if(sub?.res)sub.res.generate(out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
+    if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);sub?.res?.bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else if(sub?.res)sub.res.generateAt(sub.start+(rowIndex+1)/sub.config.rowRateHz,out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
   }
   /** Copy the last generated per-bin DIFAR bearings (call after writeRow). NaN for omni/DEMON/dead. */
   writeBearingRow(streamId:number,out:Float32Array,offset=0):void {
@@ -298,17 +333,20 @@ export class AcousticEngine {
     for(let i=0;i<this.allContacts.length;i++){const c=this.allContacts[i],out=this.truthState.contacts[i];out.active=c.active!==false;out.x=c.x;out.y=c.y;out.depthM=c.depth;out.crsDeg=(c.course*180/Math.PI+360)%360;out.spdMps=c.speed;out.spdKts=mpsToKnots(c.speed);for(let j=0;j<out.lines.length;j++){const line=c.lines![j],dst=out.lines[j];dst.f0Hz=line.hz;dst.freqHz=line.frequencyHz??line.hz;dst.power=line.power;dst.stability=line.stability!;dst.width=line.width!;dst.sigmaBins=line.sigmaBins??0;dst.eda=line.eda;dst.reactorId=line.reactorId;dst.lineFamily=line.lineFamily;dst.fundamentalHz=line.fundamentalHz;dst.harmonic=line.harmonic;dst.engineId=line.engineId;dst.shaftIndex=line.shaftIndex;}}return t;
   }
   advance(dt:number):void {
+    bumpDemonWeightTick();
     if(!Number.isFinite(dt)||dt<0||dt>1e6||this.scenario.time+dt>1e9)throw new Error('Invalid step dt');
     const s=this.scenario,from=s.time;s.time+=dt;advance(s.ownship,dt);
     for(const c of this.allContacts){let t=from;for(const leg of c.motion)if(leg.at>from&&leg.at<=s.time){advance(c,leg.at-t);c.course=leg.course;c.speed=leg.speed;c.depth=leg.depth;t=leg.at;}advance(c,s.time-t);}
-    for(const state of this.catalogStates){const c=state.contact;if(c.speed!==state.speed||c.depth!==state.depth){updateDerivedSignature(c.params,state.params,mpsToKnots(c.speed),c.depth,c.operatingMode??'normal');state.speed=c.speed;state.depth=c.depth;}}
+    const env=s.environment;for(const c of this.allContacts){c.params.waterTempC=env.temperatureC??15;c.params.waterSalinity=env.salinityPsu??35;c.params.seaState=env.seaState;if(c.catalogRef){try{const {klass}=resolveReference(c.catalogRef);c.params.periscopeDepthM=klass.snorkelDepthM||18;}catch{/* */} }if(c.params.plantSpec){c.params.reinforceBr1=c.params.plantSpec.reinforceBr1;c.params.psrHarmonicsStopAtBlades=c.params.plantSpec.psrHarmonicsStopAtBlades;}}for(const state of this.catalogStates){const c=state.contact;if(c.speed!==state.speed||c.depth!==state.depth||(c.params.seaState??0)!==env.seaState){updateDerivedSignature(c.params,state.params,mpsToKnots(c.speed),c.depth,c.operatingMode??'normal');state.speed=c.speed;state.depth=c.depth;}}
     for(const state of this.surfaceStates){const c=state.contact;if(c.speed!==state.speed){refreshSurfaceSignature(c.params,state.type,mpsToKnots(c.speed));state.speed=c.speed;}}
-    this.updateHydp();this.updateEngineRamps(false);
+    for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(false);this.updateSwaths();this.updateNarrowTransients();
     for(const w of this.lineWanders)w.advance(dt);
     for(let i=0;i<s.buoys.length;i++){
       const b=s.buoys[i],r=this.rows[i];advance(b,dt);r.alive=isFeeding(b,s.time);r.depth=b.depth;r.rfChannel=b.rfChannel;
       if(!r.alive){r.bearing=null;this.generators[i].lineCount=0;}
     }
+    // RES span averaging: one engine-wide source-STATE record per frame (stateHistory.ts); rows re-evaluate the modelled spectrum per frame (not a waveform FFT).
+    if(this.historyOn)this.history.record(s.time);
   }
   /** HYDP hydraulic burst (Wilson): speed-independent class Hz × harmonics; squally abrupt on/off
    * with tiny seeded fade. Latest-started window wins; outside every window slots are silent. */
@@ -325,6 +363,12 @@ export class AcousticEngine {
     // Keep Signature.shaftHz aligned with scaled coupled shafts for LOFAR/DEMON consumers.
     if(c.params.propulsion?.shafts[0]){c.params.shaftHz=c.params.propulsion.shafts[0].hz;c.params.tonalHz=Math.max(.01,c.params.shaftHz*c.params.blades);}
   }}
+
+  /** Short broadband swath flashes: gain=1 inside [at, at+duration), else 0. */
+  private updateSwaths():void{const t=this.scenario.time;for(const s of this.swathStates){const list=s.contact.params.eventSwaths!;for(let i=0;i<s.at.length;i++){const on=t>=s.at[i]&&t<s.at[i]+s.durationS[i];list[i].active=on;list[i].gain=on?1:0;list[i].loHz=s.loHz[i];list[i].hiHz=s.hiHz[i];}}}
+  /** Class-specific TRANSIENT lines: power while armed. */
+  private updateNarrowTransients():void{const t=this.scenario.time;for(const n of this.narrowTransientStates){let gain=0;for(let k=n.at.length-1;k>=0;k--){if(n.at[k]>t)continue;if(t<n.at[k]+n.durationS[k])gain=1;break;}
+   const lines=n.contact.params.tonals!;for(let h=0;h<n.harmonics;h++){const l=lines[n.index+h];if(!l||l.lineFamily!=='TRANSIENT')continue;l.power=gain*.08/((h+1)*(h+1));}}}
   step(dt:number):readonly BuoyRow[]{
     for(const r of this.rows)if(r.row.length!==this.scenario.bins)throw new Error('Missing row buffer');
     this.advance(dt);for(let i=0;i<this.rows.length;i++){const r=this.rows[i];if(r.alive){this.generators[i].generate(r.row);r.bearing=r.type==='difar'?this.generators[i].bearing:null;}else r.row.fill(NaN);}return this.rows;

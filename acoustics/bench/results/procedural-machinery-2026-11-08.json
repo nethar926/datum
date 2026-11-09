@@ -1,0 +1,108 @@
+{
+  "census": [
+    {
+      "difficulty": "easy",
+      "contacts": 24,
+      "runningDiesel": 13,
+      "other": 11,
+      "withVlfEda": 10
+    },
+    {
+      "difficulty": "regular",
+      "contacts": 35,
+      "runningDiesel": 8,
+      "other": 27,
+      "withVlfEda": 7
+    },
+    {
+      "difficulty": "difficult",
+      "contacts": 45,
+      "runningDiesel": 7,
+      "other": 38,
+      "withVlfEda": 7
+    }
+  ],
+  "examples": [
+    {
+      "difficulty": "easy",
+      "seed": 2,
+      "simT": 150,
+      "band": {
+        "hz": 114.56500488758553,
+        "rawEdaContributionDb": 3.2520370483398438,
+        "normalizedOnDb": 3.2485852241516113,
+        "normalizedOffDb": -0.0034453074913471937
+      },
+      "res": [
+        {
+          "res": 2,
+          "hz": 114.62750488758553,
+          "rawEdaContributionDb": 7.009389626343645,
+          "nativeNbOnMedianDb": 6.680995941162109,
+          "nativeNbOffMedianDb": -0.2408154457807541
+        },
+        {
+          "res": 5,
+          "hz": 114.5,
+          "rawEdaContributionDb": 1.66525968149709,
+          "nativeNbOnMedianDb": 0.8030127882957458,
+          "nativeNbOffMedianDb": -0.7259299159049988
+        }
+      ]
+    },
+    {
+      "difficulty": "regular",
+      "seed": 3,
+      "simT": 150,
+      "band": {
+        "hz": 165.9824046920821,
+        "rawEdaContributionDb": 0.6218643188476562,
+        "normalizedOnDb": 0.6193693280220032,
+        "normalizedOffDb": -0.002493063686415553
+      },
+      "res": [
+        {
+          "res": 2,
+          "hz": 166.0449046920821,
+          "rawEdaContributionDb": 1.7674363093751955,
+          "nativeNbOnMedianDb": 0.6771034002304077,
+          "nativeNbOffMedianDb": -1.0881315469741821
+        },
+        {
+          "res": 5,
+          "hz": 166,
+          "rawEdaContributionDb": 0.2746069465353946,
+          "nativeNbOnMedianDb": -0.6663355827331543,
+          "nativeNbOffMedianDb": -0.9407739639282227
+        }
+      ]
+    },
+    {
+      "difficulty": "difficult",
+      "seed": 0,
+      "simT": 150,
+      "band": {
+        "hz": 129.61876832844575,
+        "rawEdaContributionDb": 0.04474639892578125,
+        "normalizedOnDb": 0.041565101593732834,
+        "normalizedOffDb": -0.003126462223008275
+      },
+      "res": [
+        {
+          "res": 2,
+          "hz": 129.55626832844575,
+          "rawEdaContributionDb": 0.15694264673523511,
+          "nativeNbOnMedianDb": -0.6910360455513,
+          "nativeNbOffMedianDb": -0.8474347591400146
+        },
+        {
+          "res": 5,
+          "hz": 129.5,
+          "rawEdaContributionDb": 0.02117158442652546,
+          "nativeNbOnMedianDb": -0.9025738835334778,
+          "nativeNbOffMedianDb": -0.9235961437225342
+        }
+      ]
+    }
+  ]
+}

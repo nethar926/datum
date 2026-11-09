@@ -2,15 +2,25 @@ import { mulberry32, gaussian } from './prng.js';
 import { bladeRate, type Signature } from './sourceModel.js';
 /** Radix-2 Cooley–Tukey FFT (1965); Hann window: standard DSP, Kinsler/Frey acoustics.
  * Unnormalized forward transform; reusable buffers, no transform-time allocation. */
+/** Shared read-only twiddles/window/bit-reverse per FFT size (exact; one copy process-wide).
+ * Working real/imag buffers stay per-instance so concurrent streams do not clobber each other. */
+const FFT_TABLES=new Map<number,{window:Float64Array;cos:Float64Array;sin:Float64Array;reverse:Uint32Array;windowSum:number}>();
+function fftTables(size:number){
+ let t=FFT_TABLES.get(size);if(t)return t;
+ const window=new Float64Array(size),cos=new Float64Array(size/2),sin=new Float64Array(size/2),reverse=new Uint32Array(size);let windowSum=0;
+ const bits=Math.log2(size);for(let i=0;i<size;i++){let x=i,r=0;for(let j=0;j<bits;j++){r=(r<<1)|(x&1);x>>>=1;}reverse[i]=r;window[i]=.5-.5*Math.cos(2*Math.PI*i/(size-1));windowSum+=window[i];}
+ for(let i=0;i<size/2;i++){cos[i]=Math.cos(-2*Math.PI*i/size);sin[i]=Math.sin(-2*Math.PI*i/size);}
+ t={window,cos,sin,reverse,windowSum};FFT_TABLES.set(size,t);return t;
+}
+export function fftSharedTableBytes():number{let b=0;for(const t of FFT_TABLES.values())b+=t.window.byteLength+t.cos.byteLength+t.sin.byteLength+t.reverse.byteLength;return b;}
 export class FFT {
   readonly real:Float64Array;readonly imag:Float64Array;readonly window:Float64Array;
   private windowSum=0;
   private readonly cos:Float64Array;private readonly sin:Float64Array;private readonly reverse:Uint32Array;
   constructor(readonly size:number){
     if(size<4||(size&(size-1))!==0||size>1048576)throw new Error('FFT requires bounded power of two');
-    this.real=new Float64Array(size);this.imag=new Float64Array(size);this.window=new Float64Array(size);this.cos=new Float64Array(size/2);this.sin=new Float64Array(size/2);this.reverse=new Uint32Array(size);
-    const bits=Math.log2(size);for(let i=0;i<size;i++){let x=i,r=0;for(let j=0;j<bits;j++){r=(r<<1)|(x&1);x>>>=1;}this.reverse[i]=r;this.window[i]=.5-.5*Math.cos(2*Math.PI*i/(size-1));this.windowSum+=this.window[i];}
-    for(let i=0;i<size/2;i++){this.cos[i]=Math.cos(-2*Math.PI*i/size);this.sin[i]=Math.sin(-2*Math.PI*i/size);}
+    this.real=new Float64Array(size);this.imag=new Float64Array(size);
+    const t=fftTables(size);this.window=t.window;this.cos=t.cos;this.sin=t.sin;this.reverse=t.reverse;this.windowSum=t.windowSum;
   }
   transform(input:Float64Array|Float32Array,window=true,removeDc=false):void {
     if(input.length!==this.size)throw new Error('FFT size mismatch');

@@ -5,6 +5,8 @@ import { geometry, createGeometry } from './kinematics.js';
 import { doppler } from './doppler.js';
 import { exactGain,pathDifference,seaSurfaceSigma } from './lloydsMirror.js';
 import { spreadingLoss, thorp } from './transmissionLoss.js';
+import {czPropagationGainLinear,czEstimateFor} from './convergenceZone.js';
+import type {WaterColumnProfile} from './waterColumn.js';
 import { ambientLevel } from './ambientNoise.js';
 import { sourceLevel, fillTonals,sourceLines } from './sourceModel.js';
 import type { Contact, Environment } from './scenario.js';
@@ -41,14 +43,16 @@ export class LofarGenerator {
   private readonly baseSeed:number;private readonly bearingSeed:number;private rowIndex=0;
   private readonly g=createGeometry();
   private environment:Environment;
+  private waterColumn:WaterColumnProfile|undefined;
   private readonly difar:boolean;
   bearing=0;
   constructor(readonly buoy:Buoy, contacts:Contact[],readonly bins:number,readonly fmax:number,seed:number,environment:Environment,readonly f0=0){
     this.row=new Float32Array(bins);this.bearingRow=new Float32Array(bins);this.power=new Float64Array(bins);this.signalEast=new Float64Array(bins);this.signalNorth=new Float64Array(bins);this.signalPower=new Float64Array(bins);this.ambient=new Float64Array(bins);this.absorption=new Float64Array(bins);this.shape=new Float64Array(bins);this.absorptionExponent=new Float64Array(bins);this.coherenceExponent=new Float64Array(bins);
     this.difar=buoy.type==='difar';this.baseSeed=deriveSeed(seed,`buoy:${buoy.id}`);this.bearingSeed=deriveSeed(seed,`bearing:${buoy.id}`);this.rng=mulberry32(this.baseSeed);this.bearingRng=mulberry32(this.bearingSeed);this.environment={...environment};
-    this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const frequencies=new Float64Array(contact.lines.length),powers=new Float64Array(contact.lines.length);fillTonals(contact.params,frequencies,powers,contact.lines);const df=(fmax-f0)/(bins-1),swaths=(contact.params.speedGated??[]).filter(w=>w.kind==='SWATH').map(w=>({source:w,lo:Math.max(0,Math.ceil(((w as {loHz:number}).loHz-f0)/df)),hi:Math.min(bins-1,Math.floor(((w as {hiHz:number}).hiHz-f0)/df))}));return {contact,frequencies,powers,swaths,kernels:contact.lines.map(l=>lineKernel(l.width,l.sigmaBins)),gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
+    this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const frequencies=new Float64Array(contact.lines.length),powers=new Float64Array(contact.lines.length);fillTonals(contact.params,frequencies,powers,contact.lines);const df=(fmax-f0)/(bins-1),swathSources=[...(contact.params.speedGated??[]).filter(w=>w.kind==='SWATH'),...(contact.params.eventSwaths??[])],swaths=swathSources.map(w=>({source:w,lo:Math.max(0,Math.ceil(((w as {loHz:number}).loHz-f0)/df)),hi:Math.min(bins-1,Math.floor(((w as {hiHz:number}).hiHz-f0)/df))}));return {contact,frequencies,powers,swaths,kernels:contact.lines.map(l=>lineKernel(l.width,l.sigmaBins)),gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))()};});
     this.setEnvironment(environment);
   }
+  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
   setEnvironment(e:Environment):void {
     this.environment={...e};this.sigma=seaSurfaceSigma(e.seaState);const df=(this.fmax-this.f0)/(this.bins-1);
     for(let i=0;i<this.bins;i++){const f=Math.max(df/2,this.f0+i*df);const k=2*Math.PI*f/e.soundSpeed;this.coherenceExponent[i]=-2*k*k*this.sigma*this.sigma;this.absorption[i]=thorp(f);this.absorptionExponent[i]=-this.absorption[i]*(Math.LN10/10);this.ambient[i]=dbToPower(ambientLevel(f,e.seaState,e.shipping,e.shippingDensity));this.shape[i]=1/(1+(f/400)**2);}
@@ -60,7 +64,10 @@ export class LofarGenerator {
       const item=this.contacts[j],c=item.contact;if(c.active===false)continue;const g=geometry(c,this.buoy,this.g);
       fillTonals(c.params,item.frequencies,item.powers,c.lines);
       const spread=dbToPower(-spreadingLoss(g.range,e.spreading,e.transition));
-      const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread;
+      const prop=e.propagation,czOn=prop?.czEnabled===true;
+      const czEst=czOn||prop?.czForceGainLinear!==undefined?czEstimateFor(this.waterColumn,c.depth,this.buoy.depth):null;
+      const czGain=prop?.czForceGainLinear!==undefined?prop.czForceGainLinear:czPropagationGainLinear(g.range,czEst,{enabled:czOn});
+      const level=dbToPower(sourceLevel(c.params,c.speed,c.depth))*item.gain*spread*czGain;
       // Smooth fictional broadband PSD; absorption per bin cached, range factor updated.
       const km=Math.max(0,g.range-1)/1000;
       const flow=c.params.flowNoiseDb===undefined?0:dbToPower(c.params.flowNoiseDb)*(g.range<=1?1:spread*(c.params.flowRadiatedFraction??0));
@@ -69,6 +76,7 @@ export class LofarGenerator {
       const sinB=Math.sin(g.bearing),cosB=Math.cos(g.bearing);
       for(let i=0;i<this.bins;i++){const coherent=q*(this.sigma===0?1:Math.exp(this.coherenceExponent[i]*grazing2)),gain=Math.max(0,1+coherent*coherent-2*coherent*cp);const contrib=(broadband*gain+flow)*this.shape[i]*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}const next=cp*dc-sp*ds;sp=sp*dc+cp*ds;cp=next;}
       for(const w of item.swaths)if(w.source.gain>0)for(let i=w.lo;i<=w.hi;i++){const contrib=level*.0003*w.source.gain*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}
+      const sb=c.params.stateBroadband;if(sb){for(const band of [sb.snort,sb.waveSlap]){if(!band.active||!(band.level>0))continue;const lo=Math.max(0,Math.floor((band.loHz-this.f0)/df)),hi=Math.min(this.bins-1,Math.ceil((band.hiHz-this.f0)/df));for(let i=lo;i<=hi;i++){const contrib=level*.00025*band.level*Math.exp(this.absorptionExponent[i]*km);this.power[i]+=contrib;if(difar){this.signalPower[i]+=contrib;this.signalEast[i]+=contrib*sinB;this.signalNorth[i]+=contrib*cosB;}}}}
       for(let k=0;k<item.frequencies.length;k++){
         const f=doppler(item.frequencies[k],g.sourceRadial,g.receiverRadial,e.soundSpeed),bin=(f-this.f0)/df;
         if(bin<0||bin>this.bins-1)continue;

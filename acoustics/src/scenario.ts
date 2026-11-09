@@ -13,15 +13,24 @@ export interface MotionLeg { at:number; course:number; speed:number; depth:numbe
 /** m3-events live kinds:
  * - `hydp`: rudder/hydroplane paired blip (durationS, startOffsetPct).
  * - `engine-ramp`: ratio-locked diesel RPM knee (durationS, toScale, optional fromScale).
- * Other kinds stay reserved and are rejected. */
+ * - `swath`: short broadband flash (durationS, loHz, hiHz) — Wilson transient swaths.
+ * - `transient`: class-specific narrowband blip (durationS, hz, optional harmonics). */
 export interface ContactTransient {at:number;kind:string;params:Record<string,number|string>}
-export const TRANSIENT_KINDS=['hydp','engine-ramp'] as const;
+export const TRANSIENT_KINDS=['hydp','engine-ramp','swath','transient'] as const;
 function badHydp(p:Record<string,number|string>):boolean{for(const k of Object.keys(p))if(k!=='durationS'&&k!=='startOffsetPct')return true;return (p.durationS!==undefined&&!finite(p.durationS,.01,3600))||(p.startOffsetPct!==undefined&&!finite(p.startOffsetPct,0,20));}
 function badEngineRamp(p:Record<string,number|string>):boolean{for(const k of Object.keys(p))if(k!=='durationS'&&k!=='toScale'&&k!=='fromScale')return true;return !finite(p.durationS,.01,3600)||!finite(p.toScale,.05,1.5)||(p.fromScale!==undefined&&!finite(p.fromScale,.05,1.5));}
-function badTransient(x:ContactTransient):boolean{if(!x||typeof x!=='object'||!finite(x.at,0,1e9)||!x.params||typeof x.params!=='object'||Array.isArray(x.params))return true;if(x.kind==='hydp')return badHydp(x.params);if(x.kind==='engine-ramp')return badEngineRamp(x.params);return true;}
+function badSwath(p:Record<string,number|string>):boolean{for(const k of Object.keys(p))if(!['durationS','loHz','hiHz'].includes(k))return true;return !finite(p.durationS,.05,30)||!finite(p.loHz,0,1e5)||!finite(p.hiHz,(p.loHz as number)+1e-6,1e5);}
+function badNarrowTransient(p:Record<string,number|string>):boolean{for(const k of Object.keys(p))if(!['durationS','hz','harmonics'].includes(k))return true;return !finite(p.durationS,.05,30)||!finite(p.hz,.1,1e5)||(p.harmonics!==undefined&&(!Number.isInteger(p.harmonics)||!finite(p.harmonics,1,5)));}
+function badTransient(x:ContactTransient):boolean{if(!x||typeof x!=='object'||!finite(x.at,0,1e9)||!x.params||typeof x.params!=='object'||Array.isArray(x.params))return true;if(x.kind==='hydp')return badHydp(x.params);if(x.kind==='engine-ramp')return badEngineRamp(x.params);if(x.kind==='swath')return badSwath(x.params);if(x.kind==='transient')return badNarrowTransient(x.params);return true;}
 export interface Contact extends Track {behaviour?:BehaviourKind; lines?:TonalLine[]; id:string; category?:'surface'|'subsurface'; classificationTarget?:boolean; active?:boolean; surface?:{type:string;shafts:number;electricalHz:50|60;rank:number}; params:Signature; catalogRef?:CatalogReference; operatingMode?:ModeInput;reactorOffline?:boolean; motion:MotionLeg[]; transients?:ContactTransient[] }
-export interface Environment { shippingDensity?:number; seaState:number; shipping:Shipping; soundSpeed:number; spreading:Spreading; transition:number }
-export interface Scenario {reactorOffline?:boolean; surfacePool?:Contact[]; classificationTargets?:string[]; v:1; fMax?:number; fBin?:number; band?:[number,number]; surfaceTraffic?:number; seed:number; mode:'aviation'; bins:number; fmax:number; time:number; ownship:Track; environment:Environment; contacts:Contact[]; buoys:Buoy[] }
+export interface PropagationSettings {
+  /** CZ annulus teaching boost in LOFAR/DEMON/RES. Default false — streams match zero-CZ gain. */
+  czEnabled?:boolean;
+  /** Test/FE hook: when set, multiply received power by this linear gain (1 = no boost). */
+  czForceGainLinear?:number;
+}
+export interface Environment { shippingDensity?:number; seaState:number; shipping:Shipping; soundSpeed:number; spreading:Spreading; transition:number; /** Water column °C (Mackenzie / cavitation). */temperatureC?:number; /** Salinity ppt. */salinityPsu?:number; /** Optional propagation feature flags (CZ off by default). */propagation?:PropagationSettings }
+export interface Scenario {reactorOffline?:boolean; surfacePool?:Contact[]; classificationTargets?:string[]; v:1; fMax?:number; fBin?:number; band?:[number,number]; surfaceTraffic?:number; seed:number; mode:'aviation'; bins:number; fmax:number; time:number; ownship:Track; environment:Environment; contacts:Contact[]; buoys:Buoy[]; /** Paired BT/SSP for FE graph (Mackenzie). */waterColumn?:import('./waterColumn.js').WaterColumnProfile }
 export type ContactInput=Omit<Contact,'params'> & {params?:Signature};
 export type ScenarioInput=Omit<Scenario,'contacts'> & {contacts:ContactInput[]};
 export function resolveContactParams(c:ContactInput,time=0,reactorOffline=false):Signature {
@@ -36,9 +45,10 @@ export function validateScenario(value:unknown):asserts value is ScenarioInput {
   if(!s || s.v!==1 || s.mode!=='aviation' || !finite(s.seed,0,4294967295)||!Number.isInteger(s.seed)||!finite(s.bins,2,16384)||!Number.isInteger(s.bins)||!finite(s.fmax,1,1e6)||!finite(s.time,0,1e9)||!track(s.ownship)) throw new Error('Invalid scenario header/ownship');
   if(s.fMax!==undefined&&!finite(s.fMax,1,1e6))throw new Error('Invalid fMax');if(s.fBin!==undefined&&!finite(s.fBin,1e-12,1e6))throw new Error('Invalid fBin');if(s.surfaceTraffic!==undefined&&!finite(s.surfaceTraffic,0,1))throw new Error('Invalid surfaceTraffic');if(s.band!==undefined&&(!Array.isArray(s.band)||s.band.length!==2||!finite(s.band[0],0,1e6)||!finite(s.band[1],s.band[0]+1e-9,1e6)))throw new Error('Invalid default band');
   const e=s.environment;
-  if(!e||!finite(e.seaState,0,6)||!['light','moderate','heavy'].includes(e.shipping)||!finite(e.soundSpeed,1300,1800)||!['spherical','cylindrical','hybrid'].includes(e.spreading)||!finite(e.transition,1,1e9)) throw new Error('Invalid environment');
+  if(!e||!finite(e.seaState,0,6)||!['light','moderate','heavy'].includes(e.shipping)||!finite(e.soundSpeed,1300,1800)||!['spherical','cylindrical','hybrid'].includes(e.spreading)||!finite(e.transition,1,1e9)||(e.temperatureC!==undefined&&!finite(e.temperatureC,-2,40))||(e.salinityPsu!==undefined&&!finite(e.salinityPsu,0,42))) throw new Error('Invalid environment');
   if(!Array.isArray(s.contacts)||s.contacts.length>250||!Array.isArray(s.buoys)||s.buoys.length>128) throw new Error('Invalid counts');
   if(s.environment.shippingDensity!==undefined&&!finite(s.environment.shippingDensity,0,1))throw new Error('Invalid shipping density');
+  const prop=s.environment.propagation;if(prop!==undefined){if(typeof prop!=='object'||prop===null||Array.isArray(prop))throw new Error('Invalid propagation');if(prop.czEnabled!==undefined&&typeof prop.czEnabled!=='boolean')throw new Error('Invalid propagation.czEnabled');if(prop.czForceGainLinear!==undefined&&!finite(prop.czForceGainLinear,0,1e6))throw new Error('Invalid propagation.czForceGainLinear');}
   if(s.surfacePool!==undefined){if(!Array.isArray(s.surfacePool)||s.surfacePool.length>18||s.surfacePool.some(c=>c.category!=='surface')||s.contacts.filter(c=>!s.surfacePool!.some(p=>p.id===c.id)).length+s.surfacePool.length>250)throw new Error('Invalid surface pool');validateScenario({...s,surfacePool:undefined,classificationTargets:undefined,contacts:s.surfacePool});}
   if(s.classificationTargets!==undefined&&(!Array.isArray(s.classificationTargets)||s.classificationTargets.some(id=>!s.contacts.some(c=>c.id===id&&c.category!=='surface'))))throw new Error('Invalid classification targets');
   const ids=new Set<string>();
@@ -47,7 +57,7 @@ export function validateScenario(value:unknown):asserts value is ScenarioInput {
     if(a.tonals!==undefined){if(!Array.isArray(a.tonals)||a.tonals.length>256)throw new Error('Invalid tonal list');const lineIds=new Set<string>();for(const line of a.tonals){if(!line||!finite(line.hz,0,1e8)||!finite(line.power,0,1e6)||(line.stability!==undefined&&!['stable','unstable'].includes(line.stability))||(line.width!==undefined&&!['discrete','diffuse'].includes(line.width))||(line.width==='diffuse'&&line.sigmaBins!==undefined&&!finite(line.sigmaBins,.75,16))||(line.id!==undefined&&(typeof line.id!=='string'||!line.id||lineIds.has(line.id))))throw new Error('Invalid tonal tags');if(line.id)lineIds.add(line.id);}}
     if(!Array.isArray(c.motion)||c.motion.length<1||c.motion[0].at!==0)throw new Error('Contact needs initial timed motion leg');
     let last=-1;for(const leg of c.motion){if(!finite(leg.at,0,1e9)||leg.at<=last||!finite(leg.course,-1e6,1e6)||!finite(leg.speed,0,500)||!finite(leg.depth,0,1e6))throw new Error('Invalid motion leg');if(c.catalogRef){const {params}=resolveReference(c.catalogRef);validateOperatingState(params,{speedKn:mpsToKnots(leg.speed),depthM:leg.depth,mode:c.operatingMode??'normal',reactorOffline:c.reactorOffline??s.reactorOffline});}if(leg.waypoint!==undefined)throw new Error('Waypoint targets reserved; use course/speed legs in M1');last=leg.at;}
-    if(c.transients!==undefined && (!Array.isArray(c.transients)||c.transients.length>512||c.transients.some(badTransient)))throw new Error('Invalid transient (only hydp/engine-ramp are live; other kinds reserved)');
+    if(c.transients!==undefined && (!Array.isArray(c.transients)||c.transients.length>512||c.transients.some(badTransient)))throw new Error('Invalid transient (only hydp/engine-ramp/swath/transient are live; other kinds reserved)');
     if(c.behaviour!==undefined&&!BEHAVIOUR_KINDS.includes(c.behaviour))throw new Error('Invalid behaviour');
   }
   ids.clear(); for(const b of s.buoys){ if(!track(b)||typeof b.id!=='string'||!b.id||ids.has(b.id)||!['passive-omni','difar'].includes(b.type)||!finite(b.rfChannel,0,9999)||!Number.isInteger(b.rfChannel)||!finite(b.deployedAt,0,1e9)||!finite(b.life,.001,1e9)) throw new Error('Invalid buoy');ids.add(b.id); }

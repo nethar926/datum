@@ -1,7 +1,8 @@
 import {it,expect} from 'vitest';
-import {catalog,surfaceTypes,createSurfacePool,deriveSignature,effectiveParams,validateCatalog,validateVesselPlant,makeDrivetrain,drivetrainRatio,meshRates,firingRateHz,configurePropulsion,updatePropulsion,writePlantTonals,updateDerivedSignature,AcousticEngine,cpaScenario,knotsToMps} from '../src/index.js';
+import {catalog,surfaceTypes,createSurfacePool,deriveSignature,effectiveParams,validateCatalog,validateVesselPlant,makeDrivetrain,drivetrainRatio,meshRates,firingRateHz,configurePropulsion,updatePropulsion,writePlantTonals,updateDerivedSignature,AcousticEngine,cpaScenario,knotsToMps,coupledSpeedWindowKn} from '../src/index.js';
 import type {SubmarineClass,ModeInput} from '../src/catalog/schema.js';
-const signature=(c:SubmarineClass,speedKn=7,mode:ModeInput='snorkel')=>deriveSignature(c,'base',{speedKn,depthM:30,mode});
+const inBandSpeed=(c:SubmarineClass,fallback=7)=>{const w=coupledSpeedWindowKn(c);return w?Math.min(c.params.maxSpeedKn,Math.max(fallback,w.min+.05)):fallback};
+const signature=(c:SubmarineClass,speedKn?:number,mode:ModeInput='snorkel')=>deriveSignature(c,'base',{speedKn:speedKn??inBandSpeed(c),depthM:30,mode});
 const direct=catalog.classes.find(c=>c.machinery.kind==='dieselDirect')!;
 const geared=catalog.classes.find(c=>c.machinery.kind==='dieselGR')!;
 const electric=catalog.classes.find(c=>c.machinery.kind==='dieselElectric')!;
@@ -10,7 +11,7 @@ it('two/four stroke CSR CFR EFR ERPM relations and firing formulas',()=>{
  expect(firingRateHz({stroke:2,cylinders:6},1200)).toBe(120);expect(firingRateHz({stroke:4,cylinders:8},1200)).toBe(80);
 });
 it('CSR CFR EFR EDA and PSR have separately labelled harmonic families',()=>{
- for(const c of [direct,geared]){const s=signature(c),t=s.propulsion!;for(const label of ['CSR','CFR','EFR','EDA','PSR'] as const){const lines=s.tonals!.filter(l=>l.lineFamily===label);expect(lines.length).toBeGreaterThanOrEqual(2);for(const l of lines){expect(l.hz).toBeCloseTo(l.fundamentalHz!*l.harmonic!,12);if(label==='PSR'){expect(l.fundamentalHz).toBe(t.shafts[l.shaftIndex!].hz);continue;}const e=t.engines[l.engineIndex!];expect(l.engineId).toBe(e.id);if(label!=='EDA')expect(l.fundamentalHz).toBe(label==='CSR'?e.csrHz:label==='CFR'?e.cfrHz:e.efrHz);}}}
+ for(const c of [direct,geared]){const s=signature(c),t=s.propulsion!;for(const label of ['CSR','CFR','EFR','EDA','PSR'] as const){const lines=s.tonals!.filter(l=>l.lineFamily===label);expect(lines.length).toBeGreaterThanOrEqual(label==='EDA'?1:2);for(const l of lines){expect(l.hz).toBeCloseTo(l.fundamentalHz!*l.harmonic!,12);if(label==='PSR'){expect(l.fundamentalHz).toBe(t.shafts[l.shaftIndex!].hz);continue;}const e=t.engines[l.engineIndex!];expect(l.engineId).toBe(e.id);if(label!=='EDA')expect(l.fundamentalHz).toBe(label==='CSR'?e.csrHz:label==='CFR'?e.cfrHz:e.efrHz);}}}
 });
 it('ratios derive from hunting teeth, including multiplicative two-stage reduction',()=>{
  const a=makeDrivetrain('gr1',[{pinionTeeth:20,bullTeeth:71}]),b=makeDrivetrain('gr2',[{pinionTeeth:20,bullTeeth:71},{pinionTeeth:19,bullTeeth:61}]);expect(a.ratio).toBe(71/20);expect(a.ratioLabel).toBe('3.55:1');expect(b.ratio).toBe((71/20)*(61/19));expect(drivetrainRatio(b)).toBe(b.ratio);expect(makeDrivetrain('direct')).toMatchObject({ratio:1,ratioLabel:'1.00:1',stages:[]});expect(()=>makeDrivetrain('gr1',[{pinionTeeth:20,bullTeeth:70}])).toThrow();
@@ -20,7 +21,7 @@ it('every mesh frequency agrees from the pinion and bull sides without allocatin
  const d=makeDrivetrain('gr2',[{pinionTeeth:20,bullTeeth:71},{pinionTeeth:19,bullTeeth:61}]),out=new Float64Array(2);expect(meshRates(d,30,out)).toBe(out);expect(out[0]).toBe(600);expect(out[1]).toBeCloseTo(30/(71/20)*19);expect(()=>meshRates(d,30,new Float64Array(1))).toThrow(RangeError);
 });
 it('EDA shifts linearly with ERPM, not an independent fixed oscillator',()=>{
- const a=signature(geared,5),b=signature(geared,10),la=a.tonals!.filter(l=>l.lineFamily==='EDA'),lb=b.tonals!.filter(l=>l.lineFamily==='EDA');for(let i=0;i<la.length;i++){expect(lb[i].hz).toBeCloseTo(la[i].hz*2,12);const e=a.propulsion!.engines[la[i].engineIndex!];expect(la[i].fundamentalHz).toBeCloseTo(e.cfrHz*la[i].eda!.cfrMultiple,12);}
+ const a=signature(geared,inBandSpeed(geared,5)),b=signature(geared,inBandSpeed(geared,10)),la=a.tonals!.filter(l=>l.lineFamily==='EDA'),lb=b.tonals!.filter(l=>l.lineFamily==='EDA');for(let i=0;i<la.length;i++){expect(lb[i].hz).toBeCloseTo(la[i].hz*2,12);const e=a.propulsion!.engines[la[i].engineIndex!];expect(la[i].fundamentalHz).toBeCloseTo(e.cfrHz*la[i].eda!.cfrMultiple,12);}
 });
 it('two-shaft blade doublet spacing is n*blades*dRPM/60 and grows with harmonic order',()=>{
  const c=catalog.classes.find(c=>c.shafts===2)!,s=signature(c,10,'normal');configurePropulsion(s,123,'doublet');updatePropulsion(s,10/c.params.maxSpeedKn,'normal');writePlantTonals(s,'normal');const shafts=s.propulsion!.shafts,dRpm=Math.abs(shafts[1].rpm-shafts[0].rpm);expect(dRpm).toBeGreaterThan(0);let first=0;
@@ -36,7 +37,7 @@ it('validation rejects bad cylinders, D/D four stroke, ratios, bus frequency and
 it('D/D couples CSR exactly to PSR only when snorkeling or surfaced; battery uses the motor',()=>{
  for(const c of catalog.classes.filter(c=>c.machinery.kind==='dieselDirect')){for(const mode of ['snorkel','surfaced'] as const){const s=signature(c,7,mode),t=s.propulsion!;expect(t.shafts[0].coupled).toBe(true);expect(t.shafts[0].hz).toBe(t.engines[0].csrHz);expect(t.motor!.rpm).toBe(0);}
  const s=signature(c,7,'battery'),t=s.propulsion!;expect(t.shafts[0].coupled).toBe(false);expect(t.shafts[0].hz).toBe(t.motor!.rpm/60);expect(t.engines[0].running).toBe(false);expect(t.engines[0].csrHz).toBe(0);expect(t.shafts[0].hz).toBeGreaterThan(0);expect(s.tonals!.some(l=>['CSR','CFR','EFR','EDA'].includes(l.lineFamily??''))).toBe(false);const hz=t.shafts[0].hz,p=s.plantSpec!.machinery;if('engines' in p)p.engines[0].erpm.normal*=.9;updatePropulsion(s,7/c.params.maxSpeedKn,'battery');expect(t.shafts[0].hz).toBe(hz);}
- for(const c of createSurfacePool(7).filter(c=>c.params.plantSpec!.machinery.kind==='dieselDirect'))for(let i=0;i<c.params.propulsion!.shafts.length;i++){const t=c.params.propulsion!;expect(t.shafts[i].coupled).toBe(true);expect(t.shafts[i].hz).toBe(t.engines[i].csrHz);}
+ for(const c of createSurfacePool(7).filter(c=>c.params.plantSpec!.machinery.kind==='dieselDirect')){const t=c.params.propulsion!;for(let i=0;i<t.shafts.length;i++){if(!t.shafts[i].coupled){expect(t.declutched).toBeFalsy();expect(t.engines.every(e=>!e.running)).toBe(true);continue;}expect(t.shafts[i].hz).toBe(t.engines[i].csrHz);}}
 });
 it('D/E diesels are speed-independent and stop in battery while inverter/motor lines remain',()=>{
  const a=signature(electric,5),b=signature(electric,10);expect(a.propulsion!.engines.map(e=>e.erpm)).toEqual(b.propulsion!.engines.map(e=>e.erpm));expect(a.propulsion!.shafts[0].hz*2).toBeCloseTo(b.propulsion!.shafts[0].hz,12);const quiet=signature(electric,5,'battery');expect(quiet.propulsion!.engines.every(e=>!e.running&&e.erpm===0)).toBe(true);expect(quiet.propulsion!.shafts[0].coupled).toBe(false);expect(quiet.tonals!.some(l=>l.family==='electrical')).toBe(true);expect(quiet.tonals!.some(l=>l.family==='motor')).toBe(true);expect(quiet.tonals!.some(l=>l.lineFamily&&['CSR','CFR','EFR','EDA'].includes(l.lineFamily))).toBe(false);

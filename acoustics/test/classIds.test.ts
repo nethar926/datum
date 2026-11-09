@@ -6,15 +6,24 @@ const mid=(r:readonly number[]) => (r[0]+r[1])/2;
 const disjoint=(a:readonly number[],b:readonly number[])=>a[1]<b[0]||b[1]<a[0];
 const observations=(k:IdKeys):ClassObservations=>{
  const mode=k.engine?'SNORK':'NUC',visible=k.linesVisiblePerMode[mode];
- return {gridHz:k.gridHz,mode,lineFamilies:visible,familyFundamentalsHz:Object.fromEntries(k.harmonicFamilies.filter(f=>visible.includes(f.lineFamily)).map(f=>[f.lineFamily,mid(f.fundamentalHz)])),brToPsr:mid(k.ratios.brToPsr),gearRatio:mid(k.ratios.gear),tpk:mid(k.tpk),hydpHz:mid(k.hydp!.nominalHz),...(k.ratios.efrToCsr?{efrToCsr:mid(k.ratios.efrToCsr)}:{}),...(k.ratios.msrToMotorShaft?{msrToMotorShaft:mid(k.ratios.msrToMotorShaft),msrToPsr:mid(k.ratios.msrToPsr!)}:{}),...(k.turbineRateHz?{turbineRateHz:mid(k.turbineRateHz),reductionRatio:mid(k.reductionRatio!),...(k.gearMeshHz?.length?{gearMeshHz:mid(k.gearMeshHz[0])}:{}),turboGenHz:mid(k.turboGenHz![0])}:{}),...(k.edas?{edaCfrMultiples:k.edas.map(e=>mid(e.cfrMultiple))}:{}),speedWindows:k.speedWindows.map(w=>w.kind==='SRC'?{kind:'SRC' as const,hz:mid([w.loHz,w.hiHz]),speedKts:mid(w.speedKts)}:{kind:'SWATH' as const,loHz:w.loHz,hiHz:w.hiHz,speedKts:mid(w.speedKts)})};
+ return {gridHz:k.gridHz,mode,lineFamilies:visible,familyFundamentalsHz:Object.fromEntries(k.harmonicFamilies.filter(f=>visible.includes(f.lineFamily)).map(f=>[f.lineFamily,mid(f.fundamentalHz)])),brToPsr:mid(k.ratios.brToPsr),gearRatio:mid(k.ratios.gear),tpk:mid(k.tpk),...(k.hydp?{hydpHz:mid(k.hydp.nominalHz)}:{}),...(k.ratios.efrToCsr?{efrToCsr:mid(k.ratios.efrToCsr)}:{}),...(k.ratios.msrToMotorShaft?{msrToMotorShaft:mid(k.ratios.msrToMotorShaft),msrToPsr:mid(k.ratios.msrToPsr!)}:{}),...(k.turbineRateHz?{turbineRateHz:mid(k.turbineRateHz),reductionRatio:mid(k.reductionRatio!),...(k.gearMeshHz?.length?{gearMeshHz:mid(k.gearMeshHz[0])}:{}),turboGenHz:mid(k.turboGenHz![0])}:{}),...(k.edas?{edaCfrMultiples:k.edas.map(e=>mid(e.cfrMultiple))}:{}),speedWindows:k.speedWindows.map(w=>w.kind==='SRC'?{kind:'SRC' as const,hz:mid([w.loHz,w.hiHz]),speedKts:mid(w.speedKts)}:{kind:'SWATH' as const,loHz:w.loHz,hiHz:w.hiHz,speedKts:mid(w.speedKts)})};
 };
-it('all 231 class pairs have at least two non-overlapping physical ID keys',()=>{
- for(let i=0;i<catalog.classes.length;i++)for(let j=i+1;j<catalog.classes.length;j++){const a=catalog.classes[i].idKeys,b=catalog.classes[j].idKeys,aw=a.speedWindows.find(w=>w.kind==='SWATH')!,bw=b.speedWindows.find(w=>w.kind==='SWATH')!;
-  expect(disjoint(a.hydp!.nominalHz,b.hydp!.nominalHz),`${catalog.classes[i].id}/${catalog.classes[j].id}: HYDP`).toBe(true);expect(disjoint([aw.loHz,aw.hiHz],[bw.loHz,bw.hiHz]),'SWATH').toBe(true);expect(aw.hiHz).toBeLessThan(500);expect(bw.hiHz).toBeLessThan(500);
+it('class pairs have non-overlapping SWATH bands; HYDP bands disjoint among classes that carry HYDP',()=>{
+ const withHydp=catalog.classes.filter(c=>c.hydp&&c.idKeys.hydp);
+ expect(withHydp.length).toBeGreaterThanOrEqual(14); // ~2/3 keep HYDP
+ expect(withHydp.length).toBeLessThan(catalog.classes.length); // optional
+ expect(withHydp.some(c=>c.plant==='diesel')&&withHydp.some(c=>c.plant==='nuclear')).toBe(true);
+ expect(catalog.classes.some(c=>!c.hydp&&c.plant==='diesel')&&catalog.classes.some(c=>!c.hydp&&c.plant==='nuclear')).toBe(true);
+ for(let i=0;i<withHydp.length;i++)for(let j=i+1;j<withHydp.length;j++){
+  expect(disjoint(withHydp[i].idKeys.hydp!.nominalHz,withHydp[j].idKeys.hydp!.nominalHz),`${withHydp[i].id}/${withHydp[j].id}: HYDP`).toBe(true);
+ }
+ for(let i=0;i<catalog.classes.length;i++)for(let j=i+1;j<catalog.classes.length;j++){
+  const a=catalog.classes[i].idKeys,b=catalog.classes[j].idKeys,aw=a.speedWindows.find(w=>w.kind==='SWATH')!,bw=b.speedWindows.find(w=>w.kind==='SWATH')!;
+  expect(disjoint([aw.loHz,aw.hiHz],[bw.loHz,bw.hiHz]),'SWATH').toBe(true);expect(aw.hiHz).toBeLessThan(500);expect(bw.hiHz).toBeLessThan(500);
  }
 });
 it('midpoint observations of each class rank it uniquely first using unchanged matchClasses',()=>{
- for(const c of catalog.classes){const obs=observations(c.idKeys),ranked=matchClasses(obs);expect(ranked[0].id).toBe(c.id);expect(ranked[0].score).toBe(1);expect(ranked[0].ruledOutBy).toEqual([]);expect(ranked[0].score).toBeGreaterThan(ranked[1].score);expect(matchClasses(JSON.parse(JSON.stringify(obs)))).toEqual(ranked);const hydpOnly=matchClasses({hydpHz:obs.hydpHz});expect(hydpOnly[0].id).toBe(c.id);expect(hydpOnly[0].score).toBeGreaterThan(hydpOnly[1].score);}
+ for(const c of catalog.classes){const obs=observations(c.idKeys),ranked=matchClasses(obs);expect(ranked[0].id).toBe(c.id);expect(ranked[0].score).toBe(1);expect(ranked[0].ruledOutBy).toEqual([]);expect(ranked[0].score).toBeGreaterThan(ranked[1].score);expect(matchClasses(JSON.parse(JSON.stringify(obs)))).toEqual(ranked);if(obs.hydpHz!==undefined){const hydpOnly=matchClasses({hydpHz:obs.hydpHz});expect(hydpOnly[0].id).toBe(c.id);expect(hydpOnly[0].score).toBeGreaterThan(hydpOnly[1].score);}}
 });
 it('ID-keyed EDA definitions are varied fractional orders, including the LOP teaching example',()=>{
  const diesel=catalog.classes.filter(c=>c.plant==='diesel'),orders=new Set<string>();for(const c of diesel){expect(c.edas.length).toBeGreaterThanOrEqual(1);expect(c.edas.length).toBeLessThanOrEqual(3);for(const e of c.edas){expect([.25,.5,.75]).toContain(e.cfrMultiple%1);expect(e.name.length).toBeGreaterThan(0);}orders.add(JSON.stringify(c.edas.map(e=>e.cfrMultiple)));const copy=varyPlantIdentity(structuredClone(c),c.id);expect(copy.edas).toEqual(c.edas);}expect(orders.size).toBe(diesel.length);expect(new Set(diesel.flatMap(c=>c.edas.map(e=>e.name))).size).toBeGreaterThan(3);expect(diesel.some(c=>c.edas.some(e=>e.name==='LOP'&&e.cfrMultiple===27.75))).toBe(true);

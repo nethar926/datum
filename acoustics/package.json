@@ -7,13 +7,15 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "bench": "tsx bench/engine.bench.ts"
+    "bench": "tsx bench/engine.bench.ts",
+    "build:wasm": "node scripts/build-wasm.mjs"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4",
-    "tsx": "^4.20.6",
-    "@types/node": "^22.0.0"
+    "wabt": "^1.0.39"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
