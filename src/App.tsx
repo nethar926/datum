@@ -1,4 +1,4 @@
-import { hideLandscapePlot } from './ui/plotVisibility'
+import { hideLandscapePlot, loadLandscapePlotHidden, saveLandscapePlotHidden } from './ui/plotVisibility'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
@@ -219,7 +219,8 @@ export default function App() {
   // Phone-portrait plot sheet (gram / half / plot). Landscape and iPad keep the resizable SplitHandle.
   const [plotDetent, setPlotDetent] = useState<PlotDetent>('gram')
   const [plotProgress, setPlotProgress] = useState<number | null>(null)
-  const [landscapePlotHidden, setLandscapePlotHidden] = useState(false)
+  const [landscapePlotHidden, setLandscapePlotHidden] = useState(loadLandscapePlotHidden)
+  useEffect(() => { saveLandscapePlotHidden(landscapePlotHidden) }, [landscapePlotHidden])
   const liveProgress = plotProgress ?? detentProgress(plotDetent)
   const commitDetent = (d: PlotDetent) => { setPlotDetent(d); setPlotProgress(null) }
   const { split: segSplit } = useViewportSegments()
