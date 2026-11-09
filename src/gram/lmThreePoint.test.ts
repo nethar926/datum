@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { striationHz } from './lloyds'
 import {
   LM_ASSUMPTION, applySlide, emptyLmThreePoint, evaluateLmThreePoint, fitIdealPass,
-  lmFitWarns, lmThreePointText, nextLmPointRole, placeLmPoint,
+  LM_IDEAL_PASS_LABEL, lmFitWarns, lmIdealPassGramLabel, lmThreePointText, nextLmPointRole, placeLmPoint,
 } from './lmThreePoint'
 
 describe('ideal-pass 3-point fit', () => {
@@ -74,5 +74,29 @@ describe('placement helpers', () => {
     expect(nextLmPointRole(1)).toBe('peak')
     expect(nextLmPointRole(2)).toBe('shallow')
     expect(nextLmPointRole(3)).toBe('slide')
+  })
+})
+
+describe('on-gram ideal-pass label', () => {
+  const k = 40, tCpa = 100, tau = 200
+  const s = { k, tCpaS: tCpa, tauS: tau }
+  const points = [
+    { tS: tCpa, fHz: striationHz(s, 1, tCpa) },
+    { tS: tCpa + 80, fHz: striationHz(s, 1, tCpa + 80) },
+    { tS: tCpa + 160, fHz: striationHz(s, 1, tCpa + 160) },
+  ]
+
+  it('shows IDEAL-PASS FIT on the gram for fe_ideal_pass fits', () => {
+    // zrM null → skip acoustics path so source stays fe_ideal_pass.
+    const fit = evaluateLmThreePoint({ points, slideK: 0, slideTCpaS: 0 }, { zrM: null })
+    expect(fit.source).toBe('fe_ideal_pass')
+    expect(fit.ok).toBe(true)
+    expect(lmIdealPassGramLabel(fit)).toBe(LM_IDEAL_PASS_LABEL)
+  })
+
+  it('hides the label before three points are placed', () => {
+    const fit = evaluateLmThreePoint(emptyLmThreePoint(), { zrM: null })
+    expect(fit.ok).toBe(false)
+    expect(lmIdealPassGramLabel(fit)).toBeNull()
   })
 })

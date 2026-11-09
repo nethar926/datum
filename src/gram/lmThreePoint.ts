@@ -190,6 +190,14 @@ export function evaluateLmThreePoint(
   }
 }
 
+/** On-gram chip when the FE ideal-pass fallback is the active fit source (not tooltip-only). */
+export const LM_IDEAL_PASS_LABEL = 'IDEAL-PASS FIT'
+
+/** Visible gram label for fe_ideal_pass once a 3-point fit exists (ok or warn). Null otherwise. */
+export function lmIdealPassGramLabel(fit: LmFitResult): string | null {
+  return fit.source === 'fe_ideal_pass' && fit.ok ? LM_IDEAL_PASS_LABEL : null
+}
+
 /** Readout string for the LM panel (assumption always stated). */
 export function lmThreePointText(fit: LmFitResult): string {
   const src = fit.source === 'acoustics' ? 'AC' : 'FE'

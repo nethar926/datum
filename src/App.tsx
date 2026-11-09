@@ -14,7 +14,7 @@ import type { DifarWheelSettings } from './gl/colormap'
 import { NewScenario } from './settings/NewScenario'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
 import {
-  emptyLmThreePoint, evaluateLmThreePoint, lmThreePointText, nextLmPointRole, placeLmPoint,
+  emptyLmThreePoint, evaluateLmThreePoint, lmIdealPassGramLabel, lmThreePointText, nextLmPointRole, placeLmPoint,
   type LmThreePointState,
 } from './gram/lmThreePoint'
 import { returnToLive } from './touch/scrollBack'
@@ -474,6 +474,7 @@ export default function App() {
     rCpaM: cpaGeom?.rCpaM ?? (lm.basis === 'manual' ? lm.manRangeM : null),
     speedMps: cpaGeom?.speedMps ?? (lm.basis === 'manual' ? lm.manSpeedMps : null),
   })
+  const lmIdealLabel = lmIdealPassGramLabel(lm3Fit)
   useEffect(() => {
     if (lm3.points.length < 3 || !lm3Fit.ok) return
     setLm((prev) => ({
@@ -964,6 +965,9 @@ export default function App() {
                   {harmF0 !== null && harmProbe !== null && harmProbe >= ctx.view.lo && harmProbe <= ctx.view.hi && (
                     <div className="harm-marker lofar probe" data-testid="harm-probe" style={{ left: freqToX(harmProbe, ctx.view, ctx.width) }}><span>×{(harmProbe / harmF0).toFixed(2)}</span></div>)}
                   {tool === 'lm' && <LloydsOverlay ctx={ctx} st={lm} cpa={cpaGeom} nowS={st.simT} />}
+                  {tool === 'lm' && lmIdealLabel && (
+                    <div className="lm-ideal-badge" data-testid="lm-ideal-pass-label">{lmIdealLabel}</div>
+                  )}
                   {(ruler.placed || dopMode) && <DopplerOverlay ctx={ctx} store={ruler} nowS={st.simT} active={dopMode} locked={locks.dop} onLockTap={() => flipLock('dop')} />}
                 </>) : undefined} />
             )}
