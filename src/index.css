@@ -842,3 +842,6 @@ button, select { font: inherit; color: inherit; }
   background: rgba(0, 0, 0, .62);
   padding: 5px 8px; border-radius: 6px;
 }
+
+/* Play long press (new sim prompt): no iOS callout / text selection while holding. */
+.play-btn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }

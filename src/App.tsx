@@ -12,6 +12,10 @@ import { DifarApplet } from './gram/DifarApplet'
 import { loadWheel, saveWheel } from './gram/wheelSettings'
 import type { DifarWheelSettings } from './gl/colormap'
 import { NewScenario } from './settings/NewScenario'
+import { NewSimDialog } from './settings/NewSimDialog'
+import { canPromptNewSim, freshSeed, newSimStartArgs, type NewSimChoice } from './settings/newSim'
+import { createLongPress } from './ui/longPress'
+import { randomSeed } from './settings/simStart'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
 import {
   emptyLmThreePoint, evaluateLmThreePoint, lmIdealPassGramLabel, lmThreePointText, nextLmPointRole, placeLmPoint,
@@ -203,6 +207,10 @@ export default function App() {
   const [brgArm, setBrgArm] = useState<BearingArm>(ARM_IDLE)
   const [harmProbeOn, setHarmProbeOn] = useState(false)
   const [showNew, setShowNew] = useState(false)
+  // Play long press → "Start a new sim?" (sim keeps running until a choice).
+  const [newSim, setNewSim] = useState<{ current: number; proposed: number } | null>(null)
+  const playLpActs = useRef({ long: () => {}, tap: () => {} })
+  const playLp = useMemo(() => createLongPress(() => playLpActs.current.long(), () => playLpActs.current.tap()), [])
   const [showCmp, setShowCmp] = useState(false)
   const cuts = useMemo(() => new CutController(), [])
   const cutRev = useSyncExternalStore(cuts.subscribe, cuts.getSnapshot)
@@ -1060,9 +1068,33 @@ export default function App() {
   const focusSuffix = listen.userOn
     ? ` · FOCUS ±${Math.round(listen.effectiveHalf)}${listen.shift === 'octave' ? ' ↑' : ''}`
     : null
+  playLpActs.current = {
+    long: () => {
+      if (!st.configs.length || !canPromptNewSim(st)) return
+      try { navigator.vibrate?.(15) } catch { /* no haptics */ }
+      setNewSim({ current: st.seed, proposed: freshSeed(st.seed, randomSeed) })
+    },
+    tap: () => client.setPlaying(!st.playing),
+  }
+  const chooseNewSim = (c: NewSimChoice) => {
+    setNewSim(null)
+    const a = newSimStartArgs(st, c)
+    if (!a) return
+    const wasPlaying = st.playing
+    ruler.clear()
+    client.start(a.seed, a.scenarioId, st.band, a.params)
+    setZuluOriginMs(Date.now())
+    client.setPlaying(wasPlaying)
+  }
   const playBtn = (
-    <button className={`nav-btn glass-btn play-btn${st.playing ? '' : ' primary'}`} onClick={() => client.setPlaying(!st.playing)} disabled={!st.configs.length}
-      aria-label={st.playing ? 'Pause' : 'Play'} data-testid="play-btn">{st.playing ? <IcPause /> : <IcPlay />}</button>
+    <button className={`nav-btn glass-btn play-btn${st.playing ? '' : ' primary'}`} disabled={!st.configs.length}
+      onClick={() => playLp.click()}
+      onPointerDown={(e) => { if (e.button === 0) playLp.pointerDown(); else playLp.otherPointerDown() }}
+      onPointerUp={() => playLp.pointerCancel()} onPointerLeave={() => playLp.pointerCancel()} onPointerCancel={() => playLp.pointerCancel()}
+      onKeyDown={(e) => { if (playLp.keyDown(e.key, e.shiftKey, e.repeat)) e.preventDefault() }} onKeyUp={(e) => playLp.keyUp(e.key)}
+      onContextMenu={(e) => { e.preventDefault(); playLp.contextMenu() }}
+      aria-label={st.playing ? 'Pause' : 'Play'} aria-keyshortcuts="Shift+Enter" aria-haspopup="dialog"
+      title={`${st.playing ? 'Pause' : 'Play'} · hold (or Shift+Enter) for a new sim`} data-testid="play-btn">{st.playing ? <IcPause /> : <IcPlay />}</button>
   )
   const rateSeg = (
     <div className="seg ios-seg rate-seg" role="group" aria-label="Sim rate">
@@ -1081,6 +1113,7 @@ export default function App() {
       data-tabbar={tabMin ? 'min' : 'full'} data-fix-armed={fixStore.armed ? '1' : '0'} data-demon={demonCfgs.length ? '1' : '0'}>
       <GlassDefs />
       <Splash />
+      {newSim && <NewSimDialog currentSeed={newSim.current} proposedSeed={newSim.proposed} onChoose={chooseNewSim} />}
       {showNew && <NewScenario activeRun={st.configs.length > 0} onStartTraining={(id, traffic) => { setShowNew(false); ruler.clear(); client.setSurfaceTraffic(traffic); client.start(7, id, st.band, undefined); client.setPlaying(true) }} onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       {instrumentsVisible && (
         <NavBar title={tab === 'plot' ? 'Plot' : 'DATUM'} sub={phone ? undefined : navSub}
