@@ -1,5 +1,5 @@
 /**
- * iOS-style app chrome: appearance + glass hooks, glass tab bar (with iOS 26-style minimize), navigation bar
+ * iOS-style app chrome: appearance + glass hooks, glass tab bar, navigation bar
  * (large title collapsing to inline), the gram/plot split grabber and the Cuts placeholder screen.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
@@ -77,21 +77,20 @@ export function GlassDefs() {
 const TAB_ICON: Record<Tab, (p: { size?: number }) => ReactNode> = { live: IcLive, cuts: IcCuts, plot: IcPlot, settings: IcGear }
 
 /**
- * Floating glass tab bar capsule. `minimized` (compact widths, while the user works the gram) collapses it to the
- * active tab only, iOS 26 style; tapping the mini capsule expands it again.
+ * Glass tab bar. The selected item is accent-tinted Liquid Glass and stays in the bar —
+ * it does not break out into its own capsule, and the bar does not collapse to the active tab.
  */
-export function TabBar({ tab, onTab, minimized, onExpand, hide = [] }: {
-  tab: Tab; onTab: (t: Tab) => void; minimized: boolean; onExpand: () => void; /** Tabs omitted from the bar (e.g. Plot on phone portrait). */ hide?: readonly Tab[]
+export function TabBar({ tab, onTab, hide = [] }: {
+  tab: Tab; onTab: (t: Tab) => void; /** Tabs omitted from the bar (e.g. Plot on phone portrait). */ hide?: readonly Tab[]
 }) {
   const tabs = TABS.filter((t) => !hide.includes(t))
   return (
-    <nav className={`tabbar glass${minimized ? ' min' : ''}`} role="tablist" aria-label="DATUM" data-testid="tabbar" data-min={minimized ? '1' : '0'}>
+    <nav className="tabbar glass" role="tablist" aria-label="DATUM" data-testid="tabbar" data-min="0">
       {tabs.map((t) => {
         const I = TAB_ICON[t], on = t === tab
         return (
           <button key={t} role="tab" aria-selected={on} aria-label={TAB_LABEL[t]} data-testid={`tab-${t}`} className={on ? 'on' : undefined}
-            tabIndex={minimized && !on ? -1 : 0} aria-hidden={minimized && !on ? true : undefined}
-            onClick={() => { if (minimized) { onExpand(); return } onTab(t) }}>
+            onClick={() => onTab(t)}>
             <I size={24} /><span>{TAB_LABEL[t]}</span>
           </button>
         )

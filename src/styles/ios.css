@@ -168,11 +168,26 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .tabbar button { position: relative; display: grid; justify-items: center; align-content: center; gap: 1px; width: 66px; min-width: 44px; height: 52px; padding: 0;
   border: 0; border-radius: 999px; background: transparent; color: var(--sys-label); cursor: pointer; font: 600 10px/1.1 inherit; letter-spacing: .01em;
   transition: width var(--t) var(--spring), opacity var(--t-fast) ease, color var(--t-fast) ease, background-color var(--t-fast) ease, transform var(--t-fast) var(--spring); }
-.tabbar button.on { color: var(--tint); background: var(--glass-sel); }
+/* Selected tab: accent-tinted glass, in the bar — not a breakout capsule. */
+.tabbar button.on {
+  position: relative; isolation: isolate;
+  color: var(--on-glass-accent, #f2fff4);
+  background: transparent;
+  --glass-tint: var(--glass-accent-tint);
+  --glass-tint-reduced: var(--glass-accent-tint-reduced);
+}
+.tabbar button.on::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(10px) saturate(180%) brightness(1.03);
+  backdrop-filter: blur(10px) saturate(180%) brightness(1.03);
+}
+.tabbar button.on::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 1px 0 var(--glass-rim), inset 0 -1px 0 var(--glass-rim-lo), inset 0 0 0 .5px var(--glass-edge);
+}
+:root[data-glass='reduced'] .tabbar button.on::before { background: var(--glass-tint-reduced); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .tabbar button:active { transform: scale(.94); }
-.tabbar.min button:not(.on) { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
-.tabbar.min button.on { width: 52px; background: transparent; }
-.tabbar.min button.on span { display: none; }
 .layout-phonePortrait .tabbar button { width: 56px; }
 .layout-phonePortrait .tabbar button span { font-size: 10px; }
 .toolbar-glass { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0; height: 60px; padding: 4px; border-radius: 999px; overflow: hidden; }

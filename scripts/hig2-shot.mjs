@@ -1,5 +1,5 @@
 // HIG micro-push 2: taller phone-landscape gram + Hz axis labels never overlap/clip.
-// Also: shoot the normal working dock (tab bar minimized after gram interaction) so the
+// Also: shoot the working dock (tab bar stays full; selected item is accent-tinted) so the
 // tool strip shows at least as many tools as on base 4fc4deb, and assert no toolbar /
 // segmented label is mid-clipped by its container. Port 4200.
 import { spawn } from 'node:child_process'
@@ -87,22 +87,16 @@ try {
       else await page.mouse.click(x, y)
     }
 
-    // Working state: interact with the gram so the tab bar collapses to the single-icon capsule
-    // (same as HIG1). Without this the expanded tabs crush the tool strip on 390 px.
+    // Working state: interact with the gram. The tab bar stays full; the selected item
+    // remains in the bar (no single-icon breakout capsule).
     const g0 = await page.locator('[data-testid=lofar]').boundingBox()
     ok(!!g0, F('gram missing before interact'))
     if (g0) await press(g0.x + g0.width * 0.45, g0.y + g0.height * 0.4)
     await page.waitForTimeout(450)
 
     if (touch || name.includes('iphone')) {
-      // Wait until the dock reports minimized (data-min=1).
-      for (let i = 0; i < 20; i++) {
-        const min = await page.locator('[data-testid=tabbar]').getAttribute('data-min')
-        if (min === '1') break
-        await page.waitForTimeout(100)
-      }
-      ok(await page.locator('[data-testid=tabbar]').getAttribute('data-min') === '1', F('tab bar not minimized after gram tap (working state)'))
-      ok(await page.locator('.app.ios').getAttribute('data-tabbar') === 'min', F('app data-tabbar not min'))
+      ok(await page.locator('[data-testid=tabbar]').getAttribute('data-min') === '0', F('tab bar broke out into a minimized capsule'))
+      ok(await page.locator('.app.ios').getAttribute('data-tabbar') === 'full', F('app data-tabbar not full'))
     }
 
     const m = await page.evaluate(() => {

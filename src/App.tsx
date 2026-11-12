@@ -271,18 +271,6 @@ export default function App() {
   useEffect(() => {
     if (layout !== 'phonePortrait') { setPlotDetent('gram'); setPlotProgress(null) }
   }, [layout])
-  const compact = layout !== 'wide'
-  const [tabMin, setTabMin] = useState(false)
-  const tabMinTimer = useRef(0)
-  const onWorkspaceDown = () => {
-    if (!compact) return
-    setTabMin(true); clearTimeout(tabMinTimer.current)
-  }
-  const onWorkspaceUp = () => {
-    if (!compact) return
-    clearTimeout(tabMinTimer.current); tabMinTimer.current = window.setTimeout(() => setTabMin(false), 4000)
-  }
-  useEffect(() => { if (!compact || tab !== 'live') setTabMin(false) }, [compact, tab])
   useEffect(() => installAudioUnlock(), [])
   const [tool, setTool] = useState<'select' | 'dop' | 'lm' | 'harm' | 'comb'>('select')
   // CURLOCK: session-only locks for HARM / DOP / LM (default scrub lock lives inside Gram).
@@ -1160,7 +1148,7 @@ export default function App() {
   return (
     <div className={`app ios layout-${layout}`} data-layout={layout} data-gram-dir={gramDir} data-tab={tab} data-split={splitAxis}
       data-detent={useDetents ? plotDetent : undefined} data-segments={hinge ? 'hinge' : undefined} data-portrait={portrait ? '1' : '0'}
-      data-tabbar={tabMin ? 'min' : 'full'} data-fix-armed={fixStore.armed ? '1' : '0'} data-demon={demonCfgs.length ? '1' : '0'}>
+      data-tabbar="full" data-fix-armed={fixStore.armed ? '1' : '0'} data-demon={demonCfgs.length ? '1' : '0'}>
       <GlassDefs />
       <Splash />
       {newSim && <NewSimDialog currentSeed={newSim.current} proposedSeed={newSim.proposed} onChoose={chooseNewSim} />}
@@ -1276,7 +1264,7 @@ export default function App() {
           '--detent-ms': `${DETENT_SPRING_MS}ms`,
           ...(segVars ?? {}),
         } as React.CSSProperties}
-        onPointerDownCapture={onWorkspaceDown} onPointerUpCapture={onWorkspaceUp} onPointerCancelCapture={onWorkspaceUp}>
+        >
         <div className="workspace-left stack-gram">
         <section className="panel gram-panel gram-box" data-testid="live-gram-panel" hidden={gramMode === 'demon'} style={gramMode === 'demon' ? { display: 'none' } : undefined}>
           <div className="panel-body">
@@ -1636,7 +1624,7 @@ export default function App() {
 
       <div className="dock" data-testid="dock" data-fix-armed={fixStore.armed ? '1' : '0'}>
         {!(fixStore.armed && (tab === 'live' || tab === 'plot')) && (
-          <TabBar tab={tab} onTab={(t) => { setTab(t) }} minimized={tabMin} onExpand={() => { clearTimeout(tabMinTimer.current); setTabMin(false) }}
+          <TabBar tab={tab} onTab={(t) => { setTab(t) }}
             hide={layout === 'phonePortrait' ? (['plot'] as const) : []} />
         )}
         {fixStore.armed && (tab === 'live' || tab === 'plot') ? (

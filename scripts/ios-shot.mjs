@@ -121,19 +121,16 @@ try {
     if (slug === 'iphone-portrait-dark') {
       // Frame pacing with Liquid Glass on, then the reduced (opaque) fallback.
       perf.push([`${slug} glass full idle`, await rate(page)])
-      // Tab bar minimize: touching the gram collapses it to the active tab; the gram does not resize.
+      // Selected tab stays in the bar (no minimize/breakout capsule) while working the gram.
       const g0 = (await measure(page)).gram
       const gb = await page.locator('[data-testid=lofar]').boundingBox()
       await page.touchscreen.tap(gb.x + gb.width * 0.5, gb.y + gb.height * 0.5); await page.waitForTimeout(300)
-      ok(await page.locator('[data-testid=tabbar]').getAttribute('data-min') === '1', F('tab bar did not minimize while working the gram'))
+      ok(await page.locator('[data-testid=tabbar]').getAttribute('data-min') === '0', F('tab bar broke out into a minimized capsule'))
+      ok(await page.locator('[data-testid=tab-live]').getAttribute('class') === 'on', F('selected Live tab lost its on state'))
+      ok(await page.locator('[data-testid=tab-cuts]').isVisible(), F('Cuts tab hidden after gram interaction'))
       const g1 = (await measure(page)).gram
-      ok(Math.abs(g1.h - g0.h) < 0.5 && Math.abs(g1.w - g0.w) < 0.5, F(`gram resized on minimize (${g0.h} → ${g1.h})`))
-      const tw = await page.locator('[data-testid=gram-tools]').boundingBox()
+      ok(Math.abs(g1.h - g0.h) < 0.5 && Math.abs(g1.w - g0.w) < 0.5, F(`gram resized after gram tap (${g0.h} → ${g1.h})`))
       await page.screenshot({ path: 'docs/m3-ios-iphone-portrait-minimized.png' })
-      await page.locator('[data-testid=tab-live]').tap(); await page.waitForTimeout(300)
-      ok(await page.locator('[data-testid=tabbar]').getAttribute('data-min') === '0', F('tapping the mini tab bar did not expand it'))
-      const tw2 = await page.locator('[data-testid=gram-tools]').boundingBox()
-      ok(tw.width > tw2.width + 80, F(`tool bar did not gain room while minimized (${tw.width} vs ${tw2.width})`))
       // Split grabber: drag down 70 px → gram grows; persisted; clamp at the extremes; double-tap resets.
       const H = page.locator('[data-testid=split-handle]'), hb = await H.boundingBox()
       ok(hb.height >= 20, F('split handle missing'))

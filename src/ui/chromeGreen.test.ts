@@ -1,5 +1,5 @@
 /**
- * Chrome-green: selected Play / tool / buoy use green Liquid Glass tokens;
+ * Chrome-green: selected Play / tool / buoy / tab use green Liquid Glass tokens;
  * CON contrast pins in the toolbar trailing slot; DIFAR wheel is circular;
  * the selected-buoy plot cue stays system blue (--select-blue). Trailing CON forces ToolScroll so Duo widths
  * never mid-clip a tool label (LM → "LN").
@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { TabBar } from './chrome'
 import { ToolsToolbar } from './ToolsToolbar'
 import { DifarWheelButton } from '../gram/DifarLegend'
 
@@ -141,5 +142,25 @@ describe('DIFAR colour-wheel button', () => {
     const html = renderToStaticMarkup(createElement(DifarWheelButton, {}))
     expect(html).toContain('wheel-btn')
     expect(html).toContain('glass')
+  })
+})
+
+describe('tab bar selection', () => {
+  it('tints the selected item with accent Liquid Glass and does not break out into a capsule', () => {
+    expect(ios).toMatch(/\.tabbar button\.on[\s\S]*--glass-tint:\s*var\(--glass-accent-tint\)/)
+    expect(ios).toMatch(/\.tabbar button\.on[\s\S]*color:\s*var\(--on-glass-accent/)
+    expect(ios).not.toMatch(/\.tabbar\.min button/)
+    expect(ios).not.toMatch(/\.tabbar button\.on \{ color: var\(--tint\); background: var\(--glass-sel\);/)
+    expect(appSrc).not.toMatch(/tabMin|setTabMin/)
+    const html = renderToStaticMarkup(createElement(TabBar, { tab: 'live', onTab() {} }))
+    expect(html).toContain('data-testid="tabbar"')
+    expect(html).toContain('data-min="0"')
+    expect(html).not.toMatch(/class="[^"]*\bmin\b/)
+    expect(html).toContain('data-testid="tab-live"')
+    expect(html).toContain('data-testid="tab-plot"')
+    expect(html).toContain('data-testid="tab-cuts"')
+    expect(html).toContain('data-testid="tab-settings"')
+    expect(html).toMatch(/data-testid="tab-live"[^>]*class="on"/)
+    expect(html).not.toMatch(/role="tab"[^>]*aria-hidden="true"/)
   })
 })
