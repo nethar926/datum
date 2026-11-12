@@ -388,7 +388,9 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       // AIS: generic fictional surface tracks (name only on the plot; course/speed on the card).
       const aisOn = aisEffective(props.current.showAis, props.current.difficulty)
       if (aisOn && t.truth) {
-        const ships = aisContacts(t.truth.contacts, true, props.current.difficulty)
+        const ships = t.aisTracks?.length
+          ? t.aisTracks.map((a) => ({ id: a.id, label: a.name, sourceId: a.id, x: a.x, y: a.y, crsDeg: a.crsDeg, spdMps: a.spdMps, category: 'surface' as const, active: true }))
+          : aisContacts(t.truth.contacts, true, props.current.difficulty)
         ctx.strokeStyle = C.ais; ctx.fillStyle = C.ais; ctx.lineWidth = 1.25 * dpr
         ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
         for (const c of ships) {

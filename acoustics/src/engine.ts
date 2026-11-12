@@ -26,11 +26,15 @@ export const MAX_RF_CHANNELS=32;
 export interface BuoyRow { id:string; rfChannel:number; depth:number; type:ReceiverType; alive:boolean; bearing:number|null; row:Float32Array }
 /** Deterministic mutable simulation; construction owns a JSON-safe copy. step has no allocations.
  * Callers may replace each result.row with an appropriately sized recycled buffer before step. */
+export type AisTrack = { id: string; name: string; x: number; y: number; crsDeg: number; spdMps: number }
+
 export class AcousticEngine {
   readonly scenario:Scenario;readonly rows:BuoyRow[];readonly generators:LofarGenerator[];
   private readonly lineWanders:LineWander[]=[];
   private readonly truthState:{contacts:TruthContact[]};
   private readonly allContacts:Contact[];
+  private readonly aisStarts:{x:number;y:number;depth:number;course:number;speed:number}[];
+  private readonly aisStartTime:number;
   /** Engine-wide source-state history shared by every RES stream. */
   readonly history:StateHistory;private historyOn=false;
   private readonly baseContacts:Contact[];
@@ -78,6 +82,8 @@ export class AcousticEngine {
     this.rows=s.buoys.map((b,i)=>({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:this.generators[i].row}));
     s.classificationTargets??=this.baseContacts.filter(c=>c.category!=='surface'&&c.classificationTarget!==false).map(c=>c.id);this.syncTacticalBuoys();
     this.history=new StateHistory(this.allContacts);invalidateSpanCache();
+    this.aisStartTime=s.time;
+    this.aisStarts=this.allContacts.map(c=>({x:c.x,y:c.y,depth:c.depth,course:c.course,speed:c.speed}));
   }
   /** Acoustics-side retained bytes for RES streams: shared state history + shared render scratch +
    * each RES generator's own tables/rows/AR state. Excludes FE-held row history. */
@@ -373,5 +379,32 @@ export class AcousticEngine {
   step(dt:number):readonly BuoyRow[]{
     for(const r of this.rows)if(r.row.length!==this.scenario.bins)throw new Error('Missing row buffer');
     this.advance(dt);for(let i=0;i<this.rows.length;i++){const r=this.rows[i];if(r.alive){this.generators[i].generate(r.row);r.bearing=r.type==='difar'?this.generators[i].bearing:null;}else r.row.fill(NaN);}return this.rows;
+  }
+  /** Degrees true in [0, 360). Matches Swift SimEngine.degreesTrue / LiveEngine. */
+  static degreesTrue(rad:number):number{let d=rad*180/Math.PI;d=d%360;if(d<0)d+=360;return d;}
+  private aisPose(t:number,i:number):{x:number;y:number;depth:number;course:number;speed:number}{
+    const s=this.aisStarts[i]!,c=this.allContacts[i]!;
+    let x=s.x,y=s.y,depth=s.depth,course=s.course,speed=s.speed,tt=this.aisStartTime;
+    const move=(dt:number)=>{x+=Math.sin(course)*speed*dt;y+=Math.cos(course)*speed*dt;};
+    for(const leg of c.motion??[])if(leg.at>this.aisStartTime&&leg.at<=t){move(leg.at-tt);course=leg.course;speed=leg.speed;depth=leg.depth;tt=leg.at;}
+    move(t-tt);return {x,y,depth,course,speed};
+  }
+  /** Surface-only AIS feed at `atSimTime`. Plot coordinates match Reveal. Fictional deterministic
+   * names. Inactive pool ships, subsurface contacts, and classification targets are omitted.
+   * Read-only: does not step or mutate the engine. Duplicate ids are returned once. */
+  aisTracks(atSimTime:number=this.time):AisTrack[]{
+    if(!Number.isFinite(atSimTime))throw new Error('Invalid AIS time');
+    const seen=new Set<string>(),out:AisTrack[]=[];
+    for(let i=0;i<this.allContacts.length;i++){
+      const c=this.allContacts[i]!;
+      if(c.category!=='surface'||c.active===false||c.classificationTarget===true)continue;
+      if(seen.has(c.id))continue;seen.add(c.id);
+      let x:number,y:number,crs:number,spd:number;
+      if(atSimTime===this.time){x=c.x;y=c.y;crs=c.course;spd=c.speed;}
+      else{const p=this.aisPose(atSimTime,i);x=p.x;y=p.y;crs=p.course;spd=p.speed;}
+      const name=(c.params.label??'').trim();
+      out.push({id:c.id,name:name||c.id,x,y,crsDeg:AcousticEngine.degreesTrue(crs),spdMps:spd});
+    }
+    return out;
   }
 }

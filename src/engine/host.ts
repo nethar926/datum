@@ -37,6 +37,11 @@ type EngineSetGram = (id: number, p: { res?: number; filter?: 'NB' | 'BB'; verni
 const toConfig = (c: GramConfig & { simT?: number }): GramConfig => { const { simT: _t, ...rest } = c; return { ...rest, type: 'gramConfig', v: 1 } }
 const rad2deg = (r: number) => ((((r * 180) / Math.PI) % 360) + 360) % 360
 
+/** One-line swap onto AcousticEngine.aisTracks: surface-only, fictional names, coords match Reveal. */
+export function plotContactSource(engine: AcousticEngine): NonNullable<Tactical['aisTracks']> {
+  return engine.aisTracks(engine.time)
+}
+
 /**
  * One LOFAR stream per buoy, all alike. 'legacy' = the engine's registered pull streams (always a row);
  * 'res' = m3-res zoom-FFT subscriptions (rows every P s, phase-staggered); 'band' = m3-bands analytic
@@ -759,7 +764,7 @@ export class SimHost {
     // m3-lines engines publish full truth (propulsion, TPK, propulsor, speed-gated lines); use it as is.
     // The engine reuses those records, and postMessage clones them, so this allocates nothing per step.
     const et = (engine as unknown as { tactical?: () => { truth?: { contacts: TruthContact[] } } }).tactical?.().truth
-    if (et?.contacts) { t.truth = et; return }
+    if (et?.contacts) { t.truth = et; t.aisTracks = plotContactSource(engine); return }
     // Contacts can be added/removed at runtime (v1.1 surface traffic); resync the truth list when the count changes.
     if (t.truth!.contacts.length !== s.contacts.length)
       t.truth!.contacts = s.contacts.map((c, i) => ({ id: i + 1, label: c.params?.label ?? `C${i + 1}`, x: c.x, y: c.y, crsDeg: 0, spdMps: 0 }))
@@ -768,5 +773,6 @@ export class SimHost {
       const c = s.contacts[i], tc = contacts[i]
       tc.x = c.x; tc.y = c.y; tc.crsDeg = rad2deg(c.course); tc.spdMps = c.speed
     }
+    t.aisTracks = plotContactSource(engine)
   }
 }
