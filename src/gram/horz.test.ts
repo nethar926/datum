@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { formatZuluHms, isReviewing } from '../touch/scrollBack'
 import { formatZuluSec } from './timeAxis'
-import { horzAtPointer, horzZulu, liveReadout, readoutHz } from './horz'
+import { horzAtPointer, horzSimS, horzZulu, liveReadout, newestRowSimS, readoutHz } from './horz'
 
 describe('HORZ time label', () => {
   const origin = Date.UTC(1970, 0, 1, 13, 5, 9)
@@ -77,4 +77,33 @@ describe('pointer: mouse hover, mouse drag, and touch drag share the same rules'
     expect(move.fingerHz).toBeCloseTo(hzAtX(80, 400))
     expect(move.cursorHz).toBe(move.fingerHz)
   })
+})
+
+describe('HORZ time matches the row sim time at RES 1 and RES 5', () => {
+  const origin = Date.UTC(1970, 0, 1, 13, 0, 0)
+  const cases = [
+    { res: 1, period: 8, k: 2, newest: 48, simTime: 48 + 1.5 },
+    { res: 5, period: 2, k: 3, newest: 48, simTime: 48 + 1.5 },
+  ]
+  for (const c of cases) {
+    it(`RES ${c.res}: label on row ${c.k} back equals that row's sim time`, () => {
+      const ageS = c.k * c.period
+      const expectedT = c.newest - c.k * c.period
+      // Without rowPhaseS: row clock is newestRowSimT − k·P, not live simTime − k·P.
+      const actualT = horzSimS({ ageS, periodS: c.period, newestRowSimT: c.newest, simTime: c.simTime })
+      expect(actualT).toBeCloseTo(expectedT, 9)
+      expect(horzZulu(actualT, origin, 1)).toBe(horzZulu(expectedT, origin, 1))
+      // The previous nowS − ago path is the mismatch this pins (RES 1: 41.5 vs 32).
+      expect(c.simTime - ageS).not.toBeCloseTo(expectedT, 9)
+
+      const phase = 0.5
+      const simTime = c.newest + phase + 1.25
+      const newestPhased = newestRowSimS({ periodS: c.period, rowPhaseS: phase, newestRowSimT: 0, simTime })
+      expect(newestPhased).toBeCloseTo(c.newest + phase, 9)
+      const expectedPhased = newestPhased - c.k * c.period
+      const actualPhased = horzSimS({ ageS, periodS: c.period, rowPhaseS: phase, newestRowSimT: 99, simTime })
+      expect(actualPhased).toBeCloseTo(expectedPhased, 9)
+      expect(horzZulu(actualPhased, origin, 1)).toBe(horzZulu(expectedPhased, origin, 1))
+    })
+  }
 })

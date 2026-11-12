@@ -1,6 +1,34 @@
 import { formatZuluHms, isReviewing } from '../touch/scrollBack'
 import { formatZuluSec } from './timeAxis'
 
+/** Sim time of the newest completed row.
+ *  Uses the engine's `rowPhaseS` when it reports one (`t = n·P + phase`).
+ *  Otherwise the row clock: `newestRowSimT`, falling back to `simTime`. */
+export function newestRowSimS(opts: {
+  periodS: number
+  rowPhaseS?: number | null
+  newestRowSimT?: number | null
+  simTime: number
+}): number {
+  const { periodS, rowPhaseS, newestRowSimT, simTime } = opts
+  if (rowPhaseS != null && Number.isFinite(rowPhaseS) && periodS > 1e-12) {
+    const n = Math.floor((simTime - rowPhaseS) / periodS + 1e-9)
+    return n * periodS + rowPhaseS
+  }
+  return newestRowSimT ?? simTime
+}
+
+/** Sim time of the HORZ line sitting `ageS` behind the newest row (row k when ageS = k·P). */
+export function horzSimS(opts: {
+  ageS: number
+  periodS: number
+  rowPhaseS?: number | null
+  newestRowSimT?: number | null
+  simTime: number
+}): number {
+  return newestRowSimS(opts) - opts.ageS
+}
+
 /** HORZ line reads time. Live: `HHmmssZ`. Scroll-back: `HH:MM:SSz`. */
 export function horzZulu(simS: number, originMs: number, scrollBackS: number): string {
   return isReviewing(scrollBackS) ? formatZuluHms(simS, originMs) : formatZuluSec(simS, originMs)

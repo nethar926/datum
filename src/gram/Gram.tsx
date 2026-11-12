@@ -20,7 +20,7 @@ import { holdAfterThreeFingerSwipe, isCursorFrozen, nextHoldOnTap, showLockIcon,
 import { IcLock } from '../ui/icons'
 import { agoFromY, formatZulu, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
 import { AXIS_Y_EDGE_CLAMP_PX } from './lockVsTimeAxis'
-import { horzAtPointer, horzZulu, liveReadout, readoutHz } from './horz'
+import { horzAtPointer, horzSimS, horzZulu, liveReadout, readoutHz } from './horz'
 import { rowRateHz } from './rowPeriod'
 import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
@@ -628,7 +628,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
 
   const selLabelText = selectedHz !== null ? selectedHz.toFixed(fBin < 0.1 ? 2 : 1) : ''
   const liveHz = readoutHz(fingerHz, cursor)
-  const horzZuluText = horz && hoverAgo !== null ? horzZulu(nowS - hoverAgo, zuluOrigin, scrollBackS) : null
+  const horzTime = (ago: number) => horzSimS({ ageS: ago, periodS: 1 / rowRate, rowPhaseS: cfg?.rowPhaseS, simTime: nowS })
+  const horzZuluText = horz && hoverAgo !== null ? horzZulu(horzTime(hoverAgo), zuluOrigin, scrollBackS) : null
   const liveText = liveReadout({
     hz: liveHz, fBin, f0: cfg?.f0 ?? 0, unit, horzZulu: horzZuluText,
     crosshair: !!cross, db: cross && Number.isFinite(cross.db) ? cross.db : (cross ? null : undefined),
@@ -716,7 +717,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS, dir })}</div>}
       {horz && hoverAgo !== null && (
         <div className="horz-layer" aria-hidden data-testid={`${testId}-horz`} style={{ top: `calc((100% - 44px) * ${(pctFromAgo(hoverAgo, historyS, dir) / 100).toFixed(5)})` }}>
-          <i className="horz-line" /><span className="horz-zulu" data-testid={`${testId}-horz-zulu`}>{horzZulu(nowS - hoverAgo, zuluOrigin, scrollBackS)}</span>
+          <i className="horz-line" /><span className="horz-zulu" data-testid={`${testId}-horz-zulu`}>{horzZulu(horzTime(hoverAgo), zuluOrigin, scrollBackS)}</span>
         </div>
       )}
       {cross && (
