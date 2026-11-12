@@ -21,7 +21,8 @@ import { IcLock } from '../ui/icons'
 import { agoFromY, formatZulu, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
 import { AXIS_Y_EDGE_CLAMP_PX } from './lockVsTimeAxis'
 import { horzAtPointer, horzSimS, horzZulu, liveReadout, readoutHz } from './horz'
-import { rowRateHz } from './rowPeriod'
+import { AliStripView } from './AliStrip'
+import { rowPeriodS, rowRateHz } from './rowPeriod'
 import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
 
@@ -42,6 +43,8 @@ interface Props {
    * (not a crosshair mode, not a bearing fix).
    */
   horz?: boolean; nowS?: number
+  /** ALI: Automatic Line Integration strip at the newest-data edge (LOFAR only). */
+  ali?: boolean
   auto?: boolean; normalized?: boolean; palette?: PaletteId
   /**
    * When set, each incoming row is copied through this into scratch and pushed to the raw ring
@@ -99,7 +102,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, rowSamplerRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap, paused = false, scrollBackS = 0, onScrollBack, onReturnToLive, preprocessRow, normKey = '' }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, ali = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, rowSamplerRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap, paused = false, scrollBackS = 0, onScrollBack, onReturnToLive, preprocessRow, normKey = '' }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -720,6 +723,26 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           <i className="horz-line" /><span className="horz-zulu" data-testid={`${testId}-horz-zulu`}>{horzZulu(horzTime(hoverAgo), zuluOrigin, scrollBackS)}</span>
         </div>
       )}
+      {ali && mode !== 'demon' && cfg && histRef.current && (() => {
+        const band = normalized
+          ? contrastRange(NORM_FLOOR_DB, NORM_CEIL_DB, contrast)
+          : contrastRange(cfg.dbFloor ?? 40, cfg.dbCeil ?? 110, contrast)
+        return (
+          <AliStripView
+            hist={histRef.current!}
+            periodS={rowPeriodS(cfg, undefined, 0.5)}
+            dir={dir ?? 'bottom'}
+            palette={palette}
+            floor={band.dbFloor}
+            ceil={band.dbCeil}
+            f0={cfg.f0 ?? 0}
+            fBin={cfg.fBin ?? 1}
+            fLo={view.lo}
+            fHi={view.hi}
+            testId={`${testId}-ali`}
+          />
+        )
+      })()}
       {cross && (
         <div className="gram-layer cross-layer" style={{ width }} aria-hidden>
           <div className="cross-h" style={{ top: `${pctFromAgo(cross.agoS, historyS, dir)}%` }} />

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  HORZ_KEY, SPLIT_DEFAULT_V, SPLIT_KEY_V, SPLIT_MIN_GRAM_PX, SPLIT_MIN_PLOT_PX, clampSplit, loadHorz, loadSplit,
-  parseGlass, parseScheme, parseTab, resolveGlass, resolveScheme, saveHorz, saveSplit,
+  ALI_KEY, HORZ_KEY, SPLIT_DEFAULT_V, SPLIT_KEY_V, SPLIT_MIN_GRAM_PX, SPLIT_MIN_PLOT_PX, clampSplit, loadAli, loadHorz, loadSplit,
+  parseGlass, parseScheme, parseTab, resolveGlass, resolveScheme, saveAli, saveHorz, saveSplit,
 } from './prefs'
 
 // Minimal localStorage for the node test environment.
@@ -62,6 +62,22 @@ describe('HORZ toggle persistence', () => {
     ;(globalThis as { localStorage?: unknown }).localStorage = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
     expect(loadHorz()).toBe(false)
     expect(() => saveHorz(true)).not.toThrow()
+  })
+})
+
+describe('ALI toggle persistence', () => {
+  it('is off by default', () => {
+    expect(loadAli()).toBe(false)
+  })
+  it('round-trips on and off through localStorage', () => {
+    saveAli(true); expect(mem.get(ALI_KEY)).toBe('1'); expect(loadAli()).toBe(true)
+    saveAli(false); expect(mem.get(ALI_KEY)).toBe('0'); expect(loadAli()).toBe(false)
+  })
+  it('treats anything but "1" as off and survives a throwing storage', () => {
+    mem.set(ALI_KEY, 'true'); expect(loadAli()).toBe(false)
+    ;(globalThis as { localStorage?: unknown }).localStorage = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
+    expect(loadAli()).toBe(false)
+    expect(() => saveAli(true)).not.toThrow()
   })
 })
 

@@ -34,6 +34,8 @@ export const IcHarm = (p: P) => <S {...p}><path d="M5 5v14M10 5v14M15 5v14M20 5v
 /** COMB: centre line with symmetric sideband ticks. */
 export const IcComb = (p: P) => <S {...p}><path d="M12 3v18" /><path d="M7 6v12M17 6v12" strokeDasharray="2 1.5" opacity=".85" /><path d="M4 9v6M20 9v6" strokeDasharray="1.5 1.5" opacity=".55" /></S>
 export const IcHorz = (p: P) => <S {...p}><path d="M3 12h18" /><path d="M12 4.5v4M12 15.5v4" opacity=".55" /><circle cx="12" cy="12" r="2" /></S>
+/** ALI: a thin integrated strip at the newest-data edge of a waterfall. */
+export const IcAli = (p: P) => <S {...p}><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><path d="M5 9.5h14" strokeWidth={2.4} /><path d="M5 14h14" opacity=".45" /></S>
 export const IcLm = (p: P) => <S {...p}><path d="M4 5c3 2.5 3 11.5 0 14M9 5c2.4 2.5 2.4 11.5 0 14M14 5c1.8 2.5 1.8 11.5 0 14M19 5c1.2 2.5 1.2 11.5 0 14" /></S>
 export const IcBrg = (p: P) => <S {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 12l4.5-6.5" /><path d="M12 3.5v1.6M20.5 12h-1.6M12 20.5v-1.6M3.5 12h1.6" opacity=".6" /><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" /></S>
 /** FIX: crossed bearings with a fix mark. */

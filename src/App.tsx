@@ -72,11 +72,11 @@ import {
   availabilityMap, clearToolArm, emptyToolArm, FIX_DISABLED_REASON,
   type ToolArmState,
 } from './cuts/cutTools'
-import { IcBrg, IcChevron, IcComb, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcLock, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
+import { IcAli, IcBrg, IcChevron, IcComb, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcLock, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
 import { Splash } from './ui/Splash'
 import { hardReloadApp } from './ui/appReload'
 import { useStandalone, useUpdateAvailable } from './ui/useAppUpdate'
-import { SPLIT_DEFAULT_H, SPLIT_KEY_H, loadHorz, loadSplit, parseTab, saveHorz, type Tab } from './ui/prefs'
+import { SPLIT_DEFAULT_H, SPLIT_KEY_H, loadAli, loadHorz, loadSplit, parseTab, saveAli, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
 import { useListen } from './audio/useListen'
 import { FOCUS_HALF_WIDTHS } from './audio/focus'
@@ -298,6 +298,9 @@ export default function App() {
   // HORZ: horizontal hairline on the default gram cursor (off by default, persisted).
   const [horzOn, setHorzOn] = useState<boolean>(loadHorz)
   useEffect(() => saveHorz(horzOn), [horzOn])
+  // ALI: Automatic Line Integration strip (off by default, persisted). LOFAR only.
+  const [aliOn, setAliOn] = useState<boolean>(loadAli)
+  useEffect(() => saveAli(aliOn), [aliOn])
   const [harmF0, setHarmF0] = useState<number | null>(null)
   const [harmK, setHarmK] = useState<number | null>(null)
   const [harmFam, setHarmFam] = useState<string | null>(null)
@@ -937,6 +940,8 @@ export default function App() {
       <button className="tool" aria-pressed={tool === 'lm'} aria-label="LM" onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)"><IcLm /><span>LM</span></button>
       <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
         title="HORZ: the line reads time (Zulu). The Hz readout is the finger's x position."><IcHorz /><span>HORZ</span></button>
+      <button className="tool" aria-pressed={aliOn} aria-label="ALI" data-testid="ali-tool" onClick={() => setAliOn(!aliOn)}
+        title="ALI: Automatic Line Integration. A 30 second LOFAR strip at the newest-data edge."><IcAli /><span>ALI</span></button>
     </ToolsToolbar>
   )
   // CUTTOOLS: availability matrix + Cuts toolbar (same ToolsToolbar; FIX disabled with reason).
@@ -1264,7 +1269,7 @@ export default function App() {
                 dragLocked={(tool === 'harm' && locks.harm) || (tool === 'comb' && locks.comb) || (tool === 'lm' && locks.lm)}
                 dragLockable={(tool === 'harm' && harmF0 !== null) || (tool === 'comb' && combCentreHz !== null) || tool === 'lm'}
                 onDragLockTap={() => flipLock(tool === 'lm' ? 'lm' : tool === 'comb' ? 'comb' : 'harm')}
-                horz={horzOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
+                horz={horzOn} ali={aliOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
                 paused={!st.playing} scrollBackS={scrollBackS} onScrollBack={setScrollBackS}
                 onReturnToLive={() => setScrollBackS(returnToLive())}
                 overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null || combCentreHz !== null ? (ctx) => (<>
@@ -1536,6 +1541,8 @@ export default function App() {
                 </div></div>
               <label className="ios-row"><span className="row-label">HORZ cursor line<small>The HORZ line reads time (Zulu). The Hz readout is the finger's x position.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="horz-switch" checked={horzOn} onChange={(e) => setHorzOn(e.target.checked)} /></label>
+              <label className="ios-row"><span className="row-label">ALI strip<small>Automatic Line Integration: a 30 second LOFAR strip at the newest-data edge.</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="ali-switch" checked={aliOn} onChange={(e) => setAliOn(e.target.checked)} /></label>
               <div className="ios-row"><span className="row-label">LOFAR colour</span>
                 <div className="seg ios-seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
                   {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)} title={gramMode === 'difar' ? 'LOFAR colour (DIFAR uses the bearing wheel)' : `LOFAR amplitude in ${PALETTE_LABEL[id].toLowerCase()}`}>{PALETTE_LABEL[id]}</button>)}

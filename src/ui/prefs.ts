@@ -42,6 +42,16 @@ export function saveHorz(on: boolean): void {
   try { localStorage.setItem(HORZ_KEY, on ? '1' : '0') } catch { /* private mode */ }
 }
 
+// ---------- ALI: Automatic Line Integration strip at the newest-data edge ----------
+export const ALI_KEY = 'datum.ali'
+/** Off by default. */
+export function loadAli(): boolean {
+  try { return localStorage.getItem(ALI_KEY) === '1' } catch { return false }
+}
+export function saveAli(on: boolean): void {
+  try { localStorage.setItem(ALI_KEY, on ? '1' : '0') } catch { /* private mode */ }
+}
+
 // ---------- Appearance ----------
 export const SCHEME_KEY = 'datum.scheme'
 export type SchemePref = 'system' | 'light' | 'dark'
