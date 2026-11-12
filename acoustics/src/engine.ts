@@ -36,7 +36,7 @@ export type EngineOptions = {
 }
 export class AcousticEngine {
   readonly scenario:Scenario;readonly rows:BuoyRow[];readonly generators:LofarGenerator[];
-  readonly buoyStartMode:BuoyStartMode;
+  readonly buoyStartMode:BuoyStartMode='placed';
   readonly deployAltitudeM:number;readonly deployDescentRateMps:number;readonly deployIntegrationTimeS:number;
 
   private readonly lineWanders:LineWander[]=[];
@@ -71,7 +71,7 @@ export class AcousticEngine {
     this.deployAltitudeM=s.dropAltitudeM??options.dropAltitudeM??DEFAULT_DROP_ALTITUDE_M;
     this.deployDescentRateMps=s.descentRateMps??options.descentRateMps??DEFAULT_DESCENT_RATE_MPS;
     this.deployIntegrationTimeS=s.integrationTimeS??options.integrationTimeS??DEFAULT_INTEGRATION_TIME_S;
-    (this as {buoyStartMode:BuoyStartMode}).buoyStartMode=options.buoyStartMode??s.buoyStartMode??'placed';
+    this.buoyStartMode=options.buoyStartMode??s.buoyStartMode??'placed';
     const autoDrop=!!(options.autoDropPattern??s.autoDropPattern)&&this.buoyStartMode==='unplaced';
     const pattern=s.buoys.slice();
     if(this.buoyStartMode==='unplaced'){
