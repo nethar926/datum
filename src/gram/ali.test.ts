@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ALI_WINDOW_S, aliAvailable, aliEdgeIsTop, aliLabel, aliRowCount, aliSpanS,
+  ALI_CHART_PX, ALI_WINDOW_S, aliAvailable, aliAvoidsCrease, aliBarHeight, aliBars,
+  aliChartFrame, aliHzAt, aliLabel, aliPeakBins, aliRouteSend, aliRowCount, aliSnap, aliSpanS,
   integrateAli, integrateFromHistory,
+  type AliEngineSource,
 } from './ali'
 import { LevelHistory } from './levelHistory'
 
@@ -40,9 +42,62 @@ describe('ALI Automatic Line Integration', () => {
     expect(integrateAli([[20], [40]], RES5_HZ)[0]).toBeCloseTo(10 * Math.log10((10 ** 2 + 10 ** 4) / 2), 5)
   })
 
-  it('sits at the newest-data edge: top when cascading downward, bottom when upward', () => {
-    expect(aliEdgeIsTop(false)).toBe(true)  // newest at top (downward cascade)
-    expect(aliEdgeIsTop(true)).toBe(false) // newest at bottom (app default)
+  it('sits under the gram, above the frequency axis', () => {
+    const gram = { x: 0, y: 0, width: 400, height: 600 }
+    const frame = aliChartFrame(gram, 44)
+    expect(frame).not.toBeNull()
+    expect(frame!.height).toBe(ALI_CHART_PX)
+    expect(frame!.width).toBe(400)
+    expect(frame!.y + frame!.height).toBe(600 - 44)
+    expect(ALI_CHART_PX).toBe(56)
+  })
+
+  it('never overlaps the Duo hinge crease', () => {
+    const gram = { x: 0, y: 0, width: 400, height: 600 }
+    const vCrease = { x: 390, y: 0, width: 20, height: 600 }
+    const v = aliChartFrame(gram, 44, vCrease)!
+    expect(aliAvoidsCrease(v, vCrease)).toBe(true)
+    expect(v.x + v.width).toBeLessThanOrEqual(vCrease.x)
+    const hCrease = { x: 0, y: 540, width: 400, height: 20 }
+    const h = aliChartFrame(gram, 44, hCrease)!
+    expect(aliAvoidsCrease(h, hCrease)).toBe(true)
+    expect(h.y + h.height).toBeLessThanOrEqual(hCrease.y)
+  })
+
+  it('draws taller bars for greater amplitude and marks local-maxima as peaks', () => {
+    expect(aliBarHeight(40, 0, 40)).toBe(1)
+    expect(aliBarHeight(10, 0, 40)).toBe(0.25)
+    const row = [10, 40, 10, 20]
+    const bars = aliBars(row, null, { f0: 0, fBin: 10, fLo: 0, fHi: 40, floor: 0, ceil: 40 })
+    expect(bars.map((b) => b.height)).toEqual([0.25, 1, 0.25, 0.5])
+    expect(bars[0].height).toBeLessThan(bars[1].height)
+    expect(aliPeakBins(row)).toEqual([1])
+    expect(bars[1].isPeak).toBe(true)
+    expect(bars[0].isPeak).toBe(false)
+    expect(aliHzAt(50, 100, 0, 200)).toBe(100)
+    expect(aliSnap(12, bars, 5)).toBe(10)
+  })
+
+  it('prefers Sonya per-bearing amplitude and stubs send through the manual path', () => {
+    const row = [10, 20, 30]
+    const amps = [{ bearingDeg: 47, freqHz: 100, db: 30 }]
+    const bars = aliBars(row, amps, { f0: 0, fBin: 10, fLo: 0, fHi: 200, floor: 0, ceil: 40 })
+    expect(bars).toHaveLength(1)
+    expect(bars[0].hz).toBe(100)
+    expect(bars[0].bearingDeg).toBe(47)
+    expect(bars[0].height).toBe(aliBarHeight(30, 0, 40))
+    expect(aliBars(row, null, { f0: 0, fBin: 10, fLo: 0, fHi: 40, floor: 0, ceil: 40 })).toHaveLength(3)
+
+    const sent: number[] = []
+    const engine: AliEngineSource = {
+      aliBearingAmplitudes: () => amps,
+      sendBearingFromPeak(hz) { sent.push(hz); return true },
+    }
+    expect(aliRouteSend(80, engine)).toBe('engine')
+    expect(sent).toEqual([80])
+    engine.sendBearingFromPeak = (hz) => { sent.push(hz); return false }
+    expect(aliRouteSend(90, engine)).toBe('manual')
+    expect(aliRouteSend(1, null)).toBe('manual')
   })
 
   it('is available on LOFAR only', () => {

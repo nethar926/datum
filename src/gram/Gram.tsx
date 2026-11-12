@@ -22,6 +22,7 @@ import { agoFromY, formatZulu, newestAtBottom, pctFromAgo, timeTickAges, type Gr
 import { AXIS_Y_EDGE_CLAMP_PX } from './lockVsTimeAxis'
 import { horzAtPointer, horzSimS, horzZulu, liveReadout, readoutHz } from './horz'
 import { AliStripView } from './AliStrip'
+import { ALI_CHART_PX, type AliBearingAmp } from './ali'
 import { rowRateHz } from './rowPeriod'
 import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
@@ -43,8 +44,12 @@ interface Props {
    * (not a crosshair mode, not a bearing fix).
    */
   horz?: boolean; nowS?: number
-  /** ALI: Automatic Line Integration strip at the newest-data edge (LOFAR only). */
+  /** ALI: Automatic Line Integration amplitude bar chart under the gram (LOFAR only). */
   ali?: boolean
+  /** Send a bearing from a selected ALI bar or peak; stub through the manual bearing path. */
+  onAliSend?: (hz: number) => void
+  /** Sonya's per-bearing amplitude seam. */
+  aliBearingAmps?: AliBearingAmp[] | null
   auto?: boolean; normalized?: boolean; palette?: PaletteId
   /**
    * When set, each incoming row is copied through this into scratch and pushed to the raw ring
@@ -102,7 +107,7 @@ const AUTO_BELOW_DB = 4, AUTO_SPAN_DB = 32
  * Accepts gramRows for its own streams only (matched by streamId), so several panes can share one client.
  */
 export function Gram({ client, configs, streamIndex, view, onView, auto = true, normalized = true, palette = 'green', contrast = 1, wheel, selectedHz = null, onSelectHz, mode = 'lofar', tactical,
-  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, ali = false, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, rowSamplerRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap, paused = false, scrollBackS = 0, onScrollBack, onReturnToLive, preprocessRow, normKey = '' }: Props) {
+  label = 'LOFAR waterfall', testId = 'lofar', historyRows = 600, unit = 'Hz', overlay, onPickPoint, onDragPoint, horz = false, ali = false, onAliSend, aliBearingAmps, nowS = 0, handoff, onCenterFreq, onCursorHz, cursorSuffix = null, bearingAtRef, rowSamplerRef, dir = DEFAULT_GRAM_DIR, zuluOriginMs, dragLocked = false, dragLockable = false, onDragLockTap, paused = false, scrollBackS = 0, onScrollBack, onReturnToLive, preprocessRow, normKey = '' }: Props) {
   const HISTORY_ROWS = historyRows
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<WaterfallRenderer | null>(null)
@@ -699,7 +704,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const crossText = liveText ?? ''
 
   return (
-    <div className="gram" ref={gramBoxRef} data-testid={`${testId}-frame`} data-dir={dir} data-cursor-hold={cursorHold} data-cursor-locked={cursorLocked ? '1' : '0'} data-drag-locked={dragLocked ? '1' : '0'} data-drag-lockable={dragLockable ? '1' : '0'} data-paused={paused ? '1' : '0'} data-reviewing={isReviewing(scrollBackS) ? '1' : '0'}>
+    <div className="gram" ref={gramBoxRef} data-testid={`${testId}-frame`} data-dir={dir} data-cursor-hold={cursorHold} data-cursor-locked={cursorLocked ? '1' : '0'} data-drag-locked={dragLocked ? '1' : '0'} data-drag-lockable={dragLockable ? '1' : '0'} data-paused={paused ? '1' : '0'} data-reviewing={isReviewing(scrollBackS) ? '1' : '0'} data-ali={ali && mode !== 'demon' ? '1' : '0'}>
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas key={glGen} ref={canvasRef} data-testid={testId} onWheel={onWheel}
           onPointerDown={onPDown} onPointerMove={onPMove} onPointerUp={(e) => onPUp(e)} onPointerCancel={(e) => onPUp(e, true)}
@@ -746,7 +751,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           </span>
         ))}
       </div>
-      <div />
+      <div className="gram-corner" />
       {selPlace && (
         <div className="sel-marker" data-testid={`${testId}-sel-marker`} style={{ left: selPlace.markerX }} aria-hidden>
           <span
@@ -760,7 +765,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       )}
       {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS, dir })}</div>}
       {horz && hoverAgo !== null && (
-        <div className="horz-layer" aria-hidden data-testid={`${testId}-horz`} style={{ top: `calc((100% - 44px) * ${(pctFromAgo(hoverAgo, historyS, dir) / 100).toFixed(5)})` }}>
+        <div className="horz-layer" aria-hidden data-testid={`${testId}-horz`} style={{ top: `calc((100% - 44px - ${ali && mode !== 'demon' ? ALI_CHART_PX : 0}px) * ${(pctFromAgo(hoverAgo, historyS, dir) / 100).toFixed(5)})` }}>
           <i className="horz-line" /><span className="horz-zulu" data-testid={`${testId}-horz-zulu`}>{horzZulu(horzTime(hoverAgo), zuluOrigin, scrollBackS)}</span>
         </div>
       )}
@@ -772,7 +777,6 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           <AliStripView
             hist={histRef.current!}
             rowRateHz={rowRateHz(cfg, undefined, 0.5)}
-            dir={dir ?? 'bottom'}
             palette={palette}
             floor={band.dbFloor}
             ceil={band.dbCeil}
@@ -781,6 +785,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
             fLo={view.lo}
             fHi={view.hi}
             testId={`${testId}-ali`}
+            onSend={onAliSend}
+            bearingAmps={aliBearingAmps}
           />
         )
       })()}

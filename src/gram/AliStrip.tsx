@@ -1,15 +1,16 @@
-import { useEffect, useRef } from 'react'
-import { ALI_WINDOW_S, aliEdgeIsTop, aliLabel, drawAliStrip, integrateFromHistory } from './ali'
-import { newestAtBottom, type GramDir } from './timeAxis'
+import { useEffect, useRef, useState } from 'react'
+import {
+  ALI_WINDOW_S, aliBars, aliLabel, aliHzAt, aliSnap, drawAliBars, integrateFromHistory,
+  type AliBearingAmp, type AliBar,
+} from './ali'
 import type { LevelHistory } from './levelHistory'
 import type { PaletteId } from '../gl/colormap'
 
-/** Dark-tinted glass ALI strip. The canvas is a sibling on top of the glass so the data is not blurred. */
-export function AliStripView({ hist, rowRateHz, dir, palette, floor, ceil, f0, fBin, fLo, fHi, testId,
-  integrationMode = 'sti', integrationSpanS = 0 }: {
+/** Amplitude bar chart under the gram. Taller bar = more amplitude. Selected bar and Send use accent-tinted glass. */
+export function AliStripView({ hist, rowRateHz, palette: _palette, floor, ceil, f0, fBin, fLo, fHi, testId,
+  integrationMode = 'sti', integrationSpanS = 0, onSend, bearingAmps }: {
   hist: LevelHistory
   rowRateHz: number
-  dir: GramDir
   palette?: PaletteId
   floor: number
   ceil: number
@@ -20,9 +21,16 @@ export function AliStripView({ hist, rowRateHz, dir, palette, floor, ceil, f0, f
   testId?: string
   integrationMode?: 'sti' | 'lsti'
   integrationSpanS?: number
+  onSend?: (hz: number) => void
+  /** Sonya's per-bearing amplitude seam; when present, bars come from these samples. */
+  bearingAmps?: AliBearingAmp[] | null
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const top = aliEdgeIsTop(newestAtBottom(dir))
+  const barsRef = useRef<AliBar[]>([])
+  const [selectedHz, setSelectedHz] = useState<number | null>(null)
+  const selectedRef = useRef<number | null>(null)
+  selectedRef.current = selectedHz
+
   useEffect(() => {
     const c = canvasRef.current
     if (!c) return
@@ -36,22 +44,52 @@ export function AliStripView({ hist, rowRateHz, dir, palette, floor, ceil, f0, f
       const h = Math.max(1, Math.round((c.clientHeight || 1) * dpr))
       if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
       const row = integrateFromHistory(hist, rowRateHz)
-      if (!row.length) { ctx.clearRect(0, 0, w, h); return }
-      drawAliStrip(ctx, row, { f0, fBin, fLo, fHi, floor, ceil, palette })
+      const bars = aliBars(row, bearingAmps, { f0, fBin, fLo, fHi, floor, ceil })
+      barsRef.current = bars
+      const accent = getComputedStyle(c).getPropertyValue('--glass-accent-tint').trim()
+        || getComputedStyle(c).getPropertyValue('--tint').trim()
+        || '#30d158'
+      drawAliBars(ctx, bars, { fLo, fHi, selectedHz: selectedRef.current, accent: accent.startsWith('rgb') || accent.startsWith('#') ? accent : '#30d158' })
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [hist, rowRateHz, palette, floor, ceil, f0, fBin, fLo, fHi])
+  }, [hist, rowRateHz, floor, ceil, f0, fBin, fLo, fHi, bearingAmps])
+
+  const pick = (clientX: number, target: HTMLElement) => {
+    const rect = target.getBoundingClientRect()
+    const raw = aliHzAt(clientX - rect.left, rect.width, fLo, fHi)
+    const span = Math.max(1e-9, fHi - fLo)
+    return aliSnap(raw, barsRef.current, Math.max(span * 0.02, 1))
+  }
+
   return (
     <div
-      className={`ali-strip${top ? ' edge-top' : ' edge-bottom'}`}
+      className="ali-chart"
       data-testid={testId}
-      data-edge={top ? 'top' : 'bottom'}
+      data-under="1"
       role="img"
       aria-label={aliLabel(rowRateHz, ALI_WINDOW_S, integrationMode, integrationSpanS)}
+      onPointerUp={(e) => {
+        const hz = pick(e.clientX, e.currentTarget)
+        const windowHz = Math.max((fHi - fLo) * 0.02, 1)
+        if (selectedHz != null && Math.abs(selectedHz - hz) <= windowHz) {
+          onSend?.(hz)
+        } else {
+          setSelectedHz(hz)
+        }
+      }}
     >
       <div className="ali-glass" aria-hidden />
       <canvas ref={canvasRef} aria-hidden />
+      {selectedHz != null && onSend && (
+        <button
+          type="button"
+          className="ali-send"
+          data-testid={testId ? `${testId}-send` : 'ali-send'}
+          onPointerUp={(e) => { e.stopPropagation(); onSend(selectedHz) }}
+          onClick={(e) => { e.stopPropagation(); onSend(selectedHz) }}
+        >Send bearing</button>
+      )}
     </div>
   )
 }

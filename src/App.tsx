@@ -1293,7 +1293,7 @@ export default function App() {
                 dragLocked={(tool === 'harm' && locks.harm) || (tool === 'comb' && locks.comb) || (tool === 'lm' && locks.lm)}
                 dragLockable={(tool === 'harm' && harmF0 !== null) || (tool === 'comb' && combCentreHz !== null) || tool === 'lm'}
                 onDragLockTap={() => flipLock(tool === 'lm' ? 'lm' : tool === 'comb' ? 'comb' : 'harm')}
-                horz={horzOn} ali={aliOn} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
+                horz={horzOn} ali={aliOn} onAliSend={sendBrgAtFreq} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
                 paused={!st.playing} scrollBackS={scrollBackS} onScrollBack={setScrollBackS}
                 onReturnToLive={() => setScrollBackS(returnToLive())}
                 overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null || combCentreHz !== null ? (ctx) => (<>
