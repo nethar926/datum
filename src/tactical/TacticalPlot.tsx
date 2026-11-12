@@ -3,7 +3,8 @@ import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { crossFixes } from './fix'
 import { LONG_PRESS_MS, capDpr, exceedsSlop } from '../touch/gestures'
-import { fitView, toScreenX, toScreenY, toWorld, type PlotView } from './transform'
+import { fitView, toScreenX, toScreenY, toWorld, type PlotView, PLOT_CAMERA_FITTED, PLOT_WHEEL_FACTOR, panPlotCamera, recentrePlotCamera, zoomPlotCamera, type PlotCamera } from './transform'
+import { plotCameraAllows, plotDoubleTap, type PlotDoubleTapState } from './plotCameraGestures'
 import { bearingTo, distToRay, fixInputs, type FixSource, type ManualBearings } from './manual'
 import type { DropController } from './dropController'
 import { dropCapturesPlot } from './fieldMode'
@@ -60,6 +61,16 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   const press = useRef<{ x: number; y: number; moved: boolean; timer: number } | null>(null)
   const [picked, setPicked] = useState<TruthContact | null>(null)
   const revealHits = useRef<{ id: number; x: number; y: number; r: number }[]>([])
+  const camRef = useRef<PlotCamera>({ ...PLOT_CAMERA_FITTED })
+  const camTick = useRef(0)
+  const lastScen = useRef({ id: '', seed: NaN })
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const pinch = useRef<{ dist: number; midX: number; midY: number; cam: PlotCamera } | null>(null)
+  const pan0 = useRef<{ x: number; y: number; cam: PlotCamera } | null>(null)
+  const dbl = useRef<PlotDoubleTapState | null>(null)
+  const dropCapRef = useRef(false)
+  const brgRef = useRef(false)
+  const setCam = (c: PlotCamera) => { camRef.current = c; camTick.current++ }
 
   useEffect(() => {
     const canvas = ref.current!, over = oref.current
@@ -119,16 +130,22 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         if (known.n >= 0 && t.buoys.length > known.n) { for (let i = known.n; i < t.buoys.length && i < MAX_SPLASH; i++) splash[i] = now; splashing = true }
         known.n = t.buoys.length
       }
-      const { showReveal: reveal, spanM: span, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs, arm: armSt } = props.current
+      const { showReveal: reveal, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs, arm: armSt } = props.current
       const dpr = capDpr(devicePixelRatio)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
+      // New run: recentre on the buoy field (same as native `load()`).
+      if (st.scenarioId !== lastScen.current.id || st.seed !== lastScen.current.seed) {
+        lastScen.current = { id: st.scenarioId, seed: st.seed }
+        setCam(recentrePlotCamera())
+      }
+      const cam = camRef.current, span = cam.spanM
       const armKey = armSt?.phase === 'aim' ? `aim${armSt.buoyId}` : armSt?.phase ?? 'idle'
       const dtSnap = props.current.detune?.getSnapshot() ?? 0
       const fixSnap = props.current.fix?.getSnapshot() ?? 0
-      const key = `${w}x${h}:${reveal}:${span}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}`
+      const key = `${w}x${h}:${reveal}:${span}:${cam.cx}:${cam.cy}:${camTick.current}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
-      const v = fitView(w, h, span)
+      const v = fitView(w, h, span, cam.cx, cam.cy)
       viewRef.current = v
       if (gv !== lastGhost || splashing || base) { lastGhost = gv; drawOverlay(v, w, h, dpr, t, now) }
       if (!base) return
@@ -139,9 +156,9 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       // Range rings every 2 km + grid.
       ctx.strokeStyle = C.grid; ctx.lineWidth = 1 * dpr
       for (let r = 2000; r <= span; r += 2000) { ctx.beginPath(); ctx.arc(toScreenX(v, 0), toScreenY(v, 0), r / v.mPerPx, 0, Math.PI * 2); ctx.stroke() }
-      ctx.beginPath(); ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(toScreenX(v, 0), 0); ctx.lineTo(toScreenX(v, 0), h); ctx.moveTo(0, toScreenY(v, 0)); ctx.lineTo(w, toScreenY(v, 0)); ctx.stroke()
       ctx.font = `${10 * dpr}px ui-monospace, Menlo, monospace`; ctx.fillStyle = C.text
-      ctx.fillText('N', w / 2 + 4 * dpr, 12 * dpr)
+      ctx.fillText('N', toScreenX(v, 0) + 4 * dpr, 12 * dpr)
       // Ring-scale label is a DOM node (data-testid=ring-scale) so chrome hit-tests stay off canvas.
       if (!t) return
 
@@ -446,11 +463,46 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   useSyncExternalStore(drop?.subscribe ?? noSub, () => (drop ? dropCapturesPlot(drop.state) : false))
   useSyncExternalStore(fix?.subscribe ?? noSub, () => (fix ? fix.getSnapshot() : 0))
   const brgArmed = !!(arm && isArmed(arm) && !dropping())
+  dropCapRef.current = dropping()
+  brgRef.current = brgArmed
+  const cameraOn = () => plotCameraAllows({ dropCaptures: dropCapRef.current, brgArmed: brgRef.current })
+  const clientWorld = (cam: PlotCamera, clientX: number, clientY: number) => {
+    const c = ref.current; if (!c) return null
+    const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
+    const v = fitView(c.width, c.height, cam.spanM, cam.cx, cam.cy)
+    return toWorld(v, (clientX - rect.left) * dpr, (clientY - rect.top) * dpr)
+  }
+  useEffect(() => {
+    const c = ref.current; if (!c) return
+    const onWheel = (e: WheelEvent) => {
+      if (!cameraOn()) return
+      e.preventDefault()
+      const cam = camRef.current
+      const w = clientWorld(cam, e.clientX, e.clientY); if (!w) return
+      const factor = e.deltaY < 0 ? 1 / PLOT_WHEEL_FACTOR : PLOT_WHEEL_FACTOR
+      setCam(zoomPlotCamera(cam, factor, w.x, w.y))
+    }
+    c.addEventListener('wheel', onWheel, { passive: false })
+    return () => c.removeEventListener('wheel', onWheel)
+  }, [client])
   return (<>
     <canvas ref={ref} data-testid="tactical" aria-label="Tactical plot" data-arm={dropping() ? 'drop' : (arm?.phase ?? 'idle')}
       className={drop && dropping() ? 'dropping' : undefined}
       style={{ cursor: onManual || dropping() || brgArmed ? 'crosshair' : undefined, touchAction: 'none' }}
       onPointerDown={(e) => {
+        pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        // Two-finger pinch / pan: camera only, and only when drop and BRG are idle.
+        if (pointers.current.size >= 2 && cameraOn()) {
+          const pts = [...pointers.current.values()]
+          const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+          const midX = (pts[0].x + pts[1].x) / 2, midY = (pts[0].y + pts[1].y) / 2
+          pinch.current = { dist: Math.max(1, dist), midX, midY, cam: { ...camRef.current } }
+          // Cancel any one-finger press so this cannot start a drop, a bearing, or a card pick.
+          if (press.current) { clearTimeout(press.current.timer); press.current = null }
+          dragRef.current = null; aimTap.current = false; pan0.current = null
+          try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic */ }
+          return
+        }
         // Drop pattern arm owns the plot while active (bearing arm is forced idle in App).
         if (drop && dropping()) {
           if (dropPress.current) return // second finger: ignore
@@ -469,12 +521,11 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         }
         aimTap.current = false
         if (!h) {
-          // Empty plot tap: track for reveal pick / dismiss.
-          if (props.current.showReveal) {
-            try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic */ }
-            press.current = { x: e.clientX, y: e.clientY, moved: false, timer: 0 }
-            dragRef.current = -1 // sentinel: reveal tap
-          }
+          // Empty plot: one-finger drag pans; a still tap picks / dismisses a card; double-tap recentres.
+          try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic */ }
+          press.current = { x: e.clientX, y: e.clientY, moved: false, timer: 0 }
+          dragRef.current = -1 // sentinel: empty-plot tap or pan
+          pan0.current = cameraOn() ? { x: e.clientX, y: e.clientY, cam: { ...camRef.current } } : null
           return
         }
         if (!onManual) return
@@ -487,6 +538,19 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         press.current = pr
       }}
       onPointerMove={(e) => {
+        if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+        if (pinch.current && pointers.current.size >= 2 && cameraOn()) {
+          const pts = [...pointers.current.values()].slice(0, 2)
+          const dist = Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y))
+          const midX = (pts[0].x + pts[1].x) / 2, midY = (pts[0].y + pts[1].y) / 2
+          const start = pinch.current
+          const w0 = clientWorld(start.cam, start.midX, start.midY); if (!w0) return
+          let cam = zoomPlotCamera(start.cam, start.dist / dist, w0.x, w0.y)
+          const w1 = clientWorld(cam, midX, midY)
+          if (w1) cam = panPlotCamera(cam, w0.x - w1.x, w0.y - w1.y)
+          setCam(cam)
+          return
+        }
         const dp = dropPress.current
         if (dp && drop) {
           if (e.pointerId !== dp.id) return
@@ -496,20 +560,46 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         const id = dragRef.current; if (id === null) return
         const pr = press.current
         if (pr && !pr.moved) { if (!exceedsSlop(pr.x, pr.y, e.clientX, e.clientY)) return; pr.moved = true; clearTimeout(pr.timer) }
-        if (aimTap.current || id === -1) return // aim/reveal tap: placement/pick on up
+        // Empty-plot drag: pan (mouse or one finger). Not while drop/BRG own the plot; not on a buoy.
+        if (id === -1) {
+          const start = pan0.current
+          if (pr?.moved && start && cameraOn()) {
+            const c = ref.current
+            if (c) {
+              const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
+              const v = fitView(c.width, c.height, start.cam.spanM, start.cam.cx, start.cam.cy)
+              const dx = -(e.clientX - start.x) * dpr * v.mPerPx
+              const dy = (e.clientY - start.y) * dpr * v.mPerPx
+              setCam(panPlotCamera(start.cam, dx, dy))
+            }
+          }
+          return
+        }
+        if (aimTap.current) return // aim tap: placement on up
         const w = world(e); if (w) setFrom(id, w.x, w.y, false)
       }}
       onPointerUp={(e) => {
+        pointers.current.delete(e.pointerId)
+        if (pinch.current) {
+          if (pointers.current.size < 2) pinch.current = null
+          dragRef.current = null; aimTap.current = false; pan0.current = null
+          if (press.current) { clearTimeout(press.current.timer); press.current = null }
+          return
+        }
         const dp = dropPress.current
         if (dp && drop) { if (e.pointerId !== dp.id) return; dropPress.current = null; drop.dispatch({ type: 'release' }); return }
         const id = dragRef.current; const aiming = aimTap.current
         dragRef.current = null; aimTap.current = false
         const pr = press.current; press.current = null; if (pr) clearTimeout(pr.timer)
+        pan0.current = null
         if (id === null) return
         const w = world(e)
-        // Reveal tap (sentinel -1): pick a mark or dismiss the card.
+        // Empty-plot tap (sentinel -1): double-tap recentres (and dismisses a card); otherwise pick / dismiss.
         if (id === -1) {
           if (pr && !pr.moved) {
+            const r = plotDoubleTap(dbl.current, e.clientX, e.clientY, performance.now() / 1000)
+            dbl.current = r.last
+            if (r.kind === 'recentre') { setCam(recentrePlotCamera()); setPicked(null); return }
             const rid = hitReveal(e)
             if (rid !== null) {
               const c = client.status.tactical?.truth?.contacts.find((x) => x.id === rid) ?? null
@@ -529,11 +619,18 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         if (w) setFrom(id, w.x, w.y, true)
       }}
       onPointerCancel={() => {
+        pointers.current.clear(); pinch.current = null; pan0.current = null
         if (dropPress.current && drop) { dropPress.current = null; drop.dispatch({ type: 'cancel' }); return }
         dragRef.current = null; aimTap.current = false; if (press.current) clearTimeout(press.current.timer); press.current = null
       }}
       onContextMenu={(e) => e.preventDefault()}
-      onDoubleClick={(e) => { if (dropping() || brgArmed) return; const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
+      onDoubleClick={(e) => {
+        if (dropping() || brgArmed) return
+        const h = hitBuoy(e)
+        // Existing: double-click a DIFAR buoy clears its manual bearing.
+        if (h) { onManual?.(h.id, null, true); return }
+        if (cameraOn()) { setCam(recentrePlotCamera()); setPicked(null) }
+      }} />
     <canvas ref={oref} className="tac-overlay" data-testid="tactical-overlay" aria-hidden />
     <div className="ring-scale" data-testid="ring-scale" aria-hidden>2 km rings</div>
     {picked && (picked.category === 'surface' ? aisEffective(showAis, difficulty) : showReveal) && (() => {
