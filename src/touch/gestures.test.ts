@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  capDpr, classifyLayout, classifyTwoFinger, exceedsSlop, fingerExactCursor,
+  applyTwoFingerPan, capDpr, classifyLayout, classifyTwoFinger, exceedsSlop, fingerExactCursor,
   isThreeFingerSwipeDown, lockPanAxis, panFreqByCentroid, panScrollDeltaS, panView, pinchView,
   PINCH_DIST_THRESH_PX, THREE_FINGER_SWIPE_PX,
 } from './gestures'
@@ -123,5 +123,68 @@ describe('touch helpers', () => {
   it('slop and DPR cap', () => {
     expect(exceedsSlop(0, 0, 6, 6)).toBe(false); expect(exceedsSlop(0, 0, 9, 9)).toBe(true)
     expect(capDpr(3)).toBe(2); expect(capDpr(undefined)).toBe(1); expect(capDpr(1.5)).toBe(1.5)
+  })
+})
+
+describe('applyTwoFingerPan (frequency swipe, pause-only history, axis lock)', () => {
+  const startView = { lo: 100, hi: 200 }
+  const base = {
+    startView, width: 1000, fMax: 1000, minSpan: 10, fMin: 0,
+    scroll0: 0, height: 200, visibleHistoryS: 300, sign: 1 as const,
+  }
+  const hz = (dx: number, paused: boolean, axis: ReturnType<typeof lockPanAxis> = null) =>
+    applyTwoFingerPan({ ...base, axis, dx, dy: 0, paused })
+
+  it('horizontal swipe pans frequency while playing and while paused', () => {
+    const playing = hz(500, false)
+    const paused = hz(500, true)
+    expect(playing.axis).toBe('frequency')
+    expect(paused.axis).toBe('frequency')
+    expect(playing.view).toEqual({ lo: 50, hi: 150 })
+    expect(paused.view).toEqual({ lo: 50, hi: 150 })
+    expect(playing.scrollBackS).toBe(0)
+    expect(paused.scrollBackS).toBe(0)
+  })
+
+  it('vertical drag only scrolls history when paused', () => {
+    const playing = applyTwoFingerPan({ ...base, axis: null, dx: 0, dy: 100, paused: false })
+    expect(playing.axis).toBe('time')
+    expect(playing.view).toEqual(startView)
+    expect(playing.scrollBackS).toBe(0)
+
+    const paused = applyTwoFingerPan({ ...base, axis: null, dx: 0, dy: 100, paused: true })
+    expect(paused.axis).toBe('time')
+    expect(paused.view).toEqual(startView)
+    expect(paused.scrollBackS).toBeCloseTo(panScrollDeltaS(100, 200, 300, 1))
+    expect(paused.scrollBackS).toBeGreaterThan(0)
+  })
+
+  it('axis lock holds through a diagonal: first decisive axis wins until lift', () => {
+    // Perfect diagonal stays unlocked; nothing moves.
+    const diag = applyTwoFingerPan({ ...base, axis: null, dx: 40, dy: 40, paused: true })
+    expect(diag.axis).toBeNull()
+    expect(diag.view).toEqual(startView)
+    expect(diag.scrollBackS).toBe(0)
+
+    // Horizontal wins, then a later diagonal must not unlock into a history scroll.
+    const locked = applyTwoFingerPan({ ...base, axis: null, dx: 50, dy: 10, paused: true })
+    expect(locked.axis).toBe('frequency')
+    const through = applyTwoFingerPan({
+      ...base, axis: locked.axis, dx: 80, dy: 80, paused: true, startView: locked.view,
+    })
+    expect(through.axis).toBe('frequency')
+    expect(through.scrollBackS).toBe(0)
+    expect(through.view.lo).not.toBe(startView.lo)
+    expect(through.view).toEqual(panFreqByCentroid(locked.view, 80, 1000, 1000))
+
+    // Time lock, then a diagonal, does not pan Hz.
+    const time = applyTwoFingerPan({ ...base, axis: null, dx: 10, dy: 50, paused: true })
+    expect(time.axis).toBe('time')
+    const timeDiag = applyTwoFingerPan({
+      ...base, axis: time.axis, dx: 80, dy: 80, paused: true, scroll0: time.scrollBackS,
+    })
+    expect(timeDiag.axis).toBe('time')
+    expect(timeDiag.view).toEqual(startView)
+    expect(timeDiag.scrollBackS).toBeGreaterThan(0)
   })
 })

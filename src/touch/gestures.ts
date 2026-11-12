@@ -1,4 +1,5 @@
 import { clampView, xToFreq, type FreqView } from '../gram/axis'
+import { applyScrollDelta } from './scrollBack'
 
 /** Movement (CSS px) beyond which a press is a drag, not a tap or long-press. */
 export const TAP_SLOP_PX = 10
@@ -108,6 +109,50 @@ export function lockPanAxis(dx: number, dy: number): PanAxis | null {
   if (Math.abs(dx) > Math.abs(dy)) return 'frequency'
   if (Math.abs(dy) > Math.abs(dx)) return 'time'
   return null
+}
+
+/** Outcome of one two-finger pan frame: locked axis, Hz window, and scroll-back. */
+export type TwoFingerPan = { axis: PanAxis | null; view: FreqView; scrollBackS: number }
+
+/**
+ * Apply a two-finger pan, keeping the axis lock so frequency never fights history.
+ * Horizontal swipe pans Hz whether playing or paused. Vertical history drag is
+ * pause-only. A still-unlocked diagonal is a no-op (wait until one side wins);
+ * once locked, a later diagonal keeps the same axis until the fingers lift.
+ */
+export function applyTwoFingerPan(opts: {
+  axis: PanAxis | null
+  dx: number
+  dy: number
+  paused: boolean
+  startView: FreqView
+  width: number
+  fMax: number
+  minSpan?: number
+  fMin?: number
+  scroll0: number
+  height: number
+  visibleHistoryS: number
+  availableHistoryS?: number
+  sign?: number
+}): TwoFingerPan {
+  const axis = opts.axis ?? lockPanAxis(opts.dx, opts.dy)
+  if (axis === 'frequency') {
+    return {
+      axis,
+      view: panFreqByCentroid(opts.startView, opts.dx, opts.width, opts.fMax, opts.minSpan, opts.fMin),
+      scrollBackS: opts.scroll0,
+    }
+  }
+  if (axis === 'time' && opts.paused) {
+    const dS = panScrollDeltaS(opts.dy, opts.height, opts.visibleHistoryS, opts.sign ?? 1)
+    return {
+      axis,
+      view: opts.startView,
+      scrollBackS: applyScrollDelta(opts.scroll0, dS, opts.availableHistoryS ?? opts.visibleHistoryS),
+    }
+  }
+  return { axis, view: opts.startView, scrollBackS: opts.scroll0 }
 }
 
 /** True when three contacts move downward together by ≥ THREE_FINGER_SWIPE_PX (centroid). */

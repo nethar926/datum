@@ -13,8 +13,8 @@ import { LevelHistory } from './levelHistory'
 import { freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 import { placeFreqAxisTicks } from './freqAxis'
 import { bandLimitHz, fullView, minSpanOf } from './res'
-import { DOUBLE_TAP_MS, LONG_PRESS_MS, classifyTwoFinger, exceedsSlop, fingerExactCursor, isThreeFingerSwipeDown, lockPanAxis, panFreqByCentroid, panScrollDeltaS, pinchView, type PanAxis } from '../touch/gestures'
-import { applyScrollDelta, formatZuluHms, isReviewing, returnToLive, viewNowS } from '../touch/scrollBack'
+import { DOUBLE_TAP_MS, LONG_PRESS_MS, applyTwoFingerPan, classifyTwoFinger, exceedsSlop, fingerExactCursor, isThreeFingerSwipeDown, pinchView, type PanAxis } from '../touch/gestures'
+import { formatZuluHms, isReviewing, returnToLive, viewNowS } from '../touch/scrollBack'
 import { isLockTap } from './cursorLock'
 import { holdAfterThreeFingerSwipe, isCursorFrozen, nextHoldOnTap, showLockIcon, toggleLockButton, type CursorHold } from './cursorState'
 import { IcLock } from '../ui/icons'
@@ -569,14 +569,15 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2
         const dx = cx - G.panStart.cx, dy = cy - G.panStart.cy
         // Lock to frequency or time on the first decisive movement; hold until the fingers lift.
-        if (G.panAxis === null) G.panAxis = lockPanAxis(dx, dy)
-        if (G.panAxis === 'frequency') {
-          onView(panFreqByCentroid(G.panStart.v, dx, w, fMax, minSpan, fMin))
-        } else if (G.panAxis === 'time' && paused && onScrollBack) {
-          const sign = newestAtBottom(dir) ? 1 : -1
-          const dS = panScrollDeltaS(dy, h, historyS, sign)
-          onScrollBack(applyScrollDelta(G.panStart.scroll0, dS, historyS))
-        }
+        const r = applyTwoFingerPan({
+          axis: G.panAxis, dx, dy, paused: paused && !!onScrollBack,
+          startView: G.panStart.v, width: w, fMax, minSpan, fMin,
+          scroll0: G.panStart.scroll0, height: h, visibleHistoryS: historyS,
+          sign: newestAtBottom(dir) ? 1 : -1,
+        })
+        G.panAxis = r.axis
+        if (r.axis === 'frequency') onView(r.view)
+        else if (r.axis === 'time' && paused && onScrollBack) onScrollBack(r.scrollBackS)
         return
       }
       // Undecided: wait for a clearer signal.
