@@ -2,6 +2,10 @@
  * Small persisted UI preferences for the iOS-style chrome: portrait/landscape split, HORZ cursor hairline,
  * appearance (system / light / dark) and glass strength. Pure helpers + localStorage wrappers (private mode safe).
  */
+import {
+  BFI_DEFAULT_PRESET, BFI_DEFAULT_RANGES, BFI_PRESETS, clampBfiRange,
+  type BfiPreset, type BfiRange, type BfiRanges,
+} from '../gram/bfi'
 
 // ---------- Split (gram ↔ tactical plot) ----------
 export const SPLIT_KEY_V = 'datum.split.v' // stacked (phone portrait): gram on top
@@ -61,6 +65,51 @@ export function loadBfi(): boolean {
 export function saveBfi(on: boolean): void {
   try { localStorage.setItem(BFI_KEY, on ? '1' : '0') } catch { /* private mode */ }
 }
+
+export const BFI_PRESET_KEY = 'datum.bfi.preset'
+export const BFI_RANGES_KEY = 'datum.bfi.ranges'
+
+export function parseBfiPreset(v: unknown): BfiPreset {
+  const n = typeof v === 'string' ? Number(v) : v
+  return BFI_PRESETS.includes(n as BfiPreset) ? (n as BfiPreset) : BFI_DEFAULT_PRESET
+}
+
+export function loadBfiPreset(): BfiPreset {
+  try { return parseBfiPreset(localStorage.getItem(BFI_PRESET_KEY)) } catch { return BFI_DEFAULT_PRESET }
+}
+export function saveBfiPreset(preset: BfiPreset): void {
+  try { localStorage.setItem(BFI_PRESET_KEY, String(preset)) } catch { /* private mode */ }
+}
+
+function parseRangePair(v: unknown): BfiRange | null {
+  if (!v || typeof v !== 'object') return null
+  const lo = Number((v as { loHz?: unknown; 0?: unknown }).loHz ?? (v as { 0?: unknown })[0])
+  const hi = Number((v as { hiHz?: unknown; 1?: unknown }).hiHz ?? (v as { 1?: unknown })[1])
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null
+  return clampBfiRange({ loHz: lo, hiHz: hi })
+}
+
+export function loadBfiRanges(): BfiRanges {
+  const out: BfiRanges = { ...BFI_DEFAULT_RANGES, 1: { ...BFI_DEFAULT_RANGES[1] }, 2: { ...BFI_DEFAULT_RANGES[2] }, 3: { ...BFI_DEFAULT_RANGES[3] } }
+  try {
+    const raw = localStorage.getItem(BFI_RANGES_KEY)
+    if (!raw) return out
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    for (const p of BFI_PRESETS) {
+      const r = parseRangePair(parsed[String(p)] ?? parsed[p])
+      if (r) out[p] = r
+    }
+  } catch { /* junk or private mode */ }
+  return out
+}
+export function saveBfiRanges(ranges: BfiRanges): void {
+  try {
+    const body: Record<string, BfiRange> = {}
+    for (const p of BFI_PRESETS) body[String(p)] = clampBfiRange(ranges[p])
+    localStorage.setItem(BFI_RANGES_KEY, JSON.stringify(body))
+  } catch { /* private mode */ }
+}
+
 
 // ---------- Appearance ----------
 export const SCHEME_KEY = 'datum.scheme'

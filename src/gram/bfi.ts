@@ -1,10 +1,15 @@
 /**
  * BFI (Bearing Frequency Indication): each DIFAR bin is plotted at its bearing
- * (horizontal, 0–360° true) and frequency (vertical, the gram's current band
- * and RES). Colour is level in the gram colormap; points fade over ~30 s.
- * Omni buoys have no bearing — BFI is unavailable and the control is greyed out.
- * Data is the engine's per-bin `bearingDeg` + dB (`drainAllWithBearing`); no
- * engine change. Math matches native `BfiPlot.swift`.
+ * (horizontal, 0–360° true) and frequency (vertical, the selected BFI Hz range).
+ * Colour is a high-contrast stretch of the gram colormap so CPAs read well;
+ * points fade over ~30 s. Omni buoys have no bearing — BFI is unavailable and
+ * the control is greyed out.
+ *
+ * Until Sonya's per-band engine output lands (bearing against frequency,
+ * integrated over each band), points come from the existing per-bin
+ * `bearingDeg` + dB rows, clipped to the selected preset's Hz range.
+ * `bfiPointsFromBandSamples` is the seam for that output. Math matches
+ * native `BfiPlot.swift`.
  */
 import { paletteLut, normalizeDb, type PaletteId } from '../gl/colormap'
 import type { LevelHistory } from './levelHistory'
@@ -18,6 +23,68 @@ export type BfiPoint = {
   db: number
   ageS: number
   alpha: number
+}
+
+
+export const BFI_PRESETS = [1, 2, 3] as const
+export type BfiPreset = (typeof BFI_PRESETS)[number]
+export type BfiRange = { loHz: number; hiHz: number }
+export type BfiRanges = { 1: BfiRange; 2: BfiRange; 3: BfiRange }
+
+export const BFI_DEFAULT_PRESET: BfiPreset = 1
+export const BFI_DEFAULT_RANGES: BfiRanges = {
+  1: { loHz: 10, hiHz: 100 },
+  2: { loHz: 10, hiHz: 500 },
+  3: { loHz: 100, hiHz: 1000 },
+}
+
+export function bfiPresetTitle(preset: BfiPreset): string {
+  return `BFI ${preset}`
+}
+
+export function clampBfiRange(range: BfiRange, minSpan = 1): BfiRange {
+  let lo = Number.isFinite(range.loHz) ? range.loHz : 0
+  let hi = Number.isFinite(range.hiHz) ? range.hiHz : lo + minSpan
+  if (lo < 0) lo = 0
+  if (hi < 0) hi = 0
+  if (hi < lo) { const t = lo; lo = hi; hi = t }
+  if (hi - lo < minSpan) hi = lo + minSpan
+  return { loHz: lo, hiHz: hi }
+}
+
+export function bfiRangeFor(preset: BfiPreset, ranges: BfiRanges = BFI_DEFAULT_RANGES): BfiRange {
+  return clampBfiRange(ranges[preset])
+}
+
+/** High-contrast stretch of a 0…1 level so mid/high returns (CPAs) stand out. Matches native `BfiPlot.contrast`. */
+export function bfiContrast(t: number): number {
+  const x = Math.max(0, Math.min(1, t))
+  const y = Math.max(0, (x - 0.12) / 0.88)
+  return y ** 0.55
+}
+
+/** One integrated sample from Sonya's future per-band drain (bearing against frequency). */
+export type BfiBandSample = { bearingDeg: number; freqHz: number; db: number; rowTime: number }
+
+/** Seam for Sonya's per-band output: clip each integrated sample to `range` and apply the 30 s fade. */
+export function bfiPointsFromBandSamples(
+  samples: readonly BfiBandSample[],
+  range: BfiRange,
+  tNewestRowSim: number,
+  windowS = BFI_WINDOW_S,
+): BfiPoint[] {
+  const r = clampBfiRange(range)
+  const out: BfiPoint[] = []
+  for (const s of samples) {
+    if (s.freqHz < r.loHz - 1e-9 || s.freqHz > r.hiHz + 1e-9) continue
+    if (!Number.isFinite(s.db) || s.db <= -1e30 || !Number.isFinite(s.bearingDeg)) continue
+    const a = bfiAlpha(tNewestRowSim, s.rowTime, windowS)
+    if (a <= 0) continue
+    let d = s.bearingDeg % 360
+    if (d < 0) d += 360
+    out.push({ bearingDeg: d, freqHz: s.freqHz, db: s.db, ageS: tNewestRowSim - s.rowTime, alpha: a })
+  }
+  return out
 }
 
 export function bfiAvailable(isDifar: boolean): boolean {
@@ -164,7 +231,7 @@ export function drawBfi(
   const lut = paletteLut(opts.palette ?? 'green')
   const r = 2.2
   for (const p of points) {
-    const t = normalizeDb(p.db, opts.floor, opts.ceil)
+    const t = bfiContrast(normalizeDb(p.db, opts.floor, opts.ceil))
     if (!Number.isFinite(t) || p.alpha <= 0) continue
     const idx = Math.min(255, Math.max(0, Math.round(t * 255)))
     const o = idx * 4

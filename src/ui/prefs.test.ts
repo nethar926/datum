@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  ALI_KEY, BFI_KEY, HORZ_KEY, SPLIT_DEFAULT_V, SPLIT_KEY_V, SPLIT_MIN_GRAM_PX, SPLIT_MIN_PLOT_PX, clampSplit, loadAli, loadBfi, loadHorz, loadSplit,
-  parseGlass, parseScheme, parseTab, resolveGlass, resolveScheme, saveAli, saveBfi, saveHorz, saveSplit,
+  ALI_KEY, BFI_KEY, BFI_PRESET_KEY, BFI_RANGES_KEY, HORZ_KEY, SPLIT_DEFAULT_V, SPLIT_KEY_V, SPLIT_MIN_GRAM_PX, SPLIT_MIN_PLOT_PX,
+  clampSplit, loadAli, loadBfi, loadBfiPreset, loadBfiRanges, loadHorz, loadSplit,
+  parseBfiPreset, parseGlass, parseScheme, parseTab, resolveGlass, resolveScheme,
+  saveAli, saveBfi, saveBfiPreset, saveBfiRanges, saveHorz, saveSplit,
 } from './prefs'
+import { BFI_DEFAULT_RANGES } from '../gram/bfi'
 
 // Minimal localStorage for the node test environment.
 const mem = new Map<string, string>()
@@ -94,6 +97,40 @@ describe('BFI toggle persistence', () => {
     ;(globalThis as { localStorage?: unknown }).localStorage = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
     expect(loadBfi()).toBe(false)
     expect(() => saveBfi(true)).not.toThrow()
+  })
+})
+
+describe('BFI preset defaults, edits and persistence', () => {
+  it('defaults to BFI 1 and the documented Hz ranges', () => {
+    expect(loadBfiPreset()).toBe(1)
+    expect(loadBfiRanges()).toEqual(BFI_DEFAULT_RANGES)
+    expect(parseBfiPreset('2')).toBe(2)
+    expect(parseBfiPreset('9')).toBe(1)
+    expect(parseBfiPreset(null)).toBe(1)
+  })
+  it('persists a preset choice and an edited range', () => {
+    saveBfiPreset(3)
+    expect(mem.get(BFI_PRESET_KEY)).toBe('3')
+    expect(loadBfiPreset()).toBe(3)
+    const ranges = loadBfiRanges()
+    ranges[3] = { loHz: 30, hiHz: 250 }
+    saveBfiRanges(ranges)
+    expect(loadBfiRanges()[3]).toEqual({ loHz: 30, hiHz: 250 })
+    expect(loadBfiRanges()[1]).toEqual({ loHz: 10, hiHz: 100 })
+  })
+  it('clamps inverted and junk stored ranges', () => {
+    mem.set(BFI_RANGES_KEY, JSON.stringify({ 2: { loHz: 80, hiHz: 20 } }))
+    expect(loadBfiRanges()[2]).toEqual({ loHz: 20, hiHz: 80 })
+    mem.set(BFI_RANGES_KEY, 'banana')
+    expect(loadBfiRanges()).toEqual(BFI_DEFAULT_RANGES)
+    ;(globalThis as { localStorage?: unknown }).localStorage = {
+      getItem: () => { throw new Error('denied') },
+      setItem: () => { throw new Error('denied') },
+    }
+    expect(loadBfiPreset()).toBe(1)
+    expect(loadBfiRanges()).toEqual(BFI_DEFAULT_RANGES)
+    expect(() => saveBfiPreset(2)).not.toThrow()
+    expect(() => saveBfiRanges(BFI_DEFAULT_RANGES)).not.toThrow()
   })
 })
 

@@ -868,6 +868,14 @@ button, select { font: inherit; color: inherit; }
   background: rgba(0,0,0,.55);
   backdrop-filter: blur(8px);
 }
+.bfi-presets { position: absolute; top: 28px; left: 8px; z-index: 2; }
+.bfi-presets button { font: 600 11px/1 inherit; padding: 6px 8px; }
+.bfi-presets button:disabled { opacity: .4; }
+.bfi-range-edit { display: flex; align-items: center; gap: 6px; }
+.bfi-range-edit input { width: 72px; min-height: 44px; border: 0; border-radius: 10px; padding: 0 8px;
+  color: var(--tint); font: 400 16px/1 inherit; text-align: right; background: transparent; }
+.bfi-range-edit input:disabled { opacity: .4; }
+
 .tool[data-testid="bfi-tool"]:disabled,
 .ios-switch[data-testid="bfi-switch"]:disabled,
 [data-testid="secondary-display-bfi"]:disabled,

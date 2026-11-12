@@ -78,7 +78,8 @@ import { IcAli, IcBfi, IcBrg, IcChevron, IcComb, IcContrast, IcDop, IcFix, IcHar
 import { Splash } from './ui/Splash'
 import { hardReloadApp } from './ui/appReload'
 import { useStandalone, useUpdateAvailable } from './ui/useAppUpdate'
-import { SPLIT_DEFAULT_H, SPLIT_KEY_H, loadAli, loadBfi, loadHorz, loadSplit, parseTab, saveAli, saveBfi, saveHorz, type Tab } from './ui/prefs'
+import { SPLIT_DEFAULT_H, SPLIT_KEY_H, loadAli, loadBfi, loadBfiPreset, loadBfiRanges, loadHorz, loadSplit, parseTab, saveAli, saveBfi, saveBfiPreset, saveBfiRanges, saveHorz, type Tab } from './ui/prefs'
+import { BFI_PRESETS, bfiPresetTitle, bfiRangeFor, type BfiPreset, type BfiRanges } from './gram/bfi'
 import { installAudioUnlock } from './touch/audioUnlock'
 import { useListen } from './audio/useListen'
 import { FOCUS_HALF_WIDTHS } from './audio/focus'
@@ -294,6 +295,14 @@ export default function App() {
   // BFI: Bearing Frequency Indication (off by default, persisted). DIFAR only.
   const [bfiOn, setBfiOn] = useState<boolean>(loadBfi)
   useEffect(() => saveBfi(bfiOn), [bfiOn])
+  const [bfiPreset, setBfiPreset] = useState<BfiPreset>(loadBfiPreset)
+  const [bfiRanges, setBfiRanges] = useState<BfiRanges>(loadBfiRanges)
+  useEffect(() => saveBfiPreset(bfiPreset), [bfiPreset])
+  useEffect(() => saveBfiRanges(bfiRanges), [bfiRanges])
+  const bfiRange = bfiRangeFor(bfiPreset, bfiRanges)
+  const setBfiRange = (loHz: number, hiHz: number, preset: BfiPreset = bfiPreset) => {
+    setBfiRanges((cur) => ({ ...cur, [preset]: { loHz, hiHz } }))
+  }
   // Companion-pane display (plot by default). BFI is DIFAR only, independent of the main-display toggle.
   const [secondary, setSecondary] = useState<SecondaryDisplay>(loadSecondary)
   useEffect(() => saveSecondary(secondary), [secondary])
@@ -1325,7 +1334,7 @@ export default function App() {
                 </>) : undefined} />
               </div>
               {bfiOn && bfiAvailable && (
-                <BfiPlot client={client} configs={lofarCfgs} streamIndex={stream} view={view} palette={palette} />
+                <BfiPlot client={client} configs={lofarCfgs} streamIndex={stream} range={bfiRange} preset={bfiPreset} onPreset={setBfiPreset} available={bfiAvailable} palette={palette} />
               )}
             </>)}
             {(tool === 'harm' || harmF0 !== null) && <div className={`gram-note readout harm-note${locks.harm ? ' locked' : ''}`} data-testid="harm-readout" data-locked={locks.harm ? '1' : '0'}>{locks.harm && <IcLock size={11} className="cursor-lock-ic" />}{harmText(harmF0, harmK, cfg ? fullView(cfg).hi : BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
@@ -1438,7 +1447,7 @@ export default function App() {
           </div>
           {secondaryResolved === 'bfi' && (
             <div className="panel-body" data-testid="secondary-bfi-pane">
-              <BfiPlot client={client} configs={lofarCfgs} streamIndex={stream} view={view} palette={palette} />
+              <BfiPlot client={client} configs={lofarCfgs} streamIndex={stream} range={bfiRange} preset={bfiPreset} onPreset={setBfiPreset} available={bfiAvailable} palette={palette} />
             </div>
           )}
         </section>
@@ -1570,6 +1579,24 @@ export default function App() {
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="ali-switch" checked={aliOn} onChange={(e) => setAliOn(e.target.checked)} /></label>
               <label className="ios-row"><span className="row-label">BFI display<small>Bearing Frequency Indication: frequency against bearing, 30 second fade. DIFAR only. Main display.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="bfi-switch" checked={bfiOn} disabled={!bfiAvailable} onChange={(e) => setBfiOn(e.target.checked)} /></label>
+              <div className="ios-row"><span className="row-label">BFI preset<small>Frequency range in Hz. Edits persist.</small></span>
+                <div className="seg ios-seg" role="group" aria-label="BFI frequency preset" data-testid="bfi-preset-sheet">
+                  {BFI_PRESETS.map((p) => (
+                    <button key={p} type="button" aria-pressed={bfiPreset === p} data-testid={`bfi-preset-sheet-${p}`}
+                      disabled={!bfiAvailable} onClick={() => setBfiPreset(p)}>{bfiPresetTitle(p)}</button>
+                  ))}
+                </div></div>
+              <div className="ios-row"><span className="row-label">BFI range<small>{bfiPresetTitle(bfiPreset)} window, hertz.</small></span>
+                <div className="bfi-range-edit" data-testid="bfi-range-edit">
+                  <input type="number" inputMode="decimal" aria-label="BFI range low" data-testid="bfi-range-lo"
+                    disabled={!bfiAvailable} value={bfiRange.loHz}
+                    onChange={(e) => setBfiRange(Number(e.target.value), bfiRange.hiHz)} />
+                  <span>–</span>
+                  <input type="number" inputMode="decimal" aria-label="BFI range high" data-testid="bfi-range-hi"
+                    disabled={!bfiAvailable} value={bfiRange.hiHz}
+                    onChange={(e) => setBfiRange(bfiRange.loHz, Number(e.target.value))} />
+                  <span>Hz</span>
+                </div></div>
               <div className="ios-row"><span className="row-label">Secondary display<small>What fills the pane next to the gram. BFI is DIFAR only.</small></span>
                 {secondaryPicker('secondary-display-sheet')}</div>
               <div className="ios-row"><span className="row-label">LOFAR colour</span>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BFI_WINDOW_S, bfiAlpha, bfiAvailable, bfiFade, bfiPoints, bfiX, bfiY,
+  BFI_DEFAULT_PRESET, BFI_DEFAULT_RANGES, BFI_PRESETS, BFI_WINDOW_S,
+  bfiAlpha, bfiAvailable, bfiContrast, bfiFade, bfiPoints, bfiPointsFromBandSamples,
+  bfiPresetTitle, bfiRangeFor, bfiX, bfiY, clampBfiRange,
 } from './bfi'
 import { rowPeriodS } from './rowPeriod'
 
@@ -179,5 +181,66 @@ describe('BFI Bearing Frequency Indication', () => {
     // Same tNewest (pause) freezes.
     const again = rows(times.length, 0.125, times, tNewest)
     expect(again.map((p) => p.alpha)).toEqual(pts.map((p) => p.alpha))
+  })
+})
+
+describe('BFI presets, range clipping and contrast', () => {
+  it('defaults to BFI 1 = 10–100, BFI 2 = 10–500, BFI 3 = 100–1000 Hz', () => {
+    expect(BFI_PRESETS).toEqual([1, 2, 3])
+    expect(BFI_DEFAULT_PRESET).toBe(1)
+    expect(bfiPresetTitle(1)).toBe('BFI 1')
+    expect(BFI_DEFAULT_RANGES).toEqual({
+      1: { loHz: 10, hiHz: 100 },
+      2: { loHz: 10, hiHz: 500 },
+      3: { loHz: 100, hiHz: 1000 },
+    })
+    expect(bfiRangeFor(1)).toEqual({ loHz: 10, hiHz: 100 })
+  })
+
+  it('clamps inverted, negative and empty ranges', () => {
+    expect(clampBfiRange({ loHz: 20, hiHz: 80 })).toEqual({ loHz: 20, hiHz: 80 })
+    expect(clampBfiRange({ loHz: 80, hiHz: 20 })).toEqual({ loHz: 20, hiHz: 80 })
+    expect(clampBfiRange({ loHz: -10, hiHz: 50 }).loHz).toBe(0)
+    expect(clampBfiRange({ loHz: 40, hiHz: 40 })).toEqual({ loHz: 40, hiHz: 41 })
+    expect(clampBfiRange({ loHz: Number.NaN, hiHz: 100 }).loHz).toBe(0)
+  })
+
+  it('clips points to the selected preset range', () => {
+    const power = new Float32Array([20, 20, 20, 20])
+    const brg = new Float32Array([10, 1, 20, 1, 30, 1, 40, 1])
+    const r = BFI_DEFAULT_RANGES[1]
+    const pts = bfiPoints({
+      powerNewestFirst: [power], bearingNewestFirst: [brg],
+      f0: 0, fBin: 50, fLo: r.loHz, fHi: r.hiHz, rowRateHz: 0.5,
+    })
+    expect(pts.map((p) => p.freqHz)).toEqual([50, 100])
+    const wide = BFI_DEFAULT_RANGES[2]
+    const all = bfiPoints({
+      powerNewestFirst: [power], bearingNewestFirst: [brg],
+      f0: 0, fBin: 50, fLo: wide.loHz, fHi: wide.hiHz, rowRateHz: 0.5,
+    })
+    expect(all.map((p) => p.freqHz)).toEqual([50, 100, 150])
+  })
+
+  it('clips Sonya band-sample seam output to the range and keeps the fade', () => {
+    const pts = bfiPointsFromBandSamples([
+      { bearingDeg: 90, freqHz: 5, db: 20, rowTime: 100 },
+      { bearingDeg: 90, freqHz: 40, db: 20, rowTime: 100 },
+      { bearingDeg: 90, freqHz: 200, db: 20, rowTime: 85 },
+    ], BFI_DEFAULT_RANGES[1], 100)
+    expect(pts).toHaveLength(1)
+    expect(pts[0].freqHz).toBeCloseTo(40, 12)
+    expect(pts[0].alpha).toBe(1)
+  })
+
+  it('is available on DIFAR only and stretches contrast so CPAs read', () => {
+    expect(bfiAvailable(true)).toBe(true)
+    expect(bfiAvailable(false)).toBe(false)
+    expect(bfiContrast(0)).toBe(0)
+    expect(bfiContrast(1)).toBeCloseTo(1, 6)
+    expect(bfiContrast(-1)).toBe(0)
+    expect(bfiContrast(2)).toBe(1)
+    expect(bfiContrast(0.5)).toBeGreaterThan(0.5)
+    expect(bfiContrast(0.12)).toBeCloseTo(0, 6)
   })
 })
