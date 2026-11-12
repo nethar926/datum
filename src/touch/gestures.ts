@@ -97,6 +97,19 @@ export function panScrollDeltaS(dyCentroid: number, height: number, visibleHisto
   return sign * (dyCentroid / h) * visibleHistoryS
 }
 
+/** Locked axis of a two-finger pan, held until the fingers lift. */
+export type PanAxis = 'frequency' | 'time'
+
+/**
+ * First decisive pan movement: the larger centroid component locks the axis.
+ * A perfect diagonal (`|dx| === |dy|`) stays unlocked until one side wins.
+ */
+export function lockPanAxis(dx: number, dy: number): PanAxis | null {
+  if (Math.abs(dx) > Math.abs(dy)) return 'frequency'
+  if (Math.abs(dy) > Math.abs(dx)) return 'time'
+  return null
+}
+
 /** True when three contacts move downward together by ≥ THREE_FINGER_SWIPE_PX (centroid). */
 export function isThreeFingerSwipeDown(
   startYs: readonly number[],

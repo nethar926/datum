@@ -13,7 +13,7 @@ import { LevelHistory } from './levelHistory'
 import { freqToX, niceTicks, xToFreq, zoomView, type FreqView } from './axis'
 import { placeFreqAxisTicks } from './freqAxis'
 import { bandLimitHz, fullView, minSpanOf } from './res'
-import { DOUBLE_TAP_MS, LONG_PRESS_MS, classifyTwoFinger, exceedsSlop, fingerExactCursor, isThreeFingerSwipeDown, panFreqByCentroid, panScrollDeltaS, pinchView } from '../touch/gestures'
+import { DOUBLE_TAP_MS, LONG_PRESS_MS, classifyTwoFinger, exceedsSlop, fingerExactCursor, isThreeFingerSwipeDown, lockPanAxis, panFreqByCentroid, panScrollDeltaS, pinchView, type PanAxis } from '../touch/gestures'
 import { applyScrollDelta, formatZuluHms, isReviewing, returnToLive, viewNowS } from '../touch/scrollBack'
 import { isLockTap } from './cursorLock'
 import { holdAfterThreeFingerSwipe, isCursorFrozen, nextHoldOnTap, showLockIcon, toggleLockButton, type CursorHold } from './cursorState'
@@ -422,6 +422,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const g = useRef({
     pinch: null as null | { v: FreqView; a0: number; b0: number; ax0: number; ay0: number; bx0: number; by0: number },
     twoKind: 'undecided' as 'pinch' | 'pan' | 'undecided',
+    panAxis: null as PanAxis | null,
     panStart: null as null | { v: FreqView; cx: number; cy: number; scroll0: number },
     threeStartYs: null as number[] | null,
     dragging: false, moved: false, longFired: false, longTimer: 0,
@@ -494,7 +495,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     clearTimeout(G.longTimer)
     if (ptr.current.size === 3) {
       // Three-finger: track Ys for swipe-down lock; cancel pinch/pan.
-      G.pinch = null; G.panStart = null; G.twoKind = 'undecided'
+      G.pinch = null; G.panStart = null; G.twoKind = 'undecided'; G.panAxis = null
       G.threeStartYs = [...ptr.current.values()].map((p) => p.y)
       G.moved = true; setPressHint(false); return
     }
@@ -503,12 +504,12 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       const [a, b] = [...ptr.current.values()]
       G.pinch = { v: view, a0: a.x, b0: b.x, ax0: a.x, ay0: a.y, bx0: b.x, by0: b.y }
       G.panStart = { v: view, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, scroll0: scrollBackS }
-      G.twoKind = 'undecided'
+      G.twoKind = 'undecided'; G.panAxis = null
       G.threeStartYs = null
       G.moved = true; setPressHint(false); return
     }
     if (ptr.current.size > 3) return
-    G.moved = false; G.longFired = false; G.pinch = null; G.panStart = null; G.twoKind = 'undecided'; G.threeStartYs = null
+    G.moved = false; G.longFired = false; G.pinch = null; G.panStart = null; G.twoKind = 'undecided'; G.panAxis = null; G.threeStartYs = null
     G.hzAtDown = cursorRef.current
     G.holdAtDown = cursorHold
     G.dragLockableAtDown = dragLockable
@@ -562,10 +563,14 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       }
       if (G.twoKind === 'pan' && G.panStart) {
         const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2
-        onView(panFreqByCentroid(G.panStart.v, cx - G.panStart.cx, w, fMax, minSpan, fMin))
-        if (paused && onScrollBack) {
+        const dx = cx - G.panStart.cx, dy = cy - G.panStart.cy
+        // Lock to frequency or time on the first decisive movement; hold until the fingers lift.
+        if (G.panAxis === null) G.panAxis = lockPanAxis(dx, dy)
+        if (G.panAxis === 'frequency') {
+          onView(panFreqByCentroid(G.panStart.v, dx, w, fMax, minSpan, fMin))
+        } else if (G.panAxis === 'time' && paused && onScrollBack) {
           const sign = newestAtBottom(dir) ? 1 : -1
-          const dS = panScrollDeltaS(cy - G.panStart.cy, h, historyS, sign)
+          const dS = panScrollDeltaS(dy, h, historyS, sign)
           onScrollBack(applyScrollDelta(G.panStart.scroll0, dS, historyS))
         }
         return
@@ -586,7 +591,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     if (!p) return
     if (G.threeStartYs) { if (ptr.current.size < 3) G.threeStartYs = null; return }
     if (G.pinch || G.panStart) {
-      if (ptr.current.size < 2) { G.pinch = null; G.panStart = null; G.twoKind = 'undecided' }
+      if (ptr.current.size < 2) { G.pinch = null; G.panStart = null; G.twoKind = 'undecided'; G.panAxis = null }
       return
     }
     const dt = e.timeStamp - p.t0

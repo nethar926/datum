@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   capDpr, classifyLayout, classifyTwoFinger, exceedsSlop, fingerExactCursor,
-  isThreeFingerSwipeDown, panFreqByCentroid, panScrollDeltaS, panView, pinchView,
+  isThreeFingerSwipeDown, lockPanAxis, panFreqByCentroid, panScrollDeltaS, panView, pinchView,
   PINCH_DIST_THRESH_PX, THREE_FINGER_SWIPE_PX,
 } from './gestures'
 
@@ -84,6 +84,28 @@ describe('panScrollDeltaS', () => {
   it('maps vertical centroid move into time delta', () => {
     expect(panScrollDeltaS(100, 200, 300, 1)).toBeCloseTo(150)
     expect(panScrollDeltaS(100, 200, 300, -1)).toBeCloseTo(-150)
+  })
+})
+
+describe('lockPanAxis', () => {
+  it('locks to frequency when horizontal dominates, time when vertical does', () => {
+    expect(lockPanAxis(30, 8)).toBe('frequency')
+    expect(lockPanAxis(8, 30)).toBe('time')
+    expect(lockPanAxis(-25, 10)).toBe('frequency')
+    expect(lockPanAxis(-4, -12)).toBe('time')
+  })
+  it('stays unlocked on a perfect diagonal until one side wins', () => {
+    expect(lockPanAxis(20, 20)).toBe(null)
+    expect(lockPanAxis(0, 0)).toBe(null)
+  })
+  it('holds the first decisive axis: a later orthogonal move does not relock', () => {
+    // Caller only invokes lockPanAxis while the axis is still null (Gram.tsx / native machine).
+    let axis = lockPanAxis(40, 0)
+    expect(axis).toBe('frequency')
+    if (axis === null) axis = lockPanAxis(40, 100) // not reached: already locked
+    expect(axis).toBe('frequency')
+    axis = axis ?? lockPanAxis(0, 80)
+    expect(axis).toBe('frequency')
   })
 })
 
