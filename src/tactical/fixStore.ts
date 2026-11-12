@@ -4,8 +4,9 @@
  */
 import {
   FRESH_WINDOW_S, MIN_CROSS_DEG, covarianceEllipse, fitLeg, freshRays, leastSquaresFix,
-  parallelRejectMessage, type ErrorEllipse, type LegFit,
+  parallelRejectMessage, type ErrorEllipse, type LegFit, type BearingRay,
 } from './crossFix'
+import { DEFAULT_FIX_COLOR, DEFAULT_FIX_SHAPE, type FixColor, type FixShape } from './fixStyle'
 
 export interface LaidFix {
   id: number
@@ -18,6 +19,10 @@ export interface LaidFix {
   buoyIds: number[]
   residualM: number
   tag: string // short serial on the mark: "1", "2"…
+  /** Snapshot of the manual rays at lay time; cyan lines fade over the fix fade window. */
+  rays: BearingRay[]
+  color: FixColor
+  shape: FixShape
 }
 
 export interface FixLeg {
@@ -176,6 +181,9 @@ export class FixStore {
       x: lsq.fix.x, y: lsq.fix.y, tS: simT,
       ellipse, buoyIds: rays.map((r) => r.buoyId),
       residualM: lsq.fix.residualM, tag,
+      rays: rays.map((r) => ({ ...r })),
+      color: DEFAULT_FIX_COLOR,
+      shape: DEFAULT_FIX_SHAPE,
     }
     this.fixes.push(fix)
     leg.fixIds.push(id)
@@ -210,6 +218,33 @@ export class FixStore {
       // If we undid the only fix on a freshly opened post-DYN leg and a prior closed leg exists, leave the empty leg.
     }
     this.emit(`Undo ${last.tag}`)
+  }
+
+  deleteFix(id: number): void {
+    const i = this.fixes.findIndex((f) => f.id === id)
+    if (i < 0) return
+    const gone = this.fixes[i]!
+    this.fixes.splice(i, 1)
+    const leg = this.legs.find((l) => l.id === gone.legId)
+    if (leg) {
+      leg.fixIds = leg.fixIds.filter((fid) => fid !== id)
+      leg.fit = fitLeg(leg.fixIds.map((fid) => this.fixes.find((f) => f.id === fid)!).filter(Boolean))
+    }
+    this.emit(`Deleted ${gone.tag}`)
+  }
+
+  setFixColor(id: number, color: FixColor): void {
+    const f = this.fixes.find((x) => x.id === id)
+    if (!f) return
+    f.color = color
+    this.emit()
+  }
+
+  setFixShape(id: number, shape: FixShape): void {
+    const f = this.fixes.find((x) => x.id === id)
+    if (!f) return
+    f.shape = shape
+    this.emit()
   }
 
   clear(): void {

@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
-import { crossFixes } from './fix'
 import { LONG_PRESS_MS, capDpr, exceedsSlop } from '../touch/gestures'
 import { fitView, toScreenX, toScreenY, toWorld, type PlotView, PLOT_CAMERA_FITTED, PLOT_WHEEL_FACTOR, panPlotCamera, recentrePlotCamera, zoomPlotCamera, type PlotCamera } from './transform'
 import { plotCameraAllows, plotDoubleTap, type PlotDoubleTapState } from './plotCameraGestures'
-import { bearingTo, distToRay, fixInputs, type FixSource, type ManualBearings } from './manual'
+import { bearingTo, distToRay, type FixSource, type ManualBearings } from './manual'
 import type { DropController } from './dropController'
 import { dropCapturesPlot } from './fieldMode'
 import { planReadout, type DropPlan } from './drop'
@@ -15,6 +14,11 @@ import { aisContacts, aisEffective, revealContacts, type PlotDifficulty } from '
 import type { TruthContact } from '../engine/contract'
 import { BUOY_STATUS_COLOR, paintHealth, type DetuneStore } from './detune'
 import type { FixStore } from './fixStore'
+import {
+  DEFAULT_FIX_COLOR, FIX_COLOR_RGB, FIX_COLORS, FIX_HIT_PX, FIX_LINE, FIX_SHAPES,
+  drawFixShape, fixLineAlpha, fixMenuFrame, hitFix, loadFixFadeS,
+  type FixColor, type FixShape,
+} from './fixStyle'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -46,13 +50,15 @@ const HIT_PX = 14
 // Fingers need a 44 pt target: 22 px radius on coarse pointers.
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
-/** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional Reveal positions. Canvas 2D. */
+/** Tactical plot: aircraft track, buoys (omni / DIFAR), violet auto bearings, operator-laid fixes, optional Reveal positions. Canvas 2D. */
 export function TacticalPlot({ client, showReveal, showAis = false, difficulty = 'regular', spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune, fix }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
   const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix })
   props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix }
+  const [pickedFixId, setPickedFixId] = useState<number | null>(null)
+  const fadeSRef = useRef(loadFixFadeS())
   const viewRef = useRef<PlotView | null>(null)
   const dragRef = useRef<number | null>(null)
   /** When set, the current pointer is an armed aim-tap (plot placement), not a buoy drag. */
@@ -130,7 +136,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         if (known.n >= 0 && t.buoys.length > known.n) { for (let i = known.n; i < t.buoys.length && i < MAX_SPLASH; i++) splash[i] = now; splashing = true }
         known.n = t.buoys.length
       }
-      const { showReveal: reveal, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs, arm: armSt } = props.current
+      const { showReveal: reveal, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: _fs, arm: armSt } = props.current
       const dpr = capDpr(devicePixelRatio)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
       // New run: recentre on the buoy field (same as native `load()`).
@@ -239,24 +245,35 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         ctx.fillText(armSt.phase === 'pick-buoy' ? 'BRG · tap DIFAR buoy' : 'BRG · tap to aim', 8 * dpr, 16 * dpr)
       }
 
-      // Cross-fixes from DIFAR lines (auto teaching aid).
-      ctx.strokeStyle = C.fix; ctx.lineWidth = 1.5 * dpr
-      for (const f of crossFixes(fixInputs(shown, sm ? man : {}, t.buoys, fs, selHz), t.buoys, SEL_TOL_HZ, MIN_DRAW_Q)) {
-        const sx = toScreenX(v, f.x), sy = toScreenY(v, f.y), r = 6 * dpr
-        ctx.beginPath(); ctx.moveTo(sx - r, sy - r); ctx.lineTo(sx + r, sy + r); ctx.moveTo(sx + r, sy - r); ctx.lineTo(sx - r, sy + r); ctx.stroke()
-        ctx.fillStyle = C.fix; ctx.fillText(f.freqHz < 0 ? 'MAN' : `${f.freqHz.toFixed(0)}Hz`, sx + 8 * dpr, sy - 6 * dpr)
-      }
+      // Auto fixes are not drawn (SHOW_AUTO_FIXES). crossFixes maths stay for drop planning.
 
       // Operator FIX tracks: ellipses, marks, legs (dim closed legs), short tags; track name on the leg.
+      // Cyan snapshot bearings fade over fixFadeS of sim time (default 2 min).
       const fx = props.current.fix
       if (fx && fx.fixes.length) {
         ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
+        const fadeS = fadeSRef.current
+        const simT = t.simT ?? 0
+        ctx.strokeStyle = FIX_LINE; ctx.lineWidth = 1.25 * dpr; ctx.setLineDash([])
+        for (const f of fx.fixes) {
+          const a = fixLineAlpha(simT - f.tS, fadeS)
+          if (a <= 0.01) continue
+          ctx.globalAlpha = a
+          for (const ray of f.rays ?? []) {
+            const th = (ray.brgDeg * Math.PI) / 180
+            ctx.beginPath()
+            ctx.moveTo(toScreenX(v, ray.x), toScreenY(v, ray.y))
+            ctx.lineTo(toScreenX(v, ray.x + Math.sin(th) * BEARING_LEN_M), toScreenY(v, ray.y + Math.cos(th) * BEARING_LEN_M))
+            ctx.stroke()
+          }
+        }
+        ctx.globalAlpha = 1
         for (const leg of fx.legs) {
           const pts = leg.fixIds.map((id) => fx.fixes.find((f) => f.id === id)).filter(Boolean) as typeof fx.fixes
           if (pts.length < 2) continue
           const track = fx.tracks.find((tr) => tr.id === leg.trackId)
           ctx.globalAlpha = leg.closed ? 0.4 : 1
-          ctx.strokeStyle = C.fix; ctx.lineWidth = (leg.closed ? 1.25 : 2) * dpr
+          ctx.strokeStyle = FIX_COLOR_RGB[DEFAULT_FIX_COLOR]; ctx.lineWidth = (leg.closed ? 1.25 : 2) * dpr
           ctx.setLineDash(leg.closed ? [5 * dpr, 4 * dpr] : [])
           ctx.beginPath()
           for (let i = 0; i < pts.length; i++) {
@@ -275,7 +292,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           if (track) {
             const mid = pts[Math.floor(pts.length / 2)]!
             const mx = toScreenX(v, mid.x), my = toScreenY(v, mid.y)
-            ctx.fillStyle = C.fix
+            ctx.fillStyle = FIX_COLOR_RGB[DEFAULT_FIX_COLOR]
             ctx.font = `700 ${11 * dpr}px ui-monospace, Menlo, monospace`
             ctx.fillText(track.tag, mx + 10 * dpr, my - 10 * dpr)
             ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
@@ -291,6 +308,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           const leg = fx.legs.find((l) => l.id === f.legId)
           ctx.globalAlpha = leg?.closed ? 0.45 : 1
           const el = f.ellipse
+          const col = FIX_COLOR_RGB[f.color ?? DEFAULT_FIX_COLOR]
           // Visible floor so a tight cut still reads as an ellipse on an 18 km plot.
           const majPx = Math.max(20 * dpr, el.semiMajorM / v.mPerPx)
           const minPx = Math.max(12 * dpr, el.semiMinorM / v.mPerPx)
@@ -298,13 +316,11 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           ctx.translate(sx, sy)
           // orientDeg is °T (0 = north); canvas +X is east → rotate (θ − 90°).
           ctx.rotate(((el.orientDeg - 90) * Math.PI) / 180)
-          ctx.strokeStyle = C.fix; ctx.lineWidth = 1.5 * dpr; ctx.globalAlpha *= 0.75
+          ctx.strokeStyle = col; ctx.lineWidth = 1.5 * dpr; ctx.globalAlpha *= 0.75
           ctx.beginPath(); ctx.ellipse(0, 0, majPx, minPx, 0, 0, Math.PI * 2); ctx.stroke()
           ctx.restore()
           ctx.globalAlpha = leg?.closed ? 0.45 : 1
-          const r = 5 * dpr
-          ctx.strokeStyle = C.fix; ctx.lineWidth = 1.75 * dpr
-          ctx.beginPath(); ctx.moveTo(sx - r, sy - r); ctx.lineTo(sx + r, sy + r); ctx.moveTo(sx + r, sy - r); ctx.lineTo(sx - r, sy + r); ctx.stroke()
+          drawFixShape(ctx, f.shape ?? DEFAULT_FIX_SHAPE, sx, sy, 6 * dpr, col, 2 * dpr)
           ax[n] = sx; ay[n] = sy
           tw[n] = ctx.measureText(f.tag).width + 4 * dpr; th[n] = 12 * dpr
           n++
@@ -321,8 +337,11 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           pushObs(bx - 8 * dpr, by - 8 * dpr, 16 * dpr, 16 * dpr)
         }
         placeRevealTagsInPlace(n, ax, ay, tw, th, outX, outY, obs, mObs, w, h, 4 * dpr)
-        ctx.fillStyle = C.fix; ctx.globalAlpha = 1
-        for (let i = 0; i < n; i++) ctx.fillText(fx.fixes[i]!.tag, outX[i] + 2 * dpr, outY[i] + 10 * dpr)
+        ctx.globalAlpha = 1
+        for (let i = 0; i < n; i++) {
+          ctx.fillStyle = FIX_COLOR_RGB[fx.fixes[i]!.color ?? DEFAULT_FIX_COLOR]
+          ctx.fillText(fx.fixes[i]!.tag, outX[i] + 2 * dpr, outY[i] + 10 * dpr)
+        }
       }
 
       // Reveal positions (instructor marks only — no text dump). Zero heap traffic on the hot path.
@@ -455,6 +474,14 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       return null
     })
   }, [showReveal, showAis, difficulty])
+  const hitLaidFix = (e: React.PointerEvent | React.MouseEvent) => {
+    const fx = props.current.fix, v = viewRef.current, c = ref.current
+    if (!fx || !fx.fixes.length || !v || !c) return null
+    const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
+    const px = (e.clientX - rect.left) * dpr, py = (e.clientY - rect.top) * dpr
+    const marks = fx.fixes.map((f) => ({ id: f.id, sx: toScreenX(v, f.x), sy: toScreenY(v, f.y) }))
+    return hitFix(marks, px, py, FIX_HIT_PX * dpr)
+  }
   const setFrom = (id: number, wx: number, wy: number, final: boolean) => {
     const b = client.status.tactical?.buoys.find((x) => x.id === id); if (!b) return
     const deg = bearingTo(b, wx, wy); if (deg !== null) onManual?.(id, deg, final)
@@ -601,7 +628,10 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           if (pr && !pr.moved) {
             const r = plotDoubleTap(dbl.current, e.clientX, e.clientY, performance.now() / 1000)
             dbl.current = r.last
-            if (r.kind === 'recentre') { setCam(recentrePlotCamera()); setPicked(null); return }
+            if (r.kind === 'recentre') { setCam(recentrePlotCamera()); setPicked(null); setPickedFixId(null); return }
+            const fid = hitLaidFix(e)
+            if (fid !== null) { setPickedFixId(fid); setPicked(null); return }
+            setPickedFixId(null)
             const rid = hitReveal(e)
             if (rid !== null) {
               const tac = client.status.tactical
@@ -655,7 +685,66 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         </div>
       )
     })()}
+    {pickedFixId != null && fix && (() => {
+      const f = fix.fixes.find((x) => x.id === pickedFixId)
+      const v = viewRef.current, c = ref.current
+      if (!f || !v || !c) return null
+      const rect = c.getBoundingClientRect()
+      const dpr = c.width / Math.max(1, rect.width)
+      const frame = fixMenuFrame(toScreenX(v, f.x) / dpr, toScreenY(v, f.y) / dpr, { x: 0, y: 0, width: rect.width, height: rect.height })
+      if (!frame) return null
+      return (
+        <div
+          className="fix-menu"
+          data-testid="fix-menu"
+          role="dialog"
+          aria-label="Fix menu"
+          style={{ left: frame.x, top: frame.y, width: frame.width }}
+        >
+          <button type="button" className="fix-menu-del" onClick={() => { fix.deleteFix(f.id); setPickedFixId(null) }}>Delete</button>
+          <div className="fix-menu-colors" role="group" aria-label="Colour">
+            {FIX_COLORS.map((col) => (
+              <button key={col} type="button" aria-label={col} aria-pressed={f.color === col}
+                className={f.color === col ? 'on' : undefined}
+                style={{ background: FIX_COLOR_RGB[col] }}
+                onClick={() => fix.setFixColor(f.id, col as FixColor)} />
+            ))}
+          </div>
+          <div className="fix-menu-shapes" role="group" aria-label="Shape">
+            {FIX_SHAPES.map((sh) => (
+              <button key={sh} type="button" aria-label={sh} aria-pressed={f.shape === sh}
+                className={f.shape === sh ? 'on' : undefined}
+                onClick={() => fix.setFixShape(f.id, sh as FixShape)}>
+                <FixShapeIcon shape={sh} color={FIX_COLOR_RGB[f.color]} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )
+    })()}
   </>)
+}
+
+function FixShapeIcon({ shape, color }: { shape: FixShape; color: string }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+      {shape === 'multiply' && <path d="M4 4 L14 14 M14 4 L4 14" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" />}
+      {shape === 'plus' && <path d="M3 9 H15 M9 3 V15" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" />}
+      {shape === 'sub' && <path d="M9 3 L15 15 H3 Z" fill={color} />}
+      {shape !== 'multiply' && shape !== 'plus' && shape !== 'sub' && (
+        <polygon fill={color} points={starPoints(9, 9, 7, shape === 'star.fill' ? 5 : shape === 'staroflife.fill' ? 6 : 8, shape === 'burst.fill' ? 0.35 : 0.45)} />
+      )}
+    </svg>
+  )
+}
+function starPoints(x: number, y: number, r: number, points: number, inner: number): string {
+  const out: string[] = []
+  for (let i = 0; i < points * 2; i++) {
+    const a = i * Math.PI / points - Math.PI / 2
+    const rad = r * (i % 2 === 0 ? 1 : inner)
+    out.push(`${x + Math.cos(a) * rad},${y + Math.sin(a) * rad}`)
+  }
+  return out.join(' ')
 }
 
 /**

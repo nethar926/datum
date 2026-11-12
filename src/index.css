@@ -176,6 +176,43 @@ button, select { font: inherit; color: inherit; }
 .reveal-card-head, .ais-card-head { color: #e8ecf2; font-weight: 600; letter-spacing: .04em; margin-bottom: 2px; }
 .reveal-card .dim, .ais-card .dim { opacity: 0.55; }
 
+/* Operator-laid fix edit menu: accent-tinted Liquid Glass, stays inside the plot pane. */
+.fix-menu {
+  position: absolute; z-index: 7; padding: 10px; border-radius: 14px;
+  color: var(--on-glass-accent, #f2fff4);
+  background: transparent;
+  --glass-tint: var(--glass-accent-tint);
+  --glass-tint-reduced: var(--glass-accent-tint-reduced);
+  box-sizing: border-box;
+}
+.fix-menu::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(14px) saturate(180%) brightness(1.03);
+  backdrop-filter: blur(14px) saturate(180%) brightness(1.03);
+}
+.fix-menu::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 1px 0 var(--glass-rim, rgba(255,255,255,.18)), inset 0 -1px 0 var(--glass-rim-lo, rgba(0,0,0,.35)), inset 0 0 0 .5px var(--glass-edge, rgba(255,255,255,.12));
+}
+:root[data-glass='reduced'] .fix-menu::before { background: var(--glass-tint-reduced, var(--glass-tint)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.fix-menu-del {
+  display: block; width: 100%; min-height: 44px; margin: 0 0 8px; border: 0; border-radius: 10px;
+  font: 700 12px/1 var(--font-mono, ui-monospace, Menlo, monospace); letter-spacing: .04em;
+  color: #ff453a; background: rgba(255, 69, 58, .12); cursor: pointer;
+}
+.fix-menu-colors, .fix-menu-shapes { display: flex; gap: 6px; align-items: center; }
+.fix-menu-colors button {
+  width: 22px; height: 22px; margin: 11px; border: 0; border-radius: 50%; cursor: pointer; padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
+}
+.fix-menu-colors button[aria-pressed='true'], .fix-menu-colors button.on { box-shadow: inset 0 0 0 2px #fff; }
+.fix-menu-shapes button {
+  width: 44px; height: 44px; border: 0; border-radius: 8px; cursor: pointer;
+  background: transparent; display: grid; place-items: center; padding: 0;
+}
+.fix-menu-shapes button[aria-pressed='true'], .fix-menu-shapes button.on { background: rgba(255,255,255,.12); }
+
 /* Compendium (recognition guide) */
 .compendium { position: fixed; inset: 0; z-index: 40; background: var(--bg-0); color: var(--text-1); display: flex; flex-direction: column; }
 .cmp-bar { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--hairline); background: var(--bg-1); flex-wrap: wrap; }

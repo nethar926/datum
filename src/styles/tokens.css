@@ -31,7 +31,7 @@
   --plot-buoy-detuned: #30d158;
   --plot-buoy-dead-hi: #ff453a;
   --plot-buoy-error: #ffd60a;
-  --plot-bearing: rgba(255, 211, 92, 0.55);
+  --plot-bearing: rgba(157, 107, 255, 0.85);
   --plot-fix: #ff6b6b;
   --plot-truth: rgba(255, 255, 255, 0.55);
   /* Neutral reveal colour — distinct from buoy amber; Wilson may retune later. */
