@@ -70,6 +70,17 @@ export function GlassDefs() {
         <feGaussianBlur in="n" stdDeviation="2" result="nb" />
         <feDisplacementMap in="SourceGraphic" in2="nb" scale="18" xChannelSelector="R" yChannelSelector="G" />
       </filter>
+      {([['datum-bloom-low', 0.7, 0.04], ['datum-bloom-med', 1.2, 0.07], ['datum-bloom-high', 1.8, 0.11]] as const).map(([id, blur, grain]) => (
+        <filter key={id} id={id} x="-8%" y="-8%" width="116%" height="116%" colorInterpolationFilters="sRGB">
+          <feGaussianBlur in="SourceGraphic" stdDeviation={blur} result="blur" />
+          <feComponentTransfer in="blur" result="hot"><feFuncA type="linear" slope="0.85" /></feComponentTransfer>
+          <feBlend in="SourceGraphic" in2="hot" mode="screen" result="bloom" />
+          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="1" seed="3" result="noise" />
+          <feColorMatrix in="noise" type="luminanceToAlpha" result="nA" />
+          <feComponentTransfer in="nA" result="grain"><feFuncA type="linear" slope={grain} /></feComponentTransfer>
+          <feBlend in="bloom" in2="grain" mode="overlay" />
+        </filter>
+      ))}
     </svg>
   )
 }

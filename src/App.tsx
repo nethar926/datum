@@ -63,6 +63,7 @@ import { useLayout } from './touch/useLayout'
 import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
 import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, useAppearance, useGlass } from './ui/chrome'
+import { DISPLAY_BLOOM_LEVELS, DISPLAY_BLOOM_LABEL, loadDisplayBloom, saveDisplayBloom, type DisplayBloom } from './displayFx'
 import { ToolsToolbar } from './ui/ToolsToolbar'
 import { PlotGrabber } from './touch/PlotGrabber'
 import { useViewportSegments } from './touch/useViewportSegments'
@@ -156,6 +157,8 @@ export default function App() {
   const [vernierPick, setVernierPick] = useState(false)
   // LOFAR phosphor: green (default), amber or red. Amplitude only, no hue coding. DIFAR ignores it (bearing wheel).
   const [palette, setPalette] = useState<PaletteId>(loadPalette)
+  const [displayBloom, setDisplayBloom] = useState<DisplayBloom>(loadDisplayBloom)
+  useEffect(() => { saveDisplayBloom(displayBloom) }, [displayBloom])
   const [contrast, setContrast] = useState<number>(loadContrast)
   const [wheel, setWheel] = useState<DifarWheelSettings>(loadWheel)
   const [wheelOpen, setWheelOpen] = useState(false)
@@ -1161,7 +1164,7 @@ export default function App() {
   return (
     <div className={`app ios layout-${layout}`} data-layout={layout} data-gram-dir={gramDir} data-tab={tab} data-split={splitAxis}
       data-detent={useDetents ? plotDetent : undefined} data-segments={hinge ? 'hinge' : undefined} data-portrait={portrait ? '1' : '0'}
-      data-tabbar="full" data-fix-armed={fixStore.armed ? '1' : '0'} data-demon={demonCfgs.length ? '1' : '0'}>
+      data-tabbar="full" data-fix-armed={fixStore.armed ? '1' : '0'} data-demon={demonCfgs.length ? '1' : '0'} data-display-bloom={displayBloom !== 'off' ? displayBloom : undefined}>
       <GlassDefs />
       <Splash />
       {newSim && <NewSimDialog currentSeed={newSim.current} proposedSeed={newSim.proposed} onChoose={chooseNewSim} />}
@@ -1579,6 +1582,15 @@ export default function App() {
                 </div></div>
             </div>
             <p className="ios-foot">Grams, LOFAR palettes and the DIFAR wheel stay dark in both modes.</p>
+          </div>
+          <div className="ios-section">
+            <h3>Display</h3>
+            <div className="ios-group">
+              <div className="ios-row"><span className="row-label">Bloom &amp; phosphor noise<small>A single cheap pass on the plot, chrome and overlays. Grams are never included. Off adds no cost.</small></span>
+                <div className="seg ios-seg" role="group" aria-label="Bloom and phosphor noise" data-testid="display-bloom">
+                  {DISPLAY_BLOOM_LEVELS.map((k) => <button key={k} type="button" aria-pressed={displayBloom === k} data-testid={`display-bloom-${k}`} onClick={() => setDisplayBloom(k)}>{DISPLAY_BLOOM_LABEL[k]}</button>)}
+                </div></div>
+            </div>
           </div>
           <div className="ios-section">
             <h3>Gram</h3>
