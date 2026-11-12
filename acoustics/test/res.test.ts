@@ -162,7 +162,7 @@ describe('RES contract, determinism and allocation',()=>{
  const release=(s:ReturnType<typeof setup>,b:GramRows)=>{const buffers=[b.streamIds.buffer,b.rowIndex.buffer,b.data.buffer,b.bearingDeg!.buffer] as ArrayBuffer[];s.send({type:'release',buffers:structuredClone(buffers,{transfer:buffers})});};
  it('subscribe res/filter/vernier echoes the full gramConfig; legacy subscribe is unchanged',()=>{
   const e=new AcousticEngine(cpaScenario()),c=e.subscribe({channel:1,res:3,vernierHz:120});
-  expect(c).toEqual({v:1,type:'gramConfig',simT:0,streamId:c.streamId,kind:'lofar',channel:1,bins:1024,f0:120-64,fBin:.125,rowRateHz:.5,dbFloor:0,dbCeil:30,res:3,filter:'NB',bandHz:128,fcHz:120,enbwHz:.1875,bandLimited:false,liveBins:1024,rowPhaseS:0});
+  expect(c).toEqual({v:1,type:'gramConfig',simT:0,streamId:c.streamId,kind:'lofar',channel:1,bins:1024,f0:120-64,fBin:.125,rowRateHz:.5,dbFloor:0,dbCeil:30,res:3,filter:'NB',bandHz:128,fcHz:120,enbwHz:.1875,bandLimited:false,liveBins:1024,rowPhaseS:2,integrationMode:'sti',integrationSpanS:8});
   expect(e.subscribe({channel:1,filter:'NB'})).toMatchObject({res:5,f0:0,fBin:.5});expect(e.subscribe({channel:1,res:1})).toMatchObject({rowRateHz:.125,fBin:.03125});expect('fcHz' in e.subscribe({channel:1,res:2})).toBe(false);
   const legacy=e.subscribe({channel:1});expect(legacy).toMatchObject({rowRateHz:4,dbFloor:40,dbCeil:110,fBin:500/1023});expect(legacy.res).toBeUndefined();
   for(const bad of [{res:0},{res:10},{res:2.5},{filter:'XX'},{vernierHz:-1},{res:3,band:[0,100]},{res:3,bins:512}])expect(()=>e.subscribe({channel:1,...bad} as never)).toThrow();
@@ -200,24 +200,27 @@ describe('RES contract, determinism and allocation',()=>{
   const many=(n:number)=>{const s=cpaScenario();s.buoys=Array.from({length:n},(_,i)=>({...s.buoys[0],id:`buoy-${i+1}`,rfChannel:i+1,x:(i%8)*400,y:Math.floor(i/8)*500}));return s;};
   for(const n of [32,7]){for(const r of [1,2,3,5,9] as ResLevel[]){
    const e=new AcousticEngine(many(n)),P=resParams(r).rowPeriodS,ids=e.scenario.buoys.map(b=>e.subscribe({channel:b.rfChannel,res:r}));
-   for(const [i,c] of ids.entries()){expect(c.rowPhaseS).toBe(Math.floor(i*(P/.25)/n)*.25);expect(c.rowPhaseS).toBeLessThan(P);}
+   for(const [i,c] of ids.entries()){
+    const stagger=Math.floor(i*(P/.25)/n)*.25,start=Math.floor((0-stagger)/P+1e-9)*P+stagger;
+    expect(c.rowPhaseS).toBe(start+P);expect(((c.rowPhaseS!%P)+P)%P).toBe(stagger);
+   }
    const bound=Math.ceil(n*.25/P)+1,out=new Float32Array(1024),seen=new Map<number,number[]>();let max=0,total=0;
    for(let step=1;step<=Math.round(4*P)*3;step++){e.advance(.25);let rows=0;for(const c of ids)while(e.rowsReady(c.streamId)>0){e.writeRow(c.streamId,out);rows++;(seen.get(c.streamId)??seen.set(c.streamId,[]).get(c.streamId)!).push(e.time);}max=Math.max(max,rows);total+=rows;}
    expect(max).toBeLessThanOrEqual(bound);expect(total).toBe(3*n);
    for(const c of ids){const t=seen.get(c.streamId)!;expect(t).toHaveLength(3);for(const x of t)expect(Math.abs(((x-c.rowPhaseS!)/P)-Math.round((x-c.rowPhaseS!)/P))).toBeLessThan(1e-9);}
   }}
   // Phase is by buoy index (scenario order), so subscribe order does not change it; setGram re-phases on the new P.
-  const e=new AcousticEngine(many(8)),late=e.subscribe({channel:8,res:5}),early=e.subscribe({channel:1,res:5});expect(late.rowPhaseS).toBe(1.75);expect(early.rowPhaseS).toBe(0);
+  const e=new AcousticEngine(many(8)),late=e.subscribe({channel:8,res:5}),early=e.subscribe({channel:1,res:5});expect(late.rowPhaseS).toBe(1.75);expect(early.rowPhaseS).toBe(2);
   e.advance(3);const g=e.setGram(late.streamId,{res:1});expect(g.rowPhaseS).toBe(7);expect(e.rowsReady(late.streamId)).toBe(0);e.advance(3.75);expect(e.rowsReady(late.streamId)).toBe(0);e.advance(.25);expect(e.rowsReady(late.streamId)).toBe(1);
  });
  it('worker packs phased RES rows: per-tick rows bounded, every stream on its own grid, phased rows deterministic',()=>{
   const s=setup();for(let i=2;i<=8;i++)s.send({type:'dropBuoy',id:i,channel:i,kind:'difar',x:i*300,y:0,hydrophoneDepthM:40});
   for(let ch=1;ch<=8;ch++)s.send({type:'subscribe',channel:ch,res:5});
-  const cfg=s.messages.filter((m):m is GramConfig=>m.type==='gramConfig'&&m.res===5);expect(cfg.map(c=>c.rowPhaseS)).toEqual([0,.25,.5,.75,1,1.25,1.5,1.75]);
+  const cfg=s.messages.filter((m):m is GramConfig=>m.type==='gramConfig'&&m.res===5);expect(cfg.map(c=>c.rowPhaseS)).toEqual([2,.25,.5,.75,1,1.25,1.5,1.75]);
   let max=0;const times=new Map<number,number[]>();
   for(let k=0;k<32;k++){s.runtime.tick(.25);let rows=0;for(const b of batches(s.messages)){for(let j=0;j<b.streamIds.length;j++){const id=b.streamIds[j];const c=cfg.find(c=>c.streamId===id);if(!c)continue;rows++;(times.get(id)??times.set(id,[]).get(id)!).push(b.simT);}release(s,b);}s.messages.length=0;max=Math.max(max,rows);}
   expect(max).toBeLessThanOrEqual(Math.ceil(8*.25/2)+1);
-  for(const c of cfg)expect(times.get(c.streamId)).toEqual([0,1,2,3].map(k=>c.rowPhaseS!+2*k+(c.rowPhaseS===0?2:0)).filter(t=>t<=8));
+  for(const c of cfg)expect(times.get(c.streamId)).toEqual([0,1,2,3].map(k=>c.rowPhaseS!+2*k).filter(t=>t<=8));
   // The phase only moves *when* a stream's generator runs; its row sequence (seeded per row, AR(1)
   // state carried row to row at K=1) is unchanged, so phased rows are deterministic and identical
   // to an unphased generator with the same settings.

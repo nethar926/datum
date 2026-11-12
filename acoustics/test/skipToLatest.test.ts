@@ -46,8 +46,7 @@ describe('skipToLatest',()=>{
     const e=new AcousticEngine(cpaScenario());
     const c=e.subscribe({channel:1,res:3}); // P=2 s, rowRate 0.5
     const out=new Float32Array(c.bins);
-    e.advance(c.rowPhaseS??0);
-    e.advance(6); // three 2 s periods
+    e.advance(6); // three 2 s periods from t=0 (RES3 P=2, first row at rowPhaseS=2)
     const ready=e.rowsReady(c.streamId);
     expect(ready).toBeGreaterThanOrEqual(2);
     const idx=e.skipToLatest(c.streamId,out);

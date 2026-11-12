@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {resRowPath} from '../src/resGram.js';
-import {AcousticEngine,WorkerRuntime,cpaScenario,fictionalSignature,resParams,RES_FRAME_S,ResLofarGenerator} from '../src/index.js';
+import {AcousticEngine,WorkerRuntime,cpaScenario,fictionalSignature,resParams,RES_FRAME_S,ResLofarGenerator,HISTORY_FRAMES} from '../src/index.js';
 import {SCENARIO_CUTS,renderCut,SIM_STREAM_SET} from '../src/cuts/index.js';
 import {measureEdges} from './bandEdges.test.js';
 import type {ResLevel,Command,GramRows,WorkerRequest,WorkerResponse} from '../src/protocol.js';
@@ -52,7 +52,7 @@ describe('startup, seek/replay, bounded history',()=>{
   const oa=new Float32Array(1024),ob=new Float32Array(1024);for(let t=0;t<8;t+=.25){a.advance(.25);b.advance(.25);while(a.rowsReady(ca.streamId)>0){a.writeRow(ca.streamId,oa);b.writeRow(cb.streamId,ob);expect(a.subscriptions.get(ca.streamId).res.lastIntegrated).toBe(true);expect(Buffer.from(oa.buffer).equals(Buffer.from(ob.buffer))).toBe(true);}}
  });
  it('seek replays continuous play: bit-identical on the 0.25 s frame grid; off-grid targets differ only by float rounding of the split kinematic step (RES2, span 16 s)',()=>{
-  const mk=()=>{const messages:WorkerResponse[]=[];const runtime=new WorkerRuntime((m,t=[])=>messages.push(structuredClone(m,{transfer:t})));const send=(m:Command)=>runtime.command({...m,v:1,simT:runtime.simT} as WorkerRequest);send({type:'init',seed:42,scenarioId:'cpa-pass'});send({type:'setGram',streamId:1,res:2,filter:'NB'});const rel=()=>{for(const b of messages.splice(0))if(b.type==='gramRows'){const g=b as GramRows;kept.push(g);const buffers=[new Int32Array(g.streamIds).buffer,new Uint32Array(g.rowIndex).buffer,new Float32Array(g.data).buffer,new Float32Array(g.bearingDeg!).buffer] as ArrayBuffer[];send({type:'release',buffers:structuredClone(buffers,{transfer:buffers})} as Command);}};const kept:GramRows[]=[];return {runtime,messages:kept,send,tick:(dt:number)=>{runtime.tick(dt);rel();},seek:(t:number)=>{runtime.command({v:1,type:'seek',simT:t} as WorkerRequest);rel();kept.length=0;}};};
+  const mk=()=>{const messages:WorkerResponse[]=[];const runtime=new WorkerRuntime((m,t=[])=>messages.push(structuredClone(m,{transfer:t})),()=>cpaScenario());const send=(m:Command)=>runtime.command({...m,v:1,simT:runtime.simT} as WorkerRequest);send({type:'init',seed:42,scenarioId:'cpa-pass'});send({type:'setGram',streamId:1,res:2,filter:'NB'});const rel=()=>{for(const b of messages.splice(0))if(b.type==='gramRows'){const g=b as GramRows;kept.push(g);const buffers=[new Int32Array(g.streamIds).buffer,new Uint32Array(g.rowIndex).buffer,new Float32Array(g.data).buffer,new Float32Array(g.bearingDeg!).buffer] as ArrayBuffer[];send({type:'release',buffers:structuredClone(buffers,{transfer:buffers})} as Command);}};const kept:GramRows[]=[];return {runtime,messages:kept,send,tick:(dt:number)=>{runtime.tick(dt);rel();},seek:(t:number)=>{runtime.command({v:1,type:'seek',simT:t} as WorkerRequest);rel();kept.length=0;}};};
   const rows=(m:WorkerResponse[])=>{const out=new Map<number,Float32Array>();for(const x of m)if(x.type==='gramRows')out.set((x as GramRows).rowIndex[0]!,(x as GramRows).data);return out;};
   const x=mk();for(let i=0;i<240;i++)x.tick(.25);const want=rows(x.messages);
   let worstOff=0;for(const target of [30,17.5,17.6]){const y=mk();y.seek(target);while(y.runtime.simT<60-1e-9)y.tick(.25);const got=rows(y.messages);
@@ -65,7 +65,7 @@ describe('startup, seek/replay, bounded history',()=>{
  });
  it('history is bounded: one engine-wide state ring of HISTORY_FRAMES frames, independent of run length',()=>{
   const e=new AcousticEngine(scen(),91) as any;e.subscribe({channel:1,kind:'lofar',res:2,filter:'NB',vernierHz:32});e.subscribe({channel:1,kind:'lofar',res:5,filter:'NB',fullAxis:true});
-  const b0=e.retainedBytes().total;for(let i=0;i<2000;i++)e.advance(.25);expect(e.history.frames).toBe(Math.ceil((32+8)/.25)+2);expect(e.retainedBytes().total).toBe(b0);
+  const b0=e.retainedBytes().total;for(let i=0;i<2000;i++)e.advance(.25);expect(e.history.frames).toBe(HISTORY_FRAMES);expect(e.retainedBytes().total).toBe(b0);
  });
 
 });

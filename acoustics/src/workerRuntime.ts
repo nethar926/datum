@@ -1,11 +1,13 @@
 import {AcousticEngine} from './engine.js';
-import {cpaScenario,lloydsCpaScenario} from './scenario.js';
+import {generateScenario,clampParams,type ScenarioParams} from './scenario/presets.js';
+import type {Scenario} from './scenario.js';
 import {isAlive,isFeeding} from './buoys.js';
 import type {GramConfig,GramRows,Tactical,WorkerRequest,WorkerResponse} from './protocol.js';
 type Frame={message:GramRows;transfer:ArrayBuffer[]};
 /** Row period: legacy grams 0.25 s; RES grams P=1/rowRateHz (exact: 8, 4 or 2 s). */
 const periodOf=(c:GramConfig):number=>c.res===undefined?.25:1/c.rowRateHz;
-const phaseOf=(c:GramConfig):number=>c.rowPhaseS??0;
+/** Stagger phase in [0, P) for packing groups. Engine `rowPhaseS` is the sim time of row 0 (≡ phase mod P). */
+const phaseOf=(c:GramConfig):number=>{const P=periodOf(c),x=c.rowPhaseS??0;return ((x%P)+P)%P;};
 const due=(period:number,t:number,phase=0):boolean=>period===.25||Math.abs((t-phase)/period-Math.round((t-phase)/period))<1e-9;
 /** M1 worker controller, independently testable without Worker/Node APIs. Fixed three-batch pool.
  * Commands/config changes may allocate; tick/writeRow allocate no sample/row arrays. */
@@ -15,21 +17,26 @@ export class WorkerRuntime {
   private readonly configs:GramConfig[]=[];
   private readonly indices=new Map<number,number>();
   /** Packed batch groups: fixed legacy 4 Hz LOFAR/DEMON groups by bin count, then one RES 1024-bin
-   * group per (row period P, row phase) present, ordered P desc, phase asc. Every stream in a group is
-   * due on the same 0.25 s tick (t = k·P + rowPhaseS). Rebuilt on (un)subscribe/setGram only. */
+   * group per (row period P, stagger phase) present, ordered P desc, phase asc. Every stream in a group is
+   * due on the same 0.25 s tick (t ≡ rowPhaseS (mod P)). Rebuilt on (un)subscribe/setGram only. */
   private readonly groups:{bins:number;period:number;phase:number;tiled:boolean;configs:GramConfig[];pool:Frame[]}[]=[{bins:1024,period:.25},{bins:512,period:.25},{bins:4096,period:.25}].map(g=>({...g,phase:0,tiled:false,configs:[] as GramConfig[],pool:[] as Frame[]}));
   private readonly scratch=new Float32Array(4096);
   private timer:ReturnType<typeof setInterval>|undefined;
   private readonly bearingStore=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
   private readonly tactical:Tactical={v:1,type:'tactical',simT:0,aircraft:{x:0,y:0,altM:300,hdgDeg:0,gsMps:0},buoys:[],bearings:[]};
-  constructor(private readonly emit:(message:WorkerResponse,transfer?:ArrayBuffer[])=>void){}
+  /** Params of the generated scenario, kept so seek rebuilds the identical scenario. */
+  private params:ScenarioParams=clampParams({});private initialBuoys=0;
+  /** `fixture` is a test-only override (e.g. cpaScenario/lloydsCpaScenario); production always generates. */
+  constructor(private readonly emit:(message:WorkerResponse,transfer?:ArrayBuffer[])=>void,private readonly fixture?:(seed:number)=>Scenario){}
+  private build():Scenario{const s=this.fixture?this.fixture(this.seed):generateScenario(this.params,this.seed);s.seed=this.seed;return s;}
   get simT():number{return this.engine?.time??0;}
   dispose():void{if(this.timer!==undefined){clearInterval(this.timer);this.timer=undefined;}}
   command(m:WorkerRequest):void{try{
     if(m.v!==1||!Number.isFinite(m.simT))throw new Error('Expected v1 and finite simT');
     if(m.type==='init'){
-      if(m.scenarioId!=='cpa-pass'&&m.scenarioId!=='m1-cpa-pass'&&m.scenarioId!=='m2-lloyds-cpa')throw new Error('Unknown scenarioId; M1 supports cpa-pass');
-      const s=m.scenarioId==='m2-lloyds-cpa'?lloydsCpaScenario(m.seed):cpaScenario();s.seed=m.seed;const engine=new AcousticEngine(s);this.dispose();this.engine=engine;this.seed=m.seed;this.rate=1;this.nextId=1;this.nextRow=.25;this.configs.length=0;this.indices.clear();
+      // Always generated from ScenarioParams (behaviour dial etc.); a legacy scenarioId is accepted and ignored.
+      if(!Number.isFinite(m.seed))throw new Error('Expected finite seed');
+      this.params=clampParams({...(m.params??{}),seed:m.seed});this.seed=m.seed;const s=this.build();const engine=new AcousticEngine(s);this.dispose();this.engine=engine;this.initialBuoys=s.buoys.length;this.rate=1;this.nextId=1;this.nextRow=.25;this.configs.length=0;this.indices.clear();
       for(const b of engine.scenario.buoys)this.subscribe(b.rfChannel);this.rebuildPool();this.rebuildTactical();this.sendTactical();return;
     }
     const e=this.engine;if(!e)throw new Error('Initialize first');
@@ -44,7 +51,7 @@ export class WorkerRuntime {
         if(!(m.channel>0)||!Number.isInteger(m.channel))throw new Error('Invalid RF channel');
         const id=m.id??(Math.max(0,...this.tactical.buoys.map(b=>b.id))+1);
         if(!Number.isInteger(id)||id<1||this.tactical.buoys.some(b=>b.id===id))throw new Error('Invalid buoy id');
-        e.addBuoy({id:`buoy-${id}`,rfChannel:m.channel,type:m.kind==='omni'?'passive-omni':'difar',x:m.x,y:m.y,depth:m.hydrophoneDepthM,course:0,speed:0,deployedAt:e.time,life:m.lifeS??7200});
+        e.addBuoy({id:`buoy-${id}`,rfChannel:m.channel,type:m.kind==='omni'?'passive-omni':'difar',x:m.x,y:m.y,depth:m.hydrophoneDepthM,course:0,speed:0,deployedAt:e.time,life:m.lifeS??7200,placed:false,dropAltitudeM:m.dropAltitudeM,descentRateMps:m.descentRateMps,integrationTimeS:m.integrationTimeS});
         this.rebuildTactical();this.sendTactical();break;
       }
       case 'subscribe':{
@@ -163,10 +170,10 @@ export class WorkerRuntime {
   private seek(target:number):void{
     if(this.configs.some(c=>c.kind==='demon'||(c.res===undefined&&(c.f0!==0||Math.abs(c.fBin*(c.bins-1)-500)>1e-8))))throw new Error('Seek with DEMON awaits analysis-window replay');
     if(target<0||target>3600)throw new Error('M1 seek range is 0..3600 seconds');
-    if(this.engine!.scenario.buoys.length!==1)throw new Error('Seek after drops awaits scenario event log');
+    if(this.engine!.scenario.buoys.length!==this.initialBuoys)throw new Error('Seek after drops awaits scenario event log');
     // Replay the seeded row schedule, preserving fluctuations exactly at 4 rows/s.
     // RES streams replay as if their gram settings were applied at t=0 (rows on the P grid).
-    this.dispose();const s=cpaScenario();s.seed=this.seed;this.engine=new AcousticEngine(s);
+    this.dispose();this.engine=new AcousticEngine(this.build());
     for(let k=0;k<this.configs.length;k++){const c=this.configs[k];this.engine.registerStream(c.streamId,c.channel);if(c.res!==undefined)this.configs[k]=this.engine.setGram(c.streamId,{res:c.res,filter:c.filter,vernierHz:c.fcHz,fullAxis:c.fullAxis??null,visibleTileIndex:c.visibleTileIndex});}
     const scratch=new Float32Array(4096),rows=new Map<number,number>();const steps=Math.floor(target*4);for(let i=0;i<steps;i++){this.engine.advance(.25);const t=(i+1)*.25;for(const c of this.configs){if(c.fullAxis){while(this.engine.rowsReady(c.streamId)>0){this.engine.writeRow(c.streamId,scratch);rows.set(c.streamId,(rows.get(c.streamId)??0)+1);}continue;}if(due(periodOf(c),t,phaseOf(c))){this.engine.writeRow(c.streamId,scratch);rows.set(c.streamId,(rows.get(c.streamId)??0)+1);}}}
     if(target>this.engine.time)this.engine.advance(target-this.engine.time);

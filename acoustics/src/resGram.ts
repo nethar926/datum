@@ -12,7 +12,7 @@ import {ambientLevel} from './ambientNoise.js';
 import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
 import {BEARING_NOISE_K,BEARING_SNR_FLOOR} from './lofar.js';
 import {StateHistory} from './stateHistory.js';
-import {RES_FRAME_S,RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,type ResGramSettings,type ResParams,type ResBand,type TileBand} from './res.js';
+import {RES_FRAME_S,RES_BINS,RES_DEFAULT,TILE_BINS,TPSW,BB_SMOOTH_OCTAVE,DIFFUSE_REFERENCE_BIN_HZ,HANN_75_AMPLITUDE_CORRELATION,resParams,resBand,tileBand,gammaUnit,tpswBias,isResLevel,resSpanS,resSegmentCount,resEdof,type ResGramSettings,type ResParams,type ResBand,type TileBand,type IntegrationMode} from './res.js';
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import type {SpeedGated} from './catalog/drivetrain.js';
@@ -20,7 +20,7 @@ import {resKernel,wasmKernelReady,ensureWasmKernel,wasmUploadTables,wasmClearOut
 export {setResKernel,resKernel,ensureWasmKernel,wasmSimdSupported,wasmKernelStats,resetWasmKernelStats} from './wasm/kernel.js';
 export type {ResKernel} from './wasm/kernel.js';
 /** Bytes of the shared render scratch (counted once per process). */
-export function sharedScratchBytes():number{let b=rowCacheBytes()+spanCacheBytes()+tableBytes()+accumBytes();for(const a of Object.values(SH))b+=a.byteLength;return b;}
+export function sharedScratchBytes():number{let b=rowCacheBytes()+spanCacheBytes()+tableBytes()+accumBytes()+contactWorkBytes();for(const a of Object.values(SH))b+=a.byteLength;return b;}
 /** Row path. 'fast' (default): per-frame spectra evaluated once per band and folded into sliding
  * per-row Welch accumulators (vernier bands and FULLBAND streams with ≤2 tiles), or a direct span
  * sum with the fast spectrum kernel (FULLBAND with more tiles). 'reference': the original exact
@@ -169,6 +169,25 @@ export function normalizeResSettings(s:{res?:unknown;filter?:unknown;vernierHz?:
  * retained memory is only its band tables, output row and AR(1) state. Read `expected` etc.
  * immediately after a render. */
 const SH=(()=>{const n=TILE_BINS+1,f=()=>new Float64Array(n);return {P:f(),E:f(),N:f(),S:f(),FP:f(),FE:f(),FN:f(),FS:f(),power:f(),background:f(),clipped:f(),p0:f(),p1:f(),p2:f(),p3:f(),ab:f()};})();
+
+/** Per-contact work arrays interned by (id, line count). All generators see the same source
+ * state, and the engine renders one gen at a time, so one set is enough and exact. */
+const CONTACT_ARRAYS=new Map<string,{frequencies:Float64Array;powers:Float64Array;sigmaHz:Float64Array;swG:Float64Array;swLo:Float64Array;swHi:Float64Array}>();
+function sharedContactArrays(id:string,n:number,swN:number){
+  const key=`${id}:${n}:${swN}`;
+  let a=CONTACT_ARRAYS.get(key);
+  if(!a){
+    a={frequencies:new Float64Array(n),powers:new Float64Array(n),sigmaHz:new Float64Array(n),
+      swG:new Float64Array(swN),swLo:new Float64Array(swN),swHi:new Float64Array(swN)};
+    CONTACT_ARRAYS.set(key,a);
+  }
+  return a;
+}
+function contactWorkBytes():number{
+  let b=0;for(const a of CONTACT_ARRAYS.values())b+=a.frequencies.byteLength+a.powers.byteLength+a.sigmaHz.byteLength+a.swG.byteLength+a.swLo.byteLength+a.swHi.byteLength;
+  return b;
+}
+
 export class ResLofarGenerator {
   private waterColumn:WaterColumnProfile|undefined;
  /** Current output width (RES_BINS vernier, or TILE_BINS for a full-axis tile). */
@@ -195,6 +214,30 @@ export class ResLofarGenerator {
  /** Engine-wide source-state history (stateHistory.ts); null → snapshot fallback only. */
  private history:StateHistory|null=null;private buoyRing:Float64Array|null=null;private readonly bt:Trk={x:0,y:0,depth:0,course:0,speed:0};
  private fullAxisTiles=0;
+ /** Requested integration mode. Default `sti` is today's path (bit-exact goldens). */
+ integrationMode:IntegrationMode='sti';
+ /** Engine option: both spans ready (pre-fill counts). Default cold — LSTI waits for a real span of history. */
+ lstiWarm=false;
+ engineStartTime=0;
+ buoyLiveTime=0;
+ /** Time used to resolve effective mode / span (set at the start of each render to tEnd). */
+ queryTime=0;
+ effectiveMode(at:number=this.queryTime):IntegrationMode{
+  if(this.integrationMode!=='lsti')return 'sti';
+  if(this.lstiWarm)return 'lsti';
+  const span=resSpanS(this.params,'lsti');
+  const avail=Math.max(0,at-Math.max(this.engineStartTime,this.buoyLiveTime));
+  return avail+1e-9>=span?'lsti':'sti';
+ }
+ /** Apply a requested mode without restarting the row clock (no configure, no rowIndex reset). */
+ setIntegrationMode(mode:IntegrationMode,opts?:{lstiWarm?:boolean;startTime?:number;liveTime?:number}):void{
+  this.integrationMode=mode;
+  if(opts?.lstiWarm!==undefined)this.lstiWarm=opts.lstiWarm;
+  if(opts?.startTime!==undefined)this.engineStartTime=opts.startTime;
+  if(opts?.liveTime!==undefined)this.buoyLiveTime=opts.liveTime;
+  this.bias=tpswBias(resEdof(this.params,this.effectiveMode()));
+ }
+
  /** True when the last row was a real span average; false = explicit snapshot fallback (direct generate()/renderTile without history). */
  lastIntegrated=false;
  /** Count of rows that fell back to an instantaneous snapshot (diagnostic; cut/live paths keep this 0). */
@@ -214,9 +257,12 @@ export class ResLofarGenerator {
   this.zr=this.zi=new Float32Array(0);this.halfWidth=new Int32Array(0);this.clipped=SH.clipped;
   this.p0=SH.p0;this.p1=SH.p1;this.p2=SH.p2;this.p3=SH.p3;
   this.difar=buoy.type==='difar';this.baseSeed=deriveSeed(seed,`res:${buoy.id}`);this.bearingSeed=deriveSeed(seed,`resBearing:${buoy.id}`);this.rng=mulberry32(this.baseSeed);this.bearingRng=mulberry32(this.bearingSeed);this.environment={...environment};this.sigma=seaSurfaceSigma(environment.seaState);
-  this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const n=contact.lines.length,frequencies=new Float64Array(n),powers=new Float64Array(n),sigmaHz=new Float64Array(n);fillTonals(contact.params,frequencies,powers,contact.lines);for(let k=0;k<n;k++){const l=contact.lines[k];sigmaHz[k]=l.width==='diffuse'?(l.sigmaBins??2.5)*DIFFUSE_REFERENCE_BIN_HZ:0;}
+  this.contacts=contacts.map(contact=>{contact.lines??=sourceLines(contact.params);const n=contact.lines.length;
    const swathSources=[...(contact.params.speedGated??[]).filter(w=>w.kind==='SWATH'),...(contact.params.eventSwaths??[])],swaths=swathSources.map(w=>({source:w,loHz:(w as {loHz:number}).loHz,hiHz:(w as {hiHz:number}).hiHz,lo:0,hi:-1}));
-   return {contact,frequencies,powers,sigmaHz,swaths,gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))(),trk:{x:0,y:0,depth:0,course:0,speed:0} as Trk,act:true,srcDb:0,flowDb:NaN,flowFrac:0,cav:0,swG:new Float64Array(swaths.length),swLo:new Float64Array(swaths.length),swHi:new Float64Array(swaths.length)};});
+   const arr=sharedContactArrays(contact.id,n,swaths.length);
+   fillTonals(contact.params,arr.frequencies,arr.powers,contact.lines);
+   for(let k=0;k<n;k++){const l=contact.lines[k];arr.sigmaHz[k]=l.width==='diffuse'?(l.sigmaBins??2.5)*DIFFUSE_REFERENCE_BIN_HZ:0;}
+   return {contact,frequencies:arr.frequencies,powers:arr.powers,sigmaHz:arr.sigmaHz,swaths,gain:.9+.2*mulberry32(deriveSeed(seed,`contact:${contact.id}`))(),trk:{x:0,y:0,depth:0,course:0,speed:0} as Trk,act:true,srcDb:0,flowDb:NaN,flowFrac:0,cav:0,swG:arr.swG,swLo:arr.swLo,swHi:arr.swHi};});
   this.band=resBand(RES_DEFAULT,undefined,fmax);this.configure(normalizeResSettings(settings));
  }
  get liveBins():number{return this.band.liveBins;}
@@ -224,7 +270,7 @@ export class ResLofarGenerator {
  get fBin():number{return this.params.fBin;}
  /** Config-time: change RES/filter/vernier. Resets the row counter and AR(1) state. Vernier window is always RES_BINS. */
  configure(settings:ResGramSettings):void{
-  const s=normalizeResSettings(settings);this.settings=s;this.params=resParams(s.res);this.band=resBand(s.res,s.vernierHz,this.fmax);this.bins=RES_BINS;this.tileIndex=0;this.rowIndex=0;this.tileAr.clear();this.tileTables.clear();this.releaseAccum();this.bias=tpswBias(this.params.edof);
+  const s=normalizeResSettings(settings);this.settings=s;this.params=resParams(s.res);this.band=resBand(s.res,s.vernierHz,this.fmax);this.bins=RES_BINS;this.tileIndex=0;this.rowIndex=0;this.tileAr.clear();this.tileTables.clear();this.releaseAccum();this.bias=tpswBias(resEdof(this.params,this.effectiveMode()));
   if(this.params.averages===1&&this.zr.length!==this.capacity){this.zr=new Float32Array(this.capacity);this.zi=new Float32Array(this.capacity);}
   this.applyWindow();this.prepareAccums();
  }
@@ -335,12 +381,26 @@ export class ResLofarGenerator {
  generateAt(tEnd:number,out:Float32Array=this.row,offset=0):Float32Array{
   const rowKey=this.rowIndex++;return this.render(rowKey,out,offset,false,tEnd);
  }
+ /** Position the row clock and AR(1) state so the next generateAt emits `rowKey` bit-exactly
+  * (same noise as a gen that already rendered 0..rowKey-1). Spectra are not computed. */
+ seekRowKey(rowKey:number):void{
+  if(!Number.isInteger(rowKey)||rowKey<0)throw new Error('Invalid rowKey');
+  this.rowIndex=rowKey;
+  const k=resSegmentCount(this.params,this.effectiveMode(this.queryTime));
+  if(k!==1||this.zr.length===0||rowKey===0)return;
+  const a=HANN_75_AMPLITUDE_CORRELATION,b=Math.sqrt(1-a*a),h=Math.SQRT1_2,L=this.band.liveBins,zr=this.zr,zi=this.zi,rng=this.rng;
+  for(let r=0;r<rowKey;r++){
+   rng.reset!((this.baseSeed+Math.imul(r,0x9e3779b9))>>>0);
+   if(r===0)for(let i=0;i<L;i++){zr[i]=h*gaussian(rng);zi[i]=h*gaussian(rng);}
+   else for(let i=0;i<L;i++){zr[i]=a*zr[i]+b*h*gaussian(rng);zi[i]=a*zi[i]+b*h*gaussian(rng);}
+  }
+ }
  /** Analysis span (s) of one row: K Hann segments of length T, hop T/4 → T+(K−1)·T/4. */
- get spanS():number{const p=this.params;return p.integrationS+(p.averages-1)*p.hopS;}
+ get spanS():number{return resSpanS(this.params,this.effectiveMode(this.queryTime));}
  /** Welch power weighting of a record interval: Σ_m Hann²(segment m) averaged over 8 sub-points
   * of the frame (ts−f, ts]. Segment m spans [tEnd−m·hop−T, tEnd−m·hop]. */
  private frameWeight(ts:number,tEnd:number):number{
-  const p=this.params,T=p.integrationS,hop=p.hopS,K=p.averages,f=RES_FRAME_S;let w=0;
+  const p=this.params,T=p.integrationS,hop=p.hopS,K=resSegmentCount(p,this.effectiveMode(this.queryTime)),f=RES_FRAME_S;let w=0;
   for(let q=0;q<8;q++){const t=ts-f+(q+.5)*f/8;for(let m=0;m<K;m++){const x=(t-(tEnd-m*hop-T))/T;if(x>0&&x<1){const s=Math.sin(Math.PI*x);w+=s*s*s*s;}}}
   return w;
  }
@@ -354,7 +414,7 @@ export class ResLofarGenerator {
   const L=this.band.liveBins,difar=this.difar;
   let spanKey='';
   if(fast&&spanCacheOn){
-   spanKey=`${spanEpoch}|${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}|${BOUNDED_TILE_ACCUMS?1:0}|${h.last}`;
+   spanKey=`${spanEpoch}|${h.uid}|${this.historyBuoyKey()}|${this.settings.res}|${this.band.f0}|${L}|${tEnd}|${envEpoch}|${difar?1:0}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}|${BOUNDED_TILE_ACCUMS?1:0}|${h.last}|${this.effectiveMode(this.queryTime)}|${resSegmentCount(this.params,this.effectiveMode(this.queryTime))}`;
    for(const c of SPAN_CACHE)if(c.key===spanKey){const amb=this.ambientBin;SH.P.set(c.P.subarray(0,L));if(difar){SH.E.set(c.E.subarray(0,L));SH.N.set(c.N.subarray(0,L));for(let i=0;i<L;i++)SH.S[i]=Math.max(0,SH.P[i]!-amb[i]!);}spanCacheHits++;return true;}
   }
   const P=SH.P,E=SH.E,N=SH.N,S=SH.S,FP=SH.FP,FE=SH.FE,FN=SH.FN,FS=SH.FS;let wsum=0;
@@ -393,7 +453,7 @@ export class ResLofarGenerator {
   const p=this.params,rpF=Math.max(1,Math.round(p.rowPeriodS/f)),spanF=Math.ceil(span/f-1e-9),R=Math.ceil(spanF/rpF),slots=R+1,L=this.band.liveBins;
   const qWant=this.accumShape(budgeted).q;
   const A=this.accumFor(this.band.f0,L,budgeted);if(!A)return null;const q=A.q;
-  const ver=`${this.tablesKey}|${envEpoch}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}|${BOUNDED_TILE_ACCUMS?1:0}`;if(A.ver!==ver){A.reset();A.ver=ver;}
+  const _mode=this.effectiveMode(this.queryTime),ver=`${this.tablesKey}|${envEpoch}|${COARSE_BB?1:0}|${ADAPTIVE_CHUNK?1:0}|${CONTACT_CULL?1:0}|${BOUNDED_TILE_ACCUMS?1:0}|${_mode}|${resSegmentCount(this.params,_mode)}`;if(A.ver!==ver){A.reset();A.ver=ver;}
   const slotOf=(x:number)=>((Math.round(x/rpF)%slots)+slots)%slots,s=slotOf(e);
   if(!(A.rowE[s]===e&&A.done[s]===1)){
    const open=(x:number)=>{const k=slotOf(x);if(A.rowE[k]===x)return;A.rowE[k]=x;A.done[k]=0;A.wsum[k]=0;A.acc.fill(0,k*q*L,(k+1)*q*L);};
@@ -625,6 +685,8 @@ export class ResLofarGenerator {
   }
  }
  private render(rowKey:number,out:Float32Array,offset:number,perTileAr:boolean,tEnd?:number):Float32Array{
+  this.queryTime=tEnd??this.queryTime;
+  this.bias=tpswBias(resEdof(this.params,this.effectiveMode(this.queryTime)));
   const W=this.bins;
   if(!Number.isInteger(offset)||offset<0||out.length<offset+W)throw new Error('Row size mismatch');
   this.rng.reset!((this.baseSeed+Math.imul(rowKey,0x9e3779b9))>>>0);this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
@@ -632,7 +694,8 @@ export class ResLofarGenerator {
   const enbw=this.params.enbwHz,L=this.band.liveBins,difar=this.difar,P=this.expected,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
   // Noise: K=1 → exact AR(1) on complex amplitudes (correlated rows); K>1 → unit-mean χ²_ν gamma.
   const pw=this.power,rng=this.rng;
-  if(this.params.averages===1){const a=HANN_75_AMPLITUDE_CORRELATION,b=Math.sqrt(1-a*a),h=Math.SQRT1_2;
+  const _mode=this.effectiveMode(this.queryTime),_k=resSegmentCount(this.params,_mode),_edof=resEdof(this.params,_mode);
+  if(_k===1){const a=HANN_75_AMPLITUDE_CORRELATION,b=Math.sqrt(1-a*a),h=Math.SQRT1_2;
    let zr=this.zr,zi=this.zi,cold=rowKey===0;
    if(perTileAr){let st=this.tileAr.get(this.tileIndex);if(!st){st={zr:new Float32Array(this.capacity),zi:new Float32Array(this.capacity),lastRow:-1};this.tileAr.set(this.tileIndex,st);}zr=st.zr;zi=st.zi;
     // Rows skipped while the tile was unprepared/unfilled: fast-forward the AR(1) chain with the same
@@ -643,7 +706,7 @@ export class ResLofarGenerator {
    // Vernier path keeps zr/zi on the instance fields when not per-tile.
    if(!perTileAr){/* already wrote this.zr/zi */}else{/* tile map holds state */}
    for(let i=0;i<L;i++)pw[i]=P[i]*(zr[i]*zr[i]+zi[i]*zi[i]);}
-  else{const shape=this.params.edof/2;for(let i=0;i<L;i++)pw[i]=P[i]*gammaUnit(rng,shape);}
+  else{const shape=_edof/2;for(let i=0;i<L;i++)pw[i]=P[i]*gammaUnit(rng,shape);}
   const bb=this.settings.filter==='BB';
   if(bb){const p0=this.p0;p0[0]=0;for(let i=0;i<L;i++)p0[i+1]=p0[i]+pw[i];for(let i=0;i<L;i++){const h=this.halfWidth[i],lo=Math.max(0,i-h),hi=Math.min(L-1,i+h);out[offset+i]=powerToDb((p0[hi+1]-p0[lo])/(hi-lo+1)/enbw);}}
   else{this.tpsw(L);for(let i=0;i<L;i++)out[offset+i]=powerToDb(pw[i]/this.background[i]);}
@@ -655,6 +718,22 @@ export class ResLofarGenerator {
    else for(let i=0;i<L;i++){const snr=sP[i]/amb[i];if(!(snr>=BEARING_SNR_FLOOR)){ob[i]=br()*360;continue;}const sigma=Math.min(90,BEARING_NOISE_K/Math.sqrt(snr));ob[i]=(Math.atan2(sE[i],sN[i])*180/Math.PI+sigma*gaussian(br)+720)%360;}
   }
   return out;
+ }
+ /** Re-map the last generateAt spectrum (`this.power`, DIFAR sums) to `filter` without
+  * advancing AR / rowIndex / RNG. Same seeds as the last row so NB and BB share one spectrum. */
+ mapFilter(filter:'NB'|'BB',out:Float32Array,bearingOut?:Float32Array):void{
+  const W=this.bins,L=this.band.liveBins,enbw=this.params.enbwHz,pw=this.power,bb=filter==='BB';
+  if(bb){const p0=this.p0;p0[0]=0;for(let i=0;i<L;i++)p0[i+1]=p0[i]+pw[i];for(let i=0;i<L;i++){const h=this.halfWidth[i],lo=Math.max(0,i-h),hi=Math.min(L-1,i+h);out[i]=powerToDb((p0[hi+1]-p0[lo])/(hi-lo+1)/enbw);}}
+  else{this.tpsw(L);for(let i=0;i<L;i++)out[i]=powerToDb(pw[i]/this.background[i]);}
+  out.fill(NaN,L,W);
+  if(bearingOut){bearingOut.fill(NaN);
+   if(this.difar){const rowKey=this.rowIndex-1;this.bearingRng.reset!((this.bearingSeed+Math.imul(rowKey,0x9e3779b9))>>>0);
+    const br=this.bearingRng,ob=bearingOut,amb=this.ambientBin,sE=this.signalEast,sN=this.signalNorth,sP=this.signalPower;
+    if(bb){const a0=this.p0,a1=this.p1,a2=this.p2,a3=this.p3;a0[0]=a1[0]=a2[0]=a3[0]=0;for(let i=0;i<L;i++){a0[i+1]=a0[i]+sE[i];a1[i+1]=a1[i]+sN[i];a2[i+1]=a2[i]+sP[i];a3[i+1]=a3[i]+amb[i];}
+     for(let i=0;i<L;i++){const h=this.halfWidth[i],lo=Math.max(0,i-h),hi=Math.min(L-1,i+h)+1,snr=(a2[hi]-a2[lo])/(a3[hi]-a3[lo]);if(!(snr>=BEARING_SNR_FLOOR)){ob[i]=br()*360;continue;}const sigma=Math.min(90,BEARING_NOISE_K/Math.sqrt(snr));ob[i]=(Math.atan2(a0[hi]-a0[lo],a1[hi]-a1[lo])*180/Math.PI+sigma*gaussian(br)+720)%360;}}
+    else for(let i=0;i<L;i++){const snr=sP[i]/amb[i];if(!(snr>=BEARING_SNR_FLOOR)){ob[i]=br()*360;continue;}const sigma=Math.min(90,BEARING_NOISE_K/Math.sqrt(snr));ob[i]=(Math.atan2(sE[i],sN[i])*180/Math.PI+sigma*gaussian(br)+720)%360;}
+   }
+  }
  }
  /** TPSW (Struzinski & Lowe 1984) over live bins, O(n) via prefix sums; result in `background`. */
  private tpsw(L:number):void{

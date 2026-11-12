@@ -15,10 +15,24 @@ export const BEHAVIOUR_KINDS:readonly BehaviourKind[]=[...SURFACE_BEHAVIOURS,...
 export const subBehaviourWeights:Readonly<Record<SubBehaviour,number>>={transit:30,patrol:35,avoidance:15,combat:20};
 /** Fishing probability per fictional surface template; the remainder is `shipping`. */
 export const surfaceFishingProbability:Readonly<Record<string,number>>={'fishing-trawler':.85,tug:.4,'coastal-freighter':.1,ferry:.05,'bulk-carrier':0,tanker:0};
+/** Scenario `behaviour` dial in [0,1] (ScenarioParams.behaviour, default 0.5): 0 steady → 1 dynamic.
+ * Piecewise-linear between three knots; the middle knot is exactly today's defaults, so behaviour 0.5
+ * reproduces every draw and every scenario bit-exactly. */
+export const BEHAVIOUR_DEFAULT=.5;
+const BEHAVIOUR_STEADY:Readonly<Record<SubBehaviour,number>>={transit:60,patrol:35,avoidance:5,combat:0};
+const BEHAVIOUR_DYNAMIC:Readonly<Record<SubBehaviour,number>>={transit:10,patrol:25,avoidance:30,combat:35};
+const lerp3=(b:number,lo:number,mid:number,hi:number):number=>b===BEHAVIOUR_DEFAULT?mid:b<BEHAVIOUR_DEFAULT?lo+(mid-lo)*(b/BEHAVIOUR_DEFAULT):mid+(hi-mid)*((b-BEHAVIOUR_DEFAULT)/(1-BEHAVIOUR_DEFAULT));
+const dial=(b:number):number=>Number.isFinite(b)?clamp(b,0,1):BEHAVIOUR_DEFAULT;
+/** Sub behaviour pick weights for a dial value (0.5 → subBehaviourWeights exactly). */
+export function behaviourWeightsFor(behaviour:number):Record<SubBehaviour,number>{const b=dial(behaviour),out={...subBehaviourWeights};for(const k of SUB_BEHAVIOURS)out[k]=lerp3(b,BEHAVIOUR_STEADY[k],subBehaviourWeights[k],BEHAVIOUR_DYNAMIC[k]);return out;}
+/** First-manoeuvre hold for generated subs: 900 s at 0, exactly 600 s at 0.5, 180 s at 1. */
+export const behaviourHoldS=(behaviour:number):number=>lerp3(dial(behaviour),900,600,180);
+/** Leg spacing scale: 1.5 at 0, exactly 1 at 0.5 (today's spacing), 0.5 at 1. */
+export const behaviourLegScale=(behaviour:number):number=>lerp3(dial(behaviour),1.5,1,.5);
 /** Default generated horizon: after the last leg the contact simply holds its final leg. */
 export const BEHAVIOUR_HORIZON_S=3600;
 export interface BehaviourLimits {maxSpeedKn:number;/** Quiet / drift ceiling; default 35% of max. */quietSpeedKn?:number;/** Floor for underway legs; default min(1 kn, max). */minSpeedKn?:number;/** Allowed depth band [shallow, deep] m; [d,d] pins depth (surface ships, SURF/SNORK). */depthM:[number,number]}
-export interface BehaviourRequest {kind:BehaviourKind;seed:number;durationS:number;/** Leg 0 exactly (clamped into limits). course rad, speed m/s, depth m. x/y unused by v1 (no waypoints). */start:{course:number;speed:number;depth:number;x?:number;y?:number};limits:BehaviourLimits;/** No manoeuvre before this time (keeps initial CPA geometry). Default 0. */holdS?:number}
+export interface BehaviourRequest {kind:BehaviourKind;seed:number;durationS:number;/** Leg 0 exactly (clamped into limits). course rad, speed m/s, depth m. x/y unused by v1 (no waypoints). */start:{course:number;speed:number;depth:number;x?:number;y?:number};limits:BehaviourLimits;/** No manoeuvre before this time (keeps initial CPA geometry). Default 0. */holdS?:number;/** Multiplies every drawn leg spacing (seconds between legs). Default 1 = today's plans bit-exactly (dt·1 ≡ dt); the draws themselves never change. */legScale?:number}
 const TAU=2*Math.PI,DEG=Math.PI/180;
 const wrap=(a:number):number=>{const r=a%TAU;return r<0?r+TAU:r;};
 const range=(rng:Random,lo:number,hi:number):number=>lo+rng()*(hi-lo);
@@ -39,9 +53,10 @@ export function planBehaviour(req:BehaviourRequest):MotionLeg[] {
  const s0=Math.max(0,req.start.speed),d0=req.start.depth>=dLo&&req.start.depth<=dHi?req.start.depth:dep(req.start.depth);
  const legs:MotionLeg[]=[{at:0,course:wrap(req.start.course),speed:mpsToKnots(s0)<=limits.maxSpeedKn?s0:knotsToMps(max),depth:d0}];
  let t=0,course=legs[0].course,speedKn=mpsToKnots(legs[0].speed),depth=legs[0].depth;
- const startKn=speedKn,hold=Math.max(0,req.holdS??0);
+ const startKn=speedKn,hold=Math.max(0,req.holdS??0),legScale=req.legScale??1;
+ if(!Number.isFinite(legScale)||legScale<=0)throw new Error('Invalid behaviour request');
  /** Append a leg dt seconds after the previous one (first manoeuvre deferred to holdS). */
- const push=(dt:number,c:number,s:number,d:number):boolean=>{let at=Math.round(Math.max(t+1,t+dt));if(legs.length===1&&at<hold)at=Math.round(hold);if(at>=req.durationS)return false;t=at;course=wrap(c);speedKn=kn(s);depth=dep(d);legs.push({at,course,speed:knotsToMps(speedKn),depth});return true;};
+ const push=(dt:number,c:number,s:number,d:number):boolean=>{let at=Math.round(Math.max(t+1,t+dt*legScale));if(legs.length===1&&at<hold)at=Math.round(hold);if(at>=req.durationS)return false;t=at;course=wrap(c);speedKn=kn(s);depth=dep(d);legs.push({at,course,speed:knotsToMps(speedKn),depth});return true;};
  const deeperOrShallower=(min:number,maxStep:number):number=>{const room=[dHi-depth,depth-dLo];if(room[0]<min&&room[1]<min)return depth+(room[0]>room[1]?room[0]:-room[1]);const down=room[0]>=min&&(room[1]<min||rng()<.5);return depth+(down?1:-1)*range(rng,min,Math.max(min,Math.min(maxStep,down?room[0]:room[1])));};
  switch(kind){
   case 'shipping':{// lane-like: long steady legs, occasional 10–40° alterations, near-constant transit speed

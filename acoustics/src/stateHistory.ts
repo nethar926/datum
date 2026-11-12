@@ -1,6 +1,6 @@
 import type {Contact} from './scenario.js';
 import type {Buoy} from './buoys.js';
-import {RES_FRAME_S,resParams} from './res.js';
+import {RES_FRAME_S,resParams,resSpanS} from './res.js';
 import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
 /** Engine-wide source-STATE history for RES span averaging (shared by every LOFAR stream).
  *
@@ -15,9 +15,14 @@ import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
  * Startup: the first record pre-fills the whole window with the t0 state (sources stationary
  * before the sim). Bounded: HISTORY_FRAMES frames, fixed at construction. Deterministic. */
 export const HISTORY_LATE_MARGIN_S=8;
-/** Longest RES span (RES1: T=32 s, K=1). */
-export const HISTORY_MAX_SPAN_S=Math.max(...[1,2,3,4,5,6,7,8,9].map(r=>{const p=resParams(r as 1);return p.integrationS+(p.averages-1)*p.hopS;}));
-export const HISTORY_FRAMES=Math.ceil((HISTORY_MAX_SPAN_S+HISTORY_LATE_MARGIN_S)/RES_FRAME_S)+2;
+/** Longest RES span: LSTI RES1 = T+(8K−1)·hop = 88 s (STI RES1 was 32 s). Covers every mode. */
+export const HISTORY_MAX_SPAN_S=Math.max(...([1,2,3,4,5,6,7,8,9] as const).map(r=>resSpanS(resParams(r),'lsti')));
+/** Frames needed to cover LSTI RES1 + late margin: ceil((88+8)/0.25)+2 = 386. Startup prefill is this deep, not the full retain ring. */
+export const HISTORY_LSTI_FRAMES=Math.ceil((HISTORY_MAX_SPAN_S+HISTORY_LATE_MARGIN_S)/RES_FRAME_S)+2;
+/** Retain enough real state to replay any row in a 900 s warm ring, including that row's LSTI span (900+88). */
+export const HISTORY_RETAIN_SPAN_S=900+HISTORY_MAX_SPAN_S;
+/** Ring capacity: ceil((988+8)/0.25)+2 = 3986. Distinct from HISTORY_LSTI_FRAMES (prefill depth). */
+export const HISTORY_FRAMES=Math.ceil((HISTORY_RETAIN_SPAN_S+HISTORY_LATE_MARGIN_S)/RES_FRAME_S)+2;
 const C_HEAD=10,B_STRIDE=5;
 /** Line families whose activity is an event (unknown before t0 → zero in the startup prefill). */
 export const EVENT_FAMILIES:ReadonlySet<string>=new Set(['HYDP','INTERMITTENT','TRANSIENT','SWATH']);
@@ -58,12 +63,12 @@ export class StateHistory{
   * INTERMITTENT, TRANSIENT, SWATH lines) and every swath contribute ZERO before t0, because their
   * pre-t0 state is unknown. Buoys are back-extrapolated the same way. Deterministic. */
  private backfill():void{
-  const f=RES_FRAME_S,F=this.frames,d=this.data,s1=this.slot(0),s0=this.slot(1),t0=this.t[s0]!;
+  const f=RES_FRAME_S,F=this.frames,P=Math.min(HISTORY_LSTI_FRAMES,this.frames),d=this.data,s1=this.slot(0),s0=this.slot(1),t0=this.t[s0]!;
   const wrap=(a:number)=>{let x=a%(2*Math.PI);if(x>Math.PI)x-=2*Math.PI;if(x<-Math.PI)x+=2*Math.PI;return x;};
   for(let j=0;j<this.contacts.length;j++){const c=this.contacts[j]!,L=this.layout[j]!,o0=s0*this.stride+L.offset,o1=s1*this.stride+L.offset,mask=this.eventMask[j]!;
    const acc=(d[o1+5]!-d[o0+5]!)/f,turn=wrap(d[o1+4]!-d[o0+4]!)/f,dz=(d[o1+3]!-d[o0+3]!)/f;
    let x=d[o0+1]!,y=d[o0+2]!;
-   for(let k=1;k<=F-2;k++){const sl=(s0-k+2*F)%F,o=sl*this.stride+L.offset,tau=k*f;
+   for(let k=1;k<=P-2;k++){const sl=(s0-k+2*F)%F,o=sl*this.stride+L.offset,tau=k*f;
     const sp=Math.max(0,d[o0+5]!-acc*tau),co=d[o0+4]!-turn*tau,dep=Math.max(0,d[o0+3]!-dz*tau);
     x-=Math.sin(co)*sp*f;y-=Math.cos(co)*sp*f;
     d[o]=d[o0]!;d[o+1]=x;d[o+2]=y;d[o+3]=dep;d[o+4]=co;d[o+5]=sp;d[o+6]=sourceLevel(c.params,sp,dep);d[o+7]=d[o0+7]!;d[o+8]=d[o0+8]!;d[o+9]=d[o0+9]!;
@@ -71,11 +76,11 @@ export class StateHistory{
     const so=o+C_HEAD+2*L.lines,so0=o0+C_HEAD+2*L.lines;for(let q=0;q<L.swaths;q++){d[so+3*q]=0;d[so+3*q+1]=d[so0+3*q+1]!;d[so+3*q+2]=d[so0+3*q+2]!;}
     this.t[sl]=t0-tau;}}
   for(const r of this.buoyRings.values())this.backfillBuoy(r,s0,s1);
-  this.count=F-1;
+  this.count=P-1;
  }
  private backfillBuoy(r:Float64Array,s0:number,s1:number):void{
-  const f=RES_FRAME_S,F=this.frames,B=B_STRIDE,o0=s0*B,o1=s1*B;const acc=(r[o1+4]!-r[o0+4]!)/f,turn=(r[o1+3]!-r[o0+3]!)/f;let x=r[o0]!,y=r[o0+1]!;
-  for(let k=1;k<=F-2;k++){const o=((s0-k+2*F)%F)*B,tau=k*f,sp=Math.max(0,r[o0+4]!-acc*tau),co=r[o0+3]!-turn*tau;x-=Math.sin(co)*sp*f;y-=Math.cos(co)*sp*f;r[o]=x;r[o+1]=y;r[o+2]=r[o0+2]!;r[o+3]=co;r[o+4]=sp;}
+  const f=RES_FRAME_S,F=this.frames,P=Math.min(HISTORY_LSTI_FRAMES,this.frames),B=B_STRIDE,o0=s0*B,o1=s1*B;const acc=(r[o1+4]!-r[o0+4]!)/f,turn=(r[o1+3]!-r[o0+3]!)/f;let x=r[o0]!,y=r[o0+1]!;
+  for(let k=1;k<=P-2;k++){const o=((s0-k+2*F)%F)*B,tau=k*f,sp=Math.max(0,r[o0+4]!-acc*tau),co=r[o0+3]!-turn*tau;x-=Math.sin(co)*sp*f;y-=Math.cos(co)*sp*f;r[o]=x;r[o+1]=y;r[o+2]=r[o0+2]!;r[o+3]=co;r[o+4]=sp;}
  }
  /** Per contact, per line: 1 = event family (no pre-t0 contribution). */
  private readonly eventMask:Uint8Array[];

@@ -5,8 +5,40 @@ import {
   AcousticEngine,cpaScenario,fictionalSignature,attachWaterColumn,SIM_STREAM_SET,parseLofarStreamId,
   resForBand,vernierHzForBand,setBoundedTileAccums,boundedTileAccums,tileAccumBytes,accumCount,
   spanCacheBytes,rowCacheBytes,fftSharedTableBytes,sharedScratchBytes,setAccumMaxTiles,ACCUM_MAX_TILES_DEFAULT,
+  ResLofarGenerator,
 } from '../src/index.js';
 import type {GramConfig} from '../src/protocol.js';
+import {appendFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+
+
+/** Opt-in diagnostics (SOAK_DIAG=1, stderr; off by default, no engine change): per-tick wall of advance /
+ * op / drain, per-stream ready rows before drain, slow-stream drains, and time / calls / frames in the
+ * generator's history integrations (prototype wrappers installed only when on). */
+const DIAG=typeof process!=='undefined'&&process.env.SOAK_DIAG==='1';
+const DIAG_SLOW_MS=Number((typeof process!=='undefined'&&process.env.SOAK_DIAG_SLOW_MS)||250);
+const diagT={integrateHistory:{ms:0,calls:0},integrateAccum:{ms:0,calls:0},loadFrame:{ms:0,calls:0}};
+let diagInstalled=false;
+function diagInstall(){
+  if(!DIAG||diagInstalled)return;diagInstalled=true;
+  const proto=(ResLofarGenerator as any).prototype;
+  for(const name of Object.keys(diagT) as (keyof typeof diagT)[]){
+    const orig=proto[name];if(typeof orig!=='function'){console.error(`[soak-diag] no ${name} on ResLofarGenerator`);continue;}
+    let depth=0;
+    proto[name]=function(this:unknown,...a:unknown[]){
+      if(depth>0)return orig.apply(this,a);   // integrateCached→integrateHistory nesting: count outermost only
+      depth++;const t0=performance.now();try{return orig.apply(this,a);}finally{depth--;diagT[name].ms+=performance.now()-t0;diagT[name].calls++;}
+    };
+  }
+}
+const DIAG_FILE=typeof process!=='undefined'?process.env.SOAK_DIAG_FILE:undefined;
+/** stderr, and also appended synchronously to SOAK_DIAG_FILE when set (vitest may hold worker console output). */
+function diagLog(o:Record<string,unknown>){
+  if(!DIAG)return;const line='[soak-diag] '+JSON.stringify(o);
+  process.stderr.write(line+'\n');if(DIAG_FILE)appendFileSync(DIAG_FILE,`${new Date().toISOString()} ${line}\n`);
+}
+function diagSnapT(){return JSON.parse(JSON.stringify(diagT)) as typeof diagT;}
+function diagDeltaT(a:typeof diagT,b:typeof diagT){const o:Record<string,string>={};for(const k of Object.keys(a) as (keyof typeof diagT)[])o[k]=`${(b[k].ms-a[k].ms).toFixed(0)}ms/${b[k].calls-a[k].calls}`;return o;}
 
 const SAMPLE_S=5;
 const BUDGET=50*1024*1024;
@@ -36,9 +68,21 @@ function ownedBuffers(objects:unknown[],seenBuffers:Set<ArrayBufferLike>):number
 
 type Op='advance'|'pan'|'seekFwd'|'seekBack'|'resSwitch'|'drain';
 
+/** Synchronous soak (CLI). */
 export function runSoak(sec:number,boundedOn:boolean,nC=60,res0:2|5=2){
+  const g=soakTicks(sec,boundedOn,nC,res0);let r=g.next();while(!r.done)r=g.next();return r.value;
+}
+/** Same soak, yielding to the event loop every `yieldEvery` ticks so a vitest worker's RPC heartbeat is
+ * answered (a 5 min synchronous block raised "[vitest-worker]: Timeout calling onTaskUpdate"). */
+export async function runSoakAsync(sec:number,boundedOn:boolean,nC=60,res0:2|5=2,yieldEvery=8){
+  const g=soakTicks(sec,boundedOn,nC,res0);let r=g.next(),n=0;
+  while(!r.done){if(++n%yieldEvery===0)await new Promise<void>(res=>setImmediate(res));r=g.next();}
+  return r.value;
+}
+function* soakTicks(sec:number,boundedOn:boolean,nC=60,res0:2|5=2){
   setAccumMaxTiles(ACCUM_MAX_TILES_DEFAULT);
   setBoundedTileAccums(boundedOn);
+  diagInstall();diagLog({start:{sec,boundedOn,nC,res0}});
   const scenario=scen(32,nC);
   const e=new AcousticEngine(scenario,303),internal=e as any;
   const out=new Float32Array(4096),bearing=new Float32Array(4096);
@@ -134,11 +178,30 @@ export function runSoak(sec:number,boundedOn:boolean,nC=60,res0:2|5=2){
     }
   };
 
-  const drain=()=>{
-    for(const s of streams)while(e.rowsReady(s.streamId)>0){
-      e.writeRow(s.streamId,out);if(!s.demon)e.writeBearingRow(s.streamId,bearing);
+  const drain=(k=0)=>{
+    if(!DIAG){
+      for(const s of streams)while(e.rowsReady(s.streamId)>0){
+        e.writeRow(s.streamId,out);if(!s.demon)e.writeBearingRow(s.streamId,bearing);
+      }
+      e.tactical();return;
+    }
+    // Same calls as above, plus per-stream ready rows / rows written / wall (identical engine behaviour).
+    const ready=streams.map(s=>e.rowsReady(s.streamId));
+    const kinds={fullband:0,demon:0,other:0};streams.forEach((s,i)=>{kinds[s.fullband?'fullband':s.demon?'demon':'other']+=ready[i]!;});
+    diagLog({tick:k,t:e.time,readyBefore:kinds,maxReady:Math.max(...ready),maxReadyStream:streams[ready.indexOf(Math.max(...ready))]?.streamId});
+    const t0=performance.now();
+    for(const [i,s] of streams.entries()){
+      const ts=performance.now(),a=diagSnapT();let n=0,lastLog=ts;
+      while(e.rowsReady(s.streamId)>0){
+        e.writeRow(s.streamId,out);if(!s.demon)e.writeBearingRow(s.streamId,bearing);n++;
+        const now=performance.now();
+        if(now-lastLog>5000){lastLog=now;diagLog({tick:k,stuck:{stream:s.streamId,fullband:s.fullband,demon:s.demon,rows:n,readyNow:e.rowsReady(s.streamId),readyBefore:ready[i],ms:+(now-ts).toFixed(0)},integr:diagDeltaT(a,diagSnapT())});}
+      }
+      const ms=performance.now()-ts;
+      if(ms>DIAG_SLOW_MS)diagLog({tick:k,slowStream:{stream:s.streamId,fullband:s.fullband,demon:s.demon,rows:n,ms:+ms.toFixed(0)},integr:diagDeltaT(a,diagSnapT())});
     }
     e.tactical();
+    diagLog({tick:k,drainMs:+(performance.now()-t0).toFixed(0)});
   };
 
   const N=sec*4,tWall0=performance.now();
@@ -148,7 +211,9 @@ export function runSoak(sec:number,boundedOn:boolean,nC=60,res0:2|5=2){
     const phaseN=Math.floor(t/60)%4;
     const phase=phaseN===0?'pan':phaseN===1?'seek':phaseN===2?'res':'mixed';
     let op:Op='advance';
+    const tA=performance.now(),tA0=DIAG?diagSnapT():diagT;
     e.advance(.25);
+    if(DIAG)diagLog({tick:k,advanceMs:+(performance.now()-tA).toFixed(0),integr:diagDeltaT(tA0,diagSnapT())});
     if(phase==='pan'||phase==='mixed'){
       if(t%3===0){pan(Math.floor(t/3));op='pan';observe('pan',phase,false);}
     }
@@ -159,7 +224,10 @@ export function runSoak(sec:number,boundedOn:boolean,nC=60,res0:2|5=2){
     if(phase==='res'||phase==='mixed'){
       if(Math.abs(t%30)<1e-9 && t>0){resSwitch();op='resSwitch';observe('resSwitch',phase,false);}
     }
-    drain();
+    const tO=performance.now();
+    drain(k);
+    yield k;
+    if(DIAG)diagLog({tick:k,op,phase,tickMs:+(performance.now()-tA).toFixed(0),drainWallMs:+(performance.now()-tO).toFixed(0),totals:diagDeltaT({integrateHistory:{ms:0,calls:0},integrateAccum:{ms:0,calls:0},loadFrame:{ms:0,calls:0}},diagT)});
     if(t-lastSampleAt>=SAMPLE_S-1e-9 || k===N){
       lastSampleAt=t;
       const s=observe(op,phase,true);
@@ -212,9 +280,14 @@ export function runSoak(sec:number,boundedOn:boolean,nC=60,res0:2|5=2){
   };
 }
 
-const sec=Number(process.argv[2]||900);
-const mode=(process.argv[3]||'both').toLowerCase();
-const runs:any[]=[];
-if(mode==='on'||mode==='both'){console.error('soak bounded ON');runs.push(runSoak(sec,true));}
-if(mode==='off'||mode==='both'){console.error('soak bounded OFF');runs.push(runSoak(sec,false));}
-console.log(JSON.stringify(mode==='both'?{sec,runs}:runs[0],null,0));
+// CLI only when run directly (npx tsx bench/soakMemory.bench.ts): importing runSoak from a test must not
+// start the 900 s ON+OFF soak (it did, ~2 h of import-time work before the vitest cases ran).
+const isMain=!!process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href;
+if(isMain){
+  const sec=Number(process.argv[2]||900);
+  const mode=(process.argv[3]||'both').toLowerCase();
+  const runs:any[]=[];
+  if(mode==='on'||mode==='both'){console.error('soak bounded ON');runs.push(runSoak(sec,true));}
+  if(mode==='off'||mode==='both'){console.error('soak bounded OFF');runs.push(runSoak(sec,false));}
+  console.log(JSON.stringify(mode==='both'?{sec,runs}:runs[0],null,0));
+}

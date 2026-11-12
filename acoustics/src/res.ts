@@ -119,3 +119,23 @@ export function priorityTileOrder(visibleTileIndex:number,tileCount:number):numb
  for(let i=0;i<tileCount;i++)if(!seen.has(i))out.push(i);
  return out;
 }
+
+/** Long-STI vs short-STI integration. `sti` (default) is today's path: K = P/hop, bit-exact goldens.
+ * `lsti` uses K_L = 8K Welch/Hann² segments; Δf, T=1/Δf, hop T/4 and row period P are unchanged.
+ * Rows still emit every P. Span is T+(8K−1)·T/4 (RES1 88 s, RES5 17.5 s, RES9 ≈ 16.09 s).
+ * EDOF is welchEdof(8K) for the gamma noise draw (LSTI K_L ≥ 8, never the K=1 AR(1) path). */
+export type IntegrationMode='sti'|'lsti';
+export const LSTI_K_FACTOR=8;
+export function isIntegrationMode(v:unknown):v is IntegrationMode{return v==='sti'||v==='lsti';}
+export function resSegmentCount(p:ResParams,mode:IntegrationMode='sti'):number{
+  return mode==='lsti'?LSTI_K_FACTOR*p.averages:p.averages;
+}
+/** Analysis span (s): T+(K−1)·hop, with K = resSegmentCount(p, mode). */
+export function resSpanS(p:ResParams,mode:IntegrationMode='sti'):number{
+  const k=resSegmentCount(p,mode);return p.integrationS+(k-1)*p.hopS;
+}
+/** Welch EDOF for the mode's segment count. STI equals `p.edof`. */
+export function resEdof(p:ResParams,mode:IntegrationMode='sti'):number{
+  return mode==='sti'?p.edof:welchEdof(resSegmentCount(p,mode));
+}
+

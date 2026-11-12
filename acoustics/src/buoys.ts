@@ -5,7 +5,9 @@ export type ReceiverType = 'passive-omni' | 'difar';
 export type PendingReceiverType = 'dicass' | 'vlad' | 'bt';
 /** rfChannel 0 means detuned (no RF assigned); positive channels are unique among tuned buoys.
  * Optional `fault` is an engine-runtime health flag (yellow chrome); not required in scenario JSON. */
-export interface Buoy extends Track { id:string; rfChannel:number; deployedAt:number; life:number; type:ReceiverType; fault?:boolean; placed?:boolean; dropAltitudeM?:number; descentRateMps?:number; integrationTimeS?:number }
+export interface Buoy extends Track { id:string; rfChannel:number; deployedAt:number; life:number; type:ReceiverType; fault?:boolean;
+  /** Default true: already in the water and integrated (today's goldens). `false` walks the deploy sequence. */
+  placed?:boolean; dropAltitudeM?:number; descentRateMps?:number; integrationTimeS?:number }
 export const isAlive=(b:Buoy,time:number):boolean => time>=b.deployedAt && time<b.deployedAt+b.life;
 /** Tuned = holding a positive RF channel (feeding when also alive). */
 export const isTuned=(b:Buoy):boolean => b.rfChannel>0;

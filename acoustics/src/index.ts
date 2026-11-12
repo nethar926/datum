@@ -17,6 +17,8 @@ export * from './demon.js';
 export * from './demonStream.js';
 export * from './scenario.js';
 export * from './engine.js';
+export * from './buoyStatus.js';
+export * from './deploySequence.js';
 export * from './protocol.js';
 export * from './client.js';
 export * from './workerRuntime.js';
@@ -56,6 +58,3 @@ export * from './spawnGeometry.js';
 export * from './stateBroadband.js';
 export * from './sources.js';
 export * from './stateHistory.js';
-
-export * from './deploySequence.js';
-export * from './buoyStatus.js';

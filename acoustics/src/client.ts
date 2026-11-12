@@ -6,7 +6,8 @@ export class AcousticClient {
     worker.onmessage=(event:MessageEvent<WorkerResponse>)=>{this.simT=event.data.simT;onMessage(event.data);};
   }
   command(command:Command,transfer:Transferable[]=[]):void {const m:WorkerRequest={...command,v:1,simT:this.simT};this.worker.postMessage(m,transfer);}
-  init(seed=42,scenarioId='cpa-pass'):void{this.command({type:'init',seed,scenarioId});}
+  /** The worker always generates from ScenarioParams (e.g. {behaviour:0..1}); scenarioId is legacy and ignored. */
+  init(seed=42,scenarioId='cpa-pass',params?:Extract<Command,{type:'init'}>['params']):void{this.command({type:'init',seed,scenarioId,...(params?{params}:{})});}
   play():void{this.command({type:'play'});}
   pause():void{this.command({type:'pause'});}
   seek(simT:number):void{this.simT=simT;this.command({type:'seek'});}

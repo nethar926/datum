@@ -936,23 +936,27 @@ applied to the smoothed SNR.
 // gramConfig for RES grams (legacy/DEMON configs omit the RES fields):
 {v:1; type:'gramConfig'; simT; streamId; kind:'lofar'; channel; bins:1024; f0; fBin; rowRateHz /* 1/P */;
  dbFloor; dbCeil; res; filter; bandHz; fcHz? /* vernier only */; enbwHz; bandLimited; liveBins;
- rowPhaseS /* rows at k·P + rowPhaseS */}
+ rowPhaseS /* sim time of row 0; row k at rowPhaseS + k/rowRateHz */}
 ```
 
 `GramRows` layout is unchanged (`data` + `bearingDeg`, 1024 per stream).
 
-**Row phase (`rowPhaseS`, additive).** To avoid every buoy's RES row falling on the same frame, each
-RES stream's grid is shifted: rows are due at `t = k·P + rowPhaseS`. For the stream's buoy at index
-i of N buoys (scenario order, so independent of subscribe order; N = buoy count when the stream is
-subscribed or `setGram`'d), `rowPhaseS = floor(i·F/N)·0.25 s` with F = P/0.25 frames per period, i.e.
-(i/N)·P quantized down to the 0.25 s worker frame (always 0 ≤ rowPhaseS < P). With N streams this
-gives at most ceil(N·0.25/P)+1 RES rows per frame (32 buoys: 4 per frame at RES3+, 1 at RES1).
-`setGram` re-phases the stream on its new P. The worker packs RES streams in one batch group per
-(P, rowPhaseS). The phase only changes *when* a stream's generator runs, not its row sequence
-(per-row seeded draws, AR(1) state carried row to row), so rows stay deterministic and seek replay
-reproduces them (it re-applies settings at t=0 and counts the phased rows). Single-buoy scenarios
-get rowPhaseS 0, i.e. the m3-res grid. The frontend places row n of a stream at
-`rowPhaseS + k·P` (the `simT` of the batch that carries it). Engine API: `subscribe({channel,res?,filter?,vernierHz?})`, `setGram(streamId,patch)`,
+**Row phase (`rowPhaseS`, `rowRateHz`).** `rowRateHz` is 1/P from `resParams` for RES, and 4 for
+LOFAR and DEMON. `rowPhaseS` is the sim time (seconds) of row index 0 — the tEnd of the first row —
+so `rowTime(k) = rowPhaseS + k/rowRateHz` equals the sim time of each emitted row. To avoid every
+buoy's RES row falling on the same frame, each RES stream's grid is staggered: the phase in [0, P)
+is `floor(i·F/N)·0.25 s` for the stream's buoy at index i of N (scenario order, independent of
+subscribe order; N = buoy count when the stream is subscribed or `setGram`'d; F = P/0.25). Then
+`start` is the last grid point ≤ subscribe time and `rowPhaseS = start + P`. The stagger equals
+`((rowPhaseS % P)+P)%P`. With N streams this gives at most ceil(N·0.25/P)+1 RES rows per frame
+(32 buoys: 4 per frame at RES3+, 1 at RES1). `setGram` re-phases the stream on its new P. The
+worker packs RES streams in one batch group per (P, stagger). The stagger only changes *when* a
+stream's generator runs, not its row sequence (per-row seeded draws, AR(1) state carried row to
+row), so rows stay deterministic and seek replay reproduces them (it re-applies settings at t=0
+and counts the phased rows). A single-buoy subscribe at t=0 has stagger 0 and `rowPhaseS = P`
+(first row at t=P). The frontend places row k of a stream at `rowPhaseS + k·P` (the `simT` of the
+batch that carries it). Engine API: `subscribe({channel,res?,filter?,vernierHz?})`, `setGram(streamId,patch)`,
+`streamConfig(streamId)`, Swift `streamInfo(_:)` (`EngineStreamInfo.rowPhaseS` / `rowRateHz`),
 `gramSettings(streamId)`; client: `subscribe(channel,opts)`, `setGram(streamId,opts)`. `setGram`
 restarts the stream's row clock on the new P grid (engine row counter restarts; worker rowIndex stays
 monotonic). Worker `seek` replays RES streams as if their settings were applied at t=0.

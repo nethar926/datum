@@ -97,7 +97,7 @@ describe('FULLBAND engine contract: visible+neighbours + backfill',()=>{
   const count=tileCountFor(fmax,resParams(r).fBin);
   expect(c).toMatchObject({fullAxis:true,tileBins:TILE_BINS,tileCount:count,visibleTileIndex:0,bins:TILE_BINS,f0:0,res:r,fBin:resParams(r).fBin});
   expect(c.fcHz).toBeUndefined();
-  e.advance(c.rowPhaseS!+1/c.rowRateHz);
+  e.advance(c.rowPhaseS!);
   expect(e.rowsReady(c.streamId)).toBe(count);
   const out=new Float32Array(TILE_BINS),order:number[]=[];
   while(e.rowsReady(c.streamId)>0){e.writeRow(c.streamId,out);order.push(e.lastFullAxisTile(c.streamId)!.tileIndex);}
