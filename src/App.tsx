@@ -17,7 +17,7 @@ import { NewScenario } from './settings/NewScenario'
 import { NewSimDialog } from './settings/NewSimDialog'
 import { canPromptNewSim, freshSeed, newSimStartArgs, type NewSimChoice } from './settings/newSim'
 import { createLongPress } from './ui/longPress'
-import { loadSimStart, randomSeed } from './settings/simStart'
+import { loadSimStart, saveSimStart, randomSeed } from './settings/simStart'
 import { aisAvailable, aisEffective, type PlotDifficulty } from './tactical/plotLayerPolicy'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
 import {
@@ -33,12 +33,12 @@ import { RES_MAX, RES_MIN, clampRes, fullView, geometryKey, minSpanOf, resReadou
 import type { GramFilter, GramSettings, LofarBandPresetId } from './engine/contract'
 import { BAND_IDS, BAND_KEY, bandEdges, bandReadout, isBandId, parseBandChoice } from './gram/bands'
 import { TacticalPlot } from './tactical/TacticalPlot'
-import { headingDeg, planeState, planeVersion, resetPlaneRoute, subscribePlane, togglePlaneMenu } from './tactical/planeRoute'
+import { headingDeg, LINE_WEIGHTS, NAV_PATTERNS, TRAIL_PATTERNS, planeState, planeVersion, resetPlaneRoute, setPlaneNavStyle, setPlaneTrailStyle, subscribePlane, togglePlaneMenu, type PlaneLineWeight } from './tactical/planeRoute'
 import { DropBar } from './tactical/DropBar'
 import { DropController } from './tactical/dropController'
 import { dropCapturesPlot } from './tactical/fieldMode'
 import { BUOY_STATUS_COLOR, BUOY_STATUS_LABEL, DetuneStore, paintHealth, type BuoyHealth } from './tactical/detune'
-import { BuoyPhaseStatus, BuoySequenceSettings } from './tactical/BuoySequenceUI'
+import { BuoyPhaseStatus, BuoySequenceAdvancedSettings, BuoySequenceStartModeSettings } from './tactical/BuoySequenceUI'
 import { fromEngine, mapEngineReading, type MappedGramPhase } from './tactical/buoySequence'
 import { FixStore } from './tactical/fixStore'
 import { FixBar } from './tactical/FixBar'
@@ -64,6 +64,12 @@ import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
 import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, useAppearance, useGlass } from './ui/chrome'
 import { DISPLAY_BLOOM_LEVELS, DISPLAY_BLOOM_LABEL, loadDisplayBloom, loadDisplayNight, saveDisplayBloom, saveDisplayNight, type DisplayBloom } from './displayFx'
+import {
+  ALTITUDE_UNITS, ALTITUDE_UNIT_LABEL, DEPTH_UNITS, DEPTH_UNIT_LABEL, DISTANCE_UNITS, DISTANCE_UNIT_LABEL,
+  SPEED_UNITS, SPEED_UNIT_LABEL, aircraftReadout, fadeLabel, formatDepth, formatSpeed, loadDisplayUnits, mpsFromSpeed,
+  saveDisplayUnits, subscribeDisplayUnits, type DisplayUnits,
+} from './displayUnits'
+import { clampFixFadeS, loadFixFadeS, saveFixFadeS } from './tactical/fixStyle'
 import { ToolsToolbar } from './ui/ToolsToolbar'
 import { PlotGrabber } from './touch/PlotGrabber'
 import { useViewportSegments } from './touch/useViewportSegments'
@@ -161,6 +167,10 @@ export default function App() {
   useEffect(() => { saveDisplayBloom(displayBloom) }, [displayBloom])
   const [displayNight, setDisplayNight] = useState(loadDisplayNight)
   useEffect(() => { saveDisplayNight(displayNight) }, [displayNight])
+  const displayUnits = useSyncExternalStore(subscribeDisplayUnits, loadDisplayUnits)
+  const setDisplayUnits = (patch: Partial<DisplayUnits>) => saveDisplayUnits({ ...displayUnits, ...patch })
+  const [fixFadeS, setFixFadeS] = useState(loadFixFadeS)
+  const [simStartPrefs, setSimStartPrefs] = useState(loadSimStart)
   const [contrast, setContrast] = useState<number>(loadContrast)
   const [wheel, setWheel] = useState<DifarWheelSettings>(loadWheel)
   const [wheelOpen, setWheelOpen] = useState(false)
@@ -1420,12 +1430,12 @@ export default function App() {
               {st.tactical && (() => {
                 const ps = planeState()
                 const hdg = ps.spec ? headingDeg(ps.pose.headingRad) : st.tactical.aircraft.hdgDeg
-                const kts = ps.spec ? ps.speedKts : st.tactical.aircraft.gsMps * 1.943844
-                const alt = ps.spec ? ps.altitudeFt : (st.tactical.aircraft.altM / 0.3048)
+                const speedMps = ps.spec ? mpsFromSpeed(ps.speedKts, 'kts') : st.tactical.aircraft.gsMps
+                const altM = ps.spec ? ps.altitudeFt * 0.3048 : st.tactical.aircraft.altM
                 return (
                   <button type="button" data-testid="ac-readout" aria-label={ps.menuOpen ? 'Close plane menu' : 'Aircraft menu'}
                     onClick={() => togglePlaneMenu()}>
-                    {`A/C ${hdg.toFixed(0).padStart(3, '0')}°  ${kts.toFixed(0)} KT  ${alt.toFixed(0)} FT`}
+                    {aircraftReadout(hdg, speedMps, altM, displayUnits)}
                   </button>
                 )
               })()}
@@ -1435,12 +1445,12 @@ export default function App() {
                 if (!fit || !track) return null
                 return (
                   <span className="fix-leg-readout" data-testid="fix-leg-readout" aria-live="polite">
-                    {track.tag} CSE {String(Math.round(fit.cseDeg) % 360).padStart(3, '0')}°T SPD {fit.spdKts.toFixed(0)} kt
+{track.tag} CSE {String(Math.round(fit.cseDeg) % 360).padStart(3, '0')}°T SPD {formatSpeed(mpsFromSpeed(fit.spdKts, 'kts'), displayUnits.speed, 0)}
                   </span>
                 )
               })()}
             </div>
-            <TacticalPlot client={client} showReveal={reveal} showAis={aisOn} difficulty={runDifficulty} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings} night={displayNight}
+            <TacticalPlot client={client} showReveal={reveal} showAis={aisOn} difficulty={runDifficulty} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings} night={displayNight} fadeS={fixFadeS}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource}
               onManual={(id, deg, final) => {
                 onManual(id, deg, final)
@@ -1571,8 +1581,8 @@ export default function App() {
       )}
       {tab === 'settings' && (
         <LargeTitleScreen title="Settings" testId="settings">
-          <div className="ios-section">
-            <h3>Appearance</h3>
+          <div className="ios-section" data-testid="settings-display">
+            <h3>Display</h3>
             <div className="ios-group">
               <div className="ios-row"><span className="row-label">Appearance</span>
                 <div className="seg ios-seg" role="group" aria-label="Appearance" data-testid="scheme-seg">
@@ -1582,34 +1592,12 @@ export default function App() {
                 <div className="seg ios-seg" role="group" aria-label="Glass" data-testid="glass-seg">
                   {(['auto', 'full', 'reduced'] as const).map((k) => <button key={k} aria-pressed={glass.pref === k} data-testid={`glass-${k}`} onClick={() => glass.setPref(k)}>{k === 'auto' ? 'Auto' : k === 'full' ? 'Full' : 'Reduced'}</button>)}
                 </div></div>
-            </div>
-            <p className="ios-foot">Grams, LOFAR palettes and the DIFAR wheel stay dark in both modes.</p>
-          </div>
-          <div className="ios-section">
-            <h3>Display</h3>
-            <div className="ios-group">
               <div className="ios-row"><span className="row-label">Bloom &amp; phosphor noise<small>A single cheap pass on the plot, chrome and overlays. Grams are never included. Off adds no cost.</small></span>
                 <div className="seg ios-seg" role="group" aria-label="Bloom and phosphor noise" data-testid="display-bloom">
                   {DISPLAY_BLOOM_LEVELS.map((k) => <button key={k} type="button" aria-pressed={displayBloom === k} data-testid={`display-bloom-${k}`} onClick={() => setDisplayBloom(k)}>{DISPLAY_BLOOM_LABEL[k]}</button>)}
                 </div></div>
               <label className="ios-row"><span className="row-label">Night<small>Subtle nav lights and a flashing anti-collision beacon on the plane glyph only.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="display-night" checked={displayNight} onChange={(e) => setDisplayNight(e.target.checked)} /></label>
-            </div>
-          </div>
-          <div className="ios-section">
-            <h3>Gram</h3>
-            <div className="ios-group">
-              <div className="ios-row"><span className="row-label">Newest data</span>
-                <div className="seg ios-seg" role="group" aria-label="Gram scroll direction" data-testid="gram-dir">
-                  <button type="button" aria-pressed={gramDir === 'bottom'} data-testid="gram-dir-bottom" onClick={() => { setGramDir('bottom'); saveGramDir('bottom') }}>Bottom</button>
-                  <button type="button" aria-pressed={gramDir === 'top'} data-testid="gram-dir-top" onClick={() => { setGramDir('top'); saveGramDir('top') }}>Top</button>
-                </div></div>
-              <label className="ios-row"><span className="row-label">HORZ cursor line<small>The HORZ line reads time (Zulu). The Hz readout is the finger's x position.</small></span>
-                <input type="checkbox" role="switch" className="ios-switch" data-testid="horz-switch" checked={horzOn} onChange={(e) => setHorzOn(e.target.checked)} /></label>
-              <label className="ios-row"><span className="row-label">ALI strip<small>Automatic Line Integration: whole rows nearest 30 seconds, labelled with the real span. LOFAR only.</small></span>
-                <input type="checkbox" role="switch" className="ios-switch" data-testid="ali-switch" checked={aliOn} onChange={(e) => setAliOn(e.target.checked)} /></label>
-              <label className="ios-row"><span className="row-label">BFI display<small>Bearing Frequency Indication: frequency against bearing, 30 second fade. DIFAR only. Main display.</small></span>
-                <input type="checkbox" role="switch" className="ios-switch" data-testid="bfi-switch" checked={bfiOn} disabled={!bfiAvailable} onChange={(e) => setBfiOn(e.target.checked)} /></label>
               <div className="ios-row"><span className="row-label">BFI preset<small>Frequency range in Hz. Edits persist.</small></span>
                 <div className="seg ios-seg" role="group" aria-label="BFI frequency preset" data-testid="bfi-preset-sheet">
                   {BFI_PRESETS.map((p) => (
@@ -1628,6 +1616,70 @@ export default function App() {
                     onChange={(e) => setBfiRange(bfiRange.loHz, Number(e.target.value))} />
                   <span>Hz</span>
                 </div></div>
+            </div>
+            <p className="ios-foot">Grams, LOFAR palettes and the DIFAR wheel stay dark in both modes. Bloom never covers the grams. Night is the plane glyph only.</p>
+          </div>
+          <div className="ios-section" data-testid="settings-units">
+            <h3>Units</h3>
+            <div className="ios-group">
+              <div className="ios-row"><span className="row-label">Speed</span>
+                <div className="seg ios-seg" role="group" aria-label="Speed unit" data-testid="units-speed">
+                  {SPEED_UNITS.map((k) => <button key={k} type="button" aria-pressed={displayUnits.speed === k} data-testid={`units-speed-${k}`} onClick={() => setDisplayUnits({ speed: k })}>{SPEED_UNIT_LABEL[k]}</button>)}
+                </div></div>
+              <div className="ios-row"><span className="row-label">Distance</span>
+                <div className="seg ios-seg" role="group" aria-label="Distance unit" data-testid="units-distance">
+                  {DISTANCE_UNITS.map((k) => <button key={k} type="button" aria-pressed={displayUnits.distance === k} data-testid={`units-distance-${k}`} onClick={() => setDisplayUnits({ distance: k })}>{DISTANCE_UNIT_LABEL[k]}</button>)}
+                </div></div>
+              <div className="ios-row"><span className="row-label">Altitude</span>
+                <div className="seg ios-seg" role="group" aria-label="Altitude unit" data-testid="units-altitude">
+                  {ALTITUDE_UNITS.map((k) => <button key={k} type="button" aria-pressed={displayUnits.altitude === k} data-testid={`units-altitude-${k}`} onClick={() => setDisplayUnits({ altitude: k })}>{ALTITUDE_UNIT_LABEL[k]}</button>)}
+                </div></div>
+              <div className="ios-row"><span className="row-label">Depth</span>
+                <div className="seg ios-seg" role="group" aria-label="Depth unit" data-testid="units-depth">
+                  {DEPTH_UNITS.map((k) => <button key={k} type="button" aria-pressed={displayUnits.depth === k} data-testid={`units-depth-${k}`} onClick={() => setDisplayUnits({ depth: k })}>{DEPTH_UNIT_LABEL[k]}</button>)}
+                </div></div>
+            </div>
+            <p className="ios-foot">Readouts use these units. The sim keeps metres and metres per second internally. Defaults are kts, nMi, ft and yds.</p>
+          </div>
+          <div className="ios-section" data-testid="settings-plot">
+            <h3>Plot / Tactical</h3>
+            <div className="ios-group">
+              <div className="ios-row"><span className="row-label">Fix fade<small>{fadeLabel(fixFadeS)}</small></span>
+                <input type="number" min={10} max={600} step={10} aria-label="Fix fade" data-testid="fix-fade"
+                  value={fixFadeS} onChange={(e) => { const v = clampFixFadeS(Number(e.target.value)); setFixFadeS(v); saveFixFadeS(v) }} /></div>
+              {(() => { void planeTick; const ps = planeState(); return (
+                <>
+                  <div className="ios-row"><span className="row-label">Trail</span>
+                    <div className="seg ios-seg" role="group" aria-label="Trail" data-testid="trail-style">
+                      {TRAIL_PATTERNS.map((p) => <button key={p} type="button" aria-label={`Trail ${p}`} aria-pressed={ps.trailStyle.pattern === p} data-testid={`trail-${p}`} onClick={() => setPlaneTrailStyle({ pattern: p, weight: ps.trailStyle.weight })}>{p}</button>)}
+                      {LINE_WEIGHTS.map((w) => <button key={w} type="button" aria-label={`Trail ${w}`} aria-pressed={ps.trailStyle.weight === w} data-testid={`trail-${w}`} onClick={() => setPlaneTrailStyle({ pattern: ps.trailStyle.pattern, weight: w as PlaneLineWeight })}>{w}</button>)}
+                    </div></div>
+                  <div className="ios-row"><span className="row-label">Nav</span>
+                    <div className="seg ios-seg" role="group" aria-label="Nav" data-testid="nav-style">
+                      {NAV_PATTERNS.map((p) => <button key={p} type="button" aria-label={`Nav ${p}`} aria-pressed={ps.navStyle.pattern === p} data-testid={`nav-${p}`} onClick={() => setPlaneNavStyle({ pattern: p, weight: ps.navStyle.weight })}>{p}</button>)}
+                      {LINE_WEIGHTS.map((w) => <button key={w} type="button" aria-label={`Nav ${w}`} aria-pressed={ps.navStyle.weight === w} data-testid={`nav-${w}`} onClick={() => setPlaneNavStyle({ pattern: ps.navStyle.pattern, weight: w as PlaneLineWeight })}>{w}</button>)}
+                    </div></div>
+                </>
+              ) })()}
+              <label className="ios-row"><span className="row-label">AIS<small>{aisAvail ? 'Surface tracks: name, course and speed' : 'Unavailable on Difficult'}</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="ais-switch" checked={aisEff} disabled={!aisAvail} onChange={(e) => { if (aisAvail) setAisOn(e.target.checked) }} /></label>
+            </div>
+            <p className="ios-foot">Fix fade, trail and nav styles apply to the tactical plot. AIS is unavailable on Difficult.</p>
+          </div>
+          <div className="ios-section">
+            <h3>Gram</h3>
+            <div className="ios-group">
+              <div className="ios-row"><span className="row-label">Newest data</span>
+                <div className="seg ios-seg" role="group" aria-label="Gram scroll direction" data-testid="gram-dir">
+                  <button type="button" aria-pressed={gramDir === 'bottom'} data-testid="gram-dir-bottom" onClick={() => { setGramDir('bottom'); saveGramDir('bottom') }}>Bottom</button>
+                  <button type="button" aria-pressed={gramDir === 'top'} data-testid="gram-dir-top" onClick={() => { setGramDir('top'); saveGramDir('top') }}>Top</button>
+                </div></div>
+              <label className="ios-row"><span className="row-label">HORZ cursor line<small>The HORZ line reads time (Zulu). The Hz readout is the finger's x position.</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="horz-switch" checked={horzOn} onChange={(e) => setHorzOn(e.target.checked)} /></label>
+              <label className="ios-row"><span className="row-label">ALI strip<small>Automatic Line Integration: whole rows nearest 30 seconds, labelled with the real span. LOFAR only.</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="ali-switch" checked={aliOn} onChange={(e) => setAliOn(e.target.checked)} /></label>
+              <label className="ios-row"><span className="row-label">BFI display<small>Bearing Frequency Indication: frequency against bearing, 30 second fade. DIFAR only. Main display.</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="bfi-switch" checked={bfiOn} disabled={!bfiAvailable} onChange={(e) => setBfiOn(e.target.checked)} /></label>
               <div className="ios-row"><span className="row-label">Secondary display<small>What fills the pane next to the gram. BFI is DIFAR only.</small></span>
                 {secondaryPicker('secondary-display-sheet')}</div>
               <div className="ios-row"><span className="row-label">LOFAR colour</span>
@@ -1642,18 +1694,24 @@ export default function App() {
                 </div></div>
             </div>
           </div>
-          <div className="ios-section">
+          <div className="ios-section" data-testid="settings-simulation">
             <h3>Simulation</h3>
             <div className="ios-group">
-              <label className="ios-row"><span className="row-label">AIS<small>{aisAvail ? 'Surface tracks: name, course and speed' : 'Unavailable on Difficult'}</small></span>
-                <input type="checkbox" role="switch" className="ios-switch" data-testid="ais-switch" checked={aisEff} disabled={!aisAvail} onChange={(e) => { if (aisAvail) setAisOn(e.target.checked) }} /></label>
               <label className="ios-row"><span className="row-label">Reveal positions<small>True positions of submarines only — never surface ships</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="reveal-switch" checked={reveal} onChange={(e) => setReveal(e.target.checked)} /></label>
               <label className="ios-row" title="Off = ideal receiver with unlimited dynamic range (for comparison)"><span className="row-label">Realistic receiver<small>AGC, limited dynamic range</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /></label>
+              <div className="ios-row"><span className="row-label">Difficulty<small>Default for the next generated run. Already-stored preference is kept.</small></span>
+                <div className="seg ios-seg" role="group" aria-label="Difficulty" data-testid="settings-difficulty">
+                  {([{ id: 'easy', label: 'Easy' }, { id: 'regular', label: 'Regular' }, { id: 'difficult', label: 'Difficult' }] as const).map((d) => (
+                    <button key={d.id} type="button" aria-pressed={simStartPrefs.diff === d.id} data-testid={`settings-diff-${d.id}`}
+                      onClick={() => { const next = { ...simStartPrefs, diff: d.id }; setSimStartPrefs(next); saveSimStart(next) }}>{d.label}</button>
+                  ))}
+                </div></div>
             </div>
+            <BuoySequenceStartModeSettings embedded />
+            <BuoySequenceAdvancedSettings embedded />
           </div>
-          <BuoySequenceSettings />
           <div className="ios-section">
             <h3>Reference</h3>
             <div className="ios-group">
@@ -1723,7 +1781,7 @@ export default function App() {
               <span className="row-value buoy-status" data-testid="buoy-status" data-health={health} style={{ color: BUOY_STATUS_COLOR[health] }}>{BUOY_STATUS_LABEL[health].toUpperCase()}</span></div>
             <div className="ios-row"><span className="row-label">Channel</span><span className="row-value" data-testid="buoy-fe-channel">{health === 'detuned' ? '—' : (fe?.channel ?? buoy.channel)}</span></div>
             <div className="ios-row"><span className="row-label">Engine state</span><span className="row-value">{buoy.state.toUpperCase()}</span></div>
-            <div className="ios-row"><span className="row-label">Hydrophone depth</span><span className="row-value">{buoy.hydrophoneDepthM} m</span></div>
+            <div className="ios-row"><span className="row-label">Hydrophone depth</span><span className="row-value">{formatDepth(buoy.hydrophoneDepthM, displayUnits.depth)}</span></div>
             <div className="ios-row"><span className="row-label">Battery</span><span className="row-value">{(buoy.batteryFrac * 100).toFixed(0)}%</span></div>
             {buoy.rx && <div className="ios-row"><span className="row-label">AGC gain</span><span className="row-value">{buoy.rx.gainDb >= 0 ? '+' : ''}{buoy.rx.gainDb.toFixed(0)} dB{buoy.rx.overload ? ' · OVLD' : ''}</span></div>}
             <div className="ios-row"><span className="row-label">Gram</span><span className="row-value readout">{viewReadout}</span></div>

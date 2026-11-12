@@ -1,11 +1,20 @@
+import { useSyncExternalStore } from 'react'
 import {
   LINE_WEIGHTS, MAX_POINTS, MIN_POINTS, NAV_PATTERNS, PLANE_MODES, PLANE_MODE_LABEL, TRAIL_PATTERNS,
   applyPlaneRoute, clearPlanePoints, clearPlaneRoute, planeState, setPlaneAltitudeFt, setPlaneArm, setPlaneMode,
   setPlaneNavStyle, setPlaneRadiusNmi, setPlaneSpeedKts, setPlaneTrailStyle, type PlaneLineWeight,
 } from './planeRoute'
+import {
+  ALTITUDE_UNIT_LABEL, DISTANCE_UNIT_LABEL, SPEED_UNIT_LABEL, altitudeFromM, distanceFromM, getDisplayUnits,
+  metresFromAltitude, metresFromDistance, mpsFromSpeed, speedFromMps, subscribeDisplayUnits,
+} from '../displayUnits'
 
 export function PlaneMenu({ simT, fallback }: { simT: number; fallback: { x: number; y: number } }) {
   const s = planeState()
+  const units = useSyncExternalStore(subscribeDisplayUnits, getDisplayUnits)
+  const speedDisp = speedFromMps(mpsFromSpeed(s.speedKts, 'kts'), units.speed)
+  const altDisp = altitudeFromM(s.altitudeFt * 0.3048, units.altitude)
+  const radDisp = distanceFromM(s.radiusNmi * 1852, units.distance)
   const canFly = s.mode === 'pointToPoint'
     ? s.points.length >= MIN_POINTS && s.points.length <= MAX_POINTS
     : s.radiusNmi > 0 && s.speedKts > 0
@@ -20,21 +29,21 @@ export function PlaneMenu({ simT, fallback }: { simT: number; fallback: { x: num
         ))}
       </div>
       <label className="plane-menu-field">Speed
-        <input type="number" min={1} value={s.speedKts} aria-label="Speed knots"
-          onChange={(e) => setPlaneSpeedKts(Number(e.target.value))} />
-        <span>kts</span>
+        <input type="number" min={1} value={speedDisp} aria-label="Speed"
+          onChange={(e) => setPlaneSpeedKts(speedFromMps(mpsFromSpeed(Number(e.target.value), units.speed), 'kts'))} />
+        <span>{SPEED_UNIT_LABEL[units.speed]}</span>
       </label>
       <label className="plane-menu-field">Altitude
-        <input type="number" min={0} value={s.altitudeFt} aria-label="Altitude feet"
-          onChange={(e) => setPlaneAltitudeFt(Number(e.target.value))} />
-        <span>ft</span>
+        <input type="number" min={0} value={altDisp} aria-label="Altitude"
+          onChange={(e) => setPlaneAltitudeFt(altitudeFromM(metresFromAltitude(Number(e.target.value), units.altitude), 'ft'))} />
+        <span>{ALTITUDE_UNIT_LABEL[units.altitude]}</span>
       </label>
       {s.mode !== 'pointToPoint' ? (
         <>
           <label className="plane-menu-field">Radius
-            <input type="number" min={0.1} step={0.1} value={s.radiusNmi} aria-label="Radius nautical miles"
-              onChange={(e) => setPlaneRadiusNmi(Number(e.target.value))} />
-            <span>nMi</span>
+            <input type="number" min={0.1} step={0.1} value={radDisp} aria-label="Radius"
+              onChange={(e) => setPlaneRadiusNmi(distanceFromM(metresFromDistance(Number(e.target.value), units.distance), 'nMi'))} />
+            <span>{DISTANCE_UNIT_LABEL[units.distance]}</span>
           </label>
           <button type="button" aria-label="Tap the route centre"
             onClick={() => setPlaneArm(s.arm === 'centre' ? 'none' : 'centre')}>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { courseSpeed, formatDepth, formatRingScale, getDisplayUnits, mpsFromSpeed, rangeBearing, subscribeDisplayUnits } from '../displayUnits'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { LONG_PRESS_MS, capDpr, exceedsSlop } from '../touch/gestures'
@@ -55,6 +56,8 @@ interface Props {
   fix?: FixStore
   /** Night easter egg: nav lights + flashing beacon on the plane glyph only. */
   night?: boolean
+  /** Fix-bearing fade window (seconds of sim time). Same key as Settings. */
+  fadeS?: number
 }
 const noSub = () => () => {}
 /** New-buoy splash: an expanding ring for this long after a buoy appears on the plot. */
@@ -65,11 +68,11 @@ const HIT_PX = 14
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), violet auto bearings, operator-laid fixes, optional Reveal positions. Canvas 2D. */
-export function TacticalPlot({ client, showReveal, showAis = false, difficulty = 'regular', spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune, fix, night = false }: Props) {
+export function TacticalPlot({ client, showReveal, showAis = false, difficulty = 'regular', spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune, fix, night = false, fadeS }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, night, picked: null as TruthContact | null, affTick: 0 })
+  const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, night, fadeS, picked: null as TruthContact | null, affTick: 0, planeTick: 0 })
   const [pickedFixId, setPickedFixId] = useState<number | null>(null)
   const fadeSRef = useRef(loadFixFadeS())
   const viewRef = useRef<PlotView | null>(null)
@@ -81,8 +84,9 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   const [picked, setPicked] = useState<TruthContact | null>(null)
   const affTick = useSyncExternalStore(subscribeAisAffiliations, aisAffiliationVersion)
   const planeTick = useSyncExternalStore(subscribePlane, planeVersion)
+  const units = useSyncExternalStore(subscribeDisplayUnits, getDisplayUnits)
   const simTWall = useRef({ t: 0, wall: 0 })
-  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, night, picked, affTick, planeTick }
+  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, night, fadeS, picked, affTick, planeTick }
   const revealHits = useRef<{ id: number | string; x: number; y: number; r: number }[]>([])
   const camRef = useRef<PlotCamera>({ ...PLOT_CAMERA_FITTED })
   const camTick = useRef(0)
@@ -167,7 +171,8 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       const fixSnap = props.current.fix?.getSnapshot() ?? 0
       const nightOn = !!props.current.night
       const nightFlash = nightOn && nightBeaconOn(now / 1000) ? '1' : '0'
-      const key = `${w}x${h}:${reveal}:${span}:${cam.cx}:${cam.cy}:${camTick.current}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}:${nightOn ? '1' : '0'}:${nightFlash}`
+      const fadeKey = props.current.fadeS ?? fadeSRef.current
+      const key = `${w}x${h}:${reveal}:${span}:${cam.cx}:${cam.cy}:${camTick.current}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}:${nightOn ? '1' : '0'}:${nightFlash}:${fadeKey}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
       const v = fitView(w, h, span, cam.cx, cam.cy)
@@ -306,7 +311,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       const fx = props.current.fix
       if (fx && fx.fixes.length) {
         ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
-        const fadeS = fadeSRef.current
+        const fadeS = props.current.fadeS ?? fadeSRef.current
         const simT = t.simT ?? 0
         ctx.strokeStyle = FIX_LINE; ctx.lineWidth = 1.25 * dpr; ctx.setLineDash([])
         for (const f of fx.fixes) {
@@ -726,7 +731,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         if (cameraOn()) { setCam(recentrePlotCamera()); setPicked(null) }
       }} />
     <canvas ref={oref} className="tac-overlay" data-testid="tactical-overlay" aria-hidden />
-    <div className="ring-scale" data-testid="ring-scale" aria-hidden>2 km rings</div>
+    <div className="ring-scale" data-testid="ring-scale" aria-hidden>{formatRingScale(2000, units.distance)}</div>
     {picked && picked.category === 'surface' && aisEffective(showAis, difficulty) && (() => {
       const tac = client.status.tactical
       const track = picked.sourceId ? tac?.aisTracks?.find((x) => x.id === picked.sourceId) : undefined
@@ -754,7 +759,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           <div className="ais-card-head" style={{ color: AIS_AFFILIATION_RGB[aff] }}>{info.callsign.toUpperCase()}</div>
           <div>Class  {info.shipClass ? info.shipClass.toUpperCase() : '—'}</div>
           <div>Type  {info.type ? info.type.toUpperCase() : '—'}</div>
-          <div>CSE {String(Math.round(info.crsDeg) % 360).padStart(3, '0')}° · {info.spdKts.toFixed(1)} KT</div>
+          <div>{courseSpeed(info.crsDeg, mpsFromSpeed(info.spdKts, 'kts'), units)}</div>
           <div className="ais-card-aff" role="group" aria-label="Affiliation">
             {AIS_AFFILIATIONS.map((a) => (
               <button key={a} type="button" aria-label={AIS_AFFILIATION_LABEL[a]} aria-pressed={aff === a}
@@ -771,13 +776,13 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
     {picked && picked.category !== 'surface' && showReveal && (() => {
       const buoy = client.status.tactical?.buoys.find((b) => b.channel === selectedChannel)
       const rb = revealRangeBrg(buoy, picked)
-      const kts = picked.spdKts ?? picked.spdMps * 1.943844
+      const spd = picked.spdMps ?? (picked.spdKts != null ? mpsFromSpeed(picked.spdKts, 'kts') : 0)
       const cls = (picked.label || picked.sourceId || `C${picked.id}`).toUpperCase()
       return (
         <div className="reveal-card readout" data-testid="reveal-card" role="dialog" aria-label="Reveal contact">
           <div className="reveal-card-head">{cls}</div>
-          <div>CSE {String(Math.round(picked.crsDeg) % 360).padStart(3, '0')}° · {kts.toFixed(1)} KT{picked.depthM !== undefined ? ` · ${picked.depthM.toFixed(0)} M` : ''}</div>
-          {rb && <div>RNG {(rb.rngM / 1852).toFixed(2)} NM · BRG {String(Math.round(rb.brgDeg) % 360).padStart(3, '0')}°</div>}
+          <div>{courseSpeed(picked.crsDeg, spd, units)}{picked.depthM !== undefined ? ` · ${formatDepth(picked.depthM, units.depth)}` : ''}</div>
+          {rb && <div>{rangeBearing(rb.rngM, rb.brgDeg, units)}</div>}
           {!rb && buoy && <div className="dim">On selected buoy</div>}
           {!rb && !buoy && <div className="dim">Select a buoy for RNG/BRG</div>}
         </div>

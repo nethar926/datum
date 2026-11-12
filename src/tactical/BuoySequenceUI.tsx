@@ -55,11 +55,10 @@ function setPref(patch: Partial<SequencePrefs>, current: SequencePrefs, set: (p:
 }
 
 /** Settings: default start mode (Placed / Unplaced, with pattern-on-Start or manual). Persists. */
-export function BuoySequenceStartModeSettings({ testId = 'buoy-sequence-settings' }: { testId?: string }) {
+export function BuoySequenceStartModeSettings({ testId = 'buoy-sequence-settings', embedded = false }: { testId?: string; embedded?: boolean }) {
   const [prefs, setPrefs] = useState(loadSequencePrefs)
-  return (
-    <div className="ios-section" data-testid={testId}>
-      <h3>Start mode</h3>
+  const body = (
+    <>
       <div className="ios-group">
         <div className="ios-row">
           <span className="row-label">Start mode</span>
@@ -91,18 +90,24 @@ export function BuoySequenceStartModeSettings({ testId = 'buoy-sequence-settings
             ? 'Unplaced: grams show Buoy Loaded. The scenario\'s standard pattern drops on Start and walks the deploy sequence.'
             : 'Unplaced: grams show Buoy Loaded. Nothing lays until you pick a pattern.'}
       </p>
+    </>
+  )
+  if (embedded) return <div data-testid={testId}>{body}</div>
+  return (
+    <div className="ios-section" data-testid={testId}>
+      <h3>Start mode</h3>
+      {body}
     </div>
   )
 }
 
 /** Settings Advanced: aircraft drop-altitude picker (default 1,500 ft) and integration (5–10 s, default 5). */
-export function BuoySequenceAdvancedSettings({ testId = 'buoy-sequence-advanced' }: { testId?: string }) {
+export function BuoySequenceAdvancedSettings({ testId = 'buoy-sequence-advanced', embedded = false }: { testId?: string; embedded?: boolean }) {
   const [prefs, setPrefs] = useState(loadSequencePrefs)
   const ft = preferredAltitudeFeet(prefs)
   const integ = prefs.integrationTimeS
-  return (
-    <div className="ios-section" data-testid={testId}>
-      <h3>Advanced</h3>
+  const body = (
+    <>
       <div className="ios-group">
         <div className="ios-row">
           <span className="row-label">Drop altitude</span>
@@ -126,6 +131,13 @@ export function BuoySequenceAdvancedSettings({ testId = 'buoy-sequence-advanced'
       <p className="ios-foot">
         Drop altitude (default 1,500 ft) and integration (5–10 s, default 5) are passed to the engine on each drop. The app never counts phase time itself.
       </p>
+    </>
+  )
+  if (embedded) return <div data-testid={testId}>{body}</div>
+  return (
+    <div className="ios-section" data-testid={testId}>
+      <h3>Advanced</h3>
+      {body}
     </div>
   )
 }
