@@ -6,6 +6,7 @@ import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
 import { BfiPlot } from './gram/BfiPlot'
+import { loadSecondary, resolveSecondary, saveSecondary, type SecondaryDisplay } from './gram/secondaryDisplay'
 import { DemonPane } from './gram/DemonPane'
 import { isGramMode, type GramMode } from './gram/difarBearing'
 import { DifarWheelButton } from './gram/DifarLegend'
@@ -305,6 +306,9 @@ export default function App() {
   // BFI: Bearing Frequency Indication (off by default, persisted). DIFAR only.
   const [bfiOn, setBfiOn] = useState<boolean>(loadBfi)
   useEffect(() => saveBfi(bfiOn), [bfiOn])
+  // Companion-pane display (plot by default). BFI is DIFAR only, independent of the main-display toggle.
+  const [secondary, setSecondary] = useState<SecondaryDisplay>(loadSecondary)
+  useEffect(() => saveSecondary(secondary), [secondary])
   const [harmF0, setHarmF0] = useState<number | null>(null)
   const [harmK, setHarmK] = useState<number | null>(null)
   const [harmFam, setHarmFam] = useState<string | null>(null)
@@ -905,6 +909,18 @@ export default function App() {
     </div>
   )
   const bfiAvailable = buoy?.kind === 'difar' && gramMode !== 'demon'
+  const secondaryResolved = resolveSecondary(secondary, bfiAvailable)
+  const secondaryPicker = (testId: string) => (
+    <div className="seg ios-seg" role="group" aria-label="Secondary display" data-testid={testId}>
+      <button type="button" aria-pressed={secondaryResolved === 'plot'} data-testid={`${testId}-plot`}
+        onClick={() => setSecondary('plot')}>Plot</button>
+      <button type="button" aria-pressed={secondaryResolved === 'bfi'} data-testid={`${testId}-bfi`}
+        disabled={!bfiAvailable} onClick={() => setSecondary('bfi')}
+        title={bfiAvailable
+          ? 'BFI in the pane next to the gram. Frequency against bearing, 30 second fade. DIFAR only.'
+          : 'BFI is available on DIFAR buoys only.'}>BFI</button>
+    </div>
+  )
   const toolsRow = (
     <ToolsToolbar testId="gram-tools" full={fullTools} leading={fixToolBtn} trailing={contrastControl}>
       <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)} onClick={onBrgButton}
@@ -952,6 +968,7 @@ export default function App() {
         title={bfiAvailable
           ? 'BFI: Bearing Frequency Indication. Frequency against bearing, 30 second fade. DIFAR only.'
           : 'BFI is available on DIFAR buoys only.'}><IcBfi /><span>BFI</span></button>
+      {secondaryPicker('secondary-display')}
     </ToolsToolbar>
   )
   // CUTTOOLS: availability matrix + Cuts toolbar (same ToolsToolbar; FIX disabled with reason).
@@ -1388,8 +1405,10 @@ export default function App() {
           <SplitHandle axis={splitAxis} frac={split} onFrac={setSplit} storeKey={splitKey} targetRef={wsRef} defaultFrac={splitDefault} />
         )}
         {hinge && <div className="hinge-fold" aria-hidden data-testid="hinge-fold" />}
-        <section id="live-tactical-panel" className="panel tac-panel stack-plot" data-testid="tac-panel" hidden={plotHidden} inert={plotHidden}>
-          <div className="panel-body plot">
+        <section id="live-tactical-panel" className="panel tac-panel stack-plot" data-testid="tac-panel" data-secondary={secondaryResolved} hidden={plotHidden} inert={plotHidden}>
+          <div className="panel-body plot" data-testid="tac-plot"
+            hidden={secondaryResolved === 'bfi'}
+            style={secondaryResolved === 'bfi' ? { display: 'none' } : undefined}>
             <div className="plot-corner readout">
               <span className="sim-clock" data-testid="sim-clock">T+{fmtT(st.simT)}</span>
               {st.tactical && <span data-testid="ac-readout">{`A/C ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}°  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</span>}
@@ -1429,6 +1448,11 @@ export default function App() {
             </div>
             <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} detune={detune} />
           </div>
+          {secondaryResolved === 'bfi' && (
+            <div className="panel-body" data-testid="secondary-bfi-pane">
+              <BfiPlot client={client} configs={lofarCfgs} streamIndex={stream} view={view} palette={palette} />
+            </div>
+          )}
         </section>
         {useDetents && (
           <PlotGrabber
@@ -1556,8 +1580,10 @@ export default function App() {
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="horz-switch" checked={horzOn} onChange={(e) => setHorzOn(e.target.checked)} /></label>
               <label className="ios-row"><span className="row-label">ALI strip<small>Automatic Line Integration: whole rows nearest 30 seconds, labelled with the real span. LOFAR only.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="ali-switch" checked={aliOn} onChange={(e) => setAliOn(e.target.checked)} /></label>
-              <label className="ios-row"><span className="row-label">BFI display<small>Bearing Frequency Indication: frequency against bearing, 30 second fade. DIFAR only.</small></span>
+              <label className="ios-row"><span className="row-label">BFI display<small>Bearing Frequency Indication: frequency against bearing, 30 second fade. DIFAR only. Main display.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="bfi-switch" checked={bfiOn} disabled={!bfiAvailable} onChange={(e) => setBfiOn(e.target.checked)} /></label>
+              <div className="ios-row"><span className="row-label">Secondary display<small>What fills the pane next to the gram. BFI is DIFAR only.</small></span>
+                {secondaryPicker('secondary-display-sheet')}</div>
               <div className="ios-row"><span className="row-label">LOFAR colour</span>
                 <div className="seg ios-seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
                   {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)} title={gramMode === 'difar' ? 'LOFAR colour (DIFAR uses the bearing wheel)' : `LOFAR amplitude in ${PALETTE_LABEL[id].toLowerCase()}`}>{PALETTE_LABEL[id]}</button>)}

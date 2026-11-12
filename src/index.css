@@ -869,7 +869,10 @@ button, select { font: inherit; color: inherit; }
   backdrop-filter: blur(8px);
 }
 .tool[data-testid="bfi-tool"]:disabled,
-.ios-switch[data-testid="bfi-switch"]:disabled { opacity: .4; }
+.ios-switch[data-testid="bfi-switch"]:disabled,
+[data-testid="secondary-display-bfi"]:disabled,
+[data-testid="secondary-display-sheet-bfi"]:disabled { opacity: .4; }
+.tac-panel .panel-body[data-testid="secondary-bfi-pane"] { position: relative; min-height: 0; background: #000; }
 
 /* ---------- ALI: dark-tinted glass strip at the newest-data edge (small area only) ---------- */
 .ali-strip { position: absolute; left: 0; right: 44px; height: 16px; z-index: 3; pointer-events: none; }
