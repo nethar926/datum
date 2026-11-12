@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  ALI_KEY, HORZ_KEY, SPLIT_DEFAULT_V, SPLIT_KEY_V, SPLIT_MIN_GRAM_PX, SPLIT_MIN_PLOT_PX, clampSplit, loadAli, loadHorz, loadSplit,
-  parseGlass, parseScheme, parseTab, resolveGlass, resolveScheme, saveAli, saveHorz, saveSplit,
+  ALI_KEY, BFI_KEY, HORZ_KEY, SPLIT_DEFAULT_V, SPLIT_KEY_V, SPLIT_MIN_GRAM_PX, SPLIT_MIN_PLOT_PX, clampSplit, loadAli, loadBfi, loadHorz, loadSplit,
+  parseGlass, parseScheme, parseTab, resolveGlass, resolveScheme, saveAli, saveBfi, saveHorz, saveSplit,
 } from './prefs'
 
 // Minimal localStorage for the node test environment.
@@ -78,6 +78,22 @@ describe('ALI toggle persistence', () => {
     ;(globalThis as { localStorage?: unknown }).localStorage = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
     expect(loadAli()).toBe(false)
     expect(() => saveAli(true)).not.toThrow()
+  })
+})
+
+describe('BFI toggle persistence', () => {
+  it('is off by default', () => {
+    expect(loadBfi()).toBe(false)
+  })
+  it('round-trips on and off through localStorage', () => {
+    saveBfi(true); expect(mem.get(BFI_KEY)).toBe('1'); expect(loadBfi()).toBe(true)
+    saveBfi(false); expect(mem.get(BFI_KEY)).toBe('0'); expect(loadBfi()).toBe(false)
+  })
+  it('treats anything but "1" as off and survives a throwing storage', () => {
+    mem.set(BFI_KEY, 'true'); expect(loadBfi()).toBe(false)
+    ;(globalThis as { localStorage?: unknown }).localStorage = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
+    expect(loadBfi()).toBe(false)
+    expect(() => saveBfi(true)).not.toThrow()
   })
 })
 

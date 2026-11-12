@@ -5,6 +5,7 @@ import { Compendium } from './compendium/Compendium'
 import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
+import { BfiPlot } from './gram/BfiPlot'
 import { DemonPane } from './gram/DemonPane'
 import { isGramMode, type GramMode } from './gram/difarBearing'
 import { DifarWheelButton } from './gram/DifarLegend'
@@ -72,11 +73,11 @@ import {
   availabilityMap, clearToolArm, emptyToolArm, FIX_DISABLED_REASON,
   type ToolArmState,
 } from './cuts/cutTools'
-import { IcAli, IcBrg, IcChevron, IcComb, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcLock, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
+import { IcAli, IcBfi, IcBrg, IcChevron, IcComb, IcContrast, IcDop, IcFix, IcHarm, IcHorz, IcInfo, IcLayers, IcLink, IcLm, IcLock, IcPause, IcPlay, IcProbe, IcRefresh, IcSpeaker, IcSpeakerMute, IcTarget, IcTrash } from './ui/icons'
 import { Splash } from './ui/Splash'
 import { hardReloadApp } from './ui/appReload'
 import { useStandalone, useUpdateAvailable } from './ui/useAppUpdate'
-import { SPLIT_DEFAULT_H, SPLIT_KEY_H, loadAli, loadHorz, loadSplit, parseTab, saveAli, saveHorz, type Tab } from './ui/prefs'
+import { SPLIT_DEFAULT_H, SPLIT_KEY_H, loadAli, loadBfi, loadHorz, loadSplit, parseTab, saveAli, saveBfi, saveHorz, type Tab } from './ui/prefs'
 import { installAudioUnlock } from './touch/audioUnlock'
 import { useListen } from './audio/useListen'
 import { FOCUS_HALF_WIDTHS } from './audio/focus'
@@ -301,6 +302,9 @@ export default function App() {
   // ALI: Automatic Line Integration strip (off by default, persisted). LOFAR only.
   const [aliOn, setAliOn] = useState<boolean>(loadAli)
   useEffect(() => saveAli(aliOn), [aliOn])
+  // BFI: Bearing Frequency Indication (off by default, persisted). DIFAR only.
+  const [bfiOn, setBfiOn] = useState<boolean>(loadBfi)
+  useEffect(() => saveBfi(bfiOn), [bfiOn])
   const [harmF0, setHarmF0] = useState<number | null>(null)
   const [harmK, setHarmK] = useState<number | null>(null)
   const [harmFam, setHarmFam] = useState<string | null>(null)
@@ -900,6 +904,7 @@ export default function App() {
         onChange={(e) => setContrast(clampContrast(Number(e.currentTarget.value)))} onDoubleClick={() => setContrast(CONTRAST_DEFAULT)} />
     </div>
   )
+  const bfiAvailable = buoy?.kind === 'difar' && gramMode !== 'demon'
   const toolsRow = (
     <ToolsToolbar testId="gram-tools" full={fullTools} leading={fixToolBtn} trailing={contrastControl}>
       <button className={`tool brg-btn${isArmed(brgArm) ? ' armed' : ''}`} data-testid="brg-btn" aria-pressed={isArmed(brgArm)} onClick={onBrgButton}
@@ -942,6 +947,11 @@ export default function App() {
         title="HORZ: the line reads time (Zulu). The Hz readout is the finger's x position."><IcHorz /><span>HORZ</span></button>
       <button className="tool" aria-pressed={aliOn} aria-label="ALI" data-testid="ali-tool" onClick={() => setAliOn(!aliOn)}
         title="ALI: Automatic Line Integration. Whole rows nearest 30 seconds, labelled with the real span. LOFAR only."><IcAli /><span>ALI</span></button>
+      <button className="tool" aria-pressed={bfiOn && bfiAvailable} aria-label="BFI" data-testid="bfi-tool"
+        onClick={() => setBfiOn(!bfiOn)} disabled={!bfiAvailable}
+        title={bfiAvailable
+          ? 'BFI: Bearing Frequency Indication. Frequency against bearing, 30 second fade. DIFAR only.'
+          : 'BFI is available on DIFAR buoys only.'}><IcBfi /><span>BFI</span></button>
     </ToolsToolbar>
   )
   // CUTTOOLS: availability matrix + Cuts toolbar (same ToolsToolbar; FIX disabled with reason).
@@ -1253,8 +1263,8 @@ export default function App() {
         <div className="workspace-left stack-gram">
         <section className="panel gram-panel gram-box" data-testid="live-gram-panel" hidden={gramMode === 'demon'} style={gramMode === 'demon' ? { display: 'none' } : undefined}>
           <div className="panel-body">
-            {lofarCfgs.length > 0 && tab !== 'cuts' && (
-              <div data-testid="lofar-gram-wrap">
+            {lofarCfgs.length > 0 && tab !== 'cuts' && (<>
+              <div data-testid="lofar-gram-wrap" hidden={bfiOn && bfiAvailable} style={bfiOn && bfiAvailable ? { display: 'none' } : undefined}>
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
@@ -1309,7 +1319,10 @@ export default function App() {
                   {(ruler.placed || dopMode) && <DopplerOverlay ctx={ctx} store={ruler} nowS={st.simT} active={dopMode} locked={locks.dop} onLockTap={() => flipLock('dop')} />}
                 </>) : undefined} />
               </div>
-            )}
+              {bfiOn && bfiAvailable && (
+                <BfiPlot client={client} configs={lofarCfgs} streamIndex={stream} view={view} palette={palette} />
+              )}
+            </>)}
             {(tool === 'harm' || harmF0 !== null) && <div className={`gram-note readout harm-note${locks.harm ? ' locked' : ''}`} data-testid="harm-readout" data-locked={locks.harm ? '1' : '0'}>{locks.harm && <IcLock size={11} className="cursor-lock-ic" />}{harmText(harmF0, harmK, cfg ? fullView(cfg).hi : BAND_MAX[st.band], harmFam ?? undefined)}{harmF0 !== null && harmProbe !== null && `   ${ratioText(harmF0, harmProbe)}${probeName ? '  ' + probeName : ''}`}</div>}
             {(tool === 'comb' || combCentreHz !== null) && <div className={`gram-note readout comb-note${locks.comb ? ' locked' : ''}`} data-testid="comb-readout" data-locked={locks.comb ? '1' : '0'}>{locks.comb && <IcLock size={11} className="cursor-lock-ic" />}{combText(combCentreHz, combSpacingHz, combSidebands, combMatched)}</div>}
             {(dopMode || ruler.placed) && <DopplerReadout store={ruler} fBin={cfg?.fBin ?? 1} locked={locks.dop} />}
@@ -1543,6 +1556,8 @@ export default function App() {
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="horz-switch" checked={horzOn} onChange={(e) => setHorzOn(e.target.checked)} /></label>
               <label className="ios-row"><span className="row-label">ALI strip<small>Automatic Line Integration: whole rows nearest 30 seconds, labelled with the real span. LOFAR only.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="ali-switch" checked={aliOn} onChange={(e) => setAliOn(e.target.checked)} /></label>
+              <label className="ios-row"><span className="row-label">BFI display<small>Bearing Frequency Indication: frequency against bearing, 30 second fade. DIFAR only.</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="bfi-switch" checked={bfiOn} disabled={!bfiAvailable} onChange={(e) => setBfiOn(e.target.checked)} /></label>
               <div className="ios-row"><span className="row-label">LOFAR colour</span>
                 <div className="seg ios-seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
                   {PALETTE_IDS.map((id) => <button key={id} aria-pressed={palette === id} onClick={() => setPalette(id)} title={gramMode === 'difar' ? 'LOFAR colour (DIFAR uses the bearing wheel)' : `LOFAR amplitude in ${PALETTE_LABEL[id].toLowerCase()}`}>{PALETTE_LABEL[id]}</button>)}

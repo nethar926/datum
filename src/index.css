@@ -857,6 +857,20 @@ button, select { font: inherit; color: inherit; }
 .gram-buoy-status .gram-buoy-detail { font-weight: 500; opacity: 0.9; }
 .buoy-symbol-fill { flex: 0 0 auto; display: block; }
 
+
+/* ---------- BFI: bearing vs frequency scatter (30 s fade) ---------- */
+.bfi-plot { background: #000; border-radius: 16px; overflow: hidden; }
+.bfi-plot canvas { background: #000; }
+.bfi-label {
+  position: absolute; left: 8px; top: 6px; z-index: 3; pointer-events: none;
+  font: 10px/1 var(--font-mono); letter-spacing: .04em; color: var(--phosphor);
+  padding: 3px 6px; border-radius: 999px;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(8px);
+}
+.tool[data-testid="bfi-tool"]:disabled,
+.ios-switch[data-testid="bfi-switch"]:disabled { opacity: .4; }
+
 /* ---------- ALI: dark-tinted glass strip at the newest-data edge (small area only) ---------- */
 .ali-strip { position: absolute; left: 0; right: 44px; height: 16px; z-index: 3; pointer-events: none; }
 .ali-strip.edge-top { top: 0; }

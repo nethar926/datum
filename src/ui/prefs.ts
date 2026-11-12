@@ -52,6 +52,16 @@ export function saveAli(on: boolean): void {
   try { localStorage.setItem(ALI_KEY, on ? '1' : '0') } catch { /* private mode */ }
 }
 
+// ---------- BFI: Bearing Frequency Indication (frequency vs bearing, ~30 s fade) ----------
+export const BFI_KEY = 'datum.bfi'
+/** Off by default. */
+export function loadBfi(): boolean {
+  try { return localStorage.getItem(BFI_KEY) === '1' } catch { return false }
+}
+export function saveBfi(on: boolean): void {
+  try { localStorage.setItem(BFI_KEY, on ? '1' : '0') } catch { /* private mode */ }
+}
+
 // ---------- Appearance ----------
 export const SCHEME_KEY = 'datum.scheme'
 export type SchemePref = 'system' | 'light' | 'dark'
