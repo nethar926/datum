@@ -18,8 +18,9 @@ import { applyScrollDelta, formatZuluHms, isReviewing, returnToLive, viewNowS } 
 import { isLockTap } from './cursorLock'
 import { holdAfterThreeFingerSwipe, isCursorFrozen, nextHoldOnTap, showLockIcon, toggleLockButton, type CursorHold } from './cursorState'
 import { IcLock } from '../ui/icons'
-import { agoFromY, formatZulu, formatZuluSec, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
+import { agoFromY, formatZulu, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
 import { AXIS_Y_EDGE_CLAMP_PX } from './lockVsTimeAxis'
+import { horzAtPointer, horzZulu, liveReadout, readoutHz } from './horz'
 import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
 
@@ -35,8 +36,9 @@ interface Props {
   /** When set, pointer drags on the waterfall call this (overlay dragging); clicks are suppressed. */
   onDragPoint?: (phase: 'start' | 'move' | 'end', hz: number, agoS: number, shift: boolean) => void
   /**
-   * HORZ: a thin full-width horizontal hairline on the default cursor at the hover row, with the Zulu time at the
-   * time-axis edge. Cursor chrome only (not a crosshair mode, not a bearing fix).
+   * HORZ: a thin full-width horizontal hairline at the pointer row that reads time (Zulu at the time-axis edge).
+   * The Hz readout is the finger's x position. Works on mouse hover and on touch/mouse drag. Cursor chrome only
+   * (not a crosshair mode, not a bearing fix).
    */
   horz?: boolean; nowS?: number
   auto?: boolean; normalized?: boolean; palette?: PaletteId
@@ -112,6 +114,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const cursorRef = useRef<number | null>(null)
   const [cross, setCross] = useState<{ hz: number; agoS: number; x: number; db: number } | null>(null)
   const [hoverAgo, setHoverAgo] = useState<number | null>(null)
+  /** Hz at the pointer's x, even when the vertical hairline is locked. Cleared when the pointer lifts. */
+  const [fingerHz, setFingerHz] = useState<number | null>(null)
   const histRef = useRef<LevelHistory | null>(null)
   useLayoutEffect(() => { cursorRef.current = cursor }, [cursor])
   const brgHistRef = useRef<BearingHistory | null>(null)
@@ -438,13 +442,18 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const ago = (y: number, h: number) => agoFromY(y, h, historyS, dir) + scrollBackS
   const showAt = (x: number, y: number, w: number, h: number, withCross: boolean) => {
     // Clamp to the configured band so off-canvas pointers never show negative Hz.
-    const hz = Math.max(fMin, Math.min(fMax, xToFreq(x, view, w))); setCursor(hz); onCursorHz?.(hz)
+    const hz = Math.max(fMin, Math.min(fMax, xToFreq(x, view, w)))
     const agoS = ago(y, h)
-    if (horz) setHoverAgo(agoS)
+    const next = horzAtPointer({ x, y, w, h, hzAtX: hz, agoS, horz, locked: cursorLocked, cursorHz: cursorRef.current })
+    setFingerHz(next.fingerHz)
+    if (next.hoverAgo !== null) setHoverAgo(next.hoverAgo)
+    if (!cursorLocked) { setCursor(next.cursorHz); onCursorHz?.(next.cursorHz) }
     if (withCross) {
       const hist = histRef.current
-      const db = hist && cfg ? hist.at(agoS * rowRate, (hz - cfg.f0) / fBin) : NaN
-      setCross({ hz, agoS, x, db })
+      // Crosshair dB stays on the hairline Hz when locked; the live readout uses finger x for Hz.
+      const sampleHz = cursorLocked && cursorRef.current !== null ? cursorRef.current : hz
+      const db = hist && cfg ? hist.at(agoS * rowRate, (sampleHz - cfg.f0) / fBin) : NaN
+      setCross({ hz: sampleHz, agoS, x, db })
     }
   }
   // Live cross dB: as nowS advances (App re-renders on new rows), re-sample hist under the
@@ -507,7 +516,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     if (onDragPoint && !dragLocked) { G.dragging = true; onDragPoint('start', xToFreq(x, view, w), ago(y, h), e.shiftKey) }
     else G.dragging = false
     if (e.pointerType !== 'mouse') {
-      if (!cursorLocked) showAt(x, y, w, h, false)
+      // Touch drag (and a locked hairline): showAt updates finger Hz and HORZ ago; locked Hz stays put.
+      showAt(x, y, w, h, false)
       setPressHint(true)
       G.longTimer = window.setTimeout(() => {
         const p = ptr.current.get(e.pointerId); if (!p || G.moved || ptr.current.size !== 1) return
@@ -565,13 +575,14 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     }
     if (!G.moved && exceedsSlop(p.x0, p.y0, x, y)) { G.moved = true; clearTimeout(G.longTimer); setPressHint(false) }
     if (G.dragging && G.moved && !dragLocked) onDragPoint?.('move', xToFreq(x, view, w), ago(y, h), e.shiftKey)
-    if (!cursorLocked) showAt(x, y, w, h, G.longFired)
-    else if (horz) setHoverAgo(ago(y, h))
+    // Free or locked, mouse or touch: HORZ follows y, Hz readout follows x; locked hairline stays.
+    showAt(x, y, w, h, G.longFired)
   }
   const onPUp = (e: React.PointerEvent<HTMLCanvasElement>, cancel = false) => {
     const { x, y, w, h } = local(e), G = g.current, p = ptr.current.get(e.pointerId)
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
     ptr.current.delete(e.pointerId); clearTimeout(G.longTimer); setPressHint(false)
+    if (!ptr.current.size) setFingerHz(null)
     if (!p) return
     if (G.threeStartYs) { if (ptr.current.size < 3) G.threeStartYs = null; return }
     if (G.pinch || G.panStart) {
@@ -610,11 +621,14 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   }
 
   const selLabelText = selectedHz !== null ? selectedHz.toFixed(fBin < 0.1 ? 2 : 1) : ''
-  const cursorReadoutText = cross
-    ? null
-    : cursor !== null
-      ? `${cursor.toFixed(fBin < 0.1 ? 2 : 1)} ${unit} · bin ${Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}${cursorSuffix ?? ''}`
-      : null
+  const liveHz = readoutHz(fingerHz, cursor)
+  const horzZuluText = horz && hoverAgo !== null ? horzZulu(nowS - hoverAgo, zuluOrigin, scrollBackS) : null
+  const liveText = liveReadout({
+    hz: liveHz, fBin, f0: cfg?.f0 ?? 0, unit, horzZulu: horzZuluText,
+    crosshair: !!cross, db: cross && Number.isFinite(cross.db) ? cross.db : (cross ? null : undefined),
+    suffix: cursorSuffix ?? '',
+  })
+  const cursorReadoutText = cross ? null : liveText
   useLayoutEffect(() => {
     // Measure the live top-left readout so the sel-marker label clears real glyphs (FOCUS etc.).
     const gEl = gramBoxRef.current, rEl = readoutElRef.current
@@ -631,19 +645,14 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     return { markerX, ...placeSelMarkerLabel({ markerX, gramW: width, labelW: size.w, labelH: size.h, readout }) }
   })()
 
-  const crossText = (() => {
-    if (!cross || !cfg) return ''
-    const t = nowS - cross.agoS, db = cross.db
-    const mm = Math.floor(Math.max(0, t) / 60), ss = Math.floor(Math.max(0, t) % 60)
-    return `T+${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')} (-${cross.agoS.toFixed(0)}s)  ${cross.hz.toFixed(fBin < 0.1 ? 2 : 1)} ${unit}  ${Number.isFinite(db) ? `${db.toFixed(1)} dB` : '-- dB'}`
-  })()
+  const crossText = liveText ?? ''
 
   return (
     <div className="gram" ref={gramBoxRef} data-testid={`${testId}-frame`} data-dir={dir} data-cursor-hold={cursorHold} data-cursor-locked={cursorLocked ? '1' : '0'} data-drag-locked={dragLocked ? '1' : '0'} data-drag-lockable={dragLockable ? '1' : '0'} data-paused={paused ? '1' : '0'} data-reviewing={isReviewing(scrollBackS) ? '1' : '0'}>
       {glError ? <div className="gl-error">{glError}</div> : (
         <canvas key={glGen} ref={canvasRef} data-testid={testId} onWheel={onWheel}
           onPointerDown={onPDown} onPointerMove={onPMove} onPointerUp={(e) => onPUp(e)} onPointerCancel={(e) => onPUp(e, true)}
-          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size && !cursorLocked) { setCursor(null); setCross(null); setHoverAgo(null); onCursorHz?.(null) } }}
+          onPointerLeave={(e) => { if (e.pointerType === 'mouse' && !ptr.current.size && !cursorLocked) { setCursor(null); setCross(null); setHoverAgo(null); setFingerHz(null); onCursorHz?.(null) } }}
           onContextMenu={(e) => e.preventDefault()}
           className={pressHint ? 'pressing' : undefined}
           style={{ touchAction: 'none', cursor: onPickPoint ? 'crosshair' : onDragPoint ? 'ew-resize' : undefined }}
@@ -699,9 +708,9 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         </div>
       )}
       {cfg && overlay && <div className="gram-layer" style={{ width }}>{overlay({ view, width, cfg, historyS, dir })}</div>}
-      {horz && hoverAgo !== null && cursor !== null && (
+      {horz && hoverAgo !== null && (
         <div className="horz-layer" aria-hidden data-testid={`${testId}-horz`} style={{ top: `calc((100% - 44px) * ${(pctFromAgo(hoverAgo, historyS, dir) / 100).toFixed(5)})` }}>
-          <i className="horz-line" /><span className="horz-zulu" data-testid={`${testId}-horz-zulu`}>{isReviewing(scrollBackS) ? formatZuluHms(nowS - hoverAgo, zuluOrigin) : formatZuluSec(nowS - hoverAgo, zuluOrigin)}</span>
+          <i className="horz-line" /><span className="horz-zulu" data-testid={`${testId}-horz-zulu`}>{horzZulu(nowS - hoverAgo, zuluOrigin, scrollBackS)}</span>
         </div>
       )}
       {cross && (
@@ -710,7 +719,9 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
           <div className="cross-v" style={{ left: cross.x }} />
         </div>
       )}
-      {cross ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{crossText}{cursorSuffix ?? ''}</div> : cursor !== null && <div className={`cursor-readout${cursorHold !== 'free' ? ' held' : ''}${showLockIcon(cursorHold) ? ' locked' : ''}`} ref={readoutElRef} data-testid={`${testId}-cursor`} data-hold={cursorHold} data-locked={showLockIcon(cursorHold) ? '1' : '0'}>{showLockIcon(cursorHold) && <IcLock size={11} className="cursor-lock-ic" />}<span>{cursor.toFixed(fBin < 0.1 ? 2 : 1)} {unit} · bin {Math.round((cursor - (cfg?.f0 ?? 0)) / fBin)}{cursorSuffix ?? ''}</span></div>}
+      {liveText && (cross
+        ? <div className="cursor-readout cross-readout" data-testid={`${testId}-cross`}>{liveText}</div>
+        : <div className={`cursor-readout${cursorHold !== 'free' ? ' held' : ''}${showLockIcon(cursorHold) ? ' locked' : ''}`} ref={readoutElRef} data-testid={`${testId}-cursor`} data-hold={cursorHold} data-locked={showLockIcon(cursorHold) ? '1' : '0'}>{showLockIcon(cursorHold) && <IcLock size={11} className="cursor-lock-ic" />}<span>{liveText}</span></div>)}
       <button type="button" className={`cursor-lock-btn${showLockIcon(cursorHold) ? ' on' : ''}`} data-testid={`${testId}-lock-btn`}
         aria-pressed={showLockIcon(cursorHold)} aria-label={showLockIcon(cursorHold) ? 'Unlock cursor' : 'Lock cursor'}
         title={showLockIcon(cursorHold) ? 'Unlock' : 'Lock (or three-finger swipe down while anchored)'}

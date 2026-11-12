@@ -936,7 +936,7 @@ export default function App() {
       {combCentreHz !== null && <button className="tool sub" onClick={clearComb} aria-label="Clear COMB" data-testid="comb-clear"><IcTrash /><span>Clear</span></button>}
       <button className="tool" aria-pressed={tool === 'lm'} aria-label="LM" onClick={toggleLm} title="Lloyd's mirror striations: drag a curve onto the interference nulls (shift-drag moves CPA time)"><IcLm /><span>LM</span></button>
       <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
-        title="HORZ: horizontal hairline on the cursor with the Zulu time of the hover row"><IcHorz /><span>HORZ</span></button>
+        title="HORZ: the line reads time (Zulu). The Hz readout is the finger's x position."><IcHorz /><span>HORZ</span></button>
     </ToolsToolbar>
   )
   // CUTTOOLS: availability matrix + Cuts toolbar (same ToolsToolbar; FIX disabled with reason).
@@ -1045,7 +1045,7 @@ export default function App() {
       <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="cut-horz-tool"
         disabled={!cutAvail.horz.enabled}
         onClick={() => setHorzOn(!horzOn)}
-        title={cutAvail.horz.reason ?? 'HORZ: horizontal hairline with Zulu time of the cut row'}>
+        title={cutAvail.horz.reason ?? 'HORZ: the line reads time (Zulu). The Hz readout is the finger\'s x position.'}>
         <IcHorz /><span>HORZ</span></button>
       {gramMode === 'difar' && (
         <DifarWheelButton omni={!!cutBuoy && cutBuoy.kind !== 'difar'} wheel={wheel} open={wheelOpen}
@@ -1534,7 +1534,7 @@ export default function App() {
                   <button type="button" aria-pressed={gramDir === 'bottom'} data-testid="gram-dir-bottom" onClick={() => { setGramDir('bottom'); saveGramDir('bottom') }}>Bottom</button>
                   <button type="button" aria-pressed={gramDir === 'top'} data-testid="gram-dir-top" onClick={() => { setGramDir('top'); saveGramDir('top') }}>Top</button>
                 </div></div>
-              <label className="ios-row"><span className="row-label">HORZ cursor line<small>Hairline + Zulu time at the hover row</small></span>
+              <label className="ios-row"><span className="row-label">HORZ cursor line<small>The HORZ line reads time (Zulu). The Hz readout is the finger's x position.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="horz-switch" checked={horzOn} onChange={(e) => setHorzOn(e.target.checked)} /></label>
               <div className="ios-row"><span className="row-label">LOFAR colour</span>
                 <div className="seg ios-seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
