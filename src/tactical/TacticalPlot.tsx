@@ -60,7 +60,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   // Long-press a DIFAR buoy (touch stand-in for double-click) clears its manual bearing.
   const press = useRef<{ x: number; y: number; moved: boolean; timer: number } | null>(null)
   const [picked, setPicked] = useState<TruthContact | null>(null)
-  const revealHits = useRef<{ id: number; x: number; y: number; r: number }[]>([])
+  const revealHits = useRef<{ id: number | string; x: number; y: number; r: number }[]>([])
   const camRef = useRef<PlotCamera>({ ...PLOT_CAMERA_FITTED })
   const camTick = useRef(0)
   const lastScen = useRef({ id: '', seed: NaN })
@@ -85,7 +85,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
     const splash = new Float64Array(MAX_SPLASH), known = { n: -1 }
     let splashing = false
     let bag = makeBag(MAX_REVEAL)
-    const hitPool: { id: number; x: number; y: number; r: number }[] = Array.from({ length: MAX_REVEAL }, () => ({ id: 0, x: 0, y: 0, r: 0 }))
+    const hitPool: { id: number | string; x: number; y: number; r: number }[] = Array.from({ length: MAX_REVEAL }, () => ({ id: 0, x: 0, y: 0, r: 0 }))
     revealHits.current = hitPool
     const hitCount = { n: 0 }
     // Overlay: new-buoy splash rings (each frame only while one runs) and the drop ghost.
@@ -436,7 +436,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
     const c = ref.current; if (!c) return null
     const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
     const px = (e.clientX - rect.left) * dpr, py = (e.clientY - rect.top) * dpr
-    let best: { id: number; d: number } | null = null
+    let best: { id: number | string; d: number } | null = null
     for (let i = 0; i < revealHits.current.length; i++) {
       // hitCount lives inside the effect; use r>0 as live flag — kept in sync each draw
       const h = revealHits.current[i]
@@ -604,8 +604,12 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
             if (r.kind === 'recentre') { setCam(recentrePlotCamera()); setPicked(null); return }
             const rid = hitReveal(e)
             if (rid !== null) {
-              const c = client.status.tactical?.truth?.contacts.find((x) => x.id === rid) ?? null
-              setPicked(c)
+              const tac = client.status.tactical
+              if (typeof rid === 'string') {
+                // AIS ships come from engine.aisTracks (string ids), not truth contacts.
+                const a = tac?.aisTracks?.find((x) => x.id === rid)
+                setPicked(a ? ({ id: -1, label: a.name, sourceId: a.id, x: a.x, y: a.y, crsDeg: a.crsDeg, spdMps: a.spdMps, category: 'surface', active: true } as unknown as TruthContact) : null)
+              } else setPicked(tac?.truth?.contacts.find((x) => x.id === rid) ?? null)
             } else setPicked(null)
           }
           return

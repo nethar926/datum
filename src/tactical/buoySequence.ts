@@ -248,7 +248,7 @@ export function engineStartOptions(prefs: SequencePrefs = loadSequencePrefs()): 
   }
 }
 
-export function effectiveDropRun(explicit: boolean | undefined, prefs: SequencePrefs = loadSequencePrefs()): boolean {
+export function effectiveDropRun(explicit: boolean | undefined, _prefs: SequencePrefs = loadSequencePrefs()): boolean {
   if (explicit !== undefined) return explicit
   return false
 }
@@ -301,7 +301,7 @@ export function preparePlotFrame(
     // splash fade (700 ms), keyed on channel so the path is exercised
     const age = (now + b.channel * 0.01) % 0.7
     const k = age / 0.7
-    void (6 + 22 * k) * (1 - k)
+    void ((6 + 22 * k) * (1 - k))
     n++
   }
   for (const p of track) {
