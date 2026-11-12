@@ -30,7 +30,7 @@ export interface PropagationSettings {
   czForceGainLinear?:number;
 }
 export interface Environment { shippingDensity?:number; seaState:number; shipping:Shipping; soundSpeed:number; spreading:Spreading; transition:number; /** Water column °C (Mackenzie / cavitation). */temperatureC?:number; /** Salinity ppt. */salinityPsu?:number; /** Optional propagation feature flags (CZ off by default). */propagation?:PropagationSettings }
-export interface Scenario {reactorOffline?:boolean; surfacePool?:Contact[]; classificationTargets?:string[]; v:1; fMax?:number; fBin?:number; band?:[number,number]; surfaceTraffic?:number; seed:number; mode:'aviation'; bins:number; fmax:number; time:number; ownship:Track; environment:Environment; contacts:Contact[]; buoys:Buoy[]; /** Paired BT/SSP for FE graph (Mackenzie). */waterColumn?:import('./waterColumn.js').WaterColumnProfile }
+export interface Scenario {reactorOffline?:boolean; surfacePool?:Contact[]; classificationTargets?:string[]; v:1; fMax?:number; fBin?:number; band?:[number,number]; surfaceTraffic?:number; seed:number; mode:'aviation'; bins:number; fmax:number; time:number; ownship:Track; environment:Environment; contacts:Contact[]; buoys:Buoy[]; /** Paired BT/SSP for FE graph (Mackenzie). */waterColumn?:import('./waterColumn.js').WaterColumnProfile; dropAltitudeM?:number; descentRateMps?:number; integrationTimeS?:number; buoyStartMode?:'placed'|'unplaced'; autoDropPattern?:boolean }
 export type ContactInput=Omit<Contact,'params'> & {params?:Signature};
 export type ScenarioInput=Omit<Scenario,'contacts'> & {contacts:ContactInput[]};
 export function resolveContactParams(c:ContactInput,time=0,reactorOffline=false):Signature {

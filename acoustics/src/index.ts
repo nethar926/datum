@@ -56,3 +56,6 @@ export * from './spawnGeometry.js';
 export * from './stateBroadband.js';
 export * from './sources.js';
 export * from './stateHistory.js';
+
+export * from './deploySequence.js';
+export * from './buoyStatus.js';

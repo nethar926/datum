@@ -11,6 +11,8 @@ import {mpsToKnots,clamp} from './units.js';
 import { validateScenario, loadScenario, type Scenario, type ScenarioInput, type Environment } from './scenario.js';
 import { advance } from './kinematics.js';
 import { isAlive, isFeeding, isTuned, type ReceiverType, type Buoy } from './buoys.js';
+import {DEFAULT_DROP_ALTITUDE_M,DEFAULT_DESCENT_RATE_MPS,DEFAULT_INTEGRATION_TIME_S,type BuoyStartMode,validateDrop,validateIntegration} from './deploySequence.js';
+import {buoyDeployStatus,type BuoyStatus} from './buoyStatus.js';
 import { LofarGenerator } from './lofar.js';
 import {ResLofarGenerator,normalizeResSettings} from './resGram.js';
 import {RES_BINS,RES_FRAME_S,TILE_BINS,tileCountFor,tileIndexForHz,priorityTileOrder,tileBand,type ResGramSettings} from './res.js';
@@ -28,8 +30,15 @@ export interface BuoyRow { id:string; rfChannel:number; depth:number; type:Recei
  * Callers may replace each result.row with an appropriately sized recycled buffer before step. */
 export type AisTrack = { id: string; name: string; x: number; y: number; crsDeg: number; spdMps: number }
 
+export type EngineOptions = {
+  buoyStartMode?:BuoyStartMode; autoDropPattern?:boolean;
+  dropAltitudeM?:number; descentRateMps?:number; integrationTimeS?:number;
+}
 export class AcousticEngine {
   readonly scenario:Scenario;readonly rows:BuoyRow[];readonly generators:LofarGenerator[];
+  readonly buoyStartMode:BuoyStartMode;
+  readonly deployAltitudeM:number;readonly deployDescentRateMps:number;readonly deployIntegrationTimeS:number;
+
   private readonly lineWanders:LineWander[]=[];
   private readonly truthState:{contacts:TruthContact[]};
   private readonly allContacts:Contact[];
@@ -58,7 +67,21 @@ export class AcousticEngine {
   private nextStreamId=1;
   private readonly bearingStorage=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
   private readonly tacticalState:Tactical={v:1,type:'tactical',simT:0,aircraft:{x:0,y:0,altM:300,hdgDeg:0,gsMps:0},buoys:[],bearings:[]};
-  constructor(scenario:ScenarioInput,seed?:number){if(seed!==undefined)scenario={...scenario,seed};const resolved=loadScenario(scenario);this.scenario=structuredClone(resolved);const s=this.scenario;
+  constructor(scenario:ScenarioInput,seed?:number,options:EngineOptions={}){if(seed!==undefined)scenario={...scenario,seed};const resolved=loadScenario(scenario);this.scenario=structuredClone(resolved);const s=this.scenario;
+    this.deployAltitudeM=s.dropAltitudeM??options.dropAltitudeM??DEFAULT_DROP_ALTITUDE_M;
+    this.deployDescentRateMps=s.descentRateMps??options.descentRateMps??DEFAULT_DESCENT_RATE_MPS;
+    this.deployIntegrationTimeS=s.integrationTimeS??options.integrationTimeS??DEFAULT_INTEGRATION_TIME_S;
+    (this as {buoyStartMode:BuoyStartMode}).buoyStartMode=options.buoyStartMode??s.buoyStartMode??'placed';
+    const autoDrop=!!(options.autoDropPattern??s.autoDropPattern)&&this.buoyStartMode==='unplaced';
+    const pattern=s.buoys.slice();
+    if(this.buoyStartMode==='unplaced'){
+      s.buoys.length=0;
+      if(autoDrop){for(const b of pattern)s.buoys.push({...b,placed:false,deployedAt:s.time,
+        dropAltitudeM:s.dropAltitudeM??b.dropAltitudeM??this.deployAltitudeM,
+        descentRateMps:s.descentRateMps??b.descentRateMps??this.deployDescentRateMps,
+        integrationTimeS:s.integrationTimeS??b.integrationTimeS??this.deployIntegrationTimeS});}
+    }
+
     s.surfacePool??=createSurfacePool(s.seed,Math.min(18,250-s.contacts.length));this.baseContacts=s.contacts.filter(c=>!s.surfacePool!.some(p=>p.id===c.id));this.allContacts=this.baseContacts.concat(s.surfacePool);
     if(s.surfacePool){const n=surfaceCount(s.surfaceTraffic??0,s.surfacePool.length);s.contacts.length=0;s.contacts.push(...this.baseContacts);for(let i=0;i<s.surfacePool.length;i++){s.surfacePool[i].active=i<n;if(i<n)s.contacts.push(s.surfacePool[i]);}}
     for(const c of this.allContacts){for(const leg of c.motion)if(leg.at<=s.time){c.course=leg.course;c.speed=leg.speed;c.depth=leg.depth;}}
@@ -300,7 +323,20 @@ export class AcousticEngine {
     if(!(spec.channel>0)||!Number.isInteger(spec.channel))throw new Error('Invalid RF channel');
     let max=0;for(const b of this.scenario.buoys)max=Math.max(max,Number(b.id.replace(/\D/g,''))||0);
     const id=spec.id??max+1;if(!Number.isInteger(id)||id<1||id>2147483647)throw new Error('Invalid buoy id');
-    this.addBuoy({id:`buoy-${id}`,rfChannel:spec.channel,type:spec.kind==='omni'?'passive-omni':'difar',x:spec.x,y:spec.y,depth:spec.hydrophoneDepthM,course:0,speed:0,deployedAt:this.time,life:spec.lifeS??7200});return id;
+    const alt=spec.dropAltitudeM??this.deployAltitudeM,rate=spec.descentRateMps??this.deployDescentRateMps,integ=spec.integrationTimeS??this.deployIntegrationTimeS;
+    validateDrop(alt,rate);validateIntegration(integ);
+    this.addBuoy({id:`buoy-${id}`,rfChannel:spec.channel,type:spec.kind==='omni'?'passive-omni':'difar',x:spec.x,y:spec.y,depth:spec.hydrophoneDepthM,course:0,speed:0,deployedAt:this.time,life:spec.lifeS??7200,
+      placed:false,dropAltitudeM:alt,descentRateMps:rate,integrationTimeS:integ});return id;
+  }
+  /** Deploy-sequence status for buoy `index`. */
+  buoyStatus(index:number):BuoyStatus{
+    const b=this.scenario.buoys[index];if(!b)throw new Error('Unknown buoy');
+    return {...buoyDeployStatus(this.time,b),isTuned:isTuned(b)};
+  }
+  /** Status for the buoy of a stream id, or undefined. */
+  buoyStatusForStream(streamId:number):BuoyStatus|undefined{
+    const i=this.streams.get(streamId);if(i===undefined)return undefined;
+    return this.buoyStatus(i);
   }
 
   /** Numeric buoy id (`buoy-N` → N) or -1. */

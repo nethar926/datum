@@ -845,3 +845,14 @@ button, select { font: inherit; color: inherit; }
 
 /* Play long press (new sim prompt): no iOS callout / text selection while holding. */
 .play-btn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+
+/* Gram buoy-sequence status (Buoy Loaded → … → Tuned) and variable-colour symbol. */
+.gram-buoy-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: 600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 4px 9px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #0a84ff) 35%, transparent);
+  color: #fff; white-space: nowrap;
+}
+.gram-buoy-status .gram-buoy-detail { font-weight: 500; opacity: 0.9; }
+.buoy-symbol-fill { flex: 0 0 auto; display: block; }

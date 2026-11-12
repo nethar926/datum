@@ -154,7 +154,10 @@ export class SimHost {
     }
     this.disposeLiveCut()
     const gen = (Acoustics as unknown as { generateScenario?: (p: unknown) => ConstructorParameters<typeof AcousticEngine>[0] }).generateScenario
-    const engine = new AcousticEngine(msg.params && gen ? gen(msg.params) : buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins))
+    const engine = new AcousticEngine(msg.params && gen ? gen(msg.params) : buildScenario(msg.scenarioId, msg.seed >>> 0, band.fmax, band.bins), msg.seed >>> 0, {
+      buoyStartMode: msg.buoyStartMode, autoDropPattern: msg.autoDropPattern,
+      dropAltitudeM: msg.dropAltitudeM, descentRateMps: msg.descentRateMps, integrationTimeS: msg.integrationTimeS,
+    })
     this.engine = engine
     this.n = engine.scenario.buoys.length
     this.dt = 1 / msg.rowRateHz; this.rowRateHz = msg.rowRateHz
@@ -295,7 +298,7 @@ export class SimHost {
       for (let k = 0; used.has(ch) && k < 9999; k++) ch = (ch % 9999) + 1
       if (used.has(ch)) { error = 'No free RF channel'; break }
       try {
-        engine.dropBuoy({ channel: ch, kind: d.kind, x: d.x, y: d.y, hydrophoneDepthM: d.depthM ?? DROP_DEPTH_M[d.kind], lifeS: d.lifeS ?? DROP_LIFE_S })
+        engine.dropBuoy({ channel: ch, kind: d.kind, x: d.x, y: d.y, hydrophoneDepthM: d.depthM ?? DROP_DEPTH_M[d.kind], lifeS: d.lifeS ?? DROP_LIFE_S, dropAltitudeM: d.dropAltitudeM, descentRateMps: d.descentRateMps, integrationTimeS: d.integrationTimeS })
         this.attachBuoy(s.buoys.length - 1, d)
       } catch (e) { error = e instanceof Error ? e.message : String(e); break }
       used.add(ch); channels.push(ch)
@@ -752,6 +755,10 @@ export class SimHost {
       tb.state = s.time < b.deployedAt ? 'falling' : alive ? 'live' : 'dead'
       tb.lifeRemainingS = s.time < b.deployedAt ? b.life : remaining
       tb.batteryFrac = Math.min(1, tb.lifeRemainingS / b.life)
+      if (typeof engine.buoyStatus === 'function') {
+        try { const st = engine.buoyStatus(i); tb.status = { phase: st.phase, fill: st.fill, etaSeconds: st.etaSeconds, splashTime: st.splashTime, liveTime: st.liveTime, isTuned: st.isTuned } }
+        catch { tb.status = undefined }
+      }
       if (alive && b.type === 'difar') {
         const g = engine.generators[i]
         for (let k = 0; k < g.lineCount; k++) {

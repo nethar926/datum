@@ -35,6 +35,8 @@ import { DropBar } from './tactical/DropBar'
 import { DropController } from './tactical/dropController'
 import { dropCapturesPlot } from './tactical/fieldMode'
 import { BUOY_STATUS_COLOR, BUOY_STATUS_LABEL, DetuneStore, paintHealth, type BuoyHealth } from './tactical/detune'
+import { BuoyPhaseStatus, BuoySequenceSettings } from './tactical/BuoySequenceUI'
+import { fromEngine, mapEngineReading, type MappedGramPhase } from './tactical/buoySequence'
 import { FixStore } from './tactical/fixStore'
 import { FixBar } from './tactical/FixBar'
 import { FRESH_WINDOW_S, freshRays } from './tactical/crossFix'
@@ -1153,6 +1155,19 @@ export default function App() {
         <div className="chrome-bar glass" role="toolbar" aria-label="Gram chrome" data-testid="chrome-bar">
           <div className="chrome-scroll panel-head gram-head">
             <h2 data-testid="gram-title">{gramMode === 'demon' ? 'DEMON' : gramMode === 'difar' ? 'DIFAR' : 'LOFAR'}{gramMode !== 'demon' ? ` · ${filter}` : ''}</h2>
+            {(() => {
+              void detuneSnap
+              const fe = buoy ? detune.get(buoy.id) : undefined
+              const h = paintHealth(fe, buoy?.state)
+              const reading = buoy?.status
+                ? fromEngine(buoy.status.phase, buoy.status.fill, buoy.status.etaSeconds, buoy.status.splashTime, buoy.status.liveTime)
+                : null
+              const phase: MappedGramPhase = reading
+                ? mapEngineReading(reading)
+                : !buoy || buoy.state === 'falling' ? { name: 'loaded' }
+                  : h === 'working' ? { name: 'tuned' } : { name: 'deployed' }
+              return <BuoyPhaseStatus phase={phase} rate={st.rate} playing={st.playing} detuned={h === 'detuned'} />
+            })()}
             <div className="seg" role="group" aria-label="Gram mode" data-testid="gram-mode-seg">
               <button type="button" aria-pressed={gramMode === 'lofar'} data-testid="gram-mode-lofar" onClick={() => setGramMode('lofar')} title={`Amplitude as ${PALETTE_LABEL[palette].toLowerCase()} brightness`}>LOFAR</button>
               <button type="button" aria-pressed={gramMode === 'difar'} data-testid="gram-mode-difar" onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
@@ -1544,6 +1559,7 @@ export default function App() {
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /></label>
             </div>
           </div>
+          <BuoySequenceSettings />
           <div className="ios-section">
             <h3>Reference</h3>
             <div className="ios-group">

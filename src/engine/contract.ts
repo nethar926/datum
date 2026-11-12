@@ -31,6 +31,8 @@ export interface TacticalBuoy {
   batteryFrac: number; lifeRemainingS: number; state: 'falling' | 'live' | 'dead'
   /** Receiver front end: AGC gain relative to settled (dB) and whether the last row clipped. */
   rx?: { gainDb: number; overload: boolean }
+  /** Engine deploy-sequence status (phase, fill, etaSeconds, splashTime, liveTime). */
+  status?: { phase: string; fill: number; etaSeconds: number; splashTime: number; liveTime: number; isTuned?: boolean }
 }
 export interface Bearing { buoyId: number; freqHz: number; brgDeg: number; quality: number }
 export interface TruthContact { id: number; label: string; x: number; y: number; crsDeg: number; spdMps: number
@@ -52,7 +54,7 @@ export interface WorkerError { v: 1; type: 'error'; message: string }
  * alongside the displayed set until the display promotes it (gen matches the client's subscribeGram). */
 export interface PendingStreamSet { v: 1; type: 'pendingStreams'; gen: number; configs: GramConfig[] }
 /** m3-fe-drop: one buoy to lay (engine dropBuoy). channel is a suggestion; the host bumps it to a free RF channel. */
-export interface DropSpec { kind: 'omni' | 'difar'; x: number; y: number; channel?: number; depthM?: number; lifeS?: number }
+export interface DropSpec { kind: 'omni' | 'difar'; x: number; y: number; channel?: number; depthM?: number; lifeS?: number; dropAltitudeM?: number; descentRateMps?: number; integrationTimeS?: number }
 export type DropSource = 'manual' | 'auto'
 /** m3-fe-drop: reply to dropBuoys (after the new streams + tactical): the RF channels laid, or why it stopped short. */
 export interface BuoysDropped { v: 1; type: 'dropped'; seq: number; source: DropSource; channels: number[]; error?: string }
@@ -78,7 +80,12 @@ export type ToWorker =
       /** RES mode for every LOFAR stream (1024 bins, rows every P s). Omit for the legacy 4 Hz gram. */
       gram?: GramSettings
       /** m3-bands: with no gram, subscribe this analytic band preset per buoy (RES off). */
-      bandPreset?: LofarBandPresetId }
+      bandPreset?: LofarBandPresetId
+      buoyStartMode?: 'placed' | 'unplaced'
+      autoDropPattern?: boolean
+      dropAltitudeM?: number
+      descentRateMps?: number
+      integrationTimeS?: number }
   | { type: 'setReceiver'; enabled: boolean }
   | { type: 'setSurfaceTraffic'; value: number }      // 0 none … 1 heavy
   | { type: 'setGram'; res?: number; filter?: GramFilter; vernierHz?: number | null } // all LOFAR streams

@@ -34,7 +34,7 @@ function harnessDrop(init: Partial<Extract<ToWorker, { type: 'init' }>>) {
 
 describe('SimHost dropBuoys', () => {
   for (const [name, init] of [['RES', { gram: { res: 5, filter: 'NB' as const } }], ['band', { bandPreset: 'LF' as const }], ['legacy', {}]] as const) {
-    it(`${name}: new buoys are live on the plot, get matching LOFAR streams, and stream rows`, () => {
+    it(`${name}: new buoys appear on the plot, get matching LOFAR streams, and stay empty until liveTime`, () => {
       const { out, step, n0, after } = harnessDrop(init)
       expect(after.map((m) => m.type)).toEqual(['streams', 'tactical', 'dropped'])
       const d = after[2] as BuoysDropped
@@ -52,8 +52,11 @@ describe('SimHost dropBuoys', () => {
       expect(t.buoys).toHaveLength(n0 + 3)
       expect(t.buoys.slice(n0).map((b) => [b.kind, b.x, b.y, b.state, b.hydrophoneDepthM])).toEqual([
         ['difar', 1000, 1000, 'live', 60], ['omni', -1000, 500, 'live', 150], ['difar', 0, -3000, 'live', 60]])
+      // dropBuoy always walks the sequence: deployed (1 s) → descending (50.8 s) → integrating.
+      // First real gram row waits for the full post-splash integration window.
+      expect(t.buoys.slice(n0).every((b) => b.status?.phase === 'deployed')).toBe(true)
       const mark = out.length
-      step(12) // 6 s: every stream (RES 5 rows every 2 s) falls due at least once
+      step(12) // 6 s: still descending; new streams may emit NaN but no real data
       const rows = out.slice(mark).filter((m): m is GramRows => m.type === 'gramRows')
       expect(rows.length).toBeGreaterThan(0)
       const width = n0 + 3
@@ -61,7 +64,7 @@ describe('SimHost dropBuoys', () => {
       const ids = new Set(fresh.map((c) => c.streamId)), seen = new Set<number>()
       for (const r of rows) {
         const bins = r.data.length / width
-        r.streamIds.forEach((id, k) => { if (ids.has(id)) { seen.add(id); const row = r.data.subarray(k * bins, (k + 1) * bins); expect(row.some(Number.isFinite)).toBe(true) } })
+        r.streamIds.forEach((id, k) => { if (ids.has(id)) { seen.add(id); const row = r.data.subarray(k * bins, (k + 1) * bins); expect(row.some(Number.isFinite)).toBe(false) } })
       }
       expect(seen.size).toBe(3)
       expect(errors(out)).toHaveLength(0)

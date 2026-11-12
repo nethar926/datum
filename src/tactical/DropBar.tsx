@@ -1,4 +1,5 @@
 import { BuoyTypeSelector } from './BuoyTypeSelector'
+import { loadSequencePrefs, DESCENT_RATE_MPS } from './buoySequence'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SimClient } from '../engine/client'
 import type { BuoysDropped, DropSpec, Tactical } from '../engine/contract'
@@ -20,9 +21,12 @@ interface Props {
 const TOAST_MS = 2600
 const FIELD_MODE_SHORT = { preplan: 'PRE', auto: 'AUTO', manual: 'MAN' } as const
 export const dropSpecs = (p: DropPlan, n: number, channels: number[], lifeS?: number): DropSpec[] => {
+  const prefs = loadSequencePrefs()
   const out: DropSpec[] = []
   for (let i = 0; i < Math.min(n, p.n, channels.length); i++) {
-    out.push({ kind: p.kinds[i], x: p.xy[2 * i], y: p.xy[2 * i + 1], channel: channels[i], ...(lifeS ? { lifeS } : {}) })
+    out.push({ kind: p.kinds[i], x: p.xy[2 * i], y: p.xy[2 * i + 1], channel: channels[i],
+      ...(lifeS ? { lifeS } : {}),
+      dropAltitudeM: prefs.dropAltitudeM, descentRateMps: DESCENT_RATE_MPS, integrationTimeS: prefs.integrationTimeS })
   }
   return out
 }

@@ -1,4 +1,5 @@
 import type { Band, BuoysDropped, DropSource, DropSpec, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
+import { engineStartOptions } from '../tactical/buoySequence'
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 import { HandoffMachine, handoffLabel, type HandoffEvent, type HandoffTarget } from '../gram/handoff'
 
@@ -94,7 +95,8 @@ export class SimClient {
       : true
     this.send({ type: 'init', seed: params?.seed ?? seed, scenarioId, band, rowRateHz: this.rowRateHz, params, surfaceTraffic, demon: demonOn,
       // Band gram (RES off) or RES gram: the engine keeps the two families exclusive, so send exactly one.
-      ...(g0?.band ? { bandPreset: g0.band } : { gram: g0 ? { res: g0.res, filter: g0.filter } : undefined }) })
+      ...(g0?.band ? { bandPreset: g0.band } : { gram: g0 ? { res: g0.res, filter: g0.filter } : undefined }),
+      ...engineStartOptions() })
     if (!this.status.receiver) this.send({ type: 'setReceiver', enabled: false })
     if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(this.tick) }
   }

@@ -3,6 +3,7 @@ import { acousticsV11, trafficLabel, type Difficulty, type ScenarioParams } from
 import { applyPlant, loadSimStart, parseSeed, randomSeed, plantOfWeights, PLANT_PICKS, saveSimStart, COMING_SOON_LABEL, isPlantComingSoon, type PlantPick, type SimStartPrefs } from './simStart'
 import { TrafficSlider } from './TrafficSlider'
 import { SCENARIOS, SCENARIO_LABEL } from '../scenarios/training'
+import { BuoySequenceAdvancedFields } from '../tactical/BuoySequenceUI'
 
 const DIFFS: { id: Difficulty; label: string }[] = [{ id: 'easy', label: 'Easy' }, { id: 'regular', label: 'Regular' }, { id: 'difficult', label: 'Difficult' }]
 
@@ -125,6 +126,7 @@ export function NewScenario({ onStart, onStartTraining, onClose, activeRun = fal
             <Range label="CPA range" unit="km" value={p.cpaRangeKm} min={0.1} max={10} step={0.1} onChange={(v) => edit({ cpaRangeKm: v })} />
             <Num label="Buoy life" value={p.buoyLifeMin} min={10} max={480} step={10} fmt={(v) => `${Math.round(v)} min`} onChange={(v) => edit({ buoyLifeMin: v })} />
             <label className="check"><input type="checkbox" checked={p.opState.cavitationAllowed} onChange={(e) => editOp({ cavitationAllowed: e.target.checked })} /> Cavitation allowed</label>
+            <BuoySequenceAdvancedFields />
             {custom && <button className="btn" data-testid="ns-back-random" onClick={() => setCustom(null)}>Back to {DIFFS.find((d) => d.id === prefs.diff)!.label} preset</button>}
           </div>}
         </>)}
