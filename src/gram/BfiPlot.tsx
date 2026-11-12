@@ -6,8 +6,8 @@ import { LevelHistory } from './levelHistory'
 import { BearingHistory } from './brgFreq'
 import { niceTicks, type FreqView } from './axis'
 import { placeFreqAxisTicks } from './freqAxis'
-import { BFI_WINDOW_S, bfiPointsFromHistory, bfiRowCount, drawBfi } from './bfi'
-import { rowRateHz } from './rowPeriod'
+import { BFI_WINDOW_S, bfiPointsFromHistory, drawBfi } from './bfi'
+import { rowPeriodS, rowRateHz } from './rowPeriod'
 
 interface Props {
   client: SimClient
@@ -17,7 +17,7 @@ interface Props {
   palette?: PaletteId
 }
 
-type Rings = { power: LevelHistory; brg: BearingHistory; stream: number }
+type Rings = { power: LevelHistory; brg: BearingHistory; stream: number; newestRowSimT: number | null }
 
 /**
  * Main (or companion) BFI display: frequency against bearing, gram colormap, ~30 s fade.
@@ -32,7 +32,9 @@ export function BfiPlot({ client, configs, streamIndex, view, palette = 'green' 
   const [height, setHeight] = useState(400)
   const cfg = configs[streamIndex] ?? configs[0]
   const rate = cfg ? rowRateHz(cfg, undefined, 0.5) : 0.5
-  const rows = Math.max(16, bfiRowCount(rate) + 2)
+  const period = cfg ? rowPeriodS(cfg, undefined, 2) : 2
+  // Enough history for the 30 s window plus a couple of extra rows (age 30 is dropped).
+  const rows = Math.max(16, Math.ceil(BFI_WINDOW_S / Math.max(period, 1e-12)) + 2)
   const bins = cfg?.bins ?? 1
   const streamId = cfg?.streamId ?? -1
 
@@ -50,7 +52,7 @@ export function BfiPlot({ client, configs, streamIndex, view, palette = 'green' 
   }, [])
 
   useEffect(() => {
-    histRef.current = { power: new LevelHistory(rows, bins), brg: new BearingHistory(rows, bins), stream: -1 }
+    histRef.current = { power: new LevelHistory(rows, bins), brg: new BearingHistory(rows, bins), stream: -1, newestRowSimT: null }
     const off = client.onRows((rowsMsg) => {
       const rings = histRef.current
       const cfgNow = { streamId, bins }
@@ -58,6 +60,7 @@ export function BfiPlot({ client, configs, streamIndex, view, palette = 'green' 
       if (rings.stream !== cfgNow.streamId) {
         rings.power.clear()
         rings.brg.clear()
+        rings.newestRowSimT = null
         rings.stream = cfgNow.streamId
       }
       const n = rowsMsg.streamIds.length
@@ -70,6 +73,8 @@ export function BfiPlot({ client, configs, streamIndex, view, palette = 'green' 
         const o = k * b
         rings.power.push(rowsMsg.data, o)
         if (bd && bd.length === rowsMsg.data.length) rings.brg.push(bd, o)
+        // Newest row's sim time (row clock). Held on pause — no new row, tNewest stays.
+        rings.newestRowSimT = rowsMsg.simT
       }
     })
     return () => { off(); histRef.current = null }
@@ -89,12 +94,14 @@ export function BfiPlot({ client, configs, streamIndex, view, palette = 'green' 
       if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
       const pts = bfiPointsFromHistory(rings.power, rings.brg, {
         f0: cfg.f0, fBin: cfg.fBin, fLo: view.lo, fHi: view.hi, rowRateHz: rate,
+        tNewestRowSim: rings.newestRowSimT ?? undefined,
+        rowPeriodS: period,
       })
       drawBfi(ctx, pts, { fLo: view.lo, fHi: view.hi, floor: cfg.dbFloor, ceil: cfg.dbCeil, palette })
     }
     rafRef.current = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [cfg, view.lo, view.hi, rate, palette])
+  }, [cfg, view.lo, view.hi, rate, period, palette])
 
   const brgTicks = useMemo(() => {
     const step = width < 360 ? 90 : 45

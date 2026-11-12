@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BFI_WINDOW_S, bfiAvailable, bfiFade, bfiPoints, bfiRowCount,
+  BFI_WINDOW_S, bfiAlpha, bfiAvailable, bfiFade, bfiPoints, bfiX, bfiY,
 } from './bfi'
+import { rowPeriodS } from './rowPeriod'
+
+function rows(n: number, rowRateHz: number, rowTimes?: number[], tNewest?: number) {
+  const power = Array.from({ length: n }, () => new Float32Array([20]))
+  const brg = Array.from({ length: n }, () => new Float32Array([45]))
+  return bfiPoints({
+    powerNewestFirst: power, bearingNewestFirst: brg,
+    f0: 0, fBin: 1, fLo: 0, fHi: 10, rowRateHz,
+    rowTimesNewestFirst: rowTimes, tNewestRowSim: tNewest,
+    rowPeriodS: 1 / rowRateHz,
+  })
+}
 
 describe('BFI Bearing Frequency Indication', () => {
   it('is available on DIFAR only and fades linearly over 30 s', () => {
@@ -13,11 +25,61 @@ describe('BFI Bearing Frequency Indication', () => {
     expect(bfiFade(30)).toBe(0)
     expect(bfiFade(40)).toBe(0)
     expect(bfiFade(-1)).toBe(1)
+    expect(bfiAlpha(100, 100)).toBe(1)
+    expect(bfiAlpha(100, 85)).toBeCloseTo(0.5, 6)
+    expect(bfiAlpha(100, 70)).toBe(0)
+    expect(bfiAlpha(100, 60)).toBe(0)
   })
 
-  it('covers whole rows at RES 1 and RES 5', () => {
-    expect(bfiRowCount(0.25)).toBe(8)
-    expect(bfiRowCount(0.5)).toBe(15)
+  it('shows about 4 visible rows at RES 1 and 15 at RES 5', () => {
+    // RES 1: P = 8 s (rowRateHz = 0.125). Ages 0, 8, 16, 24 visible; 32 is gone.
+    expect(rowPeriodS({ res: 1, rowRateHz: 0.125 })).toBeCloseTo(8, 12)
+    const res1 = rows(8, 0.125)
+    const ages1 = [...new Set(res1.map((p) => p.ageS))].sort((a, b) => a - b)
+    expect(ages1).toHaveLength(4)
+    expect(ages1[0]).toBeCloseTo(0, 12)
+    expect(ages1[1]).toBeCloseTo(8, 12)
+    expect(ages1[2]).toBeCloseTo(16, 12)
+    expect(ages1[3]).toBeCloseTo(24, 12)
+    expect(ages1.some((a) => Math.abs(a - 32) < 1e-9)).toBe(false)
+    expect(bfiAlpha(32, 0)).toBe(0)
+
+    // RES 5: P = 2 s (0.5 Hz). Ages 0, 2, …, 28 → 15 rows.
+    expect(rowPeriodS({ res: 5, rowRateHz: 0.5 })).toBeCloseTo(2, 12)
+    const res5 = rows(20, 0.5)
+    const ages5 = [...new Set(res5.map((p) => p.ageS))].sort((a, b) => a - b)
+    expect(ages5).toHaveLength(15)
+    expect(ages5[0]).toBeCloseTo(0, 12)
+    expect(ages5[ages5.length - 1]).toBeCloseTo(28, 12)
+    expect(ages5.some((a) => Math.abs(a - 30) < 1e-9)).toBe(false)
+  })
+
+  it('freezes the fade on pause (tNewest held) and fades when a new row arrives', () => {
+    const rate = 0.125
+    const times = Array.from({ length: 8 }, (_, i) => (7 - i) / rate)
+    const tNewest = times[0]
+    const a = rows(times.length, rate, times, tNewest)
+    const b = rows(times.length, rate, times, tNewest)
+    expect(a.map((p) => p.alpha)).toEqual(b.map((p) => p.alpha))
+    expect(a.map((p) => p.ageS)).toEqual(b.map((p) => p.ageS))
+    expect(new Set(a.map((p) => p.ageS)).size).toBe(4)
+    // The same physical row (times[1]) fades further only when tNewest advances.
+    expect(a[1].alpha).toBeCloseTo(1 - 8 / 30, 6)
+    const later = [tNewest + 8, ...times]
+    const c = rows(later.length, rate, later, tNewest + 8)
+    expect(c[2].ageS).toBeCloseTo(16, 12)
+    expect(c[2].alpha).toBeCloseTo(1 - 16 / 30, 6)
+    expect(c[2].alpha).toBeLessThan(a[1].alpha)
+  })
+
+  it('places bearing on the horizontal axis and frequency on the vertical', () => {
+    expect(bfiX(0, 360)).toBeCloseTo(0, 12)
+    expect(bfiX(90, 360)).toBeCloseTo(90, 12)
+    expect(bfiX(180, 360)).toBeCloseTo(180, 12)
+    expect(bfiX(360, 360)).toBeCloseTo(360, 12)
+    expect(bfiY(200, 100, 200, 100)).toBeCloseTo(0, 12)   // high freq at the top
+    expect(bfiY(100, 100, 200, 100)).toBeCloseTo(100, 12) // low freq at the bottom
+    expect(bfiY(150, 100, 200, 100)).toBeCloseTo(50, 12)
   })
 
   it('lands a 20 dB bin at 90° and 200 Hz', () => {
@@ -36,6 +98,8 @@ describe('BFI Bearing Frequency Indication', () => {
     expect(pts[0].db).toBe(20)
     expect(pts[0].ageS).toBeCloseTo(0, 12)
     expect(pts[0].alpha).toBe(1)
+    expect(bfiX(pts[0].bearingDeg, 360)).toBeCloseTo(90, 12)
+    expect(bfiY(pts[0].freqHz, 0, 400, 400)).toBeCloseTo(200, 12)
   })
 
   it('lands the same point from an interleaved deg,conf ring', () => {
@@ -87,7 +151,7 @@ describe('BFI Bearing Frequency Indication', () => {
       f0: 0, fBin: 1, fLo: 0, fHi: 10, rowRateHz: 0.5,
     })
     expect(all).toHaveLength(15)
-    expect(all[all.length - 1].ageS).toBeCloseTo(14 / 0.5, 12)
+    expect(all[all.length - 1].ageS).toBeCloseTo(28, 12)
     expect(all[all.length - 1].alpha).toBeGreaterThan(0)
   })
 
@@ -101,5 +165,19 @@ describe('BFI Bearing Frequency Indication', () => {
     expect(pts).toHaveLength(2)
     expect(pts[0].bearingDeg).toBeCloseTo(10, 12)
     expect(pts[1].bearingDeg).toBeCloseTo(330, 12)
+  })
+
+  it('falls back to a rowPeriodS clock until the post-deploy sync', () => {
+    const period = rowPeriodS({ res: 1, rowRateHz: 0.125 })
+    const tNewest = 80
+    const times = Array.from({ length: 6 }, (_, i) => tNewest - i * period)
+    const pts = rows(times.length, 0.125, times, tNewest)
+    expect(new Set(pts.map((p) => p.ageS)).size).toBe(4)
+    expect(pts[0].ageS).toBeCloseTo(0, 12)
+    expect(pts[1].ageS).toBeCloseTo(period, 12)
+    expect(pts[1].alpha).toBeCloseTo(1 - period / 30, 6)
+    // Same tNewest (pause) freezes.
+    const again = rows(times.length, 0.125, times, tNewest)
+    expect(again.map((p) => p.alpha)).toEqual(pts.map((p) => p.alpha))
   })
 })

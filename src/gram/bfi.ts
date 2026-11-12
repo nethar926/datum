@@ -30,17 +30,39 @@ export function bfiFade(ageS: number, windowS = BFI_WINDOW_S): number {
   return Math.max(0, Math.min(1, 1 - ageS / windowS))
 }
 
-/** Whole rows covering the persistence window (at least one). */
+/** Time-based fade: `max(0, 1 - (tNewestRowSim - rowTime) / 30)`.
+ *  `tNewestRowSim` is the newest row's sim time, not the live engine clock. */
+export function bfiAlpha(tNewestRowSim: number, rowTime: number, windowS = BFI_WINDOW_S): number {
+  return bfiFade(tNewestRowSim - rowTime, windowS)
+}
+
+/** History hint only — visibility is `alpha > 0`, not this count. */
 export function bfiRowCount(rowRateHz: number, windowS = BFI_WINDOW_S): number {
   return Math.max(1, Math.round(windowS * Math.max(rowRateHz, 0)))
+}
+
+/** Bearing is horizontal: 0° at the left edge, 360° at the right. */
+export function bfiX(bearingDeg: number, width: number): number {
+  return (bearingDeg / 360) * width
+}
+
+/** Frequency is vertical: `fHi` at the top (y = 0), `fLo` at the bottom. */
+export function bfiY(freqHz: number, fLo: number, fHi: number, height: number): number {
+  const span = Math.max(1e-12, fHi - fLo)
+  return (1 - (freqHz - fLo) / span) * height
 }
 
 /**
  * Points from newest-first power and bearing rows. Bearing may be interleaved
  * (`deg, conf` per bin, native ring) or one deg per bin (web `BearingHistory`).
  * Bins outside `[fLo, fHi]`, with no finite bearing, zero confidence, or a
- * sentinel dB, are skipped. Rows older than `windowS` are skipped.
- * `ageS` of row `i` is `i / rowRateHz`.
+ * sentinel dB, are skipped.
+ *
+ * Fade is time-based, not row-counted:
+ * `alpha = max(0, 1 - (tNewestRowSim - rowTime(k)) / 30)`. A row with
+ * `alpha === 0` (age ≥ 30 s) is skipped. `tNewestRowSim` is the newest row's
+ * sim time. Until the post-deploy stream-config sync, times fall back to the
+ * `rowPeriodS` clock: `rowTime(i) = tNewestRowSim - i · rowPeriodS`.
  */
 export function bfiPoints(opts: {
   powerNewestFirst: ArrayLike<number>[]
@@ -51,19 +73,25 @@ export function bfiPoints(opts: {
   fHi: number
   rowRateHz: number
   windowS?: number
+  rowTimesNewestFirst?: number[]
+  tNewestRowSim?: number
+  rowPeriodS?: number
 }): BfiPoint[] {
   const windowS = opts.windowS ?? BFI_WINDOW_S
   const n = Math.min(
     opts.powerNewestFirst.length,
     opts.bearingNewestFirst.length,
-    bfiRowCount(opts.rowRateHz, windowS),
+    opts.rowTimesNewestFirst?.length ?? Infinity,
   )
   if (n <= 0 || !Number.isFinite(opts.fBin) || opts.fBin <= 0) return []
   const out: BfiPoint[] = []
   const rate = Math.max(opts.rowRateHz, 1e-12)
+  const period = (opts.rowPeriodS != null && opts.rowPeriodS > 1e-12) ? opts.rowPeriodS : 1 / rate
+  const tNewest = opts.tNewestRowSim ?? opts.rowTimesNewestFirst?.[0] ?? 0
   for (let i = 0; i < n; i++) {
-    const age = i / rate
-    const a = bfiFade(age, windowS)
+    const rowT = opts.rowTimesNewestFirst?.[i] ?? (tNewest - i * period)
+    const age = tNewest - rowT
+    const a = bfiAlpha(tNewest, rowT, windowS)
     if (a <= 0) continue
     const power = opts.powerNewestFirst[i]
     const brg = opts.bearingNewestFirst[i]
@@ -92,10 +120,14 @@ export function bfiPoints(opts: {
 export function bfiPointsFromHistory(
   power: Pick<LevelHistory, 'size' | 'copyRow' | 'bins'>,
   bearing: Pick<BearingHistory, 'size' | 'at'> & { bins: number },
-  opts: { f0: number; fBin: number; fLo: number; fHi: number; rowRateHz: number; windowS?: number },
+  opts: {
+    f0: number; fBin: number; fLo: number; fHi: number; rowRateHz: number; windowS?: number
+    tNewestRowSim?: number; rowPeriodS?: number
+  },
 ): BfiPoint[] {
   const windowS = opts.windowS ?? BFI_WINDOW_S
-  const n = Math.min(power.size, bearing.size, bfiRowCount(opts.rowRateHz, windowS))
+  // Every stored row; visibility is alpha > 0, not a whole-rows cap.
+  const n = Math.min(power.size, bearing.size)
   if (n <= 0 || power.bins <= 0) return []
   const powerRows: Float32Array[] = []
   const brgRows: Float32Array[] = []
@@ -107,11 +139,16 @@ export function bfiPointsFromHistory(
     powerRows.push(dest)
     brgRows.push(brg)
   }
+  const period = (opts.rowPeriodS != null && opts.rowPeriodS > 1e-12)
+    ? opts.rowPeriodS : 1 / Math.max(opts.rowRateHz, 1e-12)
+  const tNewest = opts.tNewestRowSim ?? 0
+  const rowTimes = powerRows.map((_, i) => tNewest - i * period)
   return bfiPoints({
     powerNewestFirst: powerRows,
     bearingNewestFirst: brgRows,
     f0: opts.f0, fBin: opts.fBin, fLo: opts.fLo, fHi: opts.fHi,
     rowRateHz: opts.rowRateHz, windowS,
+    rowTimesNewestFirst: rowTimes, tNewestRowSim: tNewest, rowPeriodS: period,
   })
 }
 
@@ -125,7 +162,6 @@ export function drawBfi(
   ctx.clearRect(0, 0, width, height)
   if (!points.length || width < 1 || height < 1 || opts.fHi <= opts.fLo) return
   const lut = paletteLut(opts.palette ?? 'green')
-  const spanF = Math.max(1e-12, opts.fHi - opts.fLo)
   const r = 2.2
   for (const p of points) {
     const t = normalizeDb(p.db, opts.floor, opts.ceil)
@@ -134,8 +170,8 @@ export function drawBfi(
     const o = idx * 4
     ctx.globalAlpha = p.alpha
     ctx.fillStyle = `rgb(${lut[o]},${lut[o + 1]},${lut[o + 2]})`
-    const x = (p.bearingDeg / 360) * width
-    const y = (1 - (p.freqHz - opts.fLo) / spanF) * height
+    const x = bfiX(p.bearingDeg, width)
+    const y = bfiY(p.freqHz, opts.fLo, opts.fHi, height)
     ctx.beginPath()
     ctx.arc(x, y, r, 0, Math.PI * 2)
     ctx.fill()
