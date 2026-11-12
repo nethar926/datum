@@ -25,6 +25,11 @@ import {
   drawSailboat, setAisAffiliation, subscribeAisAffiliations,
   type AisAffiliation,
 } from './aisStyle'
+import {
+  NAV_RGB, displaySimTime, drawPlaneNav, drawPlaneTrail, handlePlaneTap,
+  planeMenuFrame, planeState, planeVersion, samplePlane, subscribePlane,
+} from './planeRoute'
+import { PlaneMenu } from './PlaneMenu'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -72,7 +77,9 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   const press = useRef<{ x: number; y: number; moved: boolean; timer: number } | null>(null)
   const [picked, setPicked] = useState<TruthContact | null>(null)
   const affTick = useSyncExternalStore(subscribeAisAffiliations, aisAffiliationVersion)
-  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, picked, affTick }
+  const planeTick = useSyncExternalStore(subscribePlane, planeVersion)
+  const simTWall = useRef({ t: 0, wall: 0 })
+  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, picked, affTick, planeTick }
   const revealHits = useRef<{ id: number | string; x: number; y: number; r: number }[]>([])
   const camRef = useRef<PlotCamera>({ ...PLOT_CAMERA_FITTED })
   const camTick = useRef(0)
@@ -209,16 +216,39 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         ctx.setLineDash([]); ctx.globalAlpha = 1
       }
 
-      // Aircraft track + symbol.
-      const tr = client.track
-      if (tr.count > 1) {
-        ctx.strokeStyle = C.ac; ctx.globalAlpha = 0.5; ctx.lineWidth = 1.5 * dpr; ctx.beginPath()
-        for (let i = 0; i < tr.count; i++) { tr.at(i, p); const sx = toScreenX(v, p.x), sy = toScreenY(v, p.y); if (i) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy) }
-        ctx.stroke(); ctx.globalAlpha = 1
-      }
-      const ax = toScreenX(v, t.aircraft.x), ay = toScreenY(v, t.aircraft.y), hd = (t.aircraft.hdgDeg * Math.PI) / 180
-      ctx.save(); ctx.translate(ax, ay); ctx.rotate(hd); ctx.fillStyle = C.ac
+      // Z-order: nav line, then the plane glyph, then the green trail (nav before the glyph, trail after).
+      const st = client.status
+      const wall = simTWall.current
+      if (wall.t !== st.simT) { wall.t = st.simT; wall.wall = performance.now() / 1000 }
+      const simT = displaySimTime(st.simT, st.playing, st.rate, wall.wall, performance.now() / 1000)
+      const enginePose = { x: t.aircraft.x, y: t.aircraft.y, headingRad: (t.aircraft.hdgDeg * Math.PI) / 180 }
+      const pose = samplePlane(simT, enginePose)
+      const toSX = (x: number) => toScreenX(v, x), toSY = (y: number) => toScreenY(v, y)
+      const ps = planeState()
+      drawPlaneNav(ctx, ps.navX, ps.navY, ps.navCount, toSX, toSY, ps.navStyle, dpr)
+      const ax = toSX(pose.x), ay = toSY(pose.y)
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(pose.headingRad); ctx.fillStyle = C.ac
       ctx.beginPath(); ctx.moveTo(0, -8 * dpr); ctx.lineTo(6 * dpr, 6 * dpr); ctx.lineTo(0, 3 * dpr); ctx.lineTo(-6 * dpr, 6 * dpr); ctx.closePath(); ctx.fill(); ctx.restore()
+      drawPlaneTrail(ctx, ps.trail, toSX, toSY, ps.trailStyle, dpr)
+      if (ps.centre) {
+        const sx = toSX(ps.centre.x), sy = toSY(ps.centre.y)
+        ctx.strokeStyle = NAV_RGB; ctx.lineWidth = 1.5 * dpr
+        ctx.beginPath(); ctx.arc(sx, sy, 4 * dpr, 0, Math.PI * 2); ctx.stroke()
+      }
+      if (ps.points.length) {
+        ctx.strokeStyle = NAV_RGB; ctx.fillStyle = NAV_RGB; ctx.lineWidth = 1 * dpr; ctx.setLineDash([4 * dpr, 4 * dpr])
+        ctx.beginPath()
+        for (let i = 0; i < ps.points.length; i++) {
+          const sx = toSX(ps.points[i]!.x), sy = toSY(ps.points[i]!.y)
+          if (i) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy)
+        }
+        ctx.stroke(); ctx.setLineDash([])
+        for (const q of ps.points) {
+          const sx = toSX(q.x), sy = toSY(q.y)
+          ctx.beginPath(); ctx.arc(sx, sy, 3 * dpr, 0, Math.PI * 2); ctx.fill()
+        }
+      }
+      void props.current.planeTick
 
       // Buoys (status colours: white working, green detuned/integrating, red dead, yellow error).
       const dt = props.current.detune
@@ -639,6 +669,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
             const r = plotDoubleTap(dbl.current, e.clientX, e.clientY, performance.now() / 1000)
             dbl.current = r.last
             if (r.kind === 'recentre') { setCam(recentrePlotCamera()); setPicked(null); setPickedFixId(null); return }
+            if (planeState().arm !== 'none' && w) { handlePlaneTap(w.x, w.y); return }
             const fid = hitLaidFix(e)
             if (fid !== null) { setPickedFixId(fid); setPicked(null); return }
             setPickedFixId(null)
@@ -732,6 +763,19 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           {rb && <div>RNG {(rb.rngM / 1852).toFixed(2)} NM · BRG {String(Math.round(rb.brgDeg) % 360).padStart(3, '0')}°</div>}
           {!rb && buoy && <div className="dim">On selected buoy</div>}
           {!rb && !buoy && <div className="dim">Select a buoy for RNG/BRG</div>}
+        </div>
+      )
+    })()}
+    {planeState().menuOpen && (() => {
+      const v = viewRef.current, c = ref.current
+      if (!v || !c) return null
+      const rect = c.getBoundingClientRect()
+      const frame = planeMenuFrame(rect.width - 20, 52, { x: 0, y: 0, width: rect.width, height: rect.height })
+      if (!frame) return null
+      const tac = client.status.tactical?.aircraft
+      return (
+        <div style={{ position: 'absolute', left: frame.x, top: frame.y, width: frame.width, zIndex: 7 }}>
+          <PlaneMenu simT={client.status.simT} fallback={{ x: tac?.x ?? 0, y: tac?.y ?? 7000 }} />
         </div>
       )
     })()}

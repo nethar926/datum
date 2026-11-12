@@ -33,6 +33,7 @@ import { RES_MAX, RES_MIN, clampRes, fullView, geometryKey, minSpanOf, resReadou
 import type { GramFilter, GramSettings, LofarBandPresetId } from './engine/contract'
 import { BAND_IDS, BAND_KEY, bandEdges, bandReadout, isBandId, parseBandChoice } from './gram/bands'
 import { TacticalPlot } from './tactical/TacticalPlot'
+import { headingDeg, planeState, planeVersion, resetPlaneRoute, subscribePlane, togglePlaneMenu } from './tactical/planeRoute'
 import { DropBar } from './tactical/DropBar'
 import { DropController } from './tactical/dropController'
 import { dropCapturesPlot } from './tactical/fieldMode'
@@ -176,6 +177,8 @@ export default function App() {
   const fixStore = useMemo(() => new FixStore(), [])
   const fixSnap = useSyncExternalStore(fixStore.subscribe, fixStore.getSnapshot)
   void fixSnap
+  const planeTick = useSyncExternalStore(subscribePlane, planeVersion)
+  void planeTick
   /** simT when each manual bearing was last set (freshness for FIX). */
   const [manualAges, setManualAges] = useState<Record<number, number>>({})
 
@@ -183,6 +186,7 @@ export default function App() {
   useEffect(() => {
     detune.reset()
     fixStore.reset()
+    resetPlaneRoute()
     setManualAges({})
   }, [st.scenarioId, st.seed, detune, fixStore])
   useEffect(() => {
@@ -1408,7 +1412,18 @@ export default function App() {
             style={secondaryResolved === 'bfi' ? { display: 'none' } : undefined}>
             <div className="plot-corner readout">
               <span className="sim-clock" data-testid="sim-clock">T+{fmtT(st.simT)}</span>
-              {st.tactical && <span data-testid="ac-readout">{`A/C ${st.tactical.aircraft.hdgDeg.toFixed(0).padStart(3, '0')}°  ${(st.tactical.aircraft.gsMps * 1.943844).toFixed(0)} KT  ${st.tactical.aircraft.altM} M`}</span>}
+              {st.tactical && (() => {
+                const ps = planeState()
+                const hdg = ps.spec ? headingDeg(ps.pose.headingRad) : st.tactical.aircraft.hdgDeg
+                const kts = ps.spec ? ps.speedKts : st.tactical.aircraft.gsMps * 1.943844
+                const alt = ps.spec ? ps.altitudeFt : (st.tactical.aircraft.altM / 0.3048)
+                return (
+                  <button type="button" data-testid="ac-readout" aria-label={ps.menuOpen ? 'Close plane menu' : 'Aircraft menu'}
+                    onClick={() => togglePlaneMenu()}>
+                    {`A/C ${hdg.toFixed(0).padStart(3, '0')}°  ${kts.toFixed(0)} KT  ${alt.toFixed(0)} FT`}
+                  </button>
+                )
+              })()}
               {(() => {
                 const fit = fixStore.activeFit()
                 const track = fixStore.tracks.find((tr) => tr.id === fixStore.activeTrackId)
