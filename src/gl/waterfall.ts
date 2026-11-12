@@ -26,15 +26,16 @@ void main(){
   float b = mix(uB0, uB1, vUv.x);
   float per = (uB1 - uB0) * uPxW;            // bins per pixel
   int i0 = int(floor(b - per*0.5)), n = int(clamp(ceil(per), 1., 8.));
-  float v = -1e9; bool gap = false; int imax = i0;
+  float v = -1e9; bool gap = false; bool filling = false; int imax = i0;
   for (int k = 0; k < 8; k++) {
     if (k >= n) break;
     int i = clamp(i0 + k, 0, uBins - 1);
     float s = texelFetch(uTex, ivec2(i, row), 0).r;
+    if (s > 1e9) { filling = true; continue; }
     if (isnan(s) || s != s) { gap = true; continue; }
     if (s > v) { v = s; imax = i; }
   }
-  if (v < -1e8) { o = gap ? vec4(0.06,0.06,0.07,1.) : vec4(0.,0.,0.,1.); return; }
+  if (v < -1e8) { o = filling ? vec4(0.10,0.18,0.26,1.) : gap ? vec4(0.06,0.06,0.07,1.) : vec4(0.,0.,0.,1.); return; }
   float t = clamp((v - uFloor) / max(1e-3, uCeil - uFloor), 0., 1.);
   if (uDifar == 0) { o = vec4(texture(uLut, vec2(t, 0.5)).rgb, 1.); return; }
   // DIFAR: hue from the bearing of the strongest bin under this pixel, brightness from intensity.
@@ -66,14 +67,15 @@ void main(){
   if (uBearing == 1) { o = vec4(texelFetch(uSrc, ivec2(clamp(int(floor(c + 0.5)), 0, uSrcBins - 1), srow), 0).r, 0., 0., 1.); return; }
   // Power: max-pool the old bins under the new bin (coarser RES), level-mapped onto the new dB scale.
   int i0 = int(floor(c - uA * 0.5 + 0.5)), n = int(clamp(ceil(uA), 1., 8.));
-  float v = -1e9; bool gap = false;
+  float v = -1e9; bool gap = false; bool filling = false;
   for (int k = 0; k < 8; k++) {
     if (k >= n) break;
     float s = texelFetch(uSrc, ivec2(clamp(i0 + k, 0, uSrcBins - 1), srow), 0).r;
+    if (s > 1e9) { filling = true; continue; }
     if (isnan(s) || s != s) { gap = true; continue; }
     v = max(v, s);
   }
-  o = vec4(v < -1e8 ? (gap ? nan : -60000.) : v * uGain + uOff, 0., 0., 1.);
+  o = vec4(v < -1e8 ? (filling ? 1e10 : (gap ? nan : -60000.)) : v * uGain + uOff, 0., 0., 1.);
 }`
 
 /** Old → new grid for one destination stream at the handoff swap (bins and rows from the two gramConfigs).
@@ -374,6 +376,50 @@ export class WaterfallRenderer {
   /** Drop every painted row (CUT seek): next pushRow starts a fresh window. */
   clearHistory(): void {
     this.head.fill(-1); this.filled.fill(0); this.headB.fill(-1); this.filledB.fill(0)
+  }
+
+  private sentinelScratch: Float32Array | null = null
+  private sentinelRow(bins: number): Float32Array {
+    if (!this.sentinelScratch || this.sentinelScratch.length !== bins) this.sentinelScratch = new Float32Array(bins).fill(1e10)
+    else this.sentinelScratch.fill(1e10)
+    return this.sentinelScratch
+  }
+
+  /** Seed stream s with `totalRows` filling slots (oldest first). Never leaves stale or NaN-as-data. */
+  beginFilling(s: number, totalRows: number): void {
+    if (this.lost || s < 0 || s >= this.streams) return
+    const n = Math.max(0, Math.min(this.rows, totalRows))
+    const scratch = this.sentinelRow(this.bins)
+    const gl = this.gl, t = this.tex[s]
+    gl.bindTexture(gl.TEXTURE_2D, t)
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+    for (let r = 0; r < n; r++) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r, this.bins, 1, gl.RED, gl.FLOAT, scratch, 0)
+    this.head[s] = n === 0 ? -1 : (n - 1) % this.rows
+    this.filled[s] = n
+  }
+
+  /** Overwrite the row at `age` (0 = newest) without advancing the head. */
+  writeAge(s: number, age: number, data: Float32Array, offset: number, bins = this.bins): void {
+    if (this.lost || s < 0 || s >= this.streams) return
+    const filled = this.filled[s] ?? 0
+    if (age < 0 || age >= filled) return
+    const row = ((this.head[s] - age) % this.rows + this.rows) % this.rows
+    const gl = this.gl
+    gl.bindTexture(gl.TEXTURE_2D, this.tex[s])
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, row, bins, 1, gl.RED, gl.FLOAT, data, offset)
+  }
+
+  /** Redraw only the inclusive landed range; ready/filling is decided by filledFrom, not NaN. */
+  applyLanded(s: number, ev: { data: Float32Array; bins: number; fromRow: number; toRow: number; filledFrom: number; totalRows: number }): void {
+    const total = ev.totalRows
+    if (total <= 0) return
+    const lo = Math.max(0, Math.min(ev.fromRow, ev.toRow))
+    const hi = Math.min(total - 1, Math.max(ev.fromRow, ev.toRow))
+    for (let k = lo; k <= hi; k++) {
+      if (k < ev.filledFrom) continue
+      this.writeAge(s, total - 1 - k, ev.data, (k - lo) * ev.bins, ev.bins)
+    }
   }
 
   /** Upload one row for stream index s (bins floats starting at offset). */

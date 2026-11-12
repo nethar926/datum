@@ -150,6 +150,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const liveRef = useRef(configs), promotedRef = useRef<GramConfig[] | null>(null), epochRef = useRef(0)
   // m3-fe-drop: buoys joined the field (same streams + new ones at the end, same grid) → grow the renderer in place.
   const growRef = useRef<((cs: GramConfig[]) => void) | null>(null), growTo = useRef<GramConfig[] | null>(null)
+  const fillReqRef = useRef(0)
   // Render-phase sync is required: epochRef feeds rendererKey (a React key) in this same commit, and liveRef
   // must match before the frame loop runs. State/effect deferral either loops on new configs[] each render
   // or pairs new configs with the old WebGL grid for a frame. oxlint react/refs forbids this pattern.
@@ -160,6 +161,15 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     if (grew) growTo.current = configs
     // Same ids but a different grid without a handoff (legacy hot-swap setGram): rebuild the renderer.
     else if (configs[0]?.bins !== prev[0]?.bins || configs.length !== prev.length) epochRef.current++
+    else if (
+      configs !== prev && (
+        configs[0]?.res !== prev[0]?.res || configs[0]?.filter !== prev[0]?.filter ||
+        configs[0]?.fBin !== prev[0]?.fBin || configs[0]?.f0 !== prev[0]?.f0 || configs[0]?.fcHz !== prev[0]?.fcHz
+      )
+    ) {
+      // RES / filter / vernier switch: seed a filling state immediately so stale rows never redraw.
+      fillReqRef.current++
+    }
     liveRef.current = configs
   } else if (
     // CUT scrubber seek: new CutSession → new stream ids, same bins/count. Remap in place; onCutSeek clears the ring.
@@ -205,6 +215,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       raf: number
       lostTimer: number
       lastKey: string
+      drainHandle: number
+      fillApplied: number
     } = {
       r: null!,
       N: cs0.length,
@@ -221,6 +233,8 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       raf: 0,
       lostTimer: 0,
       lastKey: '',
+      drainHandle: -1,
+      fillApplied: 0,
     }
     cs0.forEach((c, i) => rt.live.set(c.streamId, i))
     try {
@@ -333,6 +347,25 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
       }
       rt.dirty = true
     })
+    const offDrain = client.onDrainProgress((ev) => {
+      const s = rt.live.get(ev.streamId)
+      if (s === undefined) return
+      if (rt.drainHandle !== ev.handleId) {
+        r.beginFilling(s, ev.totalRows)
+        rt.hist.seedFilling(ev.totalRows)
+        rt.drainHandle = ev.handleId
+        rt.fillApplied = fillReqRef.current
+      }
+      r.applyLanded(s, ev)
+      if (s === rt.histStream) {
+        const lo = ev.fromRow, bins = ev.bins
+        for (let k = ev.fromRow; k <= ev.toRow; k++) {
+          if (k < ev.filledFrom) continue
+          rt.hist.writeAge(ev.totalRows - 1 - k, ev.data, (k - lo) * bins)
+        }
+      }
+      rt.dirty = true
+    })
     growRef.current = (cs: GramConfig[]) => {
       const old = rt.N, n = cs.length
       if (n <= old || cs[0]?.bins !== rt.g.bins) return
@@ -354,6 +387,13 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     const ro = new ResizeObserver(() => { rt.dirty = true; setWidth(canvas.clientWidth); setHeight(canvas.clientHeight) })
     ro.observe(canvas)
     const frame = () => {
+      if (fillReqRef.current !== rt.fillApplied) {
+        rt.fillApplied = fillReqRef.current
+        const n = HISTORY_ROWS
+        for (let s = 0; s < rt.N; s++) r.beginFilling(s, n)
+        rt.hist.seedFilling(n)
+        rt.dirty = true
+      }
       const { view: pv, streamIndex: s, cfg: pc, auto: a, normalized: nz, palette: pal, mode: md, contrast: k } = viewRef.current
       // Just promoted, React not caught up yet: draw the new stream over its full band (allocates for ≤ 2 frames).
       const live = liveRef.current[s] ?? liveRef.current[0], c = live ?? pc
@@ -384,7 +424,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     const onShow = () => { rt.dirty = true }
     window.addEventListener('pageshow', onShow)
     return () => {
-      cancelAnimationFrame(rt.raf); clearTimeout(rt.lostTimer); off(); offSeek(); offHandoff(); ro.disconnect()
+      cancelAnimationFrame(rt.raf); clearTimeout(rt.lostTimer); off(); offDrain(); offSeek(); offHandoff(); ro.disconnect()
       document.removeEventListener('visibilitychange', checkLost); canvas.removeEventListener('webglcontextlost', onLost); window.removeEventListener('pageshow', onShow)
       r.dispose(); rendererRef.current = null; histRef.current = null; brgHistRef.current = null
       if (bearingAtRef) bearingAtRef.current = null

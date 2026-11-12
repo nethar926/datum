@@ -1,9 +1,10 @@
-import type { Band, BuoysDropped, DropSource, DropSpec, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
+import type { Band, BuoysDropped, DrainProgress, DropSource, DropSpec, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
 import { engineStartOptions } from '../tactical/buoySequence'
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 import { HandoffMachine, handoffLabel, type HandoffEvent, type HandoffTarget } from '../gram/handoff'
 
 type RowsListener = (rows: GramRows) => void
+type DrainListener = (ev: DrainProgress) => void
 /** Gram handoff notices for the waterfall (delivered synchronously, before any later gramRows). */
 export type HandoffNotice =
   | { type: 'pending'; gen: number; configs: GramConfig[] }
@@ -41,6 +42,7 @@ export class TrackRing {
 export class SimClient {
   private worker?: Worker
   private rowsListeners = new Set<RowsListener>()
+  private drainListeners = new Set<DrainListener>()
   private statusListeners = new Set<() => void>()
   private raf = 0
   private last = 0
@@ -159,11 +161,20 @@ export class SimClient {
     if (band) next.band = band
     this.target = next
     this.setStatus({ gram: { res, filter: next.filter, ...(band ? { band } : {}) } })
-    // Handoff needs a running set the engine can replace with a fresh subscribe (RES or band-preset streams).
+    // Band-preset family still uses a handoff (new stream ids). RES / filter / vernier keep
+    // the same ids via setViewRes and fill with a chunked drain (filling state, never stale).
     const live = this.status.configs.some((c) => c.kind === 'lofar' && (c.res !== undefined || c.bandPreset !== undefined))
     if (!this.worker || !live) {
       if (this.worker && !band && !p.band) this.send({ type: 'setGram', res: p.res === undefined ? undefined : res, filter: p.filter, vernierHz: p.vernierHz })
       this.displayed = { ...next }
+      return
+    }
+    // p.band === null is a family change (band → RES) and still uses a handoff.
+    if (!band && p.band === undefined) {
+      this.handoff.cancel()
+      this.send({ type: 'setGram', res: p.res === undefined ? undefined : res, filter: p.filter, vernierHz: p.vernierHz })
+      this.displayed = { ...next }
+      this.updateIndicator(true)
       return
     }
     for (const e of this.handoff.begin(this.displayed, next, this.now())) this.apply(e)
@@ -183,6 +194,7 @@ export class SimClient {
   setBand(band: Band): void { if (band !== this.status.band) this.start(this.status.seed, this.status.scenarioId, band) }
 
   onRows(cb: RowsListener): () => void { this.rowsListeners.add(cb); return () => this.rowsListeners.delete(cb) }
+  onDrainProgress(cb: DrainListener): () => void { this.drainListeners.add(cb); return () => this.drainListeners.delete(cb) }
   subscribe = (cb: () => void): (() => void) => { this.statusListeners.add(cb); return () => this.statusListeners.delete(cb) }
   getStatus = (): SimStatus => this.status
 
@@ -190,7 +202,7 @@ export class SimClient {
     cancelAnimationFrame(this.raf); this.raf = 0
     this.stopWorker()
     this.handoff.cancel()
-    this.rowsListeners.clear(); this.statusListeners.clear(); this.handoffListeners.clear(); this.cutSeekListeners.clear()
+    this.rowsListeners.clear(); this.statusListeners.clear(); this.handoffListeners.clear(); this.cutSeekListeners.clear(); this.drainListeners.clear()
   }
 
   private stopWorker(): void { this.worker?.terminate(); this.worker = undefined }
@@ -339,6 +351,9 @@ export class SimClient {
         this.setStatus({ simT: m.simT, tactical: m })
         break
       case 'dropped': this.setStatus({ lastDrop: m }); break
+      case 'drainProgress':
+        for (const l of this.drainListeners) l(m)
+        break
       case 'error': this.inFlight = false; this.seekingCut = false; this.setStatus({ error: m.message, playing: false }); break
     }
   }

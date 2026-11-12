@@ -5,6 +5,7 @@ import type { Band, Bearing, DropSpec, FromWorker, GramConfig, GramRows, LofarBa
 import { DEMON_CARRIER_BAND } from '../gram/demonConfig'
 import { buildScenario } from '../scenarios/training'
 import { parseCutScenarioId } from '../cuts/api'
+import { HistoryDrain, type DrainEvent } from './historyDrain'
 import {
   CUT_SEEK_CHUNK_ROWS,
   CUT_SEEK_FIRST_ROWS,
@@ -84,6 +85,12 @@ export class SimHost {
   /** m3-fe-gram-handoff: pending set (pendingGen > 0 while one exists), filling alongside the displayed one. */
   private pending?: LofarSet
   private pendingGen = 0
+  /** In-flight chunked history drains (one handle per displayed stream). */
+  private drains = new Map<number, HistoryDrain>()
+  private drainTimer: number | void = 0
+  /** Snapshot length requested of beginDrain; first pump covers visibleRows. */
+  historyRows = 600
+  visibleRows = 600
   /** Frame widths (buoy counts) from before a drop: their in-flight buffers are recognised and dropped on release. */
   private retiredN = new Set<number>()
   constructor(
@@ -143,6 +150,7 @@ export class SimHost {
 
   private init(msg: Extract<ToWorker, { type: 'init' }>): void {
     this.cancelCutBackfill()
+    this.cancelDrains()
 
     const band = BANDS[msg.band]
     if (!band) throw new Error('Unknown band')
@@ -233,20 +241,71 @@ export class SimHost {
   /** RES/filter/vernier change for every LOFAR stream; re-announces the streams (same ids, same frame size). */
   private setGram(msg: Extract<ToWorker, { type: 'setGram' }>): void {
     if (this.active.mode !== 'res') throw new Error('setGram needs a RES-mode init')
-    const engine = this.engine!, set = (engine as unknown as { setGram: EngineSetGram }).setGram
+    const engine = this.engine!
     const patch: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number | null } = {}
     if (msg.res !== undefined) patch.res = msg.res
     if (msg.filter !== undefined) patch.filter = msg.filter
     if (msg.vernierHz !== undefined) patch.vernierHz = msg.vernierHz
     if (this.pendingGen) this.dropPending()
+    this.cancelDrains()
     const a = this.active
-    a.configs = a.configs.map((c) => toConfig(set.call(engine, c.streamId, patch)))
+    a.configs = a.configs.map((c) => {
+      const res = patch.res ?? c.res
+      if (res === undefined) throw new Error('setGram needs a RES stream')
+      const opts: { filter?: 'NB' | 'BB'; vernierHz?: number | null } = {}
+      if (patch.filter !== undefined) opts.filter = patch.filter
+      if (patch.vernierHz !== undefined) opts.vernierHz = patch.vernierHz
+      return toConfig(engine.setViewRes(c.streamId, res, opts))
+    })
     a.filter = a.configs[0]?.filter ?? 'NB'
     if (patch.res !== undefined) a.req.res = patch.res
     if (patch.filter !== undefined) a.req.filter = patch.filter
     if (patch.vernierHz === null) delete a.req.vernierHz; else if (patch.vernierHz !== undefined) a.req.vernierHz = patch.vernierHz
     for (const r of a.rx) r.reset()
     this.post({ v: 1, type: 'streams', configs: [...a.configs, ...this.demonConfigs] })
+    for (let i = 0; i < a.configs.length; i++) {
+      const c = a.configs[i]!
+      const d = new HistoryDrain(engine)
+      const ev = d.start(c.streamId, c.res ?? null, this.historyRows, this.visibleRows, i)
+      this.drains.set(c.streamId, d)
+      if (ev) this.postDrain(ev)
+    }
+    this.scheduleDrainPumps()
+  }
+
+  private postDrain(ev: DrainEvent): void {
+    const msg = {
+      v: 1 as const, type: 'drainProgress' as const,
+      streamId: ev.streamId, handleId: ev.handleId, fromRow: ev.fromRow, toRow: ev.toRow,
+      filledFrom: ev.filledFrom, totalRows: ev.totalRows, state: ev.state, bins: ev.bins, data: ev.data,
+      ...(ev.bearingDeg ? { bearingDeg: ev.bearingDeg } : {}),
+    }
+    const xfer: Transferable[] = ev.bearingDeg ? [ev.data.buffer, ev.bearingDeg.buffer] : [ev.data.buffer]
+    this.post(msg, xfer)
+  }
+
+  private cancelDrains(): void {
+    if (this.drainTimer) { this.cancelSchedule(this.drainTimer as number); this.drainTimer = 0 }
+    for (const d of this.drains.values()) d.release()
+    this.drains.clear()
+  }
+
+  private scheduleDrainPumps(): void {
+    if (this.drainTimer) { this.cancelSchedule(this.drainTimer as number); this.drainTimer = 0 }
+    let running = false
+    for (const d of this.drains.values()) if (d.isRunning) { running = true; break }
+    if (!running) return
+    this.drainTimer = this.schedule(() => this.pumpDrains(), 16)
+  }
+
+  private pumpDrains(): void {
+    this.drainTimer = 0
+    for (const d of this.drains.values()) {
+      if (!d.isRunning) continue
+      const ev = d.pump({ budgetMs: 16 })
+      if (ev) this.postDrain(ev)
+    }
+    this.scheduleDrainPumps()
   }
 
   /**
@@ -460,6 +519,7 @@ export class SimHost {
   /** Advance one row period. With no free frame the sim waits (backpressure never drops sim time). */
   private step(): void {
     if (this.cutSession) return this.stepCut()
+    this.pumpDrains()
     const engine = this.engine!, a = this.active, pool = this.pools.get(a.bins)!
     const frame = pool.pop()
     if (!frame) return

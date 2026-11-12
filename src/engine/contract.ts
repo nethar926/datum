@@ -71,7 +71,17 @@ export interface CutSeeked {
   /** Total rows the backfill is aiming for (FULL). */
   fullRows: number
 }
-export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped | CutSeeked
+/** Chunked history drain progress: inclusive [fromRow, toRow], packed oldest-first landed rows. */
+export interface DrainProgress {
+  v: 1; type: 'drainProgress'
+  streamId: number; handleId: number; fromRow: number; toRow: number
+  filledFrom: number; totalRows: number
+  state: 'running' | 'done' | 'cancelled'
+  bins: number
+  data: Float32Array
+  bearingDeg?: Float32Array
+}
+export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped | CutSeeked | DrainProgress
 
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'
