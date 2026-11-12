@@ -169,12 +169,12 @@ button, select { font: inherit; color: inherit; }
 .cross-readout { top: auto; left: auto; right: 8px; bottom: 28px; background: rgba(0,0,0,.55); padding: 3px 5px; border-radius: 3px; }
 .ovld { font: 600 11px/1 var(--font-mono); color: #ff5a4a; border: 1px solid #ff5a4a; padding: 2px 4px; border-radius: 3px; margin-left: 6px; }
 /* Compact Reveal positions card — sits above plot chrome, dismisses on outside tap. */
-.reveal-card { position: absolute; left: max(10px, env(safe-area-inset-left)); bottom: max(56px, calc(52px + env(safe-area-inset-bottom))); z-index: 6;
+.reveal-card, .ais-card { position: absolute; left: max(10px, env(safe-area-inset-left)); bottom: max(56px, calc(52px + env(safe-area-inset-bottom))); z-index: 6;
   max-width: min(240px, 70%); padding: 8px 10px; border-radius: 10px; pointer-events: auto;
   background: rgba(8, 10, 14, 0.92); border: 1px solid rgba(184, 190, 200, 0.35); color: #d0d4dc;
   font: 11px/1.35 var(--font-mono); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
-.reveal-card-head { color: #e8ecf2; font-weight: 600; letter-spacing: .04em; margin-bottom: 2px; }
-.reveal-card .dim { opacity: 0.55; }
+.reveal-card-head, .ais-card-head { color: #e8ecf2; font-weight: 600; letter-spacing: .04em; margin-bottom: 2px; }
+.reveal-card .dim, .ais-card .dim { opacity: 0.55; }
 
 /* Compendium (recognition guide) */
 .compendium { position: fixed; inset: 0; z-index: 40; background: var(--bg-0); color: var(--text-1); display: flex; flex-direction: column; }

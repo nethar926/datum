@@ -28,7 +28,7 @@ function Range({ label, value, min, max, step, unit, onChange }: { label: string
 
 /** New-sim screen. Random is the default: three difficulties and Diesel / Any, then Start.
  * Nuke stays listed as Coming soon (disabled). Advanced opens the full manual setup. */
-export function NewScenario({ onStart, onStartTraining, onClose, activeRun = false }: { onStart: (p: ScenarioParams) => void; onStartTraining: (id: string, traffic: number) => void; onClose: () => void; activeRun?: boolean }) {
+export function NewScenario({ onStart, onStartTraining, onClose, activeRun = false }: { onStart: (p: ScenarioParams, difficulty: 'easy' | 'regular' | 'difficult') => void; onStartTraining: (id: string, traffic: number) => void; onClose: () => void; activeRun?: boolean }) {
   const [scenarioId, setScenarioId] = useState('generated')
   const [trafficOn, setTrafficOn] = useState(true)
   const api = acousticsV11
@@ -130,7 +130,7 @@ export function NewScenario({ onStart, onStartTraining, onClose, activeRun = fal
         </>)}
         <div className="modal-foot">
           <button onClick={onClose}>Cancel</button>
-          <button className="primary" disabled={scenarioId === 'generated' && (!p || seedBad)} data-testid="ns-start" onClick={() => { if (scenarioId !== 'generated') { onStartTraining(scenarioId, trafficOn ? raw?.surfaceTraffic ?? 0.5 : 0); return }; if (!p || seedBad) return; setPrefs((v) => { const n = { ...v, lastSeed: seed }; saveSimStart(n); return n }); onStart({ ...p, seed }) }}>{activeRun ? 'Start new run' : 'Start'}</button>
+          <button className="primary" disabled={scenarioId === 'generated' && (!p || seedBad)} data-testid="ns-start" onClick={() => { if (scenarioId !== 'generated') { onStartTraining(scenarioId, trafficOn ? raw?.surfaceTraffic ?? 0.5 : 0); return }; if (!p || seedBad) return; setPrefs((v) => { const n = { ...v, lastSeed: seed }; saveSimStart(n); return n }); onStart({ ...p, seed }, prefs.diff) }}>{activeRun ? 'Start new run' : 'Start'}</button>
         </div>
       </div>
     </div>

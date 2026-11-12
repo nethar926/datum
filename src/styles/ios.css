@@ -148,8 +148,15 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .app.ios .hz-field input { background: var(--sys-fill); color: var(--sys-label); border: 0; border-radius: 999px; padding: 0 14px; }
 
 /* Floating glass buttons on the plot: in the corner, never over the PPI centre. */
-.plot-float { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; gap: 6px; }
+.plot-float { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .float-btn { --glass-tint: rgba(20, 22, 26, .5); color: #f2f3f5; }
+/* AIS on: accent-tinted glass, dark text (matches native Liquid Glass tint). */
+.float-btn[aria-pressed='true'] {
+  --glass-tint: var(--glass-accent-tint);
+  --glass-tint-reduced: var(--glass-accent-tint-reduced);
+  color: var(--on-accent, #04140a);
+}
+.float-btn[aria-pressed='true']::before { background: var(--glass-tint); }
 .app.ios .plot-corner { top: 10px; right: 12px; font-size: 11px; color: #a4a7b0; display: grid; justify-items: end; gap: 2px; }
 .app.ios .plot-corner .sim-clock { color: #e6e8ee; font-variant-numeric: tabular-nums; }
 

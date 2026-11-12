@@ -15,7 +15,8 @@ import { NewScenario } from './settings/NewScenario'
 import { NewSimDialog } from './settings/NewSimDialog'
 import { canPromptNewSim, freshSeed, newSimStartArgs, type NewSimChoice } from './settings/newSim'
 import { createLongPress } from './ui/longPress'
-import { randomSeed } from './settings/simStart'
+import { loadSimStart, randomSeed } from './settings/simStart'
+import { aisAvailable, aisEffective, type PlotDifficulty } from './tactical/plotLayerPolicy'
 import { LloydsOverlay, lloydText, useLloydDrag, type CpaGeom, type LloydState } from './gram/LloydsOverlay'
 import {
   emptyLmThreePoint, evaluateLmThreePoint, lmIdealPassGramLabel, lmThreePointText, nextLmPointRole, placeLmPoint,
@@ -128,6 +129,20 @@ export default function App() {
   const [view, setView] = useState<FreqView>({ lo: 0, hi: 1000 })
 
   const [reveal, setReveal] = useState(false)
+  const [aisOn, setAisOn] = useState(false)
+  const [runDifficulty, setRunDifficulty] = useState<PlotDifficulty>(() => {
+    try {
+      const q = new URLSearchParams(location.search)
+      if (q.get('scenario') === 'generated') {
+        const d = q.get('diff')
+        if (d === 'easy' || d === 'regular' || d === 'difficult') return d
+        return 'easy'
+      }
+    } catch { /* private mode / SSR */ }
+    return loadSimStart().diff
+  })
+  const aisAvail = aisAvailable(runDifficulty)
+  const aisEff = aisEffective(aisOn, runDifficulty)
   const [gramDir, setGramDir] = useState<GramDir>(loadGramDir)
   const [zuluOriginMs, setZuluOriginMs] = useState(() => Date.now())
   useEffect(() => { saveGramDir(gramDir) }, [gramDir])
@@ -512,6 +527,7 @@ export default function App() {
     const scnQ = q.get('scenario')
     if (scnQ === 'generated' && Number.isFinite(seedQ) && seedQ >= 0 && acousticsV11.presetToParams) {
       const diff = (q.get('diff') === 'regular' || q.get('diff') === 'difficult') ? q.get('diff') as 'regular' | 'difficult' : 'easy'
+      setRunDifficulty(diff)
       let p = acousticsV11.presetToParams(diff, seedQ >>> 0)
       const slo = Number(q.get('speedLo')), shi = Number(q.get('speedHi'))
       const op = { ...p.opState }
@@ -1114,7 +1130,7 @@ export default function App() {
       <GlassDefs />
       <Splash />
       {newSim && <NewSimDialog currentSeed={newSim.current} proposedSeed={newSim.proposed} onChoose={chooseNewSim} />}
-      {showNew && <NewScenario activeRun={st.configs.length > 0} onStartTraining={(id, traffic) => { setShowNew(false); ruler.clear(); client.setSurfaceTraffic(traffic); client.start(7, id, st.band, undefined); client.setPlaying(true) }} onClose={() => setShowNew(false)} onStart={(p) => { setShowNew(false); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
+      {showNew && <NewScenario activeRun={st.configs.length > 0} onStartTraining={(id, traffic) => { setShowNew(false); setRunDifficulty('regular'); ruler.clear(); client.setSurfaceTraffic(traffic); client.start(7, id, st.band, undefined); client.setPlaying(true) }} onClose={() => setShowNew(false)} onStart={(p, diff) => { setShowNew(false); if (diff) setRunDifficulty(diff); client.start(p.seed, 'generated', st.band, p); client.setPlaying(true) }} />}
       {instrumentsVisible && (
         <NavBar title={tab === 'plot' ? 'Plot' : 'DATUM'} sub={phone ? undefined : navSub}
           trailing={<>
@@ -1355,7 +1371,7 @@ export default function App() {
                 )
               })()}
             </div>
-            <TacticalPlot client={client} showReveal={reveal} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
+            <TacticalPlot client={client} showReveal={reveal} showAis={aisOn} difficulty={runDifficulty} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource}
               onManual={(id, deg, final) => {
                 onManual(id, deg, final)
@@ -1373,6 +1389,10 @@ export default function App() {
               }} />
             <div className="plot-float">
               <button className="glass glass-btn float-btn" data-testid="layers-open" aria-label="Plot layers" onClick={() => setLayersSheet(true)}><IcLayers /></button>
+              <button className="glass glass-btn float-btn" data-testid="ais-toggle" aria-pressed={aisEff}
+                aria-label={aisAvail ? (aisEff ? 'AIS on, showing surface tracks' : 'AIS off') : 'AIS unavailable on Difficult'}
+                disabled={!aisAvail}
+                onClick={() => { if (aisAvail) setAisOn((v) => !v) }}>AIS</button>
             </div>
             <DropBar client={client} drop={drop} tactical={st.tactical} log={log} buoyLifeS={st.params ? st.params.buoyLifeMin * 60 : undefined} detune={detune} />
           </div>
@@ -1516,7 +1536,9 @@ export default function App() {
           <div className="ios-section">
             <h3>Simulation</h3>
             <div className="ios-group">
-              <label className="ios-row"><span className="row-label">Reveal positions<small>True contact marks on the plot</small></span>
+              <label className="ios-row"><span className="row-label">AIS<small>{aisAvail ? 'Surface tracks: name, course and speed' : 'Unavailable on Difficult'}</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="ais-switch" checked={aisEff} disabled={!aisAvail} onChange={(e) => { if (aisAvail) setAisOn(e.target.checked) }} /></label>
+              <label className="ios-row"><span className="row-label">Reveal positions<small>True positions of submarines only — never surface ships</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="reveal-switch" checked={reveal} onChange={(e) => setReveal(e.target.checked)} /></label>
               <label className="ios-row" title="Off = ideal receiver with unlimited dynamic range (for comparison)"><span className="row-label">Realistic receiver<small>AGC, limited dynamic range</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="rx-toggle" checked={st.receiver} onChange={(e) => client.setReceiver(e.target.checked)} /></label>
@@ -1601,6 +1623,12 @@ export default function App() {
       </Sheet>
       <Sheet open={layersSheet} onClose={() => setLayersSheet(false)} title="Plot layers" testId="layers-sheet" detents={['medium', 'large']}>
         <div className="ios-group">
+          <label className="ios-row"><span className="row-label">AIS<small>{aisAvail ? 'Surface tracks: name, course and speed' : 'Unavailable on Difficult'}</small></span>
+            <input type="checkbox" role="switch" className="ios-switch" data-testid="layers-ais-switch" checked={aisEff} disabled={!aisAvail} onChange={(e) => { if (aisAvail) setAisOn(e.target.checked) }} /></label>
+          <label className="ios-row"><span className="row-label">Reveal positions<small>True positions of submarines only — never surface ships</small></span>
+            <input type="checkbox" role="switch" className="ios-switch" data-testid="layers-reveal-switch" checked={reveal} onChange={(e) => setReveal(e.target.checked)} /></label>
+          <div className="ios-row" data-testid="layers-isr"><span className="row-label">ISR / ISAR<small>Coming soon</small></span></div>
+          <div className="ios-row" data-testid="layers-ewo"><span className="row-label">EWO<small>Coming soon</small></span></div>
           <div className="ios-row"><span className="row-label">Bearings shown</span>
             <div className="seg ios-seg" role="group" aria-label="Bearings shown">
               <button aria-pressed={!allBearings} onClick={() => setAllBearings(false)}>{selHz === null ? 'Selected' : `${selHz.toFixed(1)} Hz`}</button>

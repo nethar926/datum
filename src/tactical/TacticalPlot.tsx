@@ -10,6 +10,7 @@ import { dropCapturesPlot } from './fieldMode'
 import { planReadout, type DropPlan } from './drop'
 import { canAim, isArmed, type BearingArm } from './bearingArm'
 import { placeRevealTagsInPlace, revealRangeBrg, revealShapeForCategory } from './reveal'
+import { aisContacts, aisEffective, revealContacts, type PlotDifficulty } from './plotLayerPolicy'
 import type { TruthContact } from '../engine/contract'
 import { BUOY_STATUS_COLOR, paintHealth, type DetuneStore } from './detune'
 import type { FixStore } from './fixStore'
@@ -21,7 +22,7 @@ const BEARING_LEN_M = 7000
 const SEL_TOL_HZ = 1.5
 
 interface Props {
-  client: SimClient; showReveal: boolean; spanM?: number; selectedChannel?: number; selectedHz?: number | null; allBearings?: boolean
+  client: SimClient; showReveal: boolean; showAis?: boolean; difficulty?: PlotDifficulty; spanM?: number; selectedChannel?: number; selectedHz?: number | null; allBearings?: boolean
   showAuto?: boolean; showManual?: boolean; manual?: ManualBearings; fixSource?: FixSource
   /** Manual cursor moved (final=false while dragging, true on release); deg null clears it. */
   onManual?: (buoyId: number, deg: number | null, final: boolean) => void
@@ -45,12 +46,12 @@ const HIT_PX = 14
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), DIFAR bearing lines, cross-fixes, optional Reveal positions. Canvas 2D. */
-export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune, fix }: Props) {
+export function TacticalPlot({ client, showReveal, showAis = false, difficulty = 'regular', spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune, fix }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix })
-  props.current = { showReveal, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix }
+  const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix })
+  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix }
   const viewRef = useRef<PlotView | null>(null)
   const dragRef = useRef<number | null>(null)
   /** When set, the current pointer is an armed aim-tap (plot placement), not a buoy drag. */
@@ -66,7 +67,7 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
     if (!ctx) return
     const css = getComputedStyle(document.documentElement)
     const col = (n: string) => css.getPropertyValue(n).trim() || '#888'
-    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), reveal: col('--plot-reveal') || col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim'), stWork: col('--plot-buoy-working') || BUOY_STATUS_COLOR.working, stDet: col('--plot-buoy-detuned') || BUOY_STATUS_COLOR.detuned, stDead: col('--plot-buoy-dead-hi') || BUOY_STATUS_COLOR.dead, stErr: col('--plot-buoy-error') || BUOY_STATUS_COLOR.error, sel: col('--select') || '#30d158', selFill: col('--select-fill') || 'rgba(48,209,88,0.2)' }
+    const C = { bg: col('--plot-bg'), grid: col('--plot-grid'), ac: col('--plot-aircraft'), buoy: col('--plot-buoy'), dead: col('--plot-buoy-dead'), brg: col('--plot-bearing'), fix: col('--plot-fix'), reveal: col('--plot-reveal') || col('--plot-truth'), man: col('--plot-manual'), text: col('--phosphor-dim'), stWork: col('--plot-buoy-working') || BUOY_STATUS_COLOR.working, stDet: col('--plot-buoy-detuned') || BUOY_STATUS_COLOR.detuned, stDead: col('--plot-buoy-dead-hi') || BUOY_STATUS_COLOR.dead, stErr: col('--plot-buoy-error') || BUOY_STATUS_COLOR.error, sel: col('--select') || '#30d158', selFill: col('--select-fill') || 'rgba(48,209,88,0.2)', ais: col('--plot-ais') || '#7ecfb2' }
     const p = { x: 0, y: 0 }
     let raf = 0, lastT = -1, lastKey = '', lastGhost = -1
     // Splash start times per buoy index (typed, preallocated); known = buoys already on the plot.
@@ -311,8 +312,8 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
       for (let i = 0; i < hitPool.length; i++) hitPool[i].r = 0
       hitCount.n = 0
       if (reveal && t.truth) {
-        const contacts = t.truth.contacts
-        if (contacts.length > bag.cap) bag = makeBag(contacts.length)
+        const contacts = revealContacts(t.truth.contacts, true)
+        if (contacts.length > bag.cap) bag = makeBag(Math.max(contacts.length, t.truth.contacts.length))
         const { ax, ay, tw, th, outX, outY, obs, hit, tagCh, tagN } = bag
         let n = 0, sN = 0, mN = 0
         ctx.strokeStyle = C.reveal; ctx.fillStyle = C.reveal; ctx.lineWidth = 1.25 * dpr
@@ -367,6 +368,25 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
           ctx.fillText((tagCh[i] === 0 ? TAG_S : TAG_M)[tagN[i] - 1]!, outX[i] + 2 * dpr, outY[i] + 10 * dpr)
         }
       }
+      // AIS: generic fictional surface tracks (name only on the plot; course/speed on the card).
+      const aisOn = aisEffective(props.current.showAis, props.current.difficulty)
+      if (aisOn && t.truth) {
+        const ships = aisContacts(t.truth.contacts, true, props.current.difficulty)
+        ctx.strokeStyle = C.ais; ctx.fillStyle = C.ais; ctx.lineWidth = 1.25 * dpr
+        ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
+        for (const c of ships) {
+          const sx = toScreenX(v, c.x), sy = toScreenY(v, c.y), heading = (c.crsDeg * Math.PI) / 180
+          const hx = Math.sin(heading), hy = -Math.cos(heading)
+          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + hx * 20 * dpr, sy + hy * 20 * dpr); ctx.stroke()
+          ctx.beginPath(); ctx.arc(sx, sy, 5 * dpr, 0, Math.PI * 2); ctx.stroke()
+          const name = (c.label || c.sourceId || `C${c.id}`).toUpperCase()
+          ctx.fillText(name, sx + 10 * dpr, sy + 4 * dpr)
+          if (hitCount.n < hitPool.length) {
+            const h = hitPool[hitCount.n++]
+            h.id = c.id; h.x = sx; h.y = sy; h.r = 14 * dpr
+          }
+        }
+      }
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
@@ -392,7 +412,8 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
     return best && { id: best.id, w }
   }
   const hitReveal = (e: React.PointerEvent | React.MouseEvent) => {
-    if (!props.current.showReveal) return null
+    const aisOn = aisEffective(props.current.showAis, props.current.difficulty)
+    if (!props.current.showReveal && !aisOn) return null
     const c = ref.current; if (!c) return null
     const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
     const px = (e.clientX - rect.left) * dpr, py = (e.clientY - rect.top) * dpr
@@ -406,7 +427,15 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
     }
     return best?.id ?? null
   }
-  useEffect(() => { if (!showReveal) setPicked(null) }, [showReveal])
+  useEffect(() => {
+    setPicked((p) => {
+      if (!p) return p
+      const aisOn = aisEffective(showAis, difficulty)
+      if (p.category === 'subsurface') return showReveal ? p : null
+      if (p.category === 'surface') return aisOn ? p : null
+      return null
+    })
+  }, [showReveal, showAis, difficulty])
   const setFrom = (id: number, wx: number, wy: number, final: boolean) => {
     const b = client.status.tactical?.buoys.find((x) => x.id === id); if (!b) return
     const deg = bearingTo(b, wx, wy); if (deg !== null) onManual?.(id, deg, final)
@@ -507,18 +536,19 @@ export function TacticalPlot({ client, showReveal, spanM = 18000, selectedChanne
       onDoubleClick={(e) => { if (dropping() || brgArmed) return; const h = hitBuoy(e); if (h) onManual?.(h.id, null, true) }} />
     <canvas ref={oref} className="tac-overlay" data-testid="tactical-overlay" aria-hidden />
     <div className="ring-scale" data-testid="ring-scale" aria-hidden>2 km rings</div>
-    {picked && showReveal && (() => {
+    {picked && (picked.category === 'surface' ? aisEffective(showAis, difficulty) : showReveal) && (() => {
+      const isAis = picked.category === 'surface'
       const buoy = client.status.tactical?.buoys.find((b) => b.channel === selectedChannel)
-      const rb = revealRangeBrg(buoy, picked)
+      const rb = !isAis ? revealRangeBrg(buoy, picked) : null
       const kts = picked.spdKts ?? picked.spdMps * 1.943844
       const cls = (picked.label || picked.sourceId || `C${picked.id}`).toUpperCase()
       return (
-        <div className="reveal-card readout" data-testid="reveal-card" role="dialog" aria-label="Reveal contact">
-          <div className="reveal-card-head">{cls}</div>
-          <div>CSE {String(Math.round(picked.crsDeg) % 360).padStart(3, '0')}° · {kts.toFixed(1)} KT{picked.depthM !== undefined ? ` · ${picked.depthM.toFixed(0)} M` : ''}</div>
-          {rb && <div>RNG {(rb.rngM / 1852).toFixed(2)} NM · BRG {String(Math.round(rb.brgDeg) % 360).padStart(3, '0')}°</div>}
-          {!rb && buoy && <div className="dim">On selected buoy</div>}
-          {!buoy && <div className="dim">Select a buoy for RNG/BRG</div>}
+        <div className={isAis ? 'ais-card readout' : 'reveal-card readout'} data-testid={isAis ? 'ais-card' : 'reveal-card'} role="dialog" aria-label={isAis ? 'AIS contact' : 'Reveal contact'}>
+          <div className={isAis ? 'ais-card-head' : 'reveal-card-head'}>{cls}</div>
+          <div>CSE {String(Math.round(picked.crsDeg) % 360).padStart(3, '0')}° · {kts.toFixed(1)} KT{!isAis && picked.depthM !== undefined ? ` · ${picked.depthM.toFixed(0)} M` : ''}</div>
+          {!isAis && rb && <div>RNG {(rb.rngM / 1852).toFixed(2)} NM · BRG {String(Math.round(rb.brgDeg) % 360).padStart(3, '0')}°</div>}
+          {!isAis && !rb && buoy && <div className="dim">On selected buoy</div>}
+          {!isAis && !buoy && <div className="dim">Select a buoy for RNG/BRG</div>}
         </div>
       )
     })()}

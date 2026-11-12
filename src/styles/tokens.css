@@ -36,6 +36,7 @@
   --plot-truth: rgba(255, 255, 255, 0.55);
   /* Neutral reveal colour — distinct from buoy amber; Wilson may retune later. */
   --plot-reveal: #c5c9d4;
+  --plot-ais: #7ecfb2;  /* surface tracks; teal, distinct from reveal grey */
   --plot-manual: #8af0ff;
 
   /* Space & shape */
@@ -102,7 +103,7 @@
   --sheet-fill: rgba(250, 250, 252, 0.92);
 }
 /* Instruments (gram, plot, DIFAR wheel, compendium, modal) stay dark in light mode. */
-:root[data-scheme='light'] :is(.panel-body, .difar-applet-scrim, .compendium, .modal-scrim, .gram-note, .lm-panel, .reveal-card) {
+:root[data-scheme='light'] :is(.panel-body, .difar-applet-scrim, .compendium, .modal-scrim, .gram-note, .lm-panel, .reveal-card, .ais-card) {
   color-scheme: dark;
   --bg-0: #0b0c0e; --bg-1: #131418; --bg-2: #1b1d22; --bg-3: #24262d;
   --hairline: rgba(255, 255, 255, 0.08); --hairline-strong: rgba(255, 255, 255, 0.14);
