@@ -61,6 +61,8 @@
   --tint-fill: rgba(48, 209, 88, 0.22);
   /* Selected chrome (Play / tool / buoy / plot ring): green Liquid Glass, not blue. */
   --select: #30d158;
+  --select-blue: #0a84ff;   /* selected-buoy cue only (Wilson 2026-11-08); health colours unchanged */
+  --select-blue-fill: rgba(10, 132, 255, 0.2);
   --select-fill: rgba(48, 209, 88, 0.22);
   --select-ring: rgba(94, 230, 130, 0.85);
   --glass-accent-tint: rgba(48, 209, 88, 0.36);

@@ -1,7 +1,7 @@
 /**
  * Chrome-green: selected Play / tool / buoy use green Liquid Glass tokens;
  * CON contrast pins in the toolbar trailing slot; DIFAR wheel is circular;
- * no blue selection cue remains. Trailing CON forces ToolScroll so Duo widths
+ * the selected-buoy plot cue stays system blue (--select-blue). Trailing CON forces ToolScroll so Duo widths
  * never mid-clip a tool label (LM → "LN").
  */
 import { createElement } from 'react'
@@ -40,15 +40,27 @@ function blend(srcRgb: [number, number, number], a: number, dst: [number, number
 }
 
 describe('chrome-green selection tokens', () => {
-  it('defines green select + glass-accent tokens and drops select-blue', () => {
+  it('defines green Liquid Glass chrome accents; selected-buoy cue stays blue', () => {
     expect(tokens).toMatch(/--select:\s*#30d158/)
     expect(tokens).toMatch(/--glass-accent-tint:\s*rgba\(48,\s*209,\s*88/)
     expect(tokens).toMatch(/--on-glass-accent:\s*#f2fff4/)
-    expect(tokens).not.toMatch(/--select-blue/)
-    expect(ios).not.toMatch(/select-blue/)
-    expect(ios).not.toMatch(/#0a84ff|#0061c7|#61b1ff/)
-    expect(plot).not.toMatch(/#0a84ff|rgba\(10,\s*132,\s*255/)
-    expect(plot).toMatch(/--select/)
+    // Wilson 8 Nov / c09a487: the plot cue on the selected buoy is system blue, not the green accent.
+    expect(tokens).toMatch(/--select-blue:\s*#0a84ff/)
+    expect(tokens).toMatch(/--select-blue-fill:\s*rgba\(10,\s*132,\s*255,\s*0\.2\)/)
+    expect(plot).toMatch(/--select-blue/)
+    expect(plot).toMatch(/#0a84ff/)
+    expect(plot).not.toMatch(/sel:\s*col\('--select'\)/)
+  })
+
+  it('keeps plot health colours unchanged', () => {
+    expect(tokens).toMatch(/--plot-buoy-working:\s*#f5f5f7/)
+    expect(tokens).toMatch(/--plot-buoy-detuned:\s*#30d158/)
+    expect(tokens).toMatch(/--plot-buoy-dead-hi:\s*#ff453a/)
+    expect(tokens).toMatch(/--plot-buoy-error:\s*#ffd60a/)
+    expect(plot).toMatch(/--plot-buoy-working/)
+    expect(plot).toMatch(/--plot-buoy-detuned/)
+    expect(plot).toMatch(/--plot-buoy-dead-hi/)
+    expect(plot).toMatch(/--plot-buoy-error/)
   })
 
   it('Play primary and selected tool/buoy use green Liquid Glass, not solid tint fill', () => {
