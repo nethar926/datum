@@ -29,6 +29,7 @@ import {
   NAV_RGB, displaySimTime, drawPlaneNav, drawPlaneTrail, handlePlaneTap,
   planeMenuFrame, planeState, planeVersion, samplePlane, subscribePlane,
 } from './planeRoute'
+import { NIGHT_BEACON, NIGHT_NAV_LIGHTS, nightBeaconOn } from '../displayFx'
 import { PlaneMenu } from './PlaneMenu'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
@@ -52,6 +53,8 @@ interface Props {
   detune?: DetuneStore
   /** Operator FIX tracks / legs / ellipses. */
   fix?: FixStore
+  /** Night easter egg: nav lights + flashing beacon on the plane glyph only. */
+  night?: boolean
 }
 const noSub = () => () => {}
 /** New-buoy splash: an expanding ring for this long after a buoy appears on the plot. */
@@ -62,11 +65,11 @@ const HIT_PX = 14
 const hitPx = () => (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 22 : HIT_PX)
 
 /** Tactical plot: aircraft track, buoys (omni / DIFAR), violet auto bearings, operator-laid fixes, optional Reveal positions. Canvas 2D. */
-export function TacticalPlot({ client, showReveal, showAis = false, difficulty = 'regular', spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune, fix }: Props) {
+export function TacticalPlot({ client, showReveal, showAis = false, difficulty = 'regular', spanM = 18000, selectedChannel, selectedHz = null, allBearings = false, showAuto = true, showManual = true, manual = {}, fixSource = 'both', onManual, drop, arm, onArmPick, onArmAim, detune, fix, night = false }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, picked: null as TruthContact | null, affTick: 0 })
+  const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, night, picked: null as TruthContact | null, affTick: 0 })
   const [pickedFixId, setPickedFixId] = useState<number | null>(null)
   const fadeSRef = useRef(loadFixFadeS())
   const viewRef = useRef<PlotView | null>(null)
@@ -79,7 +82,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   const affTick = useSyncExternalStore(subscribeAisAffiliations, aisAffiliationVersion)
   const planeTick = useSyncExternalStore(subscribePlane, planeVersion)
   const simTWall = useRef({ t: 0, wall: 0 })
-  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, picked, affTick, planeTick }
+  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, night, picked, affTick, planeTick }
   const revealHits = useRef<{ id: number | string; x: number; y: number; r: number }[]>([])
   const camRef = useRef<PlotCamera>({ ...PLOT_CAMERA_FITTED })
   const camTick = useRef(0)
@@ -162,7 +165,9 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       const armKey = armSt?.phase === 'aim' ? `aim${armSt.buoyId}` : armSt?.phase ?? 'idle'
       const dtSnap = props.current.detune?.getSnapshot() ?? 0
       const fixSnap = props.current.fix?.getSnapshot() ?? 0
-      const key = `${w}x${h}:${reveal}:${span}:${cam.cx}:${cam.cy}:${camTick.current}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}`
+      const nightOn = !!props.current.night
+      const nightFlash = nightOn && nightBeaconOn(now / 1000) ? '1' : '0'
+      const key = `${w}x${h}:${reveal}:${span}:${cam.cx}:${cam.cy}:${camTick.current}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}:${nightOn ? '1' : '0'}:${nightFlash}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
       const v = fitView(w, h, span, cam.cx, cam.cy)
@@ -228,7 +233,19 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       drawPlaneNav(ctx, ps.navX, ps.navY, ps.navCount, toSX, toSY, ps.navStyle, dpr)
       const ax = toSX(pose.x), ay = toSY(pose.y)
       ctx.save(); ctx.translate(ax, ay); ctx.rotate(pose.headingRad); ctx.fillStyle = C.ac
-      ctx.beginPath(); ctx.moveTo(0, -8 * dpr); ctx.lineTo(6 * dpr, 6 * dpr); ctx.lineTo(0, 3 * dpr); ctx.lineTo(-6 * dpr, 6 * dpr); ctx.closePath(); ctx.fill(); ctx.restore()
+      ctx.beginPath(); ctx.moveTo(0, -8 * dpr); ctx.lineTo(6 * dpr, 6 * dpr); ctx.lineTo(0, 3 * dpr); ctx.lineTo(-6 * dpr, 6 * dpr); ctx.closePath(); ctx.fill()
+      if (props.current.night) {
+        for (const l of NIGHT_NAV_LIGHTS) {
+          ctx.fillStyle = `rgba(${Math.round(l.r * 255)},${Math.round(l.g * 255)},${Math.round(l.b * 255)},${l.a})`
+          ctx.beginPath(); ctx.arc(l.x * dpr, l.y * dpr, l.radius * dpr, 0, Math.PI * 2); ctx.fill()
+        }
+        if (nightBeaconOn(performance.now() / 1000)) {
+          const b = NIGHT_BEACON
+          ctx.fillStyle = `rgba(${Math.round(b.r * 255)},${Math.round(b.g * 255)},${Math.round(b.b * 255)},${b.a})`
+          ctx.beginPath(); ctx.arc(b.x * dpr, b.y * dpr, b.radius * dpr, 0, Math.PI * 2); ctx.fill()
+        }
+      }
+      ctx.restore()
       drawPlaneTrail(ctx, ps.trail, toSX, toSY, ps.trailStyle, dpr)
       if (ps.centre) {
         const sx = toSX(ps.centre.x), sy = toSY(ps.centre.y)

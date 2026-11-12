@@ -1,11 +1,12 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import {
-  BLOOM_SURFACES, DEFAULT_DISPLAY_BLOOM, bloomAppliesPass, bloomAppliesTo, bloomFilterId,
-  extraBloomPasses, loadDisplayBloom, resetDisplayBloomForTests, runBloomPass, saveDisplayBloom,
+  BLOOM_SURFACES, DEFAULT_DISPLAY_BLOOM, DEFAULT_DISPLAY_NIGHT, NIGHT_NAV_LIGHTS, bloomAppliesPass, bloomAppliesTo, bloomFilterId,
+  extraBloomPasses, loadDisplayBloom, loadDisplayNight, nightAppliesTo, nightAppliesToPlaneGlyph,
+  nightBeaconOn, nightLights, resetDisplayFxForTests, runBloomPass, saveDisplayBloom, saveDisplayNight,
 } from './displayFx'
 import { FRAME_BUDGET_S, measurePlaneFrame } from './tactical/planeRoute'
 
-beforeEach(() => { resetDisplayBloomForTests() })
+beforeEach(() => { resetDisplayFxForTests() })
 
 describe('display bloom', () => {
   it('defaults off, persists, and Off attaches no pass', () => {
@@ -50,5 +51,41 @@ describe('display bloom', () => {
     expect(Array.from(scratch)).not.toEqual(before)
     const plane = measurePlaneFrame(64, 20, 1)
     expect(plane.seconds).toBeLessThan(FRAME_BUDGET_S)
+  })
+})
+
+describe('display night', () => {
+  it('defaults off, persists, and Off draws no lights', () => {
+    expect(DEFAULT_DISPLAY_NIGHT).toBe(false)
+    expect(loadDisplayNight()).toBe(false)
+    expect(nightLights(false, 0)).toEqual([])
+    expect(nightAppliesToPlaneGlyph(false)).toBe(false)
+    saveDisplayNight(true)
+    expect(loadDisplayNight()).toBe(true)
+    expect(nightAppliesToPlaneGlyph(true)).toBe(true)
+    const nav = nightLights(true, 0.5)
+    expect(nav.map((l) => l.name)).toEqual(['left', 'right', 'tail'])
+    expect(nav[0]!.r).toBeCloseTo(0.92)
+    expect(nav[1]!.g).toBeCloseTo(0.86)
+    expect(nav[2]!.g).toBeGreaterThan(0.8)
+    expect(nightBeaconOn(0.05)).toBe(true)
+    expect(nightBeaconOn(0.5)).toBe(false)
+    expect(nightLights(true, 0.05).at(-1)?.name).toBe('beacon')
+    saveDisplayNight(false)
+    expect(loadDisplayNight()).toBe(false)
+    expect(nightLights(false, 0.05)).toEqual([])
+  })
+
+  it('is plane-glyph only and never covers grams', () => {
+    expect(nightAppliesTo('gram', true)).toBe(false)
+    expect(nightAppliesTo('chrome', true)).toBe(false)
+    expect(nightAppliesTo('overlay', true)).toBe(false)
+    expect(nightAppliesTo('plot', true)).toBe(false)
+    const left = NIGHT_NAV_LIGHTS.find((l) => l.name === 'left')!
+    const right = NIGHT_NAV_LIGHTS.find((l) => l.name === 'right')!
+    const tail = NIGHT_NAV_LIGHTS.find((l) => l.name === 'tail')!
+    expect(left.x).toBeLessThan(0)
+    expect(right.x).toBeGreaterThan(0)
+    expect(tail.y).toBeGreaterThan(0)
   })
 })

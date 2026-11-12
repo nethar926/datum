@@ -63,7 +63,7 @@ import { useLayout } from './touch/useLayout'
 import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
 import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, useAppearance, useGlass } from './ui/chrome'
-import { DISPLAY_BLOOM_LEVELS, DISPLAY_BLOOM_LABEL, loadDisplayBloom, saveDisplayBloom, type DisplayBloom } from './displayFx'
+import { DISPLAY_BLOOM_LEVELS, DISPLAY_BLOOM_LABEL, loadDisplayBloom, loadDisplayNight, saveDisplayBloom, saveDisplayNight, type DisplayBloom } from './displayFx'
 import { ToolsToolbar } from './ui/ToolsToolbar'
 import { PlotGrabber } from './touch/PlotGrabber'
 import { useViewportSegments } from './touch/useViewportSegments'
@@ -159,6 +159,8 @@ export default function App() {
   const [palette, setPalette] = useState<PaletteId>(loadPalette)
   const [displayBloom, setDisplayBloom] = useState<DisplayBloom>(loadDisplayBloom)
   useEffect(() => { saveDisplayBloom(displayBloom) }, [displayBloom])
+  const [displayNight, setDisplayNight] = useState(loadDisplayNight)
+  useEffect(() => { saveDisplayNight(displayNight) }, [displayNight])
   const [contrast, setContrast] = useState<number>(loadContrast)
   const [wheel, setWheel] = useState<DifarWheelSettings>(loadWheel)
   const [wheelOpen, setWheelOpen] = useState(false)
@@ -1438,7 +1440,7 @@ export default function App() {
                 )
               })()}
             </div>
-            <TacticalPlot client={client} showReveal={reveal} showAis={aisOn} difficulty={runDifficulty} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings}
+            <TacticalPlot client={client} showReveal={reveal} showAis={aisOn} difficulty={runDifficulty} selectedChannel={cfg?.channel} selectedHz={selHz} allBearings={allBearings} night={displayNight}
               showAuto={showAuto} showManual={showManual} manual={manual} fixSource={fixSource}
               onManual={(id, deg, final) => {
                 onManual(id, deg, final)
@@ -1590,6 +1592,8 @@ export default function App() {
                 <div className="seg ios-seg" role="group" aria-label="Bloom and phosphor noise" data-testid="display-bloom">
                   {DISPLAY_BLOOM_LEVELS.map((k) => <button key={k} type="button" aria-pressed={displayBloom === k} data-testid={`display-bloom-${k}`} onClick={() => setDisplayBloom(k)}>{DISPLAY_BLOOM_LABEL[k]}</button>)}
                 </div></div>
+              <label className="ios-row"><span className="row-label">Night<small>Subtle nav lights and a flashing anti-collision beacon on the plane glyph only.</small></span>
+                <input type="checkbox" role="switch" className="ios-switch" data-testid="display-night" checked={displayNight} onChange={(e) => setDisplayNight(e.target.checked)} /></label>
             </div>
           </div>
           <div className="ios-section">

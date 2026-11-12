@@ -75,3 +75,44 @@ export const BLOOM_SURFACES = {
   include: ['.tabbar', '.panel-body.plot', '[data-testid="settings"]', '.gram-head', '.plot-corner'],
   exclude: ['.gram-panel .panel-body', '[data-testid="live-gram-panel"] .panel-body', '[data-testid="secondary-bfi-pane"]', '[data-testid="secondary-demon-pane"]'],
 } as const
+
+export const DISPLAY_NIGHT_KEY = 'datum.display.night'
+export const DEFAULT_DISPLAY_NIGHT = false
+
+export function loadDisplayNight(): boolean {
+  const v = store().getItem(DISPLAY_NIGHT_KEY)
+  if (v == null) return DEFAULT_DISPLAY_NIGHT
+  return v === '1'
+}
+export function saveDisplayNight(on: boolean): void {
+  if (on === DEFAULT_DISPLAY_NIGHT) store().removeItem(DISPLAY_NIGHT_KEY)
+  else store().setItem(DISPLAY_NIGHT_KEY, on ? '1' : '0')
+}
+export function resetDisplayNightForTests(): void { store().removeItem(DISPLAY_NIGHT_KEY) }
+export function resetDisplayFxForTests(): void {
+  resetDisplayBloomForTests()
+  resetDisplayNightForTests()
+}
+
+/** Web plane glyph local space (heading 0 = north): nose −Y, left wing −X, right +X, tail +Y. */
+export const NIGHT_NAV_LIGHTS = [
+  { name: 'left', x: -6, y: 6, r: 0.92, g: 0.14, b: 0.14, a: 0.9, radius: 1.6 },
+  { name: 'right', x: 6, y: 6, r: 0.12, g: 0.86, b: 0.28, a: 0.9, radius: 1.6 },
+  { name: 'tail', x: 0, y: 7.2, r: 0.92, g: 0.92, b: 0.95, a: 0.85, radius: 1.5 },
+] as const
+export const NIGHT_BEACON = { name: 'beacon', x: 0, y: -1, r: 1, g: 0.22, b: 0.16, a: 0.95, radius: 1.8 } as const
+
+export function nightBeaconOn(now: number, period = 1, duty = 0.16): boolean {
+  let t = now % period
+  if (t < 0) t += period
+  return t < duty
+}
+
+export function nightLights(enabled: boolean, now: number) {
+  if (!enabled) return []
+  return nightBeaconOn(now) ? [...NIGHT_NAV_LIGHTS, NIGHT_BEACON] : [...NIGHT_NAV_LIGHTS]
+}
+
+export function nightAppliesToPlaneGlyph(enabled: boolean): boolean { return enabled }
+/** Night never covers grams, chrome, overlays, or the plot as a whole — plane glyph only. */
+export function nightAppliesTo(_surface: DisplayFxSurface, _enabled: boolean): boolean { return false }
