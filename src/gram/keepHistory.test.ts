@@ -25,9 +25,17 @@ import { describe, expect, it } from 'vitest'
  * `drainHistory(streamId, res, rows)` returns the retained rows in that
  * view. A vernier move may still rebuild the stream until her golden test
  * lands — the vernier pin stays behind `vernierGoldenAvailable`, not just
- * `setViewResAvailable`, and inspects the returned config. DEMON's exact
- * call is not specified yet; the LOFAR ↔ DEMON tests use the same
- * `drainHistory` contract and stay pending her confirmation of the call.
+ * `setViewResAvailable`, and inspects the returned config.
+ *
+ * DEMON (Sonya's confirmed contract): every DEMON band stays warm per buoy.
+ * DEMON keeps its own stream id. `subscribeDemon(buoyId, band)` is
+ * idempotent and always returns the same id. History is
+ * `drainHistory(demonId, null, rows)`; a non-null `res` for a DEMON id
+ * is an error (the LOFAR ↔ DEMON test asserts it throws/errors). Rows
+ * are oldest first; row k's sim time is `rowPhaseS + k/rowRateHz`. A
+ * LOFAR ↔ DEMON switch shows the other id and drains its history; never
+ * unsubscribe either stream (assert no unsubscribe calls). Scroll-back
+ * is kept; switching back restores exact original rows.
  *
  * ## Call sites that will move to `setViewRes` + `drainHistory`
  * (RES, NB-BB, vernier, and LOFAR ↔ DEMON. `pickBand` and the 0–1 / 0–2 kHz
@@ -89,11 +97,26 @@ describe('keep-history on a RES / filter / vernier / DEMON switch', () => {
   it.skipIf(!setViewResAvailable)(
     'LOFAR ↔ DEMON keeps rows and switching back restores original hashes',
     () => {
-      // Moves to the warm API (no longer an intended handoff). Exact DEMON
-      // call pending Sonya's confirmation; written against the same
-      // drainHistory contract: rows kept in each view, LOFAR → DEMON →
-      // LOFAR restores original hashes exactly, same ids, no extra
-      // subscriptions, scroll-back preserved.
+      // Sonya's confirmed contract (no longer pending):
+      // - DEMON keeps its own stream id. Every DEMON band stays warm per buoy.
+      // - subscribeDemon(buoyId, band) is idempotent and always returns the same id.
+      // - History: drainHistory(demonId, null, rows). A non-null res for a
+      //   DEMON id is an error — this test asserts it throws/errors.
+      // - Rows oldest first; row k sim time = rowPhaseS + k/rowRateHz.
+      // - A switch shows the other id and drains its history; never
+      //   unsubscribe either stream (assert no unsubscribe calls).
+      // - Scroll-back is kept; LOFAR → DEMON → LOFAR restores exact original rows.
+      //
+      // When the API is wired:
+      //   const demonId = subscribeDemon(buoyId, band)
+      //   expect(subscribeDemon(buoyId, band)).toBe(demonId) // idempotent
+      //   expect(demonId).not.toBe(lofarId)
+      //   const drained = drainHistory(demonId, null, rows)
+      //   expect(() => drainHistory(demonId, 5, rows)).toThrow()
+      //   drained.forEach((row, k) => {
+      //     expect(row.simT).toBe(cfg.rowPhaseS + k / cfg.rowRateHz)
+      //   }) // oldest first
+      //   expect(unsubscribeCalls).toEqual([])
       expect(setViewResAvailable).toBe(true)
     },
   )
