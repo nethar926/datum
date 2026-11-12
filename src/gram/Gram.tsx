@@ -22,7 +22,7 @@ import { agoFromY, formatZulu, newestAtBottom, pctFromAgo, timeTickAges, type Gr
 import { AXIS_Y_EDGE_CLAMP_PX } from './lockVsTimeAxis'
 import { horzAtPointer, horzSimS, horzZulu, liveReadout, readoutHz } from './horz'
 import { AliStripView } from './AliStrip'
-import { rowPeriodS, rowRateHz } from './rowPeriod'
+import { rowRateHz } from './rowPeriod'
 import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
 
@@ -730,7 +730,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
         return (
           <AliStripView
             hist={histRef.current!}
-            periodS={rowPeriodS(cfg, undefined, 0.5)}
+            rowRateHz={rowRateHz(cfg, undefined, 0.5)}
             dir={dir ?? 'bottom'}
             palette={palette}
             floor={band.dbFloor}

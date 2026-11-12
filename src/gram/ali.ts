@@ -1,13 +1,19 @@
 /**
- * ALI (Automatic Line Integration): a 30 s (by default) integration of each LOFAR
- * frequency bin, shown as a thin strip at the newest-data edge of the gram.
+ * ALI (Automatic Line Integration): a ~30 s integration of each LOFAR frequency
+ * bin, shown as a thin strip at the newest-data edge of the gram.
  *
  * When the waterfall cascades downward (newest at the top), the strip sits on the
  * top edge; when it cascades upward (newest at the bottom, the app default), it
- * sits on the bottom. LOFAR only — not DEMON. The window length is a parameter
- * so it is easy to change.
+ * sits on the bottom. LOFAR only — not DEMON.
  *
- * Math matches native `AliStrip.swift`: per-bin mean of linear power, dB in / dB out.
+ * The window is a whole number of rows: `n = max(1, round(windowS * rowRateHz))`.
+ * Power is averaged in linear units, then converted back to dB. The labelled
+ * span is the real coverage `n / rowRateHz` (RES 1 is 32 s, not 30). ALI keeps
+ * working in LSTI; the label then also shows the row's analysis span
+ * (`integrationSpanS`) so it is not read as extra gain. `integrationMode`
+ * defaults to `'sti'` — web has no LSTI fields until the post-deploy sync.
+ *
+ * Math matches native `AliStrip.swift`.
  */
 import { paletteLut, normalizeDb, type PaletteId } from '../gl/colormap'
 import type { LevelHistory } from './levelHistory'
@@ -19,8 +25,33 @@ export function aliEdgeIsTop(newestAtBottom: boolean): boolean {
   return !newestAtBottom
 }
 
-export function aliRowCount(periodS: number, windowS = ALI_WINDOW_S): number {
-  return Math.max(1, Math.ceil(windowS / Math.max(periodS, 1e-12)))
+export function aliRowCount(rowRateHz: number, windowS = ALI_WINDOW_S): number {
+  return Math.max(1, Math.round(windowS * Math.max(rowRateHz, 0)))
+}
+
+/** Real coverage of those n rows, in sim seconds. */
+export function aliSpanS(rowRateHz: number, windowS = ALI_WINDOW_S): number {
+  return aliRowCount(rowRateHz, windowS) / Math.max(rowRateHz, 1e-12)
+}
+
+/** Whole seconds when the value is an integer; one decimal otherwise (e.g. 17.5). */
+function formatS(s: number): string {
+  const r = Math.round(s * 10) / 10
+  return Number.isInteger(r) ? String(r) : r.toFixed(1)
+}
+
+/**
+ * STI: `"ALI 32 s"`. When `integrationMode` is `'lsti'`, also the row span:
+ * `"ALI 32 s (LSTI 88 s)"`. `integrationMode` defaults to `'sti'`.
+ */
+export function aliLabel(
+  rowRateHz: number,
+  windowS = ALI_WINDOW_S,
+  integrationMode: 'sti' | 'lsti' = 'sti',
+  integrationSpanS = 0,
+): string {
+  const ali = `ALI ${formatS(aliSpanS(rowRateHz, windowS))} s`
+  return integrationMode === 'lsti' ? `${ali} (LSTI ${formatS(integrationSpanS)} s)` : ali
 }
 
 export function aliAvailable(isLofar: boolean): boolean {
@@ -28,10 +59,10 @@ export function aliAvailable(isLofar: boolean): boolean {
 }
 
 /** Per-bin mean of linear power over `rowsNewestFirst` (age 0 first), limited to the window. */
-export function integrateAli(rowsNewestFirst: ArrayLike<number>[], periodS: number, windowS = ALI_WINDOW_S): Float32Array {
+export function integrateAli(rowsNewestFirst: ArrayLike<number>[], rowRateHz: number, windowS = ALI_WINDOW_S): Float32Array {
   const first = rowsNewestFirst[0]
   if (!first || first.length === 0) return new Float32Array(0)
-  const nWanted = Math.min(rowsNewestFirst.length, aliRowCount(periodS, windowS))
+  const nWanted = Math.min(rowsNewestFirst.length, aliRowCount(rowRateHz, windowS))
   const bins = first.length
   const out = new Float32Array(bins)
   out.fill(NaN)
@@ -50,10 +81,10 @@ export function integrateAli(rowsNewestFirst: ArrayLike<number>[], periodS: numb
 
 export function integrateFromHistory(
   hist: Pick<LevelHistory, 'size' | 'copyRow' | 'bins'>,
-  periodS: number,
+  rowRateHz: number,
   windowS = ALI_WINDOW_S,
 ): Float32Array {
-  const n = Math.min(hist.size, aliRowCount(periodS, windowS))
+  const n = Math.min(hist.size, aliRowCount(rowRateHz, windowS))
   if (n <= 0 || hist.bins <= 0) return new Float32Array(0)
   const rows: Float32Array[] = []
   for (let age = 0; age < n; age++) {
@@ -61,7 +92,7 @@ export function integrateFromHistory(
     if (!hist.copyRow(age, dest)) break
     rows.push(dest)
   }
-  return integrateAli(rows, periodS, windowS)
+  return integrateAli(rows, rowRateHz, windowS)
 }
 
 /** Paint the integrated row into an already-sized canvas, aligned to [fLo, fHi] on the gram. */

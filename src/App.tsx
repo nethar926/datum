@@ -941,7 +941,7 @@ export default function App() {
       <button className="tool" aria-pressed={horzOn} aria-label="HORZ" data-testid="horz-tool" onClick={() => setHorzOn(!horzOn)}
         title="HORZ: the line reads time (Zulu). The Hz readout is the finger's x position."><IcHorz /><span>HORZ</span></button>
       <button className="tool" aria-pressed={aliOn} aria-label="ALI" data-testid="ali-tool" onClick={() => setAliOn(!aliOn)}
-        title="ALI: Automatic Line Integration. A 30 second LOFAR strip at the newest-data edge."><IcAli /><span>ALI</span></button>
+        title="ALI: Automatic Line Integration. Whole rows nearest 30 seconds, labelled with the real span. LOFAR only."><IcAli /><span>ALI</span></button>
     </ToolsToolbar>
   )
   // CUTTOOLS: availability matrix + Cuts toolbar (same ToolsToolbar; FIX disabled with reason).
@@ -1541,7 +1541,7 @@ export default function App() {
                 </div></div>
               <label className="ios-row"><span className="row-label">HORZ cursor line<small>The HORZ line reads time (Zulu). The Hz readout is the finger's x position.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="horz-switch" checked={horzOn} onChange={(e) => setHorzOn(e.target.checked)} /></label>
-              <label className="ios-row"><span className="row-label">ALI strip<small>Automatic Line Integration: a 30 second LOFAR strip at the newest-data edge.</small></span>
+              <label className="ios-row"><span className="row-label">ALI strip<small>Automatic Line Integration: whole rows nearest 30 seconds, labelled with the real span. LOFAR only.</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="ali-switch" checked={aliOn} onChange={(e) => setAliOn(e.target.checked)} /></label>
               <div className="ios-row"><span className="row-label">LOFAR colour</span>
                 <div className="seg ios-seg" role="group" aria-label="LOFAR palette" data-testid="palette-seg">
