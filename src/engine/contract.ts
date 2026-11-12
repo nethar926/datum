@@ -45,8 +45,13 @@ export interface Tactical {
   v: 1; type: 'tactical'; simT: number
   aircraft: { x: number; y: number; altM: number; hdgDeg: number; gsMps: number }
   buoys: TacticalBuoy[]; bearings: Bearing[]; truth?: { contacts: TruthContact[] }
-  /** Surface-only AIS from AcousticEngine.aisTracks (plotContactSource). */
-  aisTracks?: { id: string; name: string; x: number; y: number; crsDeg: number; spdMps: number }[]
+  /** Surface-only AIS from AcousticEngine.aisTracks (plotContactSource). Optional callsign/class/type are the seam for Sonya's upcoming richer tracks. */
+  aisTracks?: AisTrack[]
+}
+/** Engine AIS track. `callsign` / `class` / `type` are the seam for Sonya's upcoming richer tracks. */
+export interface AisTrack {
+  id: string; name: string; x: number; y: number; crsDeg: number; spdMps: number
+  callsign?: string; class?: string; type?: string
 }
 export interface StreamSet { v: 1; type: 'streams'; configs: GramConfig[] }
 export interface WorkerError { v: 1; type: 'error'; message: string }

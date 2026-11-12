@@ -169,12 +169,46 @@ button, select { font: inherit; color: inherit; }
 .cross-readout { top: auto; left: auto; right: 8px; bottom: 28px; background: rgba(0,0,0,.55); padding: 3px 5px; border-radius: 3px; }
 .ovld { font: 600 11px/1 var(--font-mono); color: #ff5a4a; border: 1px solid #ff5a4a; padding: 2px 4px; border-radius: 3px; margin-left: 6px; }
 /* Compact Reveal positions card — sits above plot chrome, dismisses on outside tap. */
-.reveal-card, .ais-card { position: absolute; left: max(10px, env(safe-area-inset-left)); bottom: max(56px, calc(52px + env(safe-area-inset-bottom))); z-index: 6;
+.reveal-card { position: absolute; left: max(10px, env(safe-area-inset-left)); bottom: max(56px, calc(52px + env(safe-area-inset-bottom))); z-index: 6;
   max-width: min(240px, 70%); padding: 8px 10px; border-radius: 10px; pointer-events: auto;
   background: rgba(8, 10, 14, 0.92); border: 1px solid rgba(184, 190, 200, 0.35); color: #d0d4dc;
   font: 11px/1.35 var(--font-mono); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
-.reveal-card-head, .ais-card-head { color: #e8ecf2; font-weight: 600; letter-spacing: .04em; margin-bottom: 2px; }
-.reveal-card .dim, .ais-card .dim { opacity: 0.55; }
+.reveal-card-head { color: #e8ecf2; font-weight: 600; letter-spacing: .04em; margin-bottom: 2px; }
+.reveal-card .dim { opacity: 0.55; }
+
+/* AIS contact card: accent-tinted Liquid Glass, placed inside the plot (never over the Duo crease). */
+.ais-card {
+  position: absolute; z-index: 6; padding: 10px; border-radius: 14px; pointer-events: auto;
+  color: var(--on-glass-accent, #f2fff4);
+  background: transparent;
+  --glass-tint: var(--glass-accent-tint);
+  --glass-tint-reduced: var(--glass-accent-tint-reduced);
+  box-sizing: border-box;
+  font: 11px/1.35 var(--font-mono);
+}
+.ais-card::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(14px) saturate(180%) brightness(1.03);
+  backdrop-filter: blur(14px) saturate(180%) brightness(1.03);
+}
+.ais-card::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), 0 8px 24px rgba(0,0,0,.35);
+}
+:root[data-glass='reduced'] .ais-card::before { background: var(--glass-tint-reduced, var(--glass-tint)); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.ais-card-head { font-weight: 600; letter-spacing: .04em; margin-bottom: 4px; }
+.ais-card .dim { opacity: 0.55; }
+.ais-card-aff { display: flex; gap: 6px; align-items: flex-start; margin-top: 8px; }
+.ais-card-aff button {
+  flex: 1; min-width: 44px; min-height: 44px; padding: 4px 0 0; border: 0; background: transparent;
+  color: inherit; font: 8px/1.2 var(--font-mono); cursor: pointer; display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+}
+.ais-card-aff button i {
+  display: block; width: 22px; height: 22px; border-radius: 50%; box-sizing: border-box;
+}
+.ais-card-aff button.on i { box-shadow: inset 0 0 0 2px #fff; }
 
 /* Operator-laid fix edit menu: accent-tinted Liquid Glass, stays inside the plot pane. */
 .fix-menu {

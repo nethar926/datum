@@ -19,6 +19,12 @@ import {
   drawFixShape, fixLineAlpha, fixMenuFrame, hitFix, loadFixFadeS,
   type FixColor, type FixShape,
 } from './fixStyle'
+import {
+  AIS_AFFILIATIONS, AIS_AFFILIATION_LABEL, AIS_AFFILIATION_RGB,
+  aisAffiliation, aisAffiliationVersion, aisCardFrame, aisInfoFromTrack,
+  drawSailboat, setAisAffiliation, subscribeAisAffiliations,
+  type AisAffiliation,
+} from './aisStyle'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
 const MIN_DRAW_Q = 10
@@ -55,8 +61,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   const ref = useRef<HTMLCanvasElement>(null)
   /** m3-fe-drop: ghost + splash layer, so a drag repaints only this (the plot itself redraws on new data). */
   const oref = useRef<HTMLCanvasElement>(null)
-  const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix })
-  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix }
+  const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, picked: null as TruthContact | null, affTick: 0 })
   const [pickedFixId, setPickedFixId] = useState<number | null>(null)
   const fadeSRef = useRef(loadFixFadeS())
   const viewRef = useRef<PlotView | null>(null)
@@ -66,6 +71,8 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   // Long-press a DIFAR buoy (touch stand-in for double-click) clears its manual bearing.
   const press = useRef<{ x: number; y: number; moved: boolean; timer: number } | null>(null)
   const [picked, setPicked] = useState<TruthContact | null>(null)
+  const affTick = useSyncExternalStore(subscribeAisAffiliations, aisAffiliationVersion)
+  props.current = { showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, picked, affTick }
   const revealHits = useRef<{ id: number | string; x: number; y: number; r: number }[]>([])
   const camRef = useRef<PlotCamera>({ ...PLOT_CAMERA_FITTED })
   const camTick = useRef(0)
@@ -410,13 +417,16 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         const ships = t.aisTracks?.length
           ? t.aisTracks.map((a) => ({ id: a.id, label: a.name, sourceId: a.id, x: a.x, y: a.y, crsDeg: a.crsDeg, spdMps: a.spdMps, category: 'surface' as const, active: true }))
           : aisContacts(t.truth.contacts, true, props.current.difficulty)
-        ctx.strokeStyle = C.ais; ctx.fillStyle = C.ais; ctx.lineWidth = 1.25 * dpr
         ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
         for (const c of ships) {
-          const sx = toScreenX(v, c.x), sy = toScreenY(v, c.y), heading = (c.crsDeg * Math.PI) / 180
-          const hx = Math.sin(heading), hy = -Math.cos(heading)
-          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + hx * 20 * dpr, sy + hy * 20 * dpr); ctx.stroke()
-          ctx.beginPath(); ctx.arc(sx, sy, 5 * dpr, 0, Math.PI * 2); ctx.stroke()
+          const sx = toScreenX(v, c.x), sy = toScreenY(v, c.y)
+          const shipId = String(c.sourceId ?? c.id)
+          const aff = aisAffiliation(shipId)
+          const color = AIS_AFFILIATION_RGB[aff]
+          const pk = props.current.picked
+          const pickedAis = !!pk && pk.category === 'surface' && String(pk.sourceId ?? pk.id) === shipId
+          drawSailboat(ctx, sx, sy, c.crsDeg, color, 11 * dpr, (pickedAis ? 2 : 1.25) * dpr, pickedAis)
+          ctx.fillStyle = color
           const name = (c.label || c.sourceId || `C${c.id}`).toUpperCase()
           ctx.fillText(name, sx + 10 * dpr, sy + 4 * dpr)
           if (hitCount.n < hitPool.length) {
@@ -669,19 +679,59 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       }} />
     <canvas ref={oref} className="tac-overlay" data-testid="tactical-overlay" aria-hidden />
     <div className="ring-scale" data-testid="ring-scale" aria-hidden>2 km rings</div>
-    {picked && (picked.category === 'surface' ? aisEffective(showAis, difficulty) : showReveal) && (() => {
-      const isAis = picked.category === 'surface'
+    {picked && picked.category === 'surface' && aisEffective(showAis, difficulty) && (() => {
+      const tac = client.status.tactical
+      const track = picked.sourceId ? tac?.aisTracks?.find((x) => x.id === picked.sourceId) : undefined
+      const info = aisInfoFromTrack(track ?? {
+        id: String(picked.sourceId ?? picked.id),
+        name: picked.label,
+        x: picked.x, y: picked.y, crsDeg: picked.crsDeg, spdMps: picked.spdMps,
+      })
+      const aff = aisAffiliation(info.id)
+      const v = viewRef.current, c = ref.current
+      if (!v || !c) return null
+      const rect = c.getBoundingClientRect()
+      const dpr = c.width / Math.max(1, rect.width)
+      const frame = aisCardFrame(toScreenX(v, picked.x) / dpr, toScreenY(v, picked.y) / dpr, { x: 0, y: 0, width: rect.width, height: rect.height })
+      if (!frame) return null
+      void affTick
+      return (
+        <div
+          className="ais-card readout"
+          data-testid="ais-card"
+          role="dialog"
+          aria-label="AIS contact"
+          style={{ left: frame.x, top: frame.y, width: frame.width }}
+        >
+          <div className="ais-card-head" style={{ color: AIS_AFFILIATION_RGB[aff] }}>{info.callsign.toUpperCase()}</div>
+          <div>Class  {info.shipClass ? info.shipClass.toUpperCase() : '—'}</div>
+          <div>Type  {info.type ? info.type.toUpperCase() : '—'}</div>
+          <div>CSE {String(Math.round(info.crsDeg) % 360).padStart(3, '0')}° · {info.spdKts.toFixed(1)} KT</div>
+          <div className="ais-card-aff" role="group" aria-label="Affiliation">
+            {AIS_AFFILIATIONS.map((a) => (
+              <button key={a} type="button" aria-label={AIS_AFFILIATION_LABEL[a]} aria-pressed={aff === a}
+                className={aff === a ? 'on' : undefined}
+                onClick={() => setAisAffiliation(info.id, a as AisAffiliation)}>
+                <i style={{ background: AIS_AFFILIATION_RGB[a] }} />
+                {AIS_AFFILIATION_LABEL[a]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )
+    })()}
+    {picked && picked.category !== 'surface' && showReveal && (() => {
       const buoy = client.status.tactical?.buoys.find((b) => b.channel === selectedChannel)
-      const rb = !isAis ? revealRangeBrg(buoy, picked) : null
+      const rb = revealRangeBrg(buoy, picked)
       const kts = picked.spdKts ?? picked.spdMps * 1.943844
       const cls = (picked.label || picked.sourceId || `C${picked.id}`).toUpperCase()
       return (
-        <div className={isAis ? 'ais-card readout' : 'reveal-card readout'} data-testid={isAis ? 'ais-card' : 'reveal-card'} role="dialog" aria-label={isAis ? 'AIS contact' : 'Reveal contact'}>
-          <div className={isAis ? 'ais-card-head' : 'reveal-card-head'}>{cls}</div>
-          <div>CSE {String(Math.round(picked.crsDeg) % 360).padStart(3, '0')}° · {kts.toFixed(1)} KT{!isAis && picked.depthM !== undefined ? ` · ${picked.depthM.toFixed(0)} M` : ''}</div>
-          {!isAis && rb && <div>RNG {(rb.rngM / 1852).toFixed(2)} NM · BRG {String(Math.round(rb.brgDeg) % 360).padStart(3, '0')}°</div>}
-          {!isAis && !rb && buoy && <div className="dim">On selected buoy</div>}
-          {!isAis && !buoy && <div className="dim">Select a buoy for RNG/BRG</div>}
+        <div className="reveal-card readout" data-testid="reveal-card" role="dialog" aria-label="Reveal contact">
+          <div className="reveal-card-head">{cls}</div>
+          <div>CSE {String(Math.round(picked.crsDeg) % 360).padStart(3, '0')}° · {kts.toFixed(1)} KT{picked.depthM !== undefined ? ` · ${picked.depthM.toFixed(0)} M` : ''}</div>
+          {rb && <div>RNG {(rb.rngM / 1852).toFixed(2)} NM · BRG {String(Math.round(rb.brgDeg) % 360).padStart(3, '0')}°</div>}
+          {!rb && buoy && <div className="dim">On selected buoy</div>}
+          {!rb && !buoy && <div className="dim">Select a buoy for RNG/BRG</div>}
         </div>
       )
     })()}
