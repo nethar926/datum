@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import {
   ALTITUDE_FEET_OPTIONS, DETUNED_LABEL, INTEGRATION_TIME_S_OPTIONS,
-  START_MODE_LABEL, UNPLACED_LAYOUT_LABEL,
+  START_MODE_LABEL,
   loadSequencePrefs, phaseDetail, phaseLabel, preferredAltitudeFeet, saveSequencePrefs,
-  symbolFill, type MappedGramPhase, type SequencePrefs, type StartMode, type UnplacedLayout,
+  symbolFill, type MappedGramPhase, type SequencePrefs, type StartMode,
 } from './buoySequence'
 
 /** Variable-colour buoy glyph: waves light in step with `symbolFill` (0…1). */
@@ -54,14 +54,12 @@ function setPref(patch: Partial<SequencePrefs>, current: SequencePrefs, set: (p:
   saveSequencePrefs(next)
 }
 
-/** Settings / New-scenario Advanced: start mode, altitude, integration. */
-export function BuoySequenceSettings({ testId = 'buoy-sequence-settings' }: { testId?: string }) {
+/** Settings: default start mode (Placed / Unplaced, with pattern-on-Start or manual). Persists. */
+export function BuoySequenceStartModeSettings({ testId = 'buoy-sequence-settings' }: { testId?: string }) {
   const [prefs, setPrefs] = useState(loadSequencePrefs)
-  const ft = preferredAltitudeFeet(prefs)
-  const integ = prefs.integrationTimeS
   return (
     <div className="ios-section" data-testid={testId}>
-      <h3>Advanced</h3>
+      <h3>Start mode</h3>
       <div className="ios-group">
         <div className="ios-row">
           <span className="row-label">Start mode</span>
@@ -85,6 +83,27 @@ export function BuoySequenceSettings({ testId = 'buoy-sequence-settings' }: { te
             </div>
           </div>
         )}
+      </div>
+      <p className="ios-foot">
+        {prefs.startMode === 'placed'
+          ? 'Placed: buoys already in the water and live at Start. Goldens stay bit-exact.'
+          : prefs.unplacedLayout === 'pattern'
+            ? 'Unplaced: grams show Buoy Loaded. The scenario\'s standard pattern drops on Start and walks the deploy sequence.'
+            : 'Unplaced: grams show Buoy Loaded. Nothing lays until you pick a pattern.'}
+      </p>
+    </div>
+  )
+}
+
+/** Settings Advanced: aircraft drop-altitude picker (default 1,500 ft) and integration (5–10 s, default 5). */
+export function BuoySequenceAdvancedSettings({ testId = 'buoy-sequence-advanced' }: { testId?: string }) {
+  const [prefs, setPrefs] = useState(loadSequencePrefs)
+  const ft = preferredAltitudeFeet(prefs)
+  const integ = prefs.integrationTimeS
+  return (
+    <div className="ios-section" data-testid={testId}>
+      <h3>Advanced</h3>
+      <div className="ios-group">
         <div className="ios-row">
           <span className="row-label">Drop altitude</span>
           <div className="seg ios-seg" role="group" aria-label="Drop altitude" data-testid="altitude-seg">
@@ -105,46 +124,28 @@ export function BuoySequenceSettings({ testId = 'buoy-sequence-settings' }: { te
         </div>
       </div>
       <p className="ios-foot">
-        {prefs.startMode === 'placed'
-          ? 'Placed: buoys already in the water; grams start on Start. '
-          : prefs.unplacedLayout === 'pattern'
-            ? 'Unplaced: grams show Buoy Loaded. A standard field drops on Start. '
-            : 'Unplaced: grams show Buoy Loaded. Nothing lays until you pick a pattern. '}
-        Drop altitude (default 1,500 ft) and integration (5–10 s, default 5) are passed to the engine when it accepts them — the app never counts phase time itself.
-        {UNPLACED_LAYOUT_LABEL[prefs.unplacedLayout as UnplacedLayout] ? '' : ''}
+        Drop altitude (default 1,500 ft) and integration (5–10 s, default 5) are passed to the engine on each drop. The app never counts phase time itself.
       </p>
     </div>
   )
 }
 
-/** Compact Advanced fields for the New scenario accordion (same prefs). */
+/** @deprecated Settings used to be one Advanced block; now a start-mode section plus Advanced pickers. */
+export function BuoySequenceSettings({ testId = 'buoy-sequence-settings' }: { testId?: string }) {
+  return (
+    <>
+      <BuoySequenceStartModeSettings testId={testId} />
+      <BuoySequenceAdvancedSettings />
+    </>
+  )
+}
+
+/** Compact Advanced fields for the New scenario accordion (altitude + integration; start mode lives in Settings). */
 export function BuoySequenceAdvancedFields() {
   const [prefs, setPrefs] = useState(loadSequencePrefs)
   const ft = preferredAltitudeFeet(prefs)
   return (
     <div className="ns-seq" data-testid="ns-buoy-sequence">
-      <div className="field">
-        <label>Start mode</label>
-        <div className="seg" role="group" aria-label="Start mode">
-          {(['placed', 'unplaced'] as const).map((k) => (
-            <button key={k} type="button" aria-pressed={prefs.startMode === k} data-testid={`ns-start-mode-${k}`}
-              onClick={() => setPref({ startMode: k }, prefs, setPrefs)}>{START_MODE_LABEL[k]}</button>
-          ))}
-        </div>
-      </div>
-      {prefs.startMode === 'unplaced' && (
-        <div className="field">
-          <label>On Start</label>
-          <div className="seg" role="group" aria-label="Unplaced on Start">
-            {(['pattern', 'manual'] as const).map((k) => (
-              <button key={k} type="button" aria-pressed={prefs.unplacedLayout === k} data-testid={`ns-unplaced-${k}`}
-                onClick={() => setPref({ unplacedLayout: k }, prefs, setPrefs)}>
-                {k === 'pattern' ? 'Standard pattern' : 'Manual'}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
       <div className="field">
         <label>Drop altitude <b>{ft} ft</b></label>
         <div className="seg" role="group" aria-label="Drop altitude">
