@@ -21,6 +21,7 @@ import { IcLock } from '../ui/icons'
 import { agoFromY, formatZulu, newestAtBottom, pctFromAgo, timeTickAges, type GramDir, DEFAULT_GRAM_DIR } from './timeAxis'
 import { AXIS_Y_EDGE_CLAMP_PX } from './lockVsTimeAxis'
 import { horzAtPointer, horzZulu, liveReadout, readoutHz } from './horz'
+import { rowRateHz } from './rowPeriod'
 import { estimateCursorReadout, estimateSelLabelSize, placeSelMarkerLabel, type Rect as ReadoutRect } from './selMarkerLabel'
 
 
@@ -125,7 +126,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
   const readoutElRef = useRef<HTMLDivElement>(null)
   const [readoutBox, setReadoutBox] = useState<ReadoutRect | null>(null)
   const cfg = configs[streamIndex] ?? configs[0]
-  const fBin = cfg?.fBin ?? 1, rowRate = cfg?.rowRateHz ?? 2
+  const fBin = cfg?.fBin ?? 1, rowRate = rowRateHz(cfg, undefined, 0.5)
   const fMax = cfg ? cfg.f0 + (cfg.bins - 1) * cfg.fBin : 1000
   const fMin = cfg?.f0 ?? 0, minSpan = minSpanOf(cfg)
   const full = (): FreqView => (cfg ? fullView(cfg) : { lo: 0, hi: fMax })
@@ -238,7 +239,7 @@ export function Gram({ client, configs, streamIndex, view, onView, auto = true, 
     }
     if (rowSamplerRef) rowSamplerRef.current = (agoS, dest) => {
       const c = viewRef.current.cfg; if (!c) return false
-      const agoRows = agoS * (c.rowRateHz || 2)
+      const agoRows = agoS * rowRateHz(c, undefined, 0.5)
       return rt.hist.copyRow(agoRows, dest)
     }
     const startPending = (cs: GramConfig[]) => {

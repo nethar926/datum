@@ -19,6 +19,7 @@ import {
   type CutSession,
   type TonalLine,
 } from '@acoustics'
+import { rowRateHz } from '../gram/rowPeriod'
 
 /** Newest rows painted immediately after a scrub (4 Hz × 30 s). */
 export const CUT_SEEK_FIRST_ROWS = 120
@@ -91,7 +92,7 @@ export function fillCutSeekFast(
   const eng = session.engine
   const sid = session.lofar.streamId
   const bins = session.lofar.bins
-  const rowHz = session.lofar.rowRateHz || 4
+  const rowHz = rowRateHz(session.lofar, undefined, 0.25)
   const rowDt = 1 / rowHz
   const dur = session.cut.durationS
   const target = Math.max(0, Math.min(dur, Number.isFinite(targetS) ? targetS : 0))
