@@ -47,6 +47,8 @@ export interface Tactical {
   buoys: TacticalBuoy[]; bearings: Bearing[]; truth?: { contacts: TruthContact[] }
   /** Surface-only AIS from AcousticEngine.aisTracks (plotContactSource). Optional callsign/class/type are the seam for Sonya's upcoming richer tracks. */
   aisTracks?: AisTrack[]
+  /** BT drops from dropBtBuoy — not in `buoys`. */
+  btDrops?: BtDrop[]
 }
 /** Engine AIS track. `callsign` / `class` / `type` are the seam for Sonya's upcoming richer tracks. */
 export interface AisTrack {
@@ -63,6 +65,8 @@ export interface DropSpec { kind: 'omni' | 'difar'; x: number; y: number; channe
 export type DropSource = 'manual' | 'auto'
 /** m3-fe-drop: reply to dropBuoys (after the new streams + tactical): the RF channels laid, or why it stopped short. */
 export interface BuoysDropped { v: 1; type: 'dropped'; seq: number; source: DropSource; channels: number[]; error?: string }
+export interface BtDrop { id: number; x: number; y: number; profile: { profile: { depthM: number; tempC: number; salPsu: number; cMps: number }[]; layerDepthM: number; sonicLayerDepthM: number; thermoclineBaseM: number; deepChannelAxisM?: number; salinityPsu: number; outOfRange?: { any?: boolean } | boolean } }
+export interface BtBuoysDropped { v: 1; type: 'btDropped'; seq: number; drops: BtDrop[]; error?: string }
 /** CUT seek: bulk LOFAR window ending at simT (FE-side silent drain; no visible fast-forward). */
 export type CutSeekPhase = 'first' | 'backfill' | 'done'
 export interface CutSeeked {
@@ -86,7 +90,7 @@ export interface DrainProgress {
   data: Float32Array
   bearingDeg?: Float32Array
 }
-export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped | CutSeeked | DrainProgress
+export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped | BtBuoysDropped | CutSeeked | DrainProgress
 
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'
@@ -114,6 +118,7 @@ export type ToWorker =
   | { type: 'dropGram'; gen: number }
   /** m3-fe-drop: lay buoys now; each gets a LOFAR stream like the field's (and a pending one during a handoff). */
   | { type: 'dropBuoys'; seq: number; source: DropSource; buoys: DropSpec[] }
+  | { type: 'dropBtBuoys'; seq: number; drops: { x: number; y: number; id?: number }[] }
   | { type: 'step' }                                    // advance one row period of sim time
   /** CUT mode: silent seek to simT; host posts cutSeeked + tactical (preserves play/pause on the client). */
   | { type: 'seekCut'; simT: number; windowRows?: number }

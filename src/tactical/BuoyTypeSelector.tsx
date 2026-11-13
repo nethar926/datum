@@ -6,9 +6,10 @@ export function BuoyTypeSelector({ value, onChange, disabled = false }: {
 }) {
   return <label className="drop-type">
     <select aria-label="Buoy type for manual placement" value={value} disabled={disabled}
-      onChange={(e) => { const kind = e.target.value; if (kind === 'omni' || kind === 'difar') onChange(kind) }}>
+      onChange={(e) => { const kind = e.target.value; if (kind === 'omni' || kind === 'difar' || kind === 'bt') onChange(kind) }}>
       <option value="omni">OMNI</option>
       <option value="difar">DIRECTIONAL (DIFAR)</option>
+      <option value="bt">BT (SSP)</option>
       <option value="active" disabled>ACTIVE (DICASS) · S · not yet implemented</option>
     </select>
   </label>

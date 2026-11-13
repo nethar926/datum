@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { courseSpeed, formatDepth, formatRingScale, getDisplayUnits, mpsFromSpeed, rangeBearing, subscribeDisplayUnits } from '../displayUnits'
+import { BtProfileView } from './BtProfileView'
+import { BT_GLYPH, BT_GLYPH_RADIUS_PT, BT_HIT_RADIUS_PT, btGlyphLabel, hitBtDrop } from './btStyle'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { LONG_PRESS_MS, capDpr, exceedsSlop } from '../touch/gestures'
@@ -74,6 +76,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   const oref = useRef<HTMLCanvasElement>(null)
   const props = useRef({ showReveal, showAis, difficulty, spanM, selectedChannel, selectedHz, allBearings, showAuto, showManual, manual, fixSource, arm, detune, fix, night, fadeS, picked: null as TruthContact | null, affTick: 0, planeTick: 0 })
   const [pickedFixId, setPickedFixId] = useState<number | null>(null)
+  const [selectedBtId, setSelectedBtId] = useState<number | null>(null)
   const fadeSRef = useRef(loadFixFadeS())
   const viewRef = useRef<PlotView | null>(null)
   const dragRef = useRef<number | null>(null)
@@ -172,7 +175,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       const nightOn = !!props.current.night
       const nightFlash = nightOn && nightBeaconOn(now / 1000) ? '1' : '0'
       const fadeKey = props.current.fadeS ?? fadeSRef.current
-      const key = `${w}x${h}:${reveal}:${span}:${cam.cx}:${cam.cy}:${camTick.current}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}:${nightOn ? '1' : '0'}:${nightFlash}:${fadeKey}`
+      const key = `${w}x${h}:${reveal}:${span}:${cam.cx}:${cam.cy}:${camTick.current}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}:${nightOn ? '1' : '0'}:${nightFlash}:${fadeKey}:${selectedBtId}:${(t?.btDrops ?? []).map((d) => d.id).join(',')}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
       const v = fitView(w, h, span, cam.cx, cam.cy)
@@ -298,6 +301,21 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           ctx.beginPath(); ctx.arc(sx, sy, 12 * dpr, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([])
         }
       }
+      // BT drops are not in scenario.buoys — diamond glyph + BTid.
+      const btCol = `rgb(${BT_GLYPH.r}, ${BT_GLYPH.g}, ${BT_GLYPH.b})`
+      for (const d of t.btDrops ?? []) {
+        const sx = toScreenX(v, d.x), sy = toScreenY(v, d.y), r = BT_GLYPH_RADIUS_PT * dpr
+        ctx.strokeStyle = btCol; ctx.fillStyle = btCol; ctx.lineWidth = (d.id === selectedBtId ? 2.5 : 1.5) * dpr
+        ctx.beginPath()
+        ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy); ctx.closePath()
+        ctx.stroke()
+        if (d.id === selectedBtId) {
+          ctx.lineWidth = 2 * dpr
+          ctx.beginPath(); ctx.arc(sx, sy, 11 * dpr, 0, Math.PI * 2); ctx.stroke()
+        }
+        ctx.fillText(btGlyphLabel(d.id), sx + 8 * dpr, sy + 4 * dpr)
+      }
+
       // Armed badge on the plot (bearing arm; drop has its own hint bar).
       if (armSt && armSt.phase !== 'idle') {
         ctx.fillStyle = C.man; ctx.font = `600 ${11 * dpr}px ui-monospace, Menlo, monospace`
@@ -690,7 +708,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           if (pr && !pr.moved) {
             const r = plotDoubleTap(dbl.current, e.clientX, e.clientY, performance.now() / 1000)
             dbl.current = r.last
-            if (r.kind === 'recentre') { setCam(recentrePlotCamera()); setPicked(null); setPickedFixId(null); return }
+            if (r.kind === 'recentre') { setCam(recentrePlotCamera()); setPicked(null); setPickedFixId(null); setSelectedBtId(null); return }
             if (planeState().arm !== 'none' && w) { handlePlaneTap(w.x, w.y); return }
             const fid = hitLaidFix(e)
             if (fid !== null) { setPickedFixId(fid); setPicked(null); return }

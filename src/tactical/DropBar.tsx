@@ -54,6 +54,17 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
   const sent = useRef(new Map<number, string>())
   const [toast, setToast] = useState<string | null>(null)
   const lastDrop = useSyncExternalStore(client.subscribe, () => client.status.lastDrop)
+
+  const lastBtDrop = useSyncExternalStore(client.subscribe, () => client.status.lastBtDrop)
+  const seenBt = useRef<typeof lastBtDrop>(undefined)
+  useEffect(() => {
+    const d = lastBtDrop
+    if (!d || d === seenBt.current) return
+    seenBt.current = d
+    setToast(d.drops.length ? `BT laid · ${d.drops.length}${d.error ? ` · ${d.error}` : ''}` : `Not laid · ${d.error ?? 'no BT'}`)
+    const id = window.setTimeout(() => setToast(null), TOAST_MS)
+    return () => clearTimeout(id)
+  }, [lastBtDrop])
   const seen = useRef<BuoysDropped | undefined>(undefined)
   useEffect(() => {
     const d = lastDrop
@@ -77,6 +88,14 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
   }, [detune.noCh, detune, detuneSnap])
 
   const send = (p: DropPlan, source: 'manual' | 'auto'): boolean => {
+    if (s.buoyKind === 'bt' || p.kinds[0] === 'bt') {
+      const drops = []
+      for (let i = 0; i < p.n; i++) drops.push({ x: p.xy[2 * i]!, y: p.xy[2 * i + 1]! })
+      const seq = client.dropBtBuoys(drops)
+      sent.current.set(seq, 'BT')
+      drop.committed()
+      return true
+    }
     const n = Math.min(p.n, free)
     if (n <= 0) { detune.allocateForDrop(1); return false }
     const chs = detune.allocateForDrop(n)
@@ -88,7 +107,8 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
   }
   const confirm = () => {
     const g = drop.ghost
-    if (drop.state.phase !== 'preview' || !g || g.n > free) return
+    const isBt = s.buoyKind === 'bt' || g?.kinds[0] === 'bt'
+    if (drop.state.phase !== 'preview' || !g || (!isBt && g.n > free)) return
     if (send(g, 'manual')) drop.dispatch({ type: 'confirm' })
   }
 
@@ -138,14 +158,14 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
               </div>
             )}
             <button className="btn drop-cancel" data-testid="drop-cancel" onClick={() => drop.dispatch({ type: 'cancel' })}>Cancel</button>
-            <button className="btn primary drop-go" data-testid="drop-go" disabled={ghost.n > free} onClick={confirm}>Drop {ghost.n}</button>
+            <button className="btn primary drop-go" data-testid="drop-go" disabled={s.buoyKind !== 'bt' && ghost.n > free} onClick={confirm}>Drop {ghost.n}</button>
           </div>
         </div>
       ) : (
         <div key={hint} className={`drop-hint${toast ? ' toast' : ''}${toast === 'NO CH' ? ' noch' : ''}`} data-testid="drop-hint" aria-live="polite"><span className="drop-hint-count">{count}/{MAX_BUOYS}<span className="drop-hint-sep"> · </span></span><span className="lbl-full">{hint}</span><span className="lbl-short">{hintShort}</span></div>
       )}
       <div className="drop-tools" data-testid="pattern-row">
-        <BuoyTypeSelector value={s.buoyKind} disabled={!ready || full} onChange={(kind) => drop.dispatch({ type: 'kind', kind })} />
+        <BuoyTypeSelector value={s.buoyKind} disabled={!ready || (full && s.buoyKind !== 'bt')} onChange={(kind) => drop.dispatch({ type: 'kind', kind })} />
         <div className="seg field-mode" role="group" aria-label="Field mode" data-testid="field-mode">
           {FIELD_MODES.map((m) => (
             <button key={m} data-mode={m} aria-pressed={s.mode === m} aria-label={`${FIELD_MODE_LABEL[m]} field mode`} onClick={() => drop.dispatch({ type: 'mode', mode: m })}

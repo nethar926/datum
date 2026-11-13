@@ -1,4 +1,4 @@
-import type { Band, BuoysDropped, DrainProgress, DropSource, DropSpec, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
+import type { Band, BtBuoysDropped, BuoysDropped, DrainProgress, DropSource, DropSpec, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
 import { engineStartOptions } from '../tactical/buoySequence'
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 import { HandoffMachine, handoffLabel, type HandoffEvent, type HandoffTarget } from '../gram/handoff'
@@ -23,7 +23,8 @@ export interface SimStatus { receiver: boolean; scenarioId: string; seed: number
   /** Gram handoff indicator: label stays after the swap with active=false so it can fade out. */
   handoff?: { label: string; active: boolean; gen: number }
   /** m3-fe-drop: the worker's reply to the latest dropBuoys. */
-  lastDrop?: BuoysDropped }
+  lastDrop?: BuoysDropped
+  lastBtDrop?: BtBuoysDropped }
 
 /** Track history for the plot: fixed-size ring of x,y pairs. */
 export class TrackRing {
@@ -88,7 +89,7 @@ export class SimClient {
     if (g0) { this.target = { res: g0.res, filter: g0.filter, ...(g0.band ? { band: g0.band } : {}) }; this.displayed = { ...this.target } }
     if (this.status.handoff) this.setStatus({ handoff: undefined })
     const surfaceTraffic = params ? params.surfaceTraffic : this.status.surfaceTraffic
-    this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic, lastDrop: undefined })
+    this.setStatus({ scenarioId, seed: params?.seed ?? seed, band, simT: 0, configs: [], error: undefined, tactical: undefined, params, surfaceTraffic, lastDrop: undefined, lastBtDrop: undefined })
     // Live DEMON: always subscribe (Sonya). Keep streams running under LOFAR view; FE history owns the buffer.
     // Cuts still pass demon via startCut / ?demon=1 for the CutSession path.
     const cutScenario = typeof scenarioId === 'string' && scenarioId.startsWith('cut:')
@@ -189,6 +190,13 @@ export class SimClient {
   dropBuoys(buoys: DropSpec[], source: DropSource = 'manual'): number {
     const seq = ++this.dropSeq
     this.send({ type: 'dropBuoys', seq, source, buoys })
+    return seq
+  }
+
+  /** BT drops through the engine. Not laid into scenario.buoys and not given an RF channel. */
+  dropBtBuoys(drops: { x: number; y: number; id?: number }[]): number {
+    const seq = ++this.dropSeq
+    this.send({ type: 'dropBtBuoys', seq, drops })
     return seq
   }
   setBand(band: Band): void { if (band !== this.status.band) this.start(this.status.seed, this.status.scenarioId, band) }
@@ -351,6 +359,7 @@ export class SimClient {
         this.setStatus({ simT: m.simT, tactical: m })
         break
       case 'dropped': this.setStatus({ lastDrop: m }); break
+      case 'btDropped': this.setStatus({ lastBtDrop: m }); break
       case 'drainProgress':
         for (const l of this.drainListeners) l(m)
         break

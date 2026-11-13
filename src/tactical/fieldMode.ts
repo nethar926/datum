@@ -34,7 +34,7 @@ export function dropReducer(s: DropState, a: DropAction): DropState {
   switch (a.type) {
     case 'kind':
       // ACTIVE has no ping/echo model yet: reject unsupported values even if dispatched directly.
-      return (a.kind === 'omni' || a.kind === 'difar') && a.kind !== s.buoyKind ? { ...s, buoyKind: a.kind } : s
+      return (a.kind === 'omni' || a.kind === 'difar' || a.kind === 'bt') && a.kind !== s.buoyKind ? { ...s, buoyKind: a.kind } : s
     case 'mode': return a.mode === s.mode ? s : { ...s, mode: a.mode }
     case 'arm':
       // Tapping the armed pattern again puts it away; another pattern re-arms (any pending ghost is discarded).

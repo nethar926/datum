@@ -55,6 +55,7 @@ interface LofarSet { mode: 'legacy' | 'res' | 'band'; ids: Int32Array; configs: 
 /** Worker-side host: owns an AcousticEngine and speaks the data contract. Pure enough to unit test without a Worker. */
 export class SimHost {
   private engine?: AcousticEngine
+  private btDrops: import('./contract').BtDrop[] = []
   /** When set, LOFAR/DEMON rows drain through Acoustics renderCut (CUT mode). */
   private cutSession: CutSession | null = null
   /** Reused across CUT seeks — no per-seek capacity growth after warm-up. */
@@ -114,6 +115,7 @@ export class SimHost {
       if (msg.type === 'promoteGram') return this.promoteGram(msg.gen)
       if (msg.type === 'dropGram') { if (msg.gen === this.pendingGen) this.dropPending(); return }
       if (msg.type === 'dropBuoys') return this.dropBuoys(msg)
+      if (msg.type === 'dropBtBuoys') return this.dropBtBuoys(msg)
       if (msg.type === 'setReceiver') { this.rxEnabled = !!msg.enabled; for (const r of this.active.rx) r.reset(); for (const r of this.pending?.rx ?? []) r.reset(); return }
       throw new Error('Unknown message')
     } catch (e) {
@@ -166,7 +168,7 @@ export class SimHost {
       buoyStartMode: msg.buoyStartMode, autoDropPattern: msg.autoDropPattern,
       dropAltitudeM: msg.dropAltitudeM, descentRateMps: msg.descentRateMps, integrationTimeS: msg.integrationTimeS,
     })
-    this.engine = engine
+    this.btDrops = []; this.engine = engine
     this.n = engine.scenario.buoys.length
     this.dt = 1 / msg.rowRateHz; this.rowRateHz = msg.rowRateHz
     this.rowCount = 0
@@ -782,6 +784,34 @@ export class SimHost {
     o.course = theta + Math.PI / 2 + correction
   }
 
+
+  private dropBtBuoys(msg: Extract<ToWorker, { type: 'dropBtBuoys' }>): void {
+    const engine = this.engine!
+    const out: import('./contract').BtDrop[] = []
+    let err: string | undefined
+    try {
+      for (const d of msg.drops) {
+        const drop = engine.dropBtBuoy({ x: d.x, y: d.y, id: d.id })
+        const mapped = {
+          id: drop.id, x: drop.x, y: drop.y,
+          profile: {
+            profile: drop.profile.profile,
+            layerDepthM: drop.profile.layerDepthM,
+            sonicLayerDepthM: drop.profile.sonicLayerDepthM,
+            thermoclineBaseM: drop.profile.thermoclineBaseM,
+            salinityPsu: drop.profile.salinityPsu,
+            outOfRange: drop.profile.outOfRange?.any,
+            ...(drop.profile.deepChannelAxisM !== undefined ? { deepChannelAxisM: drop.profile.deepChannelAxisM } : {}),
+          },
+        }
+        out.push(mapped)
+        this.btDrops.push(mapped)
+      }
+    } catch (e) { err = e instanceof Error ? e.message : String(e) }
+    this.post({ v: 1, type: 'btDropped', seq: msg.seq, drops: out, ...(err ? { error: err } : {}) })
+    this.updateTactical()
+  }
+
   private makeTactical(): Tactical {
     const s = this.engine!.scenario
     const buoys: TacticalBuoy[] = s.buoys.map((b) => ({
@@ -831,7 +861,7 @@ export class SimHost {
     // m3-lines engines publish full truth (propulsion, TPK, propulsor, speed-gated lines); use it as is.
     // The engine reuses those records, and postMessage clones them, so this allocates nothing per step.
     const et = (engine as unknown as { tactical?: () => { truth?: { contacts: TruthContact[] } } }).tactical?.().truth
-    if (et?.contacts) { t.truth = et; t.aisTracks = plotContactSource(engine); return }
+    if (et?.contacts) { t.truth = et; t.aisTracks = plotContactSource(engine); t.btDrops = this.btDrops; return }
     // Contacts can be added/removed at runtime (v1.1 surface traffic); resync the truth list when the count changes.
     if (t.truth!.contacts.length !== s.contacts.length)
       t.truth!.contacts = s.contacts.map((c, i) => ({ id: i + 1, label: c.params?.label ?? `C${i + 1}`, x: c.x, y: c.y, crsDeg: 0, spdMps: 0 }))
@@ -841,5 +871,6 @@ export class SimHost {
       tc.x = c.x; tc.y = c.y; tc.crsDeg = rad2deg(c.course); tc.spdMps = c.speed
     }
     t.aisTracks = plotContactSource(engine)
+    t.btDrops = this.btDrops
   }
 }

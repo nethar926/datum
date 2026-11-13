@@ -28,7 +28,7 @@ export interface Pt { x: number; y: number }
 export interface Placement { pattern: DropPattern; center: Pt; bearingDeg: number; extentM: number; dragged: boolean
   /** Drag start → end (snapped), for the gesture guide on the plot. */
   from?: Pt; to?: Pt }
-export type DropKind = 'omni' | 'difar'
+export type DropKind = 'omni' | 'difar' | 'bt'
 export interface DropPlan { pattern: DropPattern; n: number
   /** x0,y0,x1,y1,… metres (x east, y north). */
   xy: Float64Array; kinds: DropKind[]; channels: number[]
@@ -88,7 +88,7 @@ const km = (m: number) => `${(m / 1000).toFixed(1)} km`
 const deg3 = (d: number) => String(Math.round(norm360(d)) % 360).padStart(3, '0')
 /** One-line readout for the confirm bar and the plot label. */
 export function planReadout(p: DropPlan): string {
-  const kinds = p.kinds[0] === 'omni' ? 'OMNI' : 'DIFAR', head = `${PATTERN_LABEL[p.pattern].toUpperCase()} · ${p.n} ${kinds}`
+  const kinds = p.kinds[0] === 'omni' ? 'OMNI' : p.kinds[0] === 'bt' ? 'BT' : 'DIFAR', head = `${PATTERN_LABEL[p.pattern].toUpperCase()} · ${p.n} ${kinds}`
   switch (p.pattern) {
     case 'line': return `${head} · ${km(p.extentM)} · ${deg3(p.bearingDeg)}°`
     case 'circle': return `${head} · r ${km(p.extentM)}`
