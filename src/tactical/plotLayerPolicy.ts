@@ -18,6 +18,22 @@ export const PLOT_DIFFICULTY_HARDEST: PlotDifficulty = 'difficult'
 export type PlotLayerContact = {
   category?: string | null
   active?: boolean
+  /** Sonya's upcoming `kind: 'submarine'` field; optional until the engine lands it. */
+  kind?: string | null
+  id?: string | number
+  x?: number
+  y?: number
+}
+
+/**
+ * Is this a submarine for the Reveal layer?
+ * Isolated so we can switch to Sonya's `kind: 'submarine'` when that field
+ * is on every contact. Today: honour `kind` when present, otherwise the
+ * engine's `category === "subsurface"`.
+ */
+export function isSubmarineContact(c: { kind?: string | null; category?: string | null }): boolean {
+  if (c.kind != null && c.kind !== '') return c.kind === 'submarine'
+  return c.category === 'subsurface'
 }
 
 /** AIS may be turned on on easy and regular only. Greyed out on `'difficult'`. */
@@ -39,7 +55,7 @@ export function isVisible(
   difficulty: PlotDifficulty,
 ): boolean {
   if (active === false) return false
-  if (category === 'subsurface') return revealOn
+  if (isSubmarineContact({ category })) return revealOn
   if (category === 'surface') return aisEffective(aisOn, difficulty)
   return false
 }
@@ -53,18 +69,31 @@ export function visible<T extends PlotLayerContact>(
   return contacts.filter((c) => isVisible(c.category, c.active, aisOn, revealOn, difficulty))
 }
 
-/** Reveal layer: subsurface only (even if a surface contact slipped through). */
+/** Reveal layer: submarines only (never surface / merchant contacts). */
 export function revealContacts<T extends PlotLayerContact>(contacts: readonly T[], revealOn: boolean): T[] {
   if (!revealOn) return []
-  return contacts.filter((c) => c.active !== false && c.category === 'subsurface')
+  return contacts.filter((c) => c.active !== false && isSubmarineContact(c))
 }
 
-/** AIS layer: surface only, and only when AIS is effective. */
+/**
+ * AIS layer for drawing: the engine's AIS list as given. No frontend remix
+ * from truth / gram contacts — Sonya owns that mapping.
+ */
+export function aisDisplayTracks<T>(
+  aisTracks: readonly T[],
+  aisOn: boolean,
+  difficulty: PlotDifficulty,
+): T[] {
+  if (!aisEffective(aisOn, difficulty)) return []
+  return aisTracks.slice()
+}
+
+/** Filter a mixed truth list down to surface contacts (tests / legacy). Drawing uses `aisDisplayTracks`. */
 export function aisContacts<T extends PlotLayerContact>(
   contacts: readonly T[],
   aisOn: boolean,
   difficulty: PlotDifficulty,
 ): T[] {
   if (!aisEffective(aisOn, difficulty)) return []
-  return contacts.filter((c) => c.active !== false && c.category === 'surface')
+  return contacts.filter((c) => c.active !== false && c.category === 'surface' && !isSubmarineContact(c))
 }

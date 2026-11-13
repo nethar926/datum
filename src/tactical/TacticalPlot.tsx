@@ -12,8 +12,8 @@ import type { DropController } from './dropController'
 import { dropCapturesPlot } from './fieldMode'
 import { planReadout, type DropPlan } from './drop'
 import { canAim, isArmed, type BearingArm } from './bearingArm'
-import { placeRevealTagsInPlace, revealRangeBrg, revealShapeForCategory } from './reveal'
-import { aisContacts, aisEffective, revealContacts, type PlotDifficulty } from './plotLayerPolicy'
+import { placeRevealTagsInPlace, revealRangeBrg } from './reveal'
+import { aisDisplayTracks, aisEffective, isSubmarineContact, revealContacts, type PlotDifficulty } from './plotLayerPolicy'
 import type { TruthContact } from '../engine/contract'
 import { BUOY_STATUS_COLOR, paintHealth, type DetuneStore } from './detune'
 import type { FixStore } from './fixStore'
@@ -427,35 +427,26 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         const contacts = revealContacts(t.truth.contacts, true)
         if (contacts.length > bag.cap) bag = makeBag(Math.max(contacts.length, t.truth.contacts.length))
         const { ax, ay, tw, th, outX, outY, obs, hit, tagCh, tagN } = bag
-        let n = 0, sN = 0, mN = 0
+        let n = 0, sN = 0
         ctx.strokeStyle = C.reveal; ctx.fillStyle = C.reveal; ctx.lineWidth = 1.25 * dpr
         ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
         for (let i = 0; i < contacts.length; i++) {
           const c = contacts[i]
-          if (c.active === false) continue
-          const shape = revealShapeForCategory(c.category)
-          if (!shape) continue
-          const prefix = c.category === 'subsurface' ? 0 : 1 // 0=S, 1=M
-          const num = prefix === 0 ? ++sN : ++mN
+          if (c.active === false || !isSubmarineContact(c)) continue
+          const num = ++sN
           const sx = toScreenX(v, c.x), sy = toScreenY(v, c.y), heading = (c.crsDeg * Math.PI) / 180
           const hx = Math.sin(heading), hy = -Math.cos(heading)
           ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + hx * 20 * dpr, sy + hy * 20 * dpr); ctx.stroke()
           ctx.beginPath()
-          if (shape === 'triangle') {
-            const r = 7 * dpr
-            ctx.moveTo(sx + hx * r, sy + hy * r)
-            ctx.lineTo(sx - hx * r * 0.7 + hy * r * 0.7, sy - hy * r * 0.7 - hx * r * 0.7)
-            ctx.lineTo(sx - hx * r * 0.7 - hy * r * 0.7, sy - hy * r * 0.7 + hx * r * 0.7)
-            ctx.closePath(); ctx.stroke()
-          } else {
-            // circle (surface); square/warship reserved in REVEAL_SHAPE_BY_KIND
-            ctx.arc(sx, sy, 5 * dpr, 0, Math.PI * 2); ctx.stroke()
-          }
-          // Measure without building a string when possible: "S12" / "M12" via scratch.
-          const tag = (prefix === 0 ? TAG_S : TAG_M)[num - 1] ?? ((prefix === 0 ? 'S' : 'M') + num)
+          const r = 7 * dpr
+          ctx.moveTo(sx + hx * r, sy + hy * r)
+          ctx.lineTo(sx - hx * r * 0.7 + hy * r * 0.7, sy - hy * r * 0.7 - hx * r * 0.7)
+          ctx.lineTo(sx - hx * r * 0.7 - hy * r * 0.7, sy - hy * r * 0.7 + hx * r * 0.7)
+          ctx.closePath(); ctx.stroke()
+          const tag = TAG_S[num - 1] ?? ('S' + num)
           ax[n] = sx; ay[n] = sy
           tw[n] = ctx.measureText(tag).width + 4 * dpr; th[n] = 12 * dpr
-          hit[n] = i; tagCh[n] = prefix; tagN[n] = num
+          hit[n] = i; tagCh[n] = 0; tagN[n] = num
           if (hitCount.n < hitPool.length) {
             const h = hitPool[hitCount.n++]
             h.id = c.id; h.x = sx; h.y = sy; h.r = 14 * dpr
@@ -477,17 +468,15 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         placeRevealTagsInPlace(n, ax, ay, tw, th, outX, outY, obs, mObs, w, h, 4 * dpr)
         ctx.fillStyle = C.reveal
         for (let i = 0; i < n; i++) {
-          ctx.fillText((tagCh[i] === 0 ? TAG_S : TAG_M)[tagN[i] - 1]!, outX[i] + 2 * dpr, outY[i] + 10 * dpr)
+          ctx.fillText(TAG_S[tagN[i] - 1]!, outX[i] + 2 * dpr, outY[i] + 10 * dpr)
         }
       }
-      // AIS: generic fictional surface tracks (name only on the plot; course/speed on the card).
-      const aisOn = aisEffective(props.current.showAis, props.current.difficulty)
-      if (aisOn && t.truth) {
-        const ships = t.aisTracks?.length
-          ? t.aisTracks.map((a) => ({ id: a.id, label: a.name, sourceId: a.id, x: a.x, y: a.y, crsDeg: a.crsDeg, spdMps: a.spdMps, category: 'surface' as const, active: true }))
-          : aisContacts(t.truth.contacts, true, props.current.difficulty)
+      // AIS: engine list as given (name on the plot; course/speed on the card). No truth fallback.
+      const ships = aisDisplayTracks(t.aisTracks ?? [], props.current.showAis, props.current.difficulty)
+      if (ships.length) {
+        const drawn = ships.map((a) => ({ id: a.id, label: a.name, sourceId: a.id, x: a.x, y: a.y, crsDeg: a.crsDeg, spdMps: a.spdMps, category: 'surface' as const, active: true }))
         ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
-        for (const c of ships) {
+        for (const c of drawn) {
           const sx = toScreenX(v, c.x), sy = toScreenY(v, c.y)
           const shipId = String(c.sourceId ?? c.id)
           const aff = aisAffiliation(shipId)
