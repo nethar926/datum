@@ -561,15 +561,15 @@ function nodeZlib():{deflateSync:(d:Uint8Array,o?:{level?:number})=>Uint8Array;i
 }
 
 function b64encode(u:Uint8Array):string{
-  if(typeof Buffer!=='undefined')return Buffer.from(u).toString('base64');
-  let s='';for(let i=0;i<u.length;i++)s+=String.fromCharCode(u[i]!);
-  return btoa(s);
+  const cs=0x8000;
+  let bin='';
+  for(let i=0;i<u.length;i+=cs)bin+=String.fromCharCode(...u.subarray(i,i+cs));
+  return btoa(bin);
 }
 function b64decode(s:string):Uint8Array{
-  if(typeof Buffer!=='undefined')return new Uint8Array(Buffer.from(s,'base64'));
-  const bin=atob(s),u=new Uint8Array(bin.length);
-  for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
-  return u;
+  const bin=atob(s),out=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);
+  return out;
 }
 
 function packBytes(u:Uint8Array,preferDeflate:boolean):{encoding:UserCutFallbackEncoding;text:string}{

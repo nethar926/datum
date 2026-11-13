@@ -212,7 +212,7 @@ export class ResLofarGenerator {
  private readonly tileTables=new Map<number,{key:string;bins:number;t:BandTables}>();private readonly held=new Map<string,RowAccum>();
  private readonly p0:Float64Array;private readonly p1:Float64Array;private readonly p2:Float64Array;private readonly p3:Float64Array;
  /** Engine-wide source-state history (stateHistory.ts); null → snapshot fallback only. */
- private history:StateHistory|null=null;private buoyRing:Float64Array|null=null;private readonly bt:Trk={x:0,y:0,depth:0,course:0,speed:0};
+ private history:StateHistory|null=null;private buoyRing:Float32Array|null=null;private readonly bt:Trk={x:0,y:0,depth:0,course:0,speed:0};
  private fullAxisTiles=0;
  /** Requested integration mode. Default `sti` is today's path (bit-exact goldens). */
  integrationMode:IntegrationMode='sti';

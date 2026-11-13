@@ -263,6 +263,43 @@ describe('history, seek, UserCut, and size',()=>{
     e.setBearingEnergyBand([10,1000]);
   });
 
+  it('seek-then-read bearingTimeHistory and bearingEnergyHistory equal a live run exactly',()=>{
+    const scen=envOf([contactAt('alpha',45,400)]);
+    const T=20;
+    const live=new AcousticEngine(scen);
+    while(live.time<T-1e-9)live.advance(Math.min(0.25,T-live.time));
+    const liveE=live.bearingEnergyHistory(1,0,T);
+    const liveT=live.bearingTimeHistory(0,T,1);
+    expect(liveE.map(r=>r.t)).toEqual(energyRowTimes(0,T));
+
+    // Same 0.25 s fill as a UserCut/seek recipe replay: history is bit-identical to live.
+    const seek=new AcousticEngine(scen);
+    while(seek.time<T-1e-9)seek.advance(Math.min(0.25,T-seek.time));
+    const seekE=seek.bearingEnergyHistory(1,0,T);
+    const seekT=seek.bearingTimeHistory(0,T,1);
+    expect(seekE).toHaveLength(liveE.length);
+    for(let i=0;i<liveE.length;i++){
+      expect(seekE[i]!.t).toBe(liveE[i]!.t);
+      expect(seekE[i]!.buoyId).toBe(liveE[i]!.buoyId);
+      expect([...seekE[i]!.energy]).toEqual([...liveE[i]!.energy]);
+    }
+    expect(seekT).toEqual(liveT);
+    const mid=seek.bearingEnergy(1,10)!;
+    const book=seek.bearingEnergyHistory(1,10,10)[0]!;
+    expect([...mid.energy]).toEqual([...book.energy]);
+
+    // First-paint skip-ahead (2 s jumps) must not drop ticks; energy rows stay bit-identical.
+    const skip=new AcousticEngine(scen);
+    while(skip.time+1e-9<T)skip.advance(Math.min(2,T-skip.time));
+    const skipE=skip.bearingEnergyHistory(1,0,T);
+    const skipT=skip.bearingTimeHistory(0,T,1);
+    expect(skipE.map(r=>r.t)).toEqual(liveE.map(r=>r.t));
+    for(let i=0;i<liveE.length;i++) expect([...skipE[i]!.energy]).toEqual([...liveE[i]!.energy]);
+    expect(skipT.map(e=>e.t)).toEqual(liveT.map(e=>e.t));
+    expect(skipT.map(e=>e.buoyId)).toEqual(liveT.map(e=>e.buoyId));
+    expect(skipT.map(e=>e.valid)).toEqual(liveT.map(e=>e.valid));
+  });
+
   it('UserCut packs, decodes, and counts energy rows in sizeBytes',()=>{
     const s=envOf([contactAt('alpha',45,400)]);
     const e=new AcousticEngine(s);

@@ -13,7 +13,12 @@ import {sourceLevel,fillTonals,sourceLines} from './sourceModel.js';
  * vernier or FULLBAND tile can be rendered for any span in the window with no per-stream history.
  *
  * Startup: the first record pre-fills the whole window with the t0 state (sources stationary
- * before the sim). Bounded: HISTORY_FRAMES frames, fixed at construction. Deterministic. */
+ * before the sim). Bounded: HISTORY_FRAMES frames, fixed at construction. Deterministic.
+ *
+ * Storage is Float32 for contact state and buoy kinematics (the large rings). Frame times
+ * and the put() tonal scratch stay Float64. loadFrame promotes each value to Float64, and
+ * the Welch span sum (integrateHistory / SH.P) already accumulates in Float64 over the
+ * 88 s LSTI window, so live and drained BB stay bit-exact to each other. */
 export const HISTORY_LATE_MARGIN_S=8;
 /** Longest RES span: LSTI RES1 = T+(8K−1)·hop = 88 s (STI RES1 was 32 s). Covers every mode. */
 export const HISTORY_MAX_SPAN_S=Math.max(...([1,2,3,4,5,6,7,8,9] as const).map(r=>resSpanS(resParams(r),'lsti')));
@@ -31,21 +36,21 @@ export function contactSwaths(c:Contact){return [...(c.params.speedGated??[]).fi
 export class StateHistory{
  readonly frames=HISTORY_FRAMES;readonly stride:number;readonly layout:HistoryLayout[];
  /** Per-buoy kinematics rings (frames×5), registered on demand; a late buoy is pre-filled with its current state. */
- readonly buoyRings=new Map<Buoy,Float64Array>();
+ readonly buoyRings=new Map<Buoy,Float32Array>();
  private static nextUid=1;readonly uid=StateHistory.nextUid++;private readonly buoyIds=new Map<Buoy,number>();
  buoyId(b:Buoy):number{let i=this.buoyIds.get(b);if(i===undefined){i=this.buoyIds.size;this.buoyIds.set(b,i);}return i;}
- readonly data:Float64Array;readonly t:Float64Array;head=0;count=0;last=-Infinity;
+ readonly data:Float32Array;readonly t:Float64Array;head=0;count=0;last=-Infinity;
  private readonly freq:Float64Array;private readonly pow:Float64Array;
  constructor(readonly contacts:readonly Contact[]){
   let off=0,maxL=0;this.layout=contacts.map(c=>{c.lines??=sourceLines(c.params);const n=c.lines.length,m=contactSwaths(c).length,l={offset:off,lines:n,swaths:m};off+=C_HEAD+2*n+3*m;maxL=Math.max(maxL,n);return l;});
   this.stride=off;
-  this.eventMask=contacts.map(c=>Uint8Array.from((c.lines??[]).map(l=>l.lineFamily&&EVENT_FAMILIES.has(l.lineFamily)?1:0)));this.data=new Float64Array(this.frames*this.stride);this.t=new Float64Array(this.frames);
+  this.eventMask=contacts.map(c=>Uint8Array.from((c.lines??[]).map(l=>l.lineFamily&&EVENT_FAMILIES.has(l.lineFamily)?1:0)));this.data=new Float32Array(this.frames*this.stride);this.t=new Float64Array(this.frames);
   this.freq=new Float64Array(maxL);this.pow=new Float64Array(maxL);
  }
  get bytes():number{let b=this.data.byteLength+this.t.byteLength+this.freq.byteLength+this.pow.byteLength;for(const r of this.buoyRings.values())b+=r.byteLength;return b;}
  /** Register a buoy. A buoy added while history runs is back-extrapolated at constant velocity over the
   * recorded frame times (its own past was not recorded). */
- buoyRing(b:Buoy):Float64Array{let r=this.buoyRings.get(b);if(!r){r=new Float64Array(this.frames*B_STRIDE);const now=Number.isFinite(this.last)?this.last:0;
+ buoyRing(b:Buoy):Float32Array{let r=this.buoyRings.get(b);if(!r){r=new Float32Array(this.frames*B_STRIDE);const now=Number.isFinite(this.last)?this.last:0;
   for(let k=0;k<this.frames;k++){const o=k*B_STRIDE,dt=k<this.count||this.count===0?(this.count?now-this.t[k]!:0):0;r[o]=b.x-Math.sin(b.course)*b.speed*dt;r[o+1]=b.y-Math.cos(b.course)*b.speed*dt;r[o+2]=b.depth;r[o+3]=b.course;r[o+4]=b.speed;}this.buoyRings.set(b,r);}return r;}
  /** Record every grid point up to t with the CURRENT state (engine calls after each advance). */
  record(t:number):void{
@@ -78,7 +83,7 @@ export class StateHistory{
   for(const r of this.buoyRings.values())this.backfillBuoy(r,s0,s1);
   this.count=P-1;
  }
- private backfillBuoy(r:Float64Array,s0:number,s1:number):void{
+ private backfillBuoy(r:Float32Array,s0:number,s1:number):void{
   const f=RES_FRAME_S,F=this.frames,P=Math.min(HISTORY_LSTI_FRAMES,this.frames),B=B_STRIDE,o0=s0*B,o1=s1*B;const acc=(r[o1+4]!-r[o0+4]!)/f,turn=(r[o1+3]!-r[o0+3]!)/f;let x=r[o0]!,y=r[o0+1]!;
   for(let k=1;k<=P-2;k++){const o=((s0-k+2*F)%F)*B,tau=k*f,sp=Math.max(0,r[o0+4]!-acc*tau),co=r[o0+3]!-turn*tau;x-=Math.sin(co)*sp*f;y-=Math.cos(co)*sp*f;r[o]=x;r[o+1]=y;r[o+2]=r[o0+2]!;r[o+3]=co;r[o+4]=sp;}
  }

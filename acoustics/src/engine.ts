@@ -147,6 +147,7 @@ export class AcousticEngine {
   private readonly tacticalState:Tactical={v:1,type:'tactical',simT:0,aircraft:{x:0,y:0,altM:300,hdgDeg:0,gsMps:0},buoys:[],bearings:[]};
   private readonly freqBook=new FreqTrackBook();
   readonly bearingBook=new BearingEnergyBook();
+  private bearingFilledThrough:number|undefined;
   private bearingEnergyBand:[number,number]=[BEARING_ENERGY_F_LO,BEARING_ENERGY_F_HI];
   private planeRoute:PlaneRouteSpec|null=null;
   /** weakSignal flags keyed by buoy id, last evaluated on the row clock at `this.time`. */
@@ -202,7 +203,6 @@ export class AcousticEngine {
       }
     }
     this.warm=new WarmBank(this.asWarmHost());
-    this.captureBearingTime(this.time,this.time);
   }
   private asWarmHost():WarmHost{
     const e=this;
@@ -932,6 +932,7 @@ export class AcousticEngine {
     return bearingEnergyFromState(st,buoyId)??undefined;
   }
   bearingEnergyHistory(buoyId?:number,t0?:number,t1?:number):BearingEnergyRow[]{
+    this.ensureBearingHistory(t1);
     if(buoyId!==undefined)return this.bearingBook.energy(buoyId,t0,t1);
     const ids=new Set<number>();
     const out:BearingEnergyRow[]=[];
@@ -940,7 +941,26 @@ export class AcousticEngine {
     return out.sort((a,c)=>a.t-c.t||a.buoyId-c.buoyId);
   }
   bearingTimeHistory(t0?:number,t1?:number,buoyId?:number):BearingTimeEntry[]{
+    this.ensureBearingHistory(t1);
     return this.bearingBook.timeEntries(t0,t1,buoyId);
+  }
+  /** Fill missing 1 s bearing ticks from retained state. Not called from advance so
+   * first-paint skip-ahead and UserCut/seek fills stay off the recording path. */
+  private ensureBearingHistory(through?:number):void{
+    if(!this.scenario.buoys.some(b=>isDifarBuoy(b)))return;
+    const end=Math.min(through??this.time,this.time);
+    const period=BEARING_TIME_PERIOD_S;
+    let filled=this.bearingFilledThrough;
+    if(filled===undefined){
+      if(end+1e-12<0)return;
+      this.captureBearingTime(0,0);
+      filled=0;
+      this.bearingFilledThrough=0;
+    }
+    if(end>filled+1e-12){
+      this.captureBearingTime(filled,end);
+      this.bearingFilledThrough=Math.floor((end+1e-12)/period)*period;
+    }
   }
   private captureBearingTime(t0:number,t1:number):void{
     if(!this.scenario.buoys.some(b=>isDifarBuoy(b)))return;
@@ -1063,7 +1083,6 @@ export class AcousticEngine {
     this.resolvePlannedDrops(from,s.time);
     // RES span averaging: one engine-wide source-STATE record per frame (stateHistory.ts); rows re-evaluate the modelled spectrum per frame (not a waveform FFT).
     if(this.historyOn)this.history.record(s.time);
-    this.captureBearingTime(from,s.time);
     if(this.options.deferUndeployed)this.consumeAboardRows();
     if(this.historyOn){this.warm.ensure();this.warm.tick();}
     this.consumePreLiveRows();
