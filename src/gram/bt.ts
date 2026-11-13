@@ -41,6 +41,56 @@ export const BT_ENERGY_BYTES = BT_MAX_BUOYS * BT_MAX_ROWS * BT_BINS
 
 export const BT_EMPTY_LABEL = 'No bearing data'
 
+/** Full Zulu tick as rendered on the time axis (`formatZuluHms`). */
+export const BT_ZULU_TICK = '00:00:00z'
+/** Matches `.axis { font: 10px/1 var(--font-mono) }`. */
+export const BT_AXIS_FONT_PX = 10
+/** Matches `.axis-y span { left: 6px }` and a matching right slack. */
+export const BT_AXIS_INSET_PX = 6
+/** Em-advance of a typical 10px monospace glyph (0.6em). */
+export const BT_MONO_ADVANCE = 0.6
+
+/** Minimum time-axis gutter so `HH:MM:SSz` fits (9ch at 10px mono + insets). */
+export function btTimeAxisMinWidthPx(): number {
+  return Math.ceil(BT_ZULU_TICK.length * BT_AXIS_FONT_PX * BT_MONO_ADVANCE + BT_AXIS_INSET_PX * 2)
+}
+
+export type BtAxisAlign = 'start' | 'center' | 'end'
+export type BtAxisTick = { deg: number; label: string; frac: number; left: string; align: BtAxisAlign }
+
+export function formatBtBearingTick(deg: number, centre: number | null): string {
+  if (deg === 360 && centre === null) return '360°'
+  return `${String(Math.round(wrapBearingDeg(deg)) % 360).padStart(3, '0')}°`
+}
+
+/** Anchor end ticks inward so the label stays inside the plot. */
+export function btAxisTickAlign(frac: number): BtAxisAlign {
+  if (frac <= 1e-9) return 'start'
+  if (frac >= 1 - 1e-9) return 'end'
+  return 'center'
+}
+
+export function btAxisTicks(centre: number | null, width: number): BtAxisTick[] {
+  const step = width < 360 ? 90 : 45
+  const ticks: { deg: number; frac: number }[] = []
+  if (centre === null) {
+    for (let d = 0; d <= 360; d += step) {
+      ticks.push({ deg: d, frac: d === 360 ? 1 : bearingToAxisFrac(d, null) })
+    }
+  } else {
+    for (let k = -180; k <= 180; k += step) {
+      ticks.push({ deg: wrapBearingDeg(centre + k), frac: (k + 180) / 360 })
+    }
+  }
+  return ticks.map(({ deg, frac }) => ({
+    deg,
+    frac,
+    label: formatBtBearingTick(centre === null && frac >= 1 - 1e-9 ? 360 : deg, centre),
+    left: `${(frac * 100).toFixed(4)}%`,
+    align: btAxisTickAlign(frac),
+  }))
+}
+
 export function wrapBearingDeg(deg: number): number {
   const w = deg % 360
   return w < 0 ? w + 360 : w

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { formatZuluHms } from '../touch/scrollBack'
 import {
   BT_BINS, BT_EMPTY_LABEL, BT_ENERGY_BYTES, BT_MAX_BUOYS, BT_MAX_ROWS, BT_WINDOW_S, BT_ZOOM_WINDOWS_S,
-  BtRing, BtStore, applyBtSeekClear, axisFracToBearing, bearingBin, bearingRateDegPerS,
-  bearingToAxisFrac, btAvailable, btOverlayBars, btRowFromEngine, fillBtRingFromHistory,
-  formatBtCursor, sigmaBarSegments, wrapBearingDeg,
+  BT_ZULU_TICK, BtRing, BtStore, applyBtSeekClear, axisFracToBearing, bearingBin, bearingRateDegPerS,
+  bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars, btRowFromEngine,
+  btTimeAxisMinWidthPx, fillBtRingFromHistory, formatBtBearingTick, formatBtCursor,
+  sigmaBarSegments, wrapBearingDeg,
 } from './bt'
 
 describe('wrap and 1° bins', () => {
@@ -171,6 +173,44 @@ describe('cursor readout and bearing rate', () => {
     expect(rate).not.toBeNull()
     expect(rate!).toBeCloseTo(2, 8)
     expect(bearingRateDegPerS({ bearingDeg: 0, simS: 5 }, { bearingDeg: 10, simS: 5 })).toBeNull()
+  })
+})
+
+
+describe('BT axis labels and gutter', () => {
+  it('formats the last uncentred bearing tick as 360°, not a wrapped 000°', () => {
+    expect(formatBtBearingTick(0, null)).toBe('000°')
+    expect(formatBtBearingTick(180, null)).toBe('180°')
+    expect(formatBtBearingTick(360, null)).toBe('360°')
+    expect(formatBtBearingTick(0, 0)).toBe('000°')
+  })
+
+  it('anchors end ticks inward so 000° and 360° stay inside the plot', () => {
+    expect(btAxisTickAlign(0)).toBe('start')
+    expect(btAxisTickAlign(1)).toBe('end')
+    expect(btAxisTickAlign(0.5)).toBe('center')
+    const wide = btAxisTicks(null, 800)
+    const first = wide.find((t) => t.frac === 0)
+    const last = wide.find((t) => t.frac === 1)
+    expect(first).toMatchObject({ label: '000°', align: 'start' })
+    expect(last).toMatchObject({ label: '360°', align: 'end' })
+    // Mid ticks stay centred, including 180°.
+    expect(wide.find((t) => t.deg === 180)?.align).toBe('center')
+    // Narrow plots use 90° steps but still keep both ends.
+    const narrow = btAxisTicks(null, 200)
+    expect(narrow[0]).toMatchObject({ label: '000°', align: 'start' })
+    expect(narrow.at(-1)).toMatchObject({ label: '360°', align: 'end', frac: 1 })
+  })
+
+  it('formats time ticks as full HH:MM:SSz and reserves a gutter that fits them', () => {
+    const origin = Date.UTC(2026, 0, 1, 7, 47, 0)
+    expect(formatZuluHms(0, origin)).toBe('07:47:00z')
+    expect(formatZuluHms(0, origin)).not.toBe('07:47:')
+    expect(BT_ZULU_TICK).toBe('00:00:00z')
+    expect(BT_ZULU_TICK.length).toBe(9)
+    // 9ch at 10px mono (0.6em) + 6px inset each side = 66px, wider than the old 44px gutter.
+    expect(btTimeAxisMinWidthPx()).toBe(66)
+    expect(btTimeAxisMinWidthPx()).toBeGreaterThan(44)
   })
 })
 

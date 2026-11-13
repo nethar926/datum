@@ -7,8 +7,8 @@ import { formatZuluHms } from '../touch/scrollBack'
 import {
   BT_BINS, BT_EMPTY_LABEL, BT_MAX_ROWS, BT_WINDOW_S, BT_ZOOM_WINDOWS_S, BtRing,
   applyBtSeekClear, axisFracToBearing, bearingRateDegPerS, bearingToAxisFrac,
-  btOverlayBars, btRowFromEngine, drawBtOverlays, fillBtRingFromHistory, formatBtCursor,
-  lutForPalette, paintBtRgba, wrapBearingDeg,
+  btAxisTicks, btOverlayBars, btRowFromEngine, btTimeAxisMinWidthPx, drawBtOverlays,
+  fillBtRingFromHistory, formatBtCursor, lutForPalette, paintBtRgba, wrapBearingDeg,
   type BtLineOverlay, type BtMark, type BtZoomS,
 } from './bt'
 
@@ -72,8 +72,11 @@ export function BtPlot({
     const el = boxRef.current
     if (!el) return
     const measure = () => {
-      setWidth(Math.max(1, el.clientWidth - 44))
-      setHeight(Math.max(1, el.clientHeight - 44))
+      const yAxis = el.querySelector('.axis-y') as HTMLElement | null
+      const xAxis = el.querySelector('.axis-x') as HTMLElement | null
+      const gutter = yAxis?.offsetWidth || btTimeAxisMinWidthPx()
+      setWidth(Math.max(1, el.clientWidth - gutter))
+      setHeight(Math.max(1, el.clientHeight - (xAxis?.offsetHeight || 44)))
     }
     const ro = new ResizeObserver(measure)
     ro.observe(el)
@@ -226,8 +229,8 @@ export function BtPlot({
       </div>
       <div className="axis axis-x" data-testid="bt-brg-axis" aria-hidden>
         {brgTicks.map((t) => (
-          <span key={`${t.deg}-${t.label}`} style={{ left: t.left }}>
-            <i className="tick-x" style={{ left: '50%', top: -6 }} />{t.label}
+          <span key={`${t.frac}-${t.deg}-${t.label}`} data-align={t.align} style={{ left: t.left }}>
+            <i className="tick-x" style={{ top: -6 }} />{t.label}
           </span>
         ))}
       </div>
@@ -249,19 +252,4 @@ export function BtPlot({
       {!hasData && <div className="bt-empty" data-testid="bt-empty">{BT_EMPTY_LABEL}</div>}
     </div>
   )
-}
-
-function btAxisTicks(centre: number | null, width: number): { deg: number; label: string; left: string }[] {
-  const step = width < 360 ? 90 : 45
-  const ticks: number[] = []
-  if (centre === null) {
-    for (let d = 0; d <= 360; d += step) ticks.push(d)
-  } else {
-    for (let k = -180; k <= 180; k += step) ticks.push(wrapBearingDeg(centre + k))
-  }
-  return ticks.map((deg) => {
-    const frac = centre === null && deg === 360 ? 1 : bearingToAxisFrac(deg, centre)
-    const label = deg === 360 && centre === null ? '360°' : `${String(Math.round(wrapBearingDeg(deg)) % 360).padStart(3, '0')}°`
-    return { deg, label, left: `${(frac * 100).toFixed(4)}%` }
-  })
 }

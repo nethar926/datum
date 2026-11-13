@@ -1011,8 +1011,14 @@ button, select { font: inherit; color: inherit; }
 
 
 /* ---------- BT: bearing-time waterfall (true bearing vs time) ---------- */
-.bt-plot { background: #000; }
+.bt-plot { background: #000; grid-template-columns: minmax(0, 1fr) calc(9ch + 12px); }
 .bt-plot canvas { background: #000; touch-action: none; }
+/* End bearing ticks sit inside the plot: 000° left-aligned, 360° right-aligned. */
+.bt-plot .axis-x span[data-align='start'] { transform: translateX(0); }
+.bt-plot .axis-x span[data-align='end'] { transform: translateX(-100%); }
+.bt-plot .axis-x span[data-align='start'] .tick-x { left: 0; transform: translateX(-50%); }
+.bt-plot .axis-x span[data-align='end'] .tick-x { left: 100%; transform: translateX(-50%); }
+.bt-plot .axis-x span[data-align='center'] .tick-x { left: 50%; transform: translateX(-50%); }
 .bt-label, .bt-readout {
   position: absolute; left: 8px; z-index: 3; pointer-events: none;
   font: 10px/1 var(--font-mono); letter-spacing: .04em; color: var(--phosphor);
