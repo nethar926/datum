@@ -9,8 +9,10 @@
  * 360 uint8 bins, 0…359° true. Legacy rows (no `scale`) are max-normalised;
  * `scale: 'db-above-bg-0.1'` is dB above background at 0.1 dB/step (0–25.5 dB),
  * mapped linearly onto the palette (noise near black). `btRowFromEngine` writes
- * that row into the ring. Per-line overlay dots come from `bearingTime` entries;
- * σ is drawn as a short horizontal bar (faint when `valid` is false).
+ * that row into the ring. Per-line overlay dots come from `bearingTime` entries,
+ * and are drawn only when the row energy near the ridge is at least 3 dB
+ * above background (`v >= BT_OVERLAY_DOT_MIN_V`). σ is a short horizontal
+ * bar (faint when `valid` is false).
  *
  * There is no stub fold from per-bin bearingDeg/dB. When the engine has not
  * posted rows, the display is empty ("No bearing data").
@@ -334,6 +336,10 @@ export type BtOverlayBar = {
   bearingDeg: number
   simS: number
   freqHz?: number
+  /** Paint a centre dot only when the local energy ridge is ≥ BT_OVERLAY_DOT_MIN_V. */
+  drawDot: boolean
+  /** Bearing of that ridge (may differ from `bearingDeg` by a few bins). */
+  ridgeBearingDeg: number
 }
 
 const SIGMA_BAR_MIN_FRAC = 1.5 / 360
@@ -343,6 +349,40 @@ export const BT_OVERLAY_MAX_SIGMA_DEG = 15
 export const BT_OVERLAY_BAR_MAX_AGO_S = 8
 /** Hard cap on markers painted in one frame. */
 export const BT_OVERLAY_MAX_MARKERS = 200
+/**
+ * Minimum row energy (uint8, 0.1 dB/step) at which an overlay dot is drawn.
+ * 30 = 3.0 dB above background on the `db-above-bg-0.1` scale.
+ */
+export const BT_OVERLAY_DOT_MIN_V = 30
+/** Bins either side of the entry bearing searched for the local energy ridge. */
+export const BT_OVERLAY_DOT_NEAR_BINS = 2
+
+/** True when `energy` meets Sonya's overlay-dot threshold (~3 dB above background). */
+export function btOverlayDotVisible(energy: number): boolean {
+  return (energy & 255) >= BT_OVERLAY_DOT_MIN_V
+}
+
+/** Peak energy in the small window around `bearingDeg` on this row, and the ridge bearing. */
+export function btOverlayRidge(
+  row: Uint8Array | null | undefined,
+  bearingDeg: number,
+): { v: number; bearingDeg: number } {
+  if (!row || row.length < 1) return { v: 0, bearingDeg }
+  const mid = bearingBin(bearingDeg)
+  const n = row.length
+  let bestV = -1
+  let bestBin = mid
+  const span = BT_OVERLAY_DOT_NEAR_BINS
+  for (let d = -span; d <= span; d++) {
+    const b = ((mid + d) % n + n) % n
+    const v = row[b]! & 255
+    if (v > bestV) {
+      bestV = v
+      bestBin = b
+    }
+  }
+  return { v: Math.max(0, bestV), bearingDeg: bestBin }
+}
 
 export function btEntryKey(e: { t: number; buoyId: number; freqHz?: number; band?: [number, number] }): string {
   const f = e.freqHz != null && Number.isFinite(e.freqHz)
@@ -386,9 +426,10 @@ export function appendBtEntries(
 /** Overlay bars in the visible time window for one buoy. */
 export function btOverlayBars(
   entries: readonly BtLineOverlay[],
-  opts: { buoyId: number; newest: number; windowS: number },
+  opts: { buoyId: number; newest: number; windowS: number; ring?: BtRing; rowPeriodS?: number },
 ): BtOverlayBar[] {
-  const { buoyId, newest, windowS } = opts
+  const { buoyId, newest, windowS, ring } = opts
+  const period = Math.max(1e-12, opts.rowPeriodS ?? 1)
   const t0 = newest - windowS
   const out: BtOverlayBar[] = []
   for (const e of entries) {
@@ -400,6 +441,9 @@ export function btOverlayBars(
     if (agoS > BT_OVERLAY_BAR_MAX_AGO_S + 1e-9) continue
     const raw = Number.isFinite(e.sigmaDeg) ? Math.max(0, e.sigmaDeg) : 0
     const sigma = e.valid ? Math.min(BT_OVERLAY_MAX_SIGMA_DEG, raw) : 0
+    const ridge = ring
+      ? btOverlayRidge(ring.row(Math.round(agoS / period)), e.bearingDeg)
+      : { v: 0, bearingDeg: e.bearingDeg }
     out.push({
       x: 0, // filled by the caller with the current centre
       half: e.valid ? Math.max(SIGMA_BAR_MIN_FRAC, sigma / 360) : 0,
@@ -408,6 +452,8 @@ export function btOverlayBars(
       bearingDeg: e.bearingDeg,
       simS: e.t,
       freqHz: e.freqHz,
+      drawDot: btOverlayDotVisible(ridge.v),
+      ridgeBearingDeg: ridge.bearingDeg,
     })
     if (out.length >= BT_OVERLAY_MAX_MARKERS) break
   }
@@ -491,11 +537,13 @@ export function drawBtOverlays(
       }
       ctx.stroke()
     }
-    const x = bearingToAxisFrac(bar.bearingDeg, centreDeg) * width
-    ctx.beginPath()
-    ctx.arc(x, y, Math.max(1.5, 2.5 * dpr), 0, Math.PI * 2)
-    ctx.fillStyle = ctx.strokeStyle
-    ctx.fill()
+    if (bar.drawDot) {
+      const x = bearingToAxisFrac(bar.ridgeBearingDeg, centreDeg) * width
+      ctx.beginPath()
+      ctx.arc(x, y, Math.max(1.5, 2.5 * dpr), 0, Math.PI * 2)
+      ctx.fillStyle = ctx.strokeStyle
+      ctx.fill()
+    }
     ctx.restore()
   }
 }

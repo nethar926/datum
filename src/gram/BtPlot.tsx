@@ -137,7 +137,7 @@ export function BtPlot({
       })
       ctx.putImageData(img.data, 0, 0)
       const newest = st.ring.size ? st.ring.timeAt(0) : nowS
-      const bars = btOverlayBars(st.entries, { buoyId: id, newest, windowS: zoomS })
+      const bars = btOverlayBars(st.entries, { buoyId: id, newest, windowS: zoomS, ring: st.ring, rowPeriodS: period })
       if (bars.length) {
         ctx.save()
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)

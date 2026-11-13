@@ -3,7 +3,8 @@ import { formatZuluHms } from '../touch/scrollBack'
 import {
   BT_BINS, BT_EMPTY_LABEL, BT_ENERGY_BYTES, BT_MAX_BUOYS, BT_MAX_ROWS, BT_WINDOW_S, BT_ZOOM_WINDOWS_S,
   BT_ZULU_TICK, BtRing, BtStore, applyBtSeekClear, axisFracToBearing, bearingBin, bearingRateDegPerS,
-  BT_OVERLAY_BAR_MAX_AGO_S, BT_OVERLAY_MAX_SIGMA_DEG, appendBtEntries, bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars,
+  BT_OVERLAY_BAR_MAX_AGO_S, BT_OVERLAY_DOT_MIN_V, BT_OVERLAY_DOT_NEAR_BINS, BT_OVERLAY_MAX_SIGMA_DEG, appendBtEntries, bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars,
+  btOverlayDotVisible, btOverlayRidge, drawBtOverlays,
   BT_DB_ABOVE_BG_MAX, BT_DB_ABOVE_BG_SCALE, BT_DB_ABOVE_BG_STEP, BT_DB_DISPLAY_CEIL, btPaletteIndex, btRowFromEngine,
   btTimeAxisMinWidthPx, fillBtRingFromHistory, formatBtBearingTick, formatBtCursor, lutForPalette, paintBtRgba,
   sigmaBarSegments, wrapBearingDeg,
@@ -348,5 +349,90 @@ describe('overlay σ bars', () => {
     expect(mid).toHaveLength(1)
     expect(mid[0]!.lo).toBeLessThan(0.5)
     expect(mid[0]!.hi).toBeGreaterThan(0.5)
+  })
+
+  it('paints an overlay dot only when row energy near the ridge is at least 3 dB (v >= 30)', () => {
+    expect(BT_OVERLAY_DOT_MIN_V).toBe(30)
+    expect(BT_OVERLAY_DOT_MIN_V * BT_DB_ABOVE_BG_STEP).toBeCloseTo(3, 10)
+    expect(BT_OVERLAY_DOT_NEAR_BINS).toBe(2)
+    expect(btOverlayDotVisible(0)).toBe(false)
+    expect(btOverlayDotVisible(29)).toBe(false)
+    expect(btOverlayDotVisible(30)).toBe(true)
+    expect(btOverlayDotVisible(80)).toBe(true)
+
+    const ring = new BtRing(8)
+    const quiet = new Uint8Array(BT_BINS)
+    const below = new Uint8Array(BT_BINS)
+    below[47] = 29
+    const near = new Uint8Array(BT_BINS)
+    near[49] = 30 // 2° off the entry, still in the near-ridge window
+    const on = new Uint8Array(BT_BINS)
+    on[47] = 80
+    ring.push(quiet, 8)
+    ring.push(below, 9)
+    ring.push(near, 10)
+    ring.push(on, 11)
+
+    const entries = [
+      { t: 8, buoyId: 1, bearingDeg: 47, sigmaDeg: 3, snrDb: 0, valid: true },
+      { t: 9, buoyId: 1, bearingDeg: 47, sigmaDeg: 3, snrDb: 2.9, valid: true },
+      { t: 10, buoyId: 1, bearingDeg: 47, sigmaDeg: 3, snrDb: 3, valid: true },
+      { t: 11, buoyId: 1, bearingDeg: 47, sigmaDeg: 3, snrDb: 8, valid: true },
+    ]
+    const bars = btOverlayBars(entries, { buoyId: 1, newest: 11, windowS: 8, ring, rowPeriodS: 1 })
+    expect(bars).toHaveLength(4)
+    expect(bars.map((b) => b.drawDot)).toEqual([false, false, true, true])
+    expect(bars[2]!.ridgeBearingDeg).toBe(49)
+    expect(bars[3]!.ridgeBearingDeg).toBe(47)
+
+    // No energy ring: do not guess a dot onto the noise floor.
+    const bare = btOverlayBars(entries, { buoyId: 1, newest: 11, windowS: 8 })
+    expect(bare.every((b) => b.drawDot === false)).toBe(true)
+
+    const far = new Uint8Array(BT_BINS)
+    far[51] = 80 // 4° away, outside NEAR_BINS
+    const r2 = new BtRing(2)
+    r2.push(far, 5)
+    const [offRidge] = btOverlayBars(
+      [{ t: 5, buoyId: 1, bearingDeg: 47, sigmaDeg: 3, snrDb: 8, valid: true }],
+      { buoyId: 1, newest: 5, windowS: 8, ring: r2, rowPeriodS: 1 },
+    )
+    expect(offRidge!.drawDot).toBe(false)
+
+    const wrapRow = new Uint8Array(BT_BINS)
+    wrapRow[359] = 40
+    const ridge = btOverlayRidge(wrapRow, 1)
+    expect(ridge.v).toBe(40)
+    expect(ridge.bearingDeg).toBe(359)
+  })
+
+  it('drawBtOverlays omits the centre dot when drawDot is false', () => {
+    const ops: string[] = []
+    const ctx = {
+      save() {},
+      restore() {},
+      beginPath() { ops.push('begin') },
+      moveTo() {},
+      lineTo() {},
+      stroke() { ops.push('stroke') },
+      arc() { ops.push('arc') },
+      fill() { ops.push('fill') },
+      strokeStyle: '',
+      fillStyle: '',
+      globalAlpha: 1,
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D
+    const base = {
+      x: 0, half: 3 / 360, agoS: 0, valid: true, bearingDeg: 47, simS: 10,
+      drawDot: false, ridgeBearingDeg: 47,
+    }
+    const opts = { width: 360, height: 100, windowS: 8, dir: 'bottom' as const, centreDeg: null, dpr: 1 }
+    drawBtOverlays(ctx, [base], opts)
+    expect(ops).toContain('stroke')
+    expect(ops).not.toContain('arc')
+    ops.length = 0
+    drawBtOverlays(ctx, [{ ...base, drawDot: true }], opts)
+    expect(ops).toContain('arc')
+    expect(ops).toContain('fill')
   })
 })
