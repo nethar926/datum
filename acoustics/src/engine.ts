@@ -27,6 +27,8 @@ export {HISTORY_RING_SPAN_S,historyRingRows,historyRingRowsForRes,PRECISION_DB,B
 import {sharedScratchBytes,invalidateSpanCache} from './resGram.js';
 import {buoyDeployStatus,BUOY_STATUS_SCREEN_ROWS,type BuoyStatus} from './buoyStatus.js';
 import {DEFAULT_DROP_ALTITUDE_M,DEFAULT_DESCENT_RATE_MPS,DEFAULT_INTEGRATION_TIME_S,firstEmitTime,isPlaced,validateDrop,validateIntegration,liveTime,type BuoyStartMode} from './deploySequence.js';
+import {btProfile, dropBtBuoy, type BtProfile, type BtProfileOpts, type BtDrop} from './btProfile.js';
+import {autoBearingsFromState, sendBearingFromPeakAt, type AutoBearing, type AliPeakBearing, type ContactPose} from './autoBearings.js';
 /** @deprecated Retained for API compat; HYDP no longer curves high→fixed (Wilson squally bar). */
 export const HYDP_START_OFFSET_PCT=1.5;
 /** Simultaneous tuned RF channels (= FE field cap / bench budget). */
@@ -721,6 +723,53 @@ export class AcousticEngine {
       out.push({id:c.id,name:name||c.id,x,y,crsDeg:AcousticEngine.degreesTrue(crs),spdMps:spd});
     }
     return out;
+  }
+  /** Seeded BT/SSP for this scenario (Mackenzie 1981, fictional 3-layer shape). */
+  btProfile(opts?:BtProfileOpts):BtProfile { return btProfile(this.scenario, opts); }
+  /**
+   * BT buoy drop: returns the scenario profile. Does not insert a BT receiver into
+   * `scenario.buoys` (those stay omni/difar only). `dropBuoy({kind:'bt'})` still throws.
+   */
+  dropBtBuoy(spec:{x:number;y:number;id?:number;maxDepthM?:number;samples?:number}):BtDrop {
+    let max=0;for(const b of this.scenario.buoys)max=Math.max(max,Number(b.id.replace(/\D/g,''))||0);
+    const id=spec.id??max+1;if(!Number.isInteger(id)||id<1||id>2147483647)throw new Error('Invalid buoy id');
+    return dropBtBuoy(this.scenario,{...spec,id});
+  }
+  /**
+   * Auto DIFAR bearings at `atSimTime`: one strongest-SNR line per (feeding DIFAR buoy,
+   * active contact) above `minQuality` (default 10 dB). Field names match Dorian's
+   * PlotAutoFixes.Line (`buoyId`, `freqHz`, `brgDeg`, `quality`) plus `contactId`,
+   * `snrDb`, `sigmaDeg`. Read-only: does not step or mutate the engine.
+   */
+  autoBearings(atSimTime:number=this.time, opts?:{minQuality?:number}):AutoBearing[] {
+    if(!Number.isFinite(atSimTime))throw new Error('Invalid auto-bearing time');
+    const s=this.scenario, dfHz=s.fBin??(s.fmax/Math.max(1,s.bins-1));
+    const contacts:ContactPose[]=[];
+    for(let i=0;i<this.allContacts.length;i++){
+      const c=this.allContacts[i]!;
+      const p=atSimTime===this.time?c:this.aisPose(atSimTime,i);
+      contacts.push({id:c.id,x:p.x,y:p.y,depth:p.depth,course:p.course,speed:p.speed,active:c.active,lines:c.lines,params:c.params});
+    }
+    return autoBearingsFromState({buoys:s.buoys,contacts,environment:s.environment,seed:s.seed,atSimTime,minQuality:opts?.minQuality,dfHz});
+  }
+  /**
+   * ALI peak-to-bearing: DIFAR math at a frequency or the strongest line in a band.
+   * Returns `{bearingDeg, sigmaDeg, snrDb, freqHz}` for Dorian's AliEngineSource seam.
+   */
+  sendBearingFromPeak(buoyId:number, freqHzOrBand:number|[number,number], atSimTime:number=this.time):AliPeakBearing {
+    if(!Number.isFinite(atSimTime))throw new Error('Invalid ALI time');
+    const i=this.buoyIndex(buoyId);if(i<0)throw new Error('Unknown buoyId');
+    const b=this.scenario.buoys[i]!;
+    const s=this.scenario, dfHz=s.fBin??(s.fmax/Math.max(1,s.bins-1));
+    const contacts:ContactPose[]=[];
+    for(let j=0;j<this.allContacts.length;j++){
+      const c=this.allContacts[j]!;
+      const p=atSimTime===this.time?c:this.aisPose(atSimTime,j);
+      contacts.push({id:c.id,x:p.x,y:p.y,depth:p.depth,course:p.course,speed:p.speed,active:c.active,lines:c.lines,params:c.params});
+    }
+    const freqHz=typeof freqHzOrBand==='number'?freqHzOrBand:undefined;
+    const band=typeof freqHzOrBand==='number'?undefined:freqHzOrBand;
+    return sendBearingFromPeakAt({buoy:b,buoyIndex:i,contacts,environment:s.environment,seed:s.seed,atSimTime,freqHz,band,dfHz});
   }
     /** Inject/clear yellow fault health (engine-truth for FE chrome). */
   setBuoyFault(buoyId:number,fault:boolean):void{
