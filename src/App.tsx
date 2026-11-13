@@ -33,7 +33,7 @@ import { RES_MAX, RES_MIN, clampRes, fullView, geometryKey, minSpanOf, resReadou
 import type { GramFilter, GramSettings, LofarBandPresetId } from './engine/contract'
 import { BAND_IDS, BAND_KEY, bandEdges, bandReadout, isBandId, parseBandChoice } from './gram/bands'
 import { TacticalPlot } from './tactical/TacticalPlot'
-import { headingDeg, LINE_WEIGHTS, NAV_PATTERNS, TRAIL_PATTERNS, planeState, planeVersion, resetPlaneRoute, setPlaneNavStyle, setPlaneTrailStyle, subscribePlane, togglePlaneMenu, type PlaneLineWeight } from './tactical/planeRoute'
+import { headingDeg, LINE_WEIGHT_MAX, LINE_WEIGHT_MIN, LINE_WEIGHT_STEP, NAV_DISPLAY_ORDER, NAV_PATTERN_LABEL, TRAIL_PATTERNS, lineWeightLabel, planeState, planeVersion, resetPlaneRoute, setPlaneLineWeight, setPlaneNavStyle, setPlaneTrailStyle, subscribePlane, togglePlaneMenu } from './tactical/planeRoute'
 import { DropBar } from './tactical/DropBar'
 import { DropController } from './tactical/dropController'
 import { dropCapturesPlot } from './tactical/fieldMode'
@@ -1669,20 +1669,23 @@ export default function App() {
                 <>
                   <div className="ios-row"><span className="row-label">Trail</span>
                     <div className="seg ios-seg" role="group" aria-label="Trail" data-testid="trail-style">
-                      {TRAIL_PATTERNS.map((p) => <button key={p} type="button" aria-label={`Trail ${p}`} aria-pressed={ps.trailStyle.pattern === p} data-testid={`trail-${p}`} onClick={() => setPlaneTrailStyle({ pattern: p, weight: ps.trailStyle.weight })}>{p}</button>)}
-                      {LINE_WEIGHTS.map((w) => <button key={w} type="button" aria-label={`Trail ${w}`} aria-pressed={ps.trailStyle.weight === w} data-testid={`trail-${w}`} onClick={() => setPlaneTrailStyle({ pattern: ps.trailStyle.pattern, weight: w as PlaneLineWeight })}>{w}</button>)}
+                      {TRAIL_PATTERNS.map((p) => <button key={p} type="button" aria-label={`Trail ${p}`} aria-pressed={ps.trailStyle.pattern === p} data-testid={`trail-${p}`} onClick={() => setPlaneTrailStyle({ pattern: p, weight: ps.trailStyle.weight })}>{p[0]!.toUpperCase() + p.slice(1)}</button>)}
                     </div></div>
                   <div className="ios-row"><span className="row-label">Nav</span>
                     <div className="seg ios-seg" role="group" aria-label="Nav" data-testid="nav-style">
-                      {NAV_PATTERNS.map((p) => <button key={p} type="button" aria-label={`Nav ${p}`} aria-pressed={ps.navStyle.pattern === p} data-testid={`nav-${p}`} onClick={() => setPlaneNavStyle({ pattern: p, weight: ps.navStyle.weight })}>{p}</button>)}
-                      {LINE_WEIGHTS.map((w) => <button key={w} type="button" aria-label={`Nav ${w}`} aria-pressed={ps.navStyle.weight === w} data-testid={`nav-${w}`} onClick={() => setPlaneNavStyle({ pattern: ps.navStyle.pattern, weight: w as PlaneLineWeight })}>{w}</button>)}
+                      {NAV_DISPLAY_ORDER.map((p) => <button key={p} type="button" aria-label={`Nav ${NAV_PATTERN_LABEL[p]}`} aria-pressed={ps.navStyle.pattern === p} data-testid={`nav-${p}`} onClick={() => setPlaneNavStyle({ pattern: p, weight: ps.navStyle.weight })}>{NAV_PATTERN_LABEL[p]}</button>)}
                     </div></div>
+                  <div className="ios-row"><span className="row-label">Line thickness<small>{lineWeightLabel(ps.lineWeight)}</small></span>
+                    <input type="range" min={LINE_WEIGHT_MIN} max={LINE_WEIGHT_MAX} step={LINE_WEIGHT_STEP}
+                      aria-label="Line thickness" aria-valuetext={lineWeightLabel(ps.lineWeight)}
+                      data-testid="line-thickness" value={ps.lineWeight}
+                      onChange={(e) => setPlaneLineWeight(Number(e.target.value))} /></div>
                 </>
               ) })()}
               <label className="ios-row"><span className="row-label">AIS<small>{aisAvail ? 'Surface tracks: name, course and speed' : 'Unavailable on Difficult'}</small></span>
                 <input type="checkbox" role="switch" className="ios-switch" data-testid="ais-switch" checked={aisEff} disabled={!aisAvail} onChange={(e) => { if (aisAvail) setAisOn(e.target.checked) }} /></label>
             </div>
-            <p className="ios-foot">Fix fade, trail and nav styles apply to the tactical plot. AIS is unavailable on Difficult.</p>
+            <p className="ios-foot">Fix fade, trail and nav styles apply to the tactical plot. Line thickness is one value for both the trail and the nav line, from 0.5 to 4 pt. AIS is unavailable on Difficult.</p>
           </div>
           <div className="ios-section">
             <h3>Gram</h3>

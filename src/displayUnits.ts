@@ -206,6 +206,7 @@ export const SETTINGS_CATALOG: SettingsItem[] = [
   { id: 'fix-fade', section: 'plot-tactical', persistKey: 'datum.fix.fadeS' },
   { id: 'trail-style', section: 'plot-tactical', persistKey: 'datum.plane.trail' },
   { id: 'nav-style', section: 'plot-tactical', persistKey: 'datum.plane.nav' },
+  { id: 'line-weight', section: 'plot-tactical', persistKey: 'datum.plane.lineWeight' },
   { id: 'ais', section: 'plot-tactical', persistKey: null },
   { id: 'newest-data', section: 'gram', persistKey: null },
   { id: 'horz', section: 'gram', persistKey: null },

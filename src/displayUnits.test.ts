@@ -8,7 +8,7 @@ import {
 import { DISPLAY_BLOOM_KEY } from './displayFx'
 import { DISPLAY_NIGHT_KEY } from './displayFx'
 import { FIX_FADE_KEY } from './tactical/fixStyle'
-import { TRAIL_KEY, NAV_KEY } from './tactical/planeRoute'
+import { TRAIL_KEY, NAV_KEY, LINE_WEIGHT_KEY } from './tactical/planeRoute'
 import { SIM_START_KEY } from './settings/simStart'
 import { SCHEME_KEY, GLASS_KEY } from './ui/prefs'
 
@@ -67,7 +67,7 @@ describe('display units', () => {
     const required = [
       'appearance', 'glass', 'accent', 'bloom', 'night', 'bfi-preset', 'bfi-range', 'app-icon',
       'units-speed', 'units-distance', 'units-altitude', 'units-depth',
-      'fix-fade', 'trail-style', 'nav-style', 'ais',
+      'fix-fade', 'trail-style', 'nav-style', 'line-weight', 'ais',
       'newest-data', 'horz', 'ali', 'bfi', 'secondary-display', 'lofar-colour', 'band-preset', 'sim-band',
       'reveal', 'receiver', 'difficulty', 'start-mode', 'unplaced-layout', 'drop-altitude', 'integration', 'lsti',
       'compendium', 'operator-log', 'symbols', 'debug-overlay', 'reload',
@@ -92,6 +92,7 @@ describe('display units', () => {
     expect(keyOf('fix-fade')).toBe(FIX_FADE_KEY)
     expect(keyOf('trail-style')).toBe(TRAIL_KEY)
     expect(keyOf('nav-style')).toBe(NAV_KEY)
+    expect(keyOf('line-weight')).toBe(LINE_WEIGHT_KEY)
     expect(keyOf('difficulty')).toBe(SIM_START_KEY)
     expect(keyOf('appearance')).toBe(SCHEME_KEY)
     expect(keyOf('glass')).toBe(GLASS_KEY)

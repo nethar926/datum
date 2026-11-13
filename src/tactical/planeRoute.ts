@@ -17,11 +17,51 @@ export const PLANE_MODE_LABEL: Record<PlaneRouteMode, string> = {
 
 export const TRAIL_PATTERNS = ['dotted', 'dashed', 'solid'] as const
 export type PlaneTrailPattern = (typeof TRAIL_PATTERNS)[number]
-export const NAV_PATTERNS = ['dashed', 'solid'] as const
+export const NAV_PATTERNS = ['dashed', 'solid', 'discreet'] as const
 export type PlaneNavPattern = (typeof NAV_PATTERNS)[number]
+/** Settings display order: Discreet, Dashed, Solid. Stored values stay in NAV_PATTERNS order. */
+export const NAV_DISPLAY_ORDER: readonly PlaneNavPattern[] = ['discreet', 'dashed', 'solid']
+export const NAV_PATTERN_LABEL: Record<PlaneNavPattern, string> = {
+  discreet: 'Discreet', dashed: 'Dashed', solid: 'Solid',
+}
+/** Discreet is a solid line at 20 % opacity. */
+export function navOpacity(pattern: PlaneNavPattern): number { return pattern === 'discreet' ? 0.2 : 1 }
+
+/** Old Thin/Thick tokens, still accepted when migrating persisted styles. */
 export const LINE_WEIGHTS = ['thin', 'thick'] as const
-export type PlaneLineWeight = (typeof LINE_WEIGHTS)[number]
-export const LINE_WIDTH: Record<PlaneLineWeight, number> = { thin: 1.5, thick: 3.25 }
+export type PlaneLineWeightToken = (typeof LINE_WEIGHTS)[number]
+/** Global trail/nav width in points (0.5–4, 0.5 steps). */
+export type PlaneLineWeight = number
+export const LINE_WEIGHT_MIN = 0.5
+export const LINE_WEIGHT_MAX = 4
+export const LINE_WEIGHT_STEP = 0.5
+export const LINE_WEIGHT_KEY = 'datum.plane.lineWeight'
+export const LINE_WIDTH_THIN = 1.5
+export const LINE_WIDTH_THICK = 3.25
+/** @deprecated Use `lineWidthPts`. Kept as a lookup of the old tokens. */
+export const LINE_WIDTH: Record<PlaneLineWeightToken, number> = { thin: LINE_WIDTH_THIN, thick: 3.5 }
+
+/** Snap to 0.5 pt inside [0.5, 4]. Midpoints (3.25) round half up, so Thick → 3.5. */
+export function snapLineWeight(value: number): number {
+  if (!Number.isFinite(value)) return LINE_WIDTH_THIN
+  const clamped = Math.min(LINE_WEIGHT_MAX, Math.max(LINE_WEIGHT_MIN, value))
+  return Math.round(clamped / LINE_WEIGHT_STEP + 1e-12) * LINE_WEIGHT_STEP
+}
+export function parseLineWeight(s: string): number | undefined {
+  const k = s.trim().toLowerCase()
+  if (k === 'thin') return snapLineWeight(LINE_WIDTH_THIN)
+  if (k === 'thick') return snapLineWeight(LINE_WIDTH_THICK)
+  const v = Number(k)
+  if (!Number.isFinite(v)) return
+  return snapLineWeight(v)
+}
+export function lineWidthPts(weight: PlaneLineWeight | PlaneLineWeightToken = loadLineWeight()): number {
+  return typeof weight === 'number' ? snapLineWeight(weight) : LINE_WIDTH[weight]
+}
+export function lineWeightLabel(weight: number = loadLineWeight()): string {
+  const w = snapLineWeight(weight)
+  return Number.isInteger(w) ? `${w.toFixed(0)} pt` : `${w.toFixed(1)} pt`
+}
 
 export type PlanePose = { x: number; y: number; headingRad: number; altM: number; speedMps: number }
 export type PlaneWayPoint = { x: number; y: number }
@@ -92,8 +132,8 @@ export function routeIsReady(spec: PlaneRouteSpec): boolean {
   return spec.radiusM > 0
 }
 
-export type PlaneTrailStyle = { pattern: PlaneTrailPattern; weight: PlaneLineWeight }
-export type PlaneNavStyle = { pattern: PlaneNavPattern; weight: PlaneLineWeight }
+export type PlaneTrailStyle = { pattern: PlaneTrailPattern; weight: PlaneLineWeightToken }
+export type PlaneNavStyle = { pattern: PlaneNavPattern; weight: PlaneLineWeightToken }
 export const defaultTrailStyle = (): PlaneTrailStyle => ({ pattern: 'solid', weight: 'thin' })
 export const defaultNavStyle = (): PlaneNavStyle => ({ pattern: 'dashed', weight: 'thin' })
 
@@ -103,13 +143,13 @@ export function parseTrailStyle(s: string): PlaneTrailStyle | undefined {
   const p = s.split('-')
   if (p.length !== 2) return
   if (!(TRAIL_PATTERNS as readonly string[]).includes(p[0]!) || !(LINE_WEIGHTS as readonly string[]).includes(p[1]!)) return
-  return { pattern: p[0] as PlaneTrailPattern, weight: p[1] as PlaneLineWeight }
+  return { pattern: p[0] as PlaneTrailPattern, weight: p[1] as PlaneLineWeightToken }
 }
 export function parseNavStyle(s: string): PlaneNavStyle | undefined {
   const p = s.split('-')
   if (p.length !== 2) return
   if (!(NAV_PATTERNS as readonly string[]).includes(p[0]!) || !(LINE_WEIGHTS as readonly string[]).includes(p[1]!)) return
-  return { pattern: p[0] as PlaneNavPattern, weight: p[1] as PlaneLineWeight }
+  return { pattern: p[0] as PlaneNavPattern, weight: p[1] as PlaneLineWeightToken }
 }
 
 export function trailDashes(pattern: PlaneTrailPattern, dpr = 1): number[] {
@@ -136,7 +176,36 @@ export function loadNavStyle(): PlaneNavStyle {
   return (v && parseNavStyle(v)) || defaultNavStyle()
 }
 export function saveNavStyle(s: PlaneNavStyle): void { store().setItem(NAV_KEY, navStyleRaw(s)) }
-export function resetPlaneStylesForTests(): void { store().removeItem(TRAIL_KEY); store().removeItem(NAV_KEY) }
+export function storedLineWeight(raw: string | null | undefined): number | undefined {
+  if (!raw) return
+  const p = raw.split('-')
+  const token = p.length >= 2 ? p[1] : raw
+  return parseLineWeight(token!)
+}
+/** Collapse old per-line trail / nav thicknesses into one global value. The thicker wins. */
+export function migrateLineWeight(trailRaw?: string | null, navRaw?: string | null): number {
+  const tw = storedLineWeight(trailRaw ?? null)
+  const nw = storedLineWeight(navRaw ?? null)
+  if (tw != null && nw != null) return tw >= nw ? tw : nw
+  if (tw != null) return tw
+  if (nw != null) return nw
+  return LINE_WIDTH_THIN
+}
+export function loadLineWeight(): number {
+  const s = store().getItem(LINE_WEIGHT_KEY)
+  if (s) {
+    const w = parseLineWeight(s)
+    if (w != null) return w
+  }
+  const w = migrateLineWeight(store().getItem(TRAIL_KEY), store().getItem(NAV_KEY))
+  store().setItem(LINE_WEIGHT_KEY, String(w))
+  return w
+}
+export function saveLineWeight(w: number): void { store().setItem(LINE_WEIGHT_KEY, String(snapLineWeight(w))) }
+export function resetPlaneStylesForTests(): void {
+  store().removeItem(TRAIL_KEY); store().removeItem(NAV_KEY); store().removeItem(LINE_WEIGHT_KEY)
+}
+
 
 export type PlaneLayoutRect = FixLayoutRect
 export function planeMenuFrame(
@@ -230,7 +299,7 @@ export function drawPlaneTrail(
   if (trail.count < 2) return
   const bands = 8
   const dash = trailDashes(style.pattern, dpr)
-  const lw = LINE_WIDTH[style.weight] * dpr
+  const lw = lineWidthPts() * dpr
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   for (let b = 0; b < bands; b++) {
@@ -269,11 +338,12 @@ export function drawPlaneNav(
     if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y)
   }
   ctx.strokeStyle = NAV_RGB
-  ctx.globalAlpha = 1
-  ctx.lineWidth = LINE_WIDTH[style.weight] * dpr
+  ctx.globalAlpha = navOpacity(style.pattern)
+  ctx.lineWidth = lineWidthPts() * dpr
   ctx.setLineDash(navDashes(style.pattern, dpr))
   ctx.stroke()
   ctx.setLineDash([])
+  ctx.globalAlpha = 1
 }
 
 // ----- session store (styles persist; route is session-only) -----
@@ -299,6 +369,7 @@ let points: PlaneWayPoint[] = []
 let spec: PlaneRouteSpec | null = null
 let trailStyle = loadTrailStyle()
 let navStyle = loadNavStyle()
+let lineWeight = loadLineWeight()
 const trail = new PlaneTrail()
 const navX = new Float64Array(NAV_CAP)
 const navY = new Float64Array(NAV_CAP)
@@ -313,7 +384,7 @@ export function setPlaneRouteSource(s: PlaneRouteSource | null): void {
 }
 
 export function planeState() {
-  return { menuOpen, arm, mode, speedKts, altitudeFt, radiusNmi, centre, points, spec, trailStyle, navStyle, trail, navX, navY, navCount, pose, version }
+  return { menuOpen, arm, mode, speedKts, altitudeFt, radiusNmi, centre, points, spec, trailStyle, navStyle, lineWeight, trail, navX, navY, navCount, pose, version }
 }
 
 export function planeVersion(): number { return version }
@@ -328,6 +399,7 @@ export function setPlaneAltitudeFt(v: number): void { altitudeFt = Math.max(0, v
 export function setPlaneRadiusNmi(v: number): void { radiusNmi = Math.max(0.1, v); changed() }
 export function setPlaneTrailStyle(s: PlaneTrailStyle): void { trailStyle = s; saveTrailStyle(s); changed() }
 export function setPlaneNavStyle(s: PlaneNavStyle): void { navStyle = s; saveNavStyle(s); changed() }
+export function setPlaneLineWeight(w: number): void { lineWeight = snapLineWeight(w); saveLineWeight(lineWeight); changed() }
 
 export function clearPlanePoints(): void { points = []; arm = 'points'; changed() }
 
@@ -380,6 +452,9 @@ export function samplePlane(t: number, engine?: PlanePose): PlanePose {
 
 export function resetPlaneForTests(): void {
   resetPlaneStylesForTests()
+  trailStyle = loadTrailStyle()
+  navStyle = loadNavStyle()
+  lineWeight = loadLineWeight()
   resetPlaneRoute()
   version = 0
 }

@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from 'react'
 import {
-  LINE_WEIGHTS, MAX_POINTS, MIN_POINTS, NAV_PATTERNS, PLANE_MODES, PLANE_MODE_LABEL, TRAIL_PATTERNS,
-  applyPlaneRoute, clearPlanePoints, clearPlaneRoute, planeState, setPlaneAltitudeFt, setPlaneArm, setPlaneMode,
-  setPlaneNavStyle, setPlaneRadiusNmi, setPlaneSpeedKts, setPlaneTrailStyle, type PlaneLineWeight,
+  LINE_WEIGHT_MAX, LINE_WEIGHT_MIN, LINE_WEIGHT_STEP, MAX_POINTS, MIN_POINTS, NAV_DISPLAY_ORDER, NAV_PATTERN_LABEL,
+  PLANE_MODES, PLANE_MODE_LABEL, TRAIL_PATTERNS,
+  applyPlaneRoute, clearPlanePoints, clearPlaneRoute, lineWeightLabel, planeState, setPlaneAltitudeFt, setPlaneArm,
+  setPlaneLineWeight, setPlaneMode, setPlaneNavStyle, setPlaneRadiusNmi, setPlaneSpeedKts, setPlaneTrailStyle,
 } from './planeRoute'
 import {
   ALTITUDE_UNIT_LABEL, DISTANCE_UNIT_LABEL, SPEED_UNIT_LABEL, altitudeFromM, distanceFromM, getDisplayUnits,
@@ -71,27 +72,24 @@ export function PlaneMenu({ simT, fallback }: { simT: number; fallback: { x: num
         {TRAIL_PATTERNS.map((p) => (
           <button key={p} type="button" aria-label={`Trail ${p}`} aria-pressed={s.trailStyle.pattern === p}
             className={s.trailStyle.pattern === p ? 'on' : undefined}
-            onClick={() => setPlaneTrailStyle({ pattern: p, weight: s.trailStyle.weight })}>{p}</button>
-        ))}
-        {LINE_WEIGHTS.map((w) => (
-          <button key={w} type="button" aria-label={`Trail ${w}`} aria-pressed={s.trailStyle.weight === w}
-            className={s.trailStyle.weight === w ? 'on' : undefined}
-            onClick={() => setPlaneTrailStyle({ pattern: s.trailStyle.pattern, weight: w as PlaneLineWeight })}>{w}</button>
+            onClick={() => setPlaneTrailStyle({ pattern: p, weight: s.trailStyle.weight })}>{p[0]!.toUpperCase() + p.slice(1)}</button>
         ))}
       </div>
       <div className="plane-menu-style" role="group" aria-label="Nav">
         <span>Nav</span>
-        {NAV_PATTERNS.map((p) => (
-          <button key={p} type="button" aria-label={`Nav ${p}`} aria-pressed={s.navStyle.pattern === p}
+        {NAV_DISPLAY_ORDER.map((p) => (
+          <button key={p} type="button" aria-label={`Nav ${NAV_PATTERN_LABEL[p]}`} aria-pressed={s.navStyle.pattern === p}
             className={s.navStyle.pattern === p ? 'on' : undefined}
-            onClick={() => setPlaneNavStyle({ pattern: p, weight: s.navStyle.weight })}>{p}</button>
-        ))}
-        {LINE_WEIGHTS.map((w) => (
-          <button key={w} type="button" aria-label={`Nav ${w}`} aria-pressed={s.navStyle.weight === w}
-            className={s.navStyle.weight === w ? 'on' : undefined}
-            onClick={() => setPlaneNavStyle({ pattern: s.navStyle.pattern, weight: w as PlaneLineWeight })}>{w}</button>
+            onClick={() => setPlaneNavStyle({ pattern: p, weight: s.navStyle.weight })}>{NAV_PATTERN_LABEL[p]}</button>
         ))}
       </div>
+      <label className="plane-menu-field">Line thickness
+        <input type="range" min={LINE_WEIGHT_MIN} max={LINE_WEIGHT_MAX} step={LINE_WEIGHT_STEP}
+          aria-label="Line thickness" aria-valuetext={lineWeightLabel(s.lineWeight)}
+          data-testid="plane-menu-line-thickness" value={s.lineWeight}
+          onChange={(e) => setPlaneLineWeight(Number(e.target.value))} />
+        <span>{lineWeightLabel(s.lineWeight)}</span>
+      </label>
     </div>
   )
 }

@@ -1,9 +1,11 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import {
-  DEFAULT_RADIUS_M, DEFAULT_RADIUS_NMI, FRAME_BUDGET_S, MAX_POINTS, MIN_POINTS, NAV_CAP, TRAIL_CAP,
-  PlaneTrail, loadNavStyle, loadTrailStyle, measurePlaneFrame, planeAvoidsCrease, planeMenuFrame,
-  planeNavPoints, planePose, enginePlaneSource, glyphRotationRad, DEFAULT_MAX_TURN_RATE_RAD_S, resetPlaneForTests, resetPlaneStylesForTests,
-  routeIsReady, saveNavStyle, saveTrailStyle, type PlaneRouteSpec,
+  DEFAULT_RADIUS_M, DEFAULT_RADIUS_NMI, FRAME_BUDGET_S, MAX_POINTS, MIN_POINTS, NAV_CAP, NAV_DISPLAY_ORDER,
+  NAV_PATTERNS, TRAIL_CAP, PlaneTrail, lineWeightLabel, loadLineWeight, loadNavStyle, loadTrailStyle,
+  measurePlaneFrame, migrateLineWeight, navOpacity, parseLineWeight, planeAvoidsCrease, planeMenuFrame,
+  planeNavPoints, planePose, enginePlaneSource, glyphRotationRad, DEFAULT_MAX_TURN_RATE_RAD_S,
+  resetPlaneForTests, resetPlaneStylesForTests, routeIsReady, saveLineWeight, saveNavStyle, saveTrailStyle,
+  snapLineWeight, type PlaneRouteSpec,
 } from './planeRoute'
 
 beforeEach(() => { resetPlaneForTests(); resetPlaneStylesForTests() })
@@ -150,5 +152,52 @@ describe('plane route', () => {
       expect(p.altM).toBeCloseTo(alt, 9)
       expect(p.speedMps).toBeCloseTo(speed, 9)
     }
+  })
+
+
+  it('shows nav options as Discreet, Dashed, Solid without changing stored pattern values', () => {
+    expect(NAV_PATTERNS).toEqual(['dashed', 'solid', 'discreet'])
+    expect([...NAV_DISPLAY_ORDER]).toEqual(['discreet', 'dashed', 'solid'])
+    expect(new Set(NAV_DISPLAY_ORDER)).toEqual(new Set(NAV_PATTERNS))
+    expect(navOpacity('discreet')).toBeCloseTo(0.2, 12)
+    expect(navOpacity('dashed')).toBe(1)
+    expect(navOpacity('solid')).toBe(1)
+  })
+
+  it('snaps line thickness to 0.5 pt steps and migrates old thin/thick tokens', () => {
+    expect(snapLineWeight(3.25)).toBe(3.5)
+    expect(snapLineWeight(0)).toBe(0.5)
+    expect(snapLineWeight(9)).toBe(4)
+    expect(snapLineWeight(2.24)).toBe(2)
+    expect(snapLineWeight(2.25)).toBe(2.5)
+    expect(parseLineWeight('thin')).toBe(1.5)
+    expect(parseLineWeight('thick')).toBe(3.5)
+    expect(parseLineWeight('1.5')).toBe(1.5)
+    expect(parseLineWeight('3.25')).toBe(3.5)
+    expect(parseLineWeight('2')).toBe(2)
+    expect(parseLineWeight('nope')).toBeUndefined()
+    expect(lineWeightLabel(1.5)).toBe('1.5 pt')
+    expect(lineWeightLabel(2)).toBe('2 pt')
+    expect(lineWeightLabel(3.5)).toBe('3.5 pt')
+
+    expect(migrateLineWeight(undefined, undefined)).toBe(1.5)
+    expect(migrateLineWeight('dotted-thick', 'dashed-thin')).toBe(3.5)
+    expect(migrateLineWeight('solid-thin', 'solid-thin')).toBe(1.5)
+    expect(migrateLineWeight(undefined, 'solid-thick')).toBe(3.5)
+    expect(migrateLineWeight('off', undefined)).toBe(1.5)
+
+    resetPlaneStylesForTests()
+    saveTrailStyle({ pattern: 'dotted', weight: 'thick' })
+    saveNavStyle({ pattern: 'dashed', weight: 'thin' })
+    expect(loadLineWeight()).toBe(3.5)
+    saveTrailStyle({ pattern: 'solid', weight: 'thin' })
+    expect(loadLineWeight()).toBe(3.5) // existing global is kept
+    resetPlaneStylesForTests()
+    saveLineWeight(1.5)
+    saveTrailStyle({ pattern: 'dotted', weight: 'thick' })
+    expect(loadLineWeight()).toBe(1.5)
+    saveLineWeight(3.25)
+    expect(loadLineWeight()).toBe(3.5)
+    expect(lineWeightLabel()).toBe('3.5 pt')
   })
 })
