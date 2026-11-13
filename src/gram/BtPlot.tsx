@@ -7,7 +7,7 @@ import { formatZuluHms } from '../touch/scrollBack'
 import {
   BT_BINS, BT_EMPTY_LABEL, BT_MAX_ROWS, BT_WINDOW_S, BT_ZOOM_WINDOWS_S, BtRing,
   applyBtSeekClear, axisFracToBearing, bearingRateDegPerS, bearingToAxisFrac,
-  btAxisTicks, btOverlayBars, btRowFromEngine, btTimeAxisMinWidthPx, drawBtOverlays,
+  appendBtEntries, btAxisTicks, btOverlayBars, btRowFromEngine, btTimeAxisMinWidthPx, drawBtOverlays,
   fillBtRingFromHistory, formatBtCursor, lutForPalette, paintBtRgba, wrapBearingDeg,
   type BtLineOverlay, type BtMark, type BtZoomS,
 } from './bt'
@@ -106,7 +106,8 @@ export function BtPlot({
         st.ring.push(st.out, row.t)
         st.lastT = row.t
       }
-      if (mineT.length) st.entries.push(...mineT)
+      const newest = mineE.length ? st.lastT : (mineT.length ? mineT[mineT.length - 1]!.t : st.lastT)
+      appendBtEntries(st.entries, mineT, Number.isFinite(newest) ? newest : 0, BT_WINDOW_S)
       if (st.ring.size > 0) { setHasData(true); setNewestT(st.ring.timeAt(0)) }
     })
     return () => { off(); histRef.current = null }

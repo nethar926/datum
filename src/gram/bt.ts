@@ -126,18 +126,28 @@ export function axisFracToBearing(frac: number, centreDeg: number | null): numbe
 export const BT_DB_ABOVE_BG_SCALE = 'db-above-bg-0.1' as const
 /** dB per uint8 step when `scale === 'db-above-bg-0.1'`. */
 export const BT_DB_ABOVE_BG_STEP = 0.1
-/** Full-scale range: 255 × 0.1 dB. */
+/** Engine full-scale range: 255 × 0.1 dB. */
 export const BT_DB_ABOVE_BG_MAX = 25.5
+/**
+ * Palette full-scale for `db-above-bg-0.1` rows. This is a display range only
+ * (not a row normaliser): 0 dB → black, this many dB → the top of the LUT, so
+ * an 8 dB contact sits well up the scale. The engine still stores 0–25.5 dB.
+ */
+export const BT_DB_DISPLAY_CEIL = 15
 
 /**
  * Map one engine energy sample onto a 256-step BT palette index.
- * `db-above-bg-0.1` is already 0–25.5 dB in 0.1 dB steps, so 0 (noise) is
- * palette 0 (near black) and 255 (25.5 dB) is the top of the LUT.
+ * `db-above-bg-0.1` stores tenths of a dB (v=80 is 8 dB, v=255 is 25.5 dB).
+ * The index is v stretched so `BT_DB_DISPLAY_CEIL` dB is full brightness
+ * (`round(v * 255 / (ceil/0.1))`, clamped). It is not v as dB, and not v/25.5.
  * Legacy max-normalised rows (no scale, or any other value) copy as stored.
  */
 export function btPaletteIndex(energy: number, scale?: string | null): number {
   const v = energy & 255
-  if (scale === BT_DB_ABOVE_BG_SCALE) return v
+  if (scale === BT_DB_ABOVE_BG_SCALE) {
+    const full = BT_DB_DISPLAY_CEIL / BT_DB_ABOVE_BG_STEP
+    return Math.max(0, Math.min(255, Math.round((v / full) * 255)))
+  }
   return v
 }
 
@@ -329,6 +339,49 @@ export type BtOverlayBar = {
 const SIGMA_BAR_MIN_FRAC = 1.5 / 360
 /** Display clamp: engine invalid entries carry σ = 90° (a 180° bar) and would wash the gram. */
 export const BT_OVERLAY_MAX_SIGMA_DEG = 15
+/** Only recent σ-bars are drawn; a long history of mint bars paints out the energy gram. */
+export const BT_OVERLAY_BAR_MAX_AGO_S = 8
+/** Hard cap on markers painted in one frame. */
+export const BT_OVERLAY_MAX_MARKERS = 200
+
+export function btEntryKey(e: { t: number; buoyId: number; freqHz?: number; band?: [number, number] }): string {
+  const f = e.freqHz != null && Number.isFinite(e.freqHz)
+    ? `f:${e.freqHz}`
+    : (e.band ? `b:${e.band[0]}:${e.band[1]}` : '')
+  return `${e.t.toFixed(3)}:${e.buoyId}:${f}`
+}
+
+/**
+ * Keep overlay entries unique and inside the display window.
+ * Live `bearingBt` messages must not be appended raw — re-sending a widening
+ * history, or a listener firing more than once, stacks tens of thousands of
+ * mint σ-bars over a correctly painted dark gram.
+ */
+export function appendBtEntries(
+  dest: BtLineOverlay[],
+  incoming: readonly BtLineOverlay[],
+  newest: number,
+  windowS: number,
+): void {
+  const t0 = newest - windowS
+  const seen = new Set<string>()
+  let w = 0
+  for (const e of dest) {
+    if (!Number.isFinite(e.t) || e.t < t0 - 1e-9) continue
+    const k = btEntryKey(e)
+    if (seen.has(k)) continue
+    seen.add(k)
+    dest[w++] = e
+  }
+  dest.length = w
+  for (const e of incoming) {
+    if (!Number.isFinite(e.t) || e.t < t0 - 1e-9) continue
+    const k = btEntryKey(e)
+    if (seen.has(k)) continue
+    seen.add(k)
+    dest.push(e)
+  }
+}
 
 /** Overlay bars in the visible time window for one buoy. */
 export function btOverlayBars(
@@ -341,20 +394,22 @@ export function btOverlayBars(
   for (const e of entries) {
     if (e.buoyId !== buoyId) continue
     if (!Number.isFinite(e.t) || e.t < t0 - 1e-9 || e.t > newest + 1e-9) continue
+    const agoS = newest - e.t
+    // Only the most recent integration (τ ≈ 8 s) gets a σ-bar. Older markers
+    // are omitted so a dense history cannot wash the energy gram to mint.
+    if (agoS > BT_OVERLAY_BAR_MAX_AGO_S + 1e-9) continue
     const raw = Number.isFinite(e.sigmaDeg) ? Math.max(0, e.sigmaDeg) : 0
-    // Invalid detections are uniform in bearing with σ = 90°. A stacked 180° bar
-    // at even modest alpha paints the energy gram into a solid mint wash.
-    // Keep a faint marker (half = 0 → dot only) and cap valid bars.
     const sigma = e.valid ? Math.min(BT_OVERLAY_MAX_SIGMA_DEG, raw) : 0
     out.push({
       x: 0, // filled by the caller with the current centre
       half: e.valid ? Math.max(SIGMA_BAR_MIN_FRAC, sigma / 360) : 0,
-      agoS: newest - e.t,
+      agoS,
       valid: e.valid,
       bearingDeg: e.bearingDeg,
       simS: e.t,
       freqHz: e.freqHz,
     })
+    if (out.length >= BT_OVERLAY_MAX_MARKERS) break
   }
   return out
 }

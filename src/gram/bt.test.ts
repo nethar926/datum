@@ -3,9 +3,9 @@ import { formatZuluHms } from '../touch/scrollBack'
 import {
   BT_BINS, BT_EMPTY_LABEL, BT_ENERGY_BYTES, BT_MAX_BUOYS, BT_MAX_ROWS, BT_WINDOW_S, BT_ZOOM_WINDOWS_S,
   BT_ZULU_TICK, BtRing, BtStore, applyBtSeekClear, axisFracToBearing, bearingBin, bearingRateDegPerS,
-  BT_OVERLAY_MAX_SIGMA_DEG, bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars,
-  BT_DB_ABOVE_BG_MAX, BT_DB_ABOVE_BG_SCALE, BT_DB_ABOVE_BG_STEP, btPaletteIndex, btRowFromEngine,
-  btTimeAxisMinWidthPx, fillBtRingFromHistory, formatBtBearingTick, formatBtCursor, lutForPalette,
+  BT_OVERLAY_BAR_MAX_AGO_S, BT_OVERLAY_MAX_SIGMA_DEG, appendBtEntries, bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars,
+  BT_DB_ABOVE_BG_MAX, BT_DB_ABOVE_BG_SCALE, BT_DB_ABOVE_BG_STEP, BT_DB_DISPLAY_CEIL, btPaletteIndex, btRowFromEngine,
+  btTimeAxisMinWidthPx, fillBtRingFromHistory, formatBtBearingTick, formatBtCursor, lutForPalette, paintBtRgba,
   sigmaBarSegments, wrapBearingDeg,
 } from './bt'
 
@@ -94,28 +94,61 @@ describe('btRowFromEngine', () => {
     expect(btPaletteIndex(255)).toBe(255)
   })
 
-  it('maps db-above-bg-0.1 linearly onto the palette (0 dB near black, 25.5 dB at the top)', () => {
+  it('maps db-above-bg-0.1 so 0 dB is black and BT_DB_DISPLAY_CEIL dB is full scale', () => {
     expect(BT_DB_ABOVE_BG_STEP).toBe(0.1)
     expect(BT_DB_ABOVE_BG_MAX).toBeCloseTo(255 * BT_DB_ABOVE_BG_STEP, 10)
+    expect(BT_DB_DISPLAY_CEIL).toBe(15)
     expect(btPaletteIndex(0, BT_DB_ABOVE_BG_SCALE)).toBe(0)
-    expect(btPaletteIndex(10, BT_DB_ABOVE_BG_SCALE)).toBe(10) // 1.0 dB
+    // v is tenths of a dB, not dB and not v/25.5.
+    expect(btPaletteIndex(10, BT_DB_ABOVE_BG_SCALE)).toBe(Math.round((10 / 150) * 255)) // 1.0 dB
+    expect(btPaletteIndex(150, BT_DB_ABOVE_BG_SCALE)).toBe(255) // 15 dB → top
     expect(btPaletteIndex(255, BT_DB_ABOVE_BG_SCALE)).toBe(255)
     const energy = new Uint8Array(BT_BINS)
     energy[0] = 0
-    energy[90] = 25   // 2.5 dB
-    energy[180] = 255 // 25.5 dB
+    energy[90] = 80   // 8.0 dB
+    energy[180] = 255 // 25.5 dB, still clamped to the top
     const out = new Uint8Array(BT_BINS)
     btRowFromEngine({ energy, scale: BT_DB_ABOVE_BG_SCALE }, out)
     expect(out[0]).toBe(0)
-    expect(out[90]).toBe(25)
+    expect(out[90]).toBe(Math.round((80 / 150) * 255))
     expect(out[180]).toBe(255)
     const lut = lutForPalette('green')
-    // Palette index 0 is the first stop (near black); 255 is the last stop (not black).
     const lum0 = lut[0]! + lut[1]! + lut[2]!
     const lumTop = lut[255 * 4]! + lut[255 * 4 + 1]! + lut[255 * 4 + 2]!
     expect(lum0).toBeLessThan(40)
     expect(lumTop).toBeGreaterThan(lum0)
     expect(lumTop).toBeGreaterThan(200)
+  })
+
+  it('paints a 0 dB noise bin dark and an 8 dB contact bin clearly brighter', () => {
+    const energy = new Uint8Array(BT_BINS)
+    energy[10] = 80 // 8.0 dB
+    const out = new Uint8Array(BT_BINS)
+    btRowFromEngine({ energy, scale: BT_DB_ABOVE_BG_SCALE }, out)
+    const ring = new BtRing(16)
+    ring.push(out, 1)
+    const w = 360, h = 16
+    const rgba = new Uint8ClampedArray(w * h * 4)
+    const lut = lutForPalette('green')
+    // windowS ≪ height so the bottom pixel falls in ago row 0 (newest).
+    paintBtRgba(rgba, w, h, ring, { centreDeg: null, lut, dir: 'bottom', windowS: 2, rowPeriodS: 1 })
+    const lum = (x: number, y: number) => {
+      const o = (y * w + x) * 4
+      return 0.2126 * rgba[o]! + 0.7152 * rgba[o + 1]! + 0.0722 * rgba[o + 2]!
+    }
+    const y = h - 1 // newest row at the bottom
+    const lumNoise = lum(0, y)
+    const lumPeak = lum(10, y)
+    expect(out[0]).toBe(0)
+    expect(lumNoise).toBeLessThan(15)
+    expect(lumPeak).toBeGreaterThan(lumNoise + 40)
+    expect(lumPeak).toBeGreaterThan(50)
+    // The painted pixel is the LUT at the display index, not v treated as dB (v/25.5).
+    const idx = btPaletteIndex(80, BT_DB_ABOVE_BG_SCALE)
+    const o = ((y * w) + 10) * 4
+    expect(rgba[o]).toBe(lut[idx * 4])
+    expect(rgba[o + 1]).toBe(lut[idx * 4 + 1])
+    expect(rgba[o + 2]).toBe(lut[idx * 4 + 2])
   })
 })
 
@@ -292,6 +325,19 @@ describe('overlay σ bars', () => {
     expect(bars[0]!.half).toBeCloseTo(BT_OVERLAY_MAX_SIGMA_DEG / 360, 10)
     expect(bars[0]!.half).toBeLessThan(90 / 360)
     expect(bars[1]!.half).toBe(0)
+  })
+  it('drops overlay markers older than BT_OVERLAY_BAR_MAX_AGO_S and dedups appends', () => {
+    const newest = 60
+    const old = { t: 0, buoyId: 1, bearingDeg: 10, sigmaDeg: 3, snrDb: 8, valid: true, freqHz: 80 }
+    const recent = { t: 58, buoyId: 1, bearingDeg: 47, sigmaDeg: 3, snrDb: 8, valid: true, freqHz: 80 }
+    const bars = btOverlayBars([old, recent], { buoyId: 1, newest, windowS: 900 })
+    expect(BT_OVERLAY_BAR_MAX_AGO_S).toBe(8)
+    expect(bars).toHaveLength(1)
+    expect(bars[0]!.simS).toBe(58)
+    const dest = [recent]
+    appendBtEntries(dest, [recent, recent, { ...recent, t: 59, freqHz: 120 }, old], 60, 10)
+    expect(dest).toHaveLength(2)
+    expect(dest.map((e) => e.t).sort((a, b) => a - b)).toEqual([58, 59])
   })
   it('splits a σ bar that wraps at 0/360 on an uncentred axis', () => {
     const segs = sigmaBarSegments(0, 10 / 360, null)
