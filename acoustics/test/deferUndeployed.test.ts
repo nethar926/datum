@@ -15,7 +15,7 @@ const many=golden.runs.find((r:any)=>r.name==='many-32');
 /** Exporter rowHash (NaN canonicalised). */
 function rowHash(a:Float32Array){const u=new Uint32Array(a.buffer,a.byteOffset,a.length);let h=0x811c9dc5;for(let i=0;i<a.length;i++){const v=Number.isNaN(a[i])?0x7fc00000:u[i];h^=v;h=Math.imul(h,0x01000193)>>>0;}return h>>>0;}
 /** Swift/TS parity pin: chains of the deferred rows (Swift DeferUndeployedTests.tsDigest asserts the same table). */
-const DIGEST:Record<string,number>={'RES1 NB':1036205115,'RES2 NB':503211430,'RES3 NB':1422948325,'RES5 NB':609017706,'RES7 NB':596450304,'RES9 NB':976997890,'RES3 BB FULLBAND':1850292764,'RES5 BB FULLBAND':2787690262,'RES5 vernier 300':3235325204,'LOFAR':4238430556,'DEMON':216088475,'buoy-1 RES5 NB (deployed at 0)':3956764082};
+const DIGEST:Record<string,number>={'RES1 NB':1036205115,'RES2 NB':503211430,'RES3 NB':1935425923,'RES5 NB':4260436442,'RES7 NB':1580845402,'RES9 NB':405046596,'RES3 BB FULLBAND':1193319322,'RES5 BB FULLBAND':1343046509,'RES5 vernier 300':667203418,'LOFAR':4238430556,'DEMON':216088475,'buoy-1 RES5 NB (deployed at 0)':2418889051};
 type Spec={name:string;sub:(e:AcousticEngine)=>number;window:number};
 const resWin=(r:number)=>{const p=resParams(r as ResLevel);return p.integrationS+(p.averages-1)*p.hopS+p.rowPeriodS;};
 const res=(name:string,req:Record<string,unknown>,r:number):Spec=>({name,window:resWin(r),sub:e=>(e.subscribe({kind:'lofar',...req} as any) as any).streamId});

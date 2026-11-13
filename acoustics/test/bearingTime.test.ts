@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {
   AcousticEngine, cpaScenario, fictionalSignature, geometry, createGeometry,
   compassBiasDeg, bearingTimeSigmaDeg, bearingTimeFromState, bearingEnergyFromState,
-  addWrappedGaussian, quantizeU8, quantizeEnergyRow, wrapDeg,
+  addWrappedGaussian, quantizeU8, quantizeEnergyRow, wrapDeg, bearingEnergyNzGuardBins,
   splitWindowBearingBackground, applyBearingEnergyIntegration,
   bearingEnergyRawBytes, energyRowCount, energyRowTimes,
   BEARING_TIME_SIGMA_FLOOR_DEG, BEARING_TIME_DETECT_SNR, BEARING_ENERGY_BINS,
@@ -214,7 +214,8 @@ describe('bearing-energy row',()=>{
     const bias=compassBiasDeg(7,1);
     const g=geometry(c,difar(),createGeometry());
     const expectDeg=wrapDeg(g.bearing*180/Math.PI+bias);
-    expect(circDiff(peakBin(row.energy),expectDeg)).toBeLessThan(1.5);
+    // dB peak can sit a bin or two off the linear mean once the guard is 3*sigma.
+    expect(circDiff(peakBin(row.energy),expectDeg)).toBeLessThanOrEqual(3);
   });
 
   it('the row widens as SNR falls',()=>{
@@ -410,5 +411,17 @@ describe('history, seek, UserCut, and size',()=>{
     expect(energyRowTimes(0,900)).toHaveLength(n);
     expect(energyRowTimes(0,900)[0]).toBe(0);
     expect(energyRowTimes(0,900).at(-1)).toBe(900);
+  });
+});
+
+describe('bearing-energy split-window guard',()=>{
+  it('is max(5°, 3σ) in 1° bins, capped inside the 30° window',()=>{
+    expect(bearingEnergyNzGuardBins(0)).toBe(5);
+    expect(bearingEnergyNzGuardBins(NaN)).toBe(5);
+    expect(bearingEnergyNzGuardBins(3)).toBe(9);
+    expect(bearingEnergyNzGuardBins(4)).toBe(12);
+    expect(bearingEnergyNzGuardBins(6.6)).toBe(20);
+    expect(bearingEnergyNzGuardBins(10)).toBe(29);
+    expect(bearingEnergyNzGuardBins(20)).toBe(29);
   });
 });
