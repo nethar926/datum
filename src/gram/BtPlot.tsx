@@ -235,18 +235,20 @@ export function BtPlot({
           </span>
         ))}
       </div>
-      <div className="bt-label" data-testid="bt-label">{label}</div>
-      <div className="bt-controls">
-        <div className="seg ios-seg" role="group" aria-label="BT history zoom" data-testid="bt-zoom">
-          {BT_ZOOM_WINDOWS_S.map((s) => (
-            <button key={s} type="button" aria-pressed={zoomS === s} data-testid={`bt-zoom-${s}`}
-              disabled={!available} onClick={() => setZoomS(s)}>{s / 60} min</button>
-          ))}
-        </div>
-        <div className="seg ios-seg" role="group" aria-label="BT axis centre" data-testid="bt-centre">
-          <button type="button" aria-pressed={centreOn} data-testid="bt-centre-000"
-            disabled={!available} onClick={() => setCentreOn((v) => !v)}
-            title="Centre the axis on 000° so a track near north does not wrap">Centre 000</button>
+      <div className="bt-chrome">
+        <div className="bt-label" data-testid="bt-label">{label}</div>
+        <div className="bt-controls">
+          <div className="seg ios-seg" role="group" aria-label="BT history zoom" data-testid="bt-zoom">
+            {BT_ZOOM_WINDOWS_S.map((s) => (
+              <button key={s} type="button" aria-pressed={zoomS === s} data-testid={`bt-zoom-${s}`}
+                disabled={!available} onClick={() => setZoomS(s)}>{s / 60} min</button>
+            ))}
+          </div>
+          <div className="seg ios-seg" role="group" aria-label="BT axis centre" data-testid="bt-centre">
+            <button type="button" aria-pressed={centreOn} data-testid="bt-centre-000"
+              disabled={!available} onClick={() => setCentreOn((v) => !v)}
+              title="Centre the axis on 000° so a track near north does not wrap">Centre 000</button>
+          </div>
         </div>
       </div>
       {readout && <div className="bt-readout" data-testid="bt-readout">{readout}</div>}
