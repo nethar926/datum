@@ -10,6 +10,7 @@
  * stays in TS; the Swift side must reproduce one row from the snapshot, bit-for-bit RNG.
  * Fictional parameters only (public textbook physics).
  */
+import '../src/jsMath.js';
 import {writeFileSync,mkdirSync,statSync,readdirSync} from 'node:fs';
 import {dirname,join} from 'node:path';
 import {fileURLToPath} from 'node:url';

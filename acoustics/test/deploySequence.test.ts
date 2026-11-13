@@ -90,23 +90,17 @@ describe('deploy sequence (matches Swift DeploySequence)',()=>{
     expect(st.liveTime).toBe(liveTime(e.scenario.buoys[0]!));
   });
 
-  it('unplaced auto-drop walks deployed → descending → integrating → tuned',()=>{
+  it('unplaced auto-drop stays planned until a route captures it',()=>{
     const raw=generateScenario(clampParams({seed:7}));
     const e=engine7({buoyStartMode:'unplaced',autoDropPattern:true});
     expect(e.scenario.buoys.length).toBe(raw.buoys.length);
     expect(e.scenario.buoys.every(b=>b.placed===false)).toBe(true);
-    expect(e.buoyStatus(0,9).phase).toBe('deployed');
-    const fall=fallDurationS(e.scenario.buoys[0]!);
-    e.advance(1);
-    expect(e.buoyStatus(0,9).phase).toBe('descending');
-    e.advance(fall/2);
-    expect(e.buoyStatus(0,9).phase).toBe('descending');
-    e.advance(fall/2);
-    expect(e.buoyStatus(0,9).phase).toBe('integrating');
-    expect(e.buoyStatus(0,9).splashTime).toBeCloseTo(e.time,12);
-    e.advance(e.scenario.buoys[0]!.integrationTimeS??5);
-    expect(e.buoyStatus(0,9).phase).toBe('tuned');
-    expect(e.buoyStatus(0,9).fill).toBe(1);
+    expect(e.buoyStatus(0,9).phase).toBe('planned');
+    expect(e.buoyStatus(0,9).releaseAt).toBeNull();
+    expect(e.buoyStatus(0,9).plannedDrop).toEqual({x:e.scenario.buoys[0]!.x,y:e.scenario.buoys[0]!.y,order:0});
+    e.advance(60);
+    expect(e.buoyStatus(0,9).phase).toBe('planned');
+    expect(e.scenario.buoys[0]!.deployedAt).toBeUndefined();
   });
 
   it('first live LOFAR row is at/after firstEmitTime; nothing real before live',()=>{

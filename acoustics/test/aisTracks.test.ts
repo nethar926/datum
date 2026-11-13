@@ -2,7 +2,7 @@
 import {it,expect,describe} from 'vitest';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {AcousticEngine,cpaScenario,clampParams,generateScenario} from '../src/index.js';
+import {AcousticEngine,cpaScenario,clampParams,generateScenario,AIS_POSITION_JITTER_M,createAisTrackSource} from '../src/index.js';
 
 function bits(x:number):string{
   const b=new Float64Array([x]);const u=new Uint32Array(b.buffer);
@@ -70,12 +70,22 @@ describe('aisTracks (matches Swift SimEngine.aisTracks)',()=>{
       expect(c.category).toBe('surface');
       expect(c.classificationTarget).not.toBe(true);
       expect(c.active).not.toBe(false);
-      expect(t.x).toBe(c.x);
-      expect(t.y).toBe(c.y);
-      expect(t.crsDeg).toBe(AcousticEngine.degreesTrue(c.course));
+      const dist=Math.hypot(t.x-c.x,t.y-c.y);
+      expect(dist).toBeLessThanOrEqual(AIS_POSITION_JITTER_M+1e-12);
       expect(t.spdMps).toBe(c.speed);
       expect(t.name).toBe(c.params.label.trim());
       expect(t.name.toLowerCase().startsWith('fictional ')).toBe(false);
+      expect(t.callsign).toMatch(/^[A-Z]{2}[0-9]{2}[A-Z]$/);
+      expect(t.shipClass).toBeTruthy();
+      expect(t.class).toBe(t.shipClass);
+      expect(t.hdgAvailable).toBe(t.hdgDeg!=null);
+      const src=createAisTrackSource({seed:7,count:0});
+      const dec=src.decorate({id:t.id,name:t.name,x:c.x,y:c.y,crsDeg:AcousticEngine.degreesTrue(c.course),spdMps:c.speed},e.time);
+      expect(t.crsDeg).toBe(dec.crsDeg);
+      expect(t.hdgDeg).toBe(dec.hdgDeg);
+      expect(t.hdgAvailable).toBe(dec.hdgAvailable);
+      expect(t.callsign).toBe(dec.callsign);
+      expect(t.type).toBe(dec.type);
     }
     const snap=e.scenario.contacts.map(c=>({x:c.x,y:c.y,course:c.course,speed:c.speed}));
     const t0=e.time;
@@ -114,6 +124,42 @@ describe('aisTracks (matches Swift SimEngine.aisTracks)',()=>{
         }
       }
     }
+  });
+
+
+  it('every AIS track id maps to an active surface contact; no phantoms by default',()=>{
+    for(const seed of [1,7,8,42,91,131,371]){
+      const e=new AcousticEngine(generateScenario(clampParams({seed})),seed);
+      for(const t of [0,30,120,600]){
+        const tracks=e.aisTracks(t);
+        const ids=new Set(tracks.map(tr=>tr.id));
+        expect(ids.size).toBe(tracks.length);
+        for(const tr of tracks){
+          const c=e.scenario.contacts.find(x=>x.id===tr.id);
+          expect(c,`missing surface contact for AIS id ${tr.id} seed=${seed}`).toBeTruthy();
+          expect(c!.category).toBe('surface');
+          expect(c!.classificationTarget).not.toBe(true);
+          expect(c!.active).not.toBe(false);
+          const pose=t===e.time?c!:null;
+          if(pose){
+            expect(Math.hypot(tr.x-pose.x,tr.y-pose.y)).toBeLessThanOrEqual(AIS_POSITION_JITTER_M+1e-12);
+          }
+        }
+      }
+    }
+  });
+
+  it('backgroundAisOnly (default off) may add planner ships that are not gram contacts',()=>{
+    const e=engine7();
+    expect(e.scenario.backgroundAisOnly).toBeFalsy();
+    const base=e.aisTracks(0);
+    expect(base.every(t=>e.scenario.contacts.some(c=>c.id===t.id))).toBe(true);
+    e.scenario.backgroundAisOnly=true;
+    const withBg=e.aisTracks(0);
+    expect(withBg.length).toBeGreaterThan(base.length);
+    const phantoms=withBg.filter(t=>!e.scenario.contacts.some(c=>c.id===t.id));
+    expect(phantoms.length).toBeGreaterThan(0);
+    expect(phantoms.every(t=>t.id.startsWith('ais-'))).toBe(true);
   });
 
   it('invalid time throws',()=>{

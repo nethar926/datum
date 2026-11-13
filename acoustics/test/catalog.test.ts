@@ -27,10 +27,10 @@ it('truth/display labels strip leading Fictional while catalog class names keep 
  for(const c of createSurfacePool(7))expect(c.params.label).not.toMatch(/^fictional /i);
  for(const klass of catalog.classes){
   const s:ScenarioInput=cpaScenario();s.contacts=[{...s.contacts[0],params:undefined as never,catalogRef:{classId:klass.id,hullId:klass.hulls[0].id,variantId:'base'},operatingMode:'normal',speed:knotsToMps(Math.min(5,klass.params.maxSpeedKn)),depth:Math.min(50,klass.params.depthM[1]),motion:[{at:0,course:0,speed:knotsToMps(Math.min(5,klass.params.maxSpeedKn)),depth:Math.min(50,klass.params.depthM[1])}]}];
-  for(const c of new AcousticEngine(loadScenario(s)).tactical().truth!.contacts)expect(c.label).not.toMatch(/^fictional /i);
+  for(const c of new AcousticEngine(loadScenario(s)).allTruthContacts())expect(c.label).not.toMatch(/^fictional /i);
  }
  const surface=cpaScenario();const se=new AcousticEngine(surface);se.setSurfaceTraffic(1);
- for(const c of se.tactical().truth!.contacts)expect(c.label).not.toMatch(/^fictional /i);
- for(const scenario of [cpaScenario(),busyScenario(),lloydsCpaScenario()])for(const c of new AcousticEngine(scenario).tactical().truth!.contacts)expect(c.label).not.toMatch(/^fictional /i);
+ for(const c of se.allTruthContacts())expect(c.label).not.toMatch(/^fictional /i);
+ for(const scenario of [cpaScenario(),busyScenario(),lloydsCpaScenario()])for(const c of new AcousticEngine(scenario).allTruthContacts())expect(c.label).not.toMatch(/^fictional /i);
  expect(busyScenario().contacts[0].params.label).toBe('Vessel 0');expect(lloydsCpaScenario().contacts[0].params.label).toBe('Cavitating Training Contact');
 });

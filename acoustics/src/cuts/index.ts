@@ -62,3 +62,12 @@ export type {CutScenarioKind,CutScenarioPack} from './types.js';
 export {CUT_SCENARIO_KINDS} from './types.js';
 export {CUT_VISIBILITY_WINDOW,cutVisibilityIds,meanRawRow,localContrastDb,bestLine,contrastNearHz,cutHydpAtS,resolveLessonHz,lessonLineContrasts} from './visibility.js';
 export type {LessonContrast} from './visibility.js';
+
+export {
+ USER_CUT_VERSION,USER_CUT_KIND,USER_CUT_MODEL_VERSION,USER_CUT_WINDOW_S,USER_CUT_FALLBACK_LABEL,USER_CUT_HISTORY_PREFILL_S,
+ makeUserCut,loadUserCut,userCutJsonBytes,prerollRecipe,decodeFallback,packFallback,
+ inferFilterDifficulty,filterDifficultyFromEngine,engineDifficultyFromFilter,buildReveal,buildFilters,stateHashAt,hashRowData,
+ type UserCut,type UserCutSession,type UserCutReveal,type UserCutRevealContact,type UserCutFilters,
+ type UserCutCheck,type UserCutRowHash,type UserCutFallbackRows,type UserCutFallbackStream,
+ type UserCutMode,type UserCutDifficulty,type UserCutPlant,type MakeUserCutOptions,type DecodedFallbackStream,
+} from './userCut.js';

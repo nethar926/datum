@@ -1,3 +1,4 @@
+import './jsMath.js';
 export * from './prng.js';
 export * from './units.js';
 export * from './kinematics.js';
@@ -59,6 +60,11 @@ export * from './stateBroadband.js';
 export * from './sources.js';
 export * from './stateHistory.js';
 export * from './planeRoute.js';
+export * from './planeDrop.js';
 export * from './aisTrackSource.js';
 export * from './btProfile.js';
 export * from './autoBearings.js';
+export * from './bfiBandSamples.js';
+export * from './freqTrack.js';
+
+export * from './crewSync.js';

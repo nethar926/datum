@@ -115,7 +115,7 @@ describe('setTuned (matches Swift SimEngine.setTuned)',()=>{
     expect(new Uint32Array(new Float32Array(drop).buffer)).toEqual(new Uint32Array(new Float32Array(keep).buffer));
   });
 
-  it('channel conflicts, host channel, and detune does not change lifecycle phase',()=>{
+  it('channel conflicts, host channel, and detune after release is the detuned phase',()=>{
     const e=engine();
     e.setTuned(1,false);
     expect(()=>e.setTuned(1,true,2)).toThrow(/already used/i);
@@ -124,12 +124,15 @@ describe('setTuned (matches Swift SimEngine.setTuned)',()=>{
     for(let i=0;i<8;i++)e.advance(.25);
     const before=e.buoyStatus(0,9,600);
     expect(before.isTuned).toBe(true);
+    expect(before.phase).toBe('tuned');
     e.setTuned(1,false);
     const after=e.buoyStatus(0,9,600);
     expect(after.isTuned).toBe(false);
-    expect(after.phase).toBe(before.phase);
-    expect(after.fill).toBe(before.fill);
-    expect(after.etaSeconds).toBe(before.etaSeconds);
+    expect(after.phase).toBe('detuned');
+    expect(after.fill).toBe(1);
+    expect(after.etaSeconds).toBe(0);
+    expect(after.splashTime).toBe(before.splashTime);
+    expect(after.liveTime).toBe(before.liveTime);
     expect(MAX_RF_CHANNELS).toBe(32);
   });
 });

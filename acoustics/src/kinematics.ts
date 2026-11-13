@@ -1,5 +1,6 @@
 /** Constant-velocity Cartesian tracks: textbook relative motion (Urick, Principles of Underwater Sound).
  * x east, y north, depth positive down; course radians clockwise from north; speed m/s. */
+import './jsMath.js';
 export interface Track { x: number; y: number; depth: number; course: number; speed: number }
 export interface Geometry { range: number; horizontal: number; bearing: number; rangeRate: number; sourceRadial: number; receiverRadial: number; cpaTime: number; cpaRange: number }
 export const createGeometry = (): Geometry => ({range:0,horizontal:0,bearing:0,rangeRate:0,sourceRadial:0,receiverRadial:0,cpaTime:0,cpaRange:0});

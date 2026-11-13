@@ -6,7 +6,8 @@
  * Everything is deterministic in (seed, id, t). Public physics only.
  */
 import { deriveSeed, mulberry32, type Random } from './prng.js';
-import { knotsToMps } from './units.js';
+import { knotsToMps, mpsToKnots } from './units.js';
+import { mixSeedTime, wrapDeg } from './autoBearings.js';
 
 export const AIS_TYPES = ['cargo', 'tanker', 'fishing', 'ferry', 'yacht', 'tug'] as const;
 export type AisType = (typeof AIS_TYPES)[number];
@@ -50,9 +51,12 @@ export type AisEngineTrack = {
   type: AisType;
   x: number;
   y: number;
-  /** Degrees true, wrapped to [0, 360). */
+  /** Degrees true, course over ground, wrapped to [0, 360). */
   crsDeg: number;
   spdMps: number;
+  /** Degrees true, wrapped to [0, 360). Null when the report has no heading. */
+  hdgDeg: number | null;
+  hdgAvailable: boolean;
 };
 
 export type AisIdentity = {
@@ -122,12 +126,6 @@ function pickChar(rng: Random, alphabet: string): string {
   return alphabet[i]!;
 }
 
-function wrapDeg(deg: number): number {
-  let d = deg % 360;
-  if (d < 0) d += 360;
-  return d;
-}
-
 function headingDeg(rad: number): number {
   return wrapDeg(rad * 180 / Math.PI);
 }
@@ -153,6 +151,82 @@ export function identityFromRng(rng: Random): AisIdentity {
 export function aisIdentity(seed: number, id: string): AisIdentity {
   const rng = mulberry32(deriveSeed(seed >>> 0, id));
   return identityFromRng(rng);
+}
+
+/** Below this SOG, reported course is noisy and heading stays steady. */
+/** Position is truth kinematics; no extra GPS/report offset is applied. */
+export const AIS_POSITION_JITTER_M = 0;
+export const AIS_COG_NOISY_KN = 0.5;
+/** Slow vessels (and anything under this) can show crab greater than 15°. */
+export const AIS_SLOW_KN = 3;
+
+/** P(no heading). Weighted toward Class-B-style yacht and fishing. */
+export const AIS_NO_HEADING_P: Record<AisType, number> = {
+  cargo: 0.08,
+  tanker: 0.08,
+  ferry: 0.08,
+  tug: 0.20,
+  fishing: 0.40,
+  yacht: 0.40,
+};
+
+/** Per-track leeway amplitude in knots (set/drift is scenario-level). */
+const AIS_LEEWAY_KN: Record<AisType, readonly [number, number]> = {
+  cargo: [0.05, 0.25],
+  tanker: [0.05, 0.25],
+  ferry: [0.08, 0.30],
+  tug: [0.80, 2.20],
+  fishing: [1.30, 3.40],
+  yacht: [1.30, 3.50],
+};
+
+function scenarioCurrent(seed: number): {setRad: number; driftMps: number} {
+  const rng = mulberry32(deriveSeed(seed >>> 0, 'ais-current'));
+  const setRad = rng() * 2 * Math.PI;
+  const driftKn = 0.50 + rng() * 0.80; // 0.50–1.30 kn
+  return {setRad, driftMps: knotsToMps(driftKn)};
+}
+
+/**
+ * Reported COG and heading for a pose. Heading is course minus a seeded
+ * crab angle (scenario current set/drift plus per-track leeway). Uses a
+ * derived RNG so plan kinematics stay unchanged. Deterministic in
+ * (seed, id, type, course, speed, t).
+ */
+export function aisReportedCourseAndHeading(
+  seed: number,
+  id: string,
+  type: AisType,
+  trueCrsDeg: number,
+  spdMps: number,
+  atSimTime = 0,
+): {crsDeg: number; hdgDeg: number | null; hdgAvailable: boolean} {
+  const rng = mulberry32(deriveSeed(seed >>> 0, `${id}:ais-hdg`));
+  const pNo = AIS_NO_HEADING_P[type] ?? 0.1;
+  const hdgAvailable = rng() >= pNo;
+  const [loKn, hiKn] = AIS_LEEWAY_KN[type] ?? [0.1, 0.4];
+  const leewayMps = knotsToMps(loKn + rng() * (hiKn - loKn));
+  const leewaySign = rng() < 0.5 ? -1 : 1;
+  const driftScale = 0.70 + rng() * 0.80; // per-track 0.70–1.50 of scenario drift
+  const setJitter = (rng() * 2 - 1) * (20 * Math.PI / 180);
+  const current = scenarioCurrent(seed);
+  const crsRad = trueCrsDeg * Math.PI / 180;
+  const crossCurrent = current.driftMps * driftScale * Math.sin(current.setRad + setJitter - crsRad);
+  const lateral = crossCurrent + leewaySign * leewayMps;
+  const sog = Math.max(spdMps, 1e-9);
+  const crabDeg = Math.atan2(lateral, sog) * 180 / Math.PI;
+  const steadyHdgDeg = wrapDeg(trueCrsDeg - crabDeg);
+  const kn = mpsToKnots(spdMps);
+  let crsDeg = wrapDeg(trueCrsDeg);
+  if (kn < AIS_COG_NOISY_KN) {
+    const n = mulberry32(mixSeedTime(seed >>> 0, `ais-cog:${id}`, atSimTime))();
+    crsDeg = wrapDeg(trueCrsDeg + (n * 2 - 1) * 90);
+  }
+  return {
+    crsDeg,
+    hdgAvailable,
+    hdgDeg: hdgAvailable ? steadyHdgDeg : null,
+  };
 }
 
 function trackId(i: number): string {
@@ -229,9 +303,11 @@ function poseOnPlan(plan: AisPlan, t: number): { x: number; y: number; crsRad: n
   };
 }
 
-function toTrack(plan: AisPlan, t: number): AisEngineTrack {
+function toTrack(plan: AisPlan, t: number, seed: number): AisEngineTrack {
   const p = poseOnPlan(plan, t);
   const idn = plan.identity;
+  const trueCrsDeg = headingDeg(p.crsRad);
+  const reported = aisReportedCourseAndHeading(seed, plan.id, idn.type, trueCrsDeg, p.spdMps, t);
   return {
     id: plan.id,
     callsign: idn.callsign,
@@ -240,8 +316,10 @@ function toTrack(plan: AisPlan, t: number): AisEngineTrack {
     class: idn.shipClass,
     type: idn.type,
     x: p.x, y: p.y,
-    crsDeg: headingDeg(p.crsRad),
+    crsDeg: reported.crsDeg,
     spdMps: p.spdMps,
+    hdgDeg: reported.hdgDeg,
+    hdgAvailable: reported.hdgAvailable,
   };
 }
 
@@ -274,19 +352,22 @@ export class SeededAisTrackSource implements AisTrackSource {
   aisTrack(id: string, atSimTime = 0): AisEngineTrack | undefined {
     const plan = this.byId.get(id);
     if (!plan) return undefined;
-    return toTrack(plan, atSimTime);
+    return toTrack(plan, atSimTime, this.spec.seed);
   }
 
   aisTracks(atSimTime = 0): AisEngineTrack[] {
-    return this.plans.map((p) => toTrack(p, atSimTime));
+    return this.plans.map((p) => toTrack(p, atSimTime, this.spec.seed));
   }
 
   /**
    * Keep an existing engine/plot pose and fill callsign, class and type from
    * `seed + id`. Use this so the card does not override Reveal-frame kinematics.
    */
-  decorate(track: DecorateIn, _atSimTime = 0): AisEngineTrack {
+  decorate(track: DecorateIn, atSimTime = 0): AisEngineTrack {
     const idn = aisIdentity(this.spec.seed, track.id);
+    const reported = aisReportedCourseAndHeading(
+      this.spec.seed, track.id, idn.type, wrapDeg(track.crsDeg), track.spdMps, atSimTime,
+    );
     return {
       id: track.id,
       callsign: idn.callsign,
@@ -295,8 +376,10 @@ export class SeededAisTrackSource implements AisTrackSource {
       class: idn.shipClass,
       type: idn.type,
       x: track.x, y: track.y,
-      crsDeg: wrapDeg(track.crsDeg),
+      crsDeg: reported.crsDeg,
       spdMps: track.spdMps,
+      hdgDeg: reported.hdgDeg,
+      hdgAvailable: reported.hdgAvailable,
     };
   }
 }

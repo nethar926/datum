@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {AcousticEngine,cpaScenario,loadScenario,ScenarioError,exampleScenarios} from '../src/index.js';
+import {AcousticEngine,cpaScenario,loadScenario,ScenarioError,exampleScenarios,splashTime} from '../src/index.js';
 import type {LogEvent,Confidence,LogEventType,GramConfig,GramRows,Tactical,Command,WorkerRequest,WorkerResponse} from '../src/contract.js';
 it('loadScenario validates and reports precise paths in ScenarioError',()=>{
   const valid=cpaScenario();expect(loadScenario(valid)).toBe(valid);
@@ -32,7 +32,11 @@ it('legacy registered writeRow remains immediate and now returns numbered rows',
 it('dropBuoy returns numeric id and tactical reuses records carrying lifecycle',()=>{
   const e=new AcousticEngine(cpaScenario()),id=e.dropBuoy({channel:2,kind:'omni',x:10,y:20,hydrophoneDepthM:75,lifeS:1});expect(id).toBe(2);
   const c=e.subscribe({channel:2,kind:'lofar'}),t=e.tactical();expect(t.buoys[1]).toMatchObject({id:2,channel:2,kind:'omni',x:10,y:20,hydrophoneDepthM:75,state:'live'});
-  e.advance(1);expect(e.tactical()).toBe(t);expect(t.buoys[1].state).toBe('dead');const out=new Float32Array(1024);expect(e.writeRow(c.streamId,out)).toBe(0);expect([...out].every(Number.isNaN)).toBe(true);
+  const dropped=e.scenario.buoys[1]!;
+  e.advance(splashTime(dropped)+dropped.life-e.time);expect(e.tactical()).toBe(t);expect(t.buoys[1].state).toBe('dead');
+  const out=new Float32Array(1024);const wr=e.writeRow(c.streamId,out);
+  if(wr>=0)expect([...out].every(Number.isNaN)).toBe(true);
+  else expect(e.rowsReady(c.streamId)).toBe(0); // row clock starts at liveTime; a 1 s life ends during descent
   expect(e.dropBuoy({id:7,channel:3,kind:'difar',x:0,y:0,hydrophoneDepthM:40})).toBe(7);
 });
 it('contract facade exports v1 and additive v1.1 log types',()=>{

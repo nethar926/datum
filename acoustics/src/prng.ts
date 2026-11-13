@@ -1,4 +1,5 @@
 /** Mulberry32 (Tommy Ettinger); Box–Muller transform (1958). Non-cryptographic. */
+import './jsMath.js';
 export type Random = (() => number) & {reset?:(seed:number)=>void};
 export function mulberry32(seed: number): Random {
   let a = seed >>> 0;

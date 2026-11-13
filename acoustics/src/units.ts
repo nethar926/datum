@@ -1,4 +1,5 @@
 /** SI internally; pressure/power dB conventions: Kinsler & Frey, Fundamentals of Acoustics. */
+import './jsMath.js';
 export const C = 1500;
 export const knotsToMps = (knots: number): number => knots * 0.5144444444444445;
 export const mpsToKnots = (mps: number): number => mps / 0.5144444444444445;

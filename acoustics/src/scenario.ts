@@ -30,7 +30,7 @@ export interface PropagationSettings {
   czForceGainLinear?:number;
 }
 export interface Environment { shippingDensity?:number; seaState:number; shipping:Shipping; soundSpeed:number; spreading:Spreading; transition:number; /** Water column °C (Mackenzie / cavitation). */temperatureC?:number; /** Salinity ppt. */salinityPsu?:number; /** Optional propagation feature flags (CZ off by default). */propagation?:PropagationSettings }
-export interface Scenario {reactorOffline?:boolean; surfacePool?:Contact[]; classificationTargets?:string[]; v:1; fMax?:number; fBin?:number; band?:[number,number]; surfaceTraffic?:number; seed:number; mode:'aviation'; bins:number; fmax:number; time:number; ownship:Track; environment:Environment; contacts:Contact[]; buoys:Buoy[]; /** Paired BT/SSP for FE graph (Mackenzie). */waterColumn?:import('./waterColumn.js').WaterColumnProfile;
+export interface Scenario {reactorOffline?:boolean; surfacePool?:Contact[]; classificationTargets?:string[]; v:1; fMax?:number; fBin?:number; band?:[number,number]; surfaceTraffic?:number; /** When true, engine.aisTracks also includes planner-only ships that make no gram signal. Default off. */backgroundAisOnly?:boolean; seed:number; mode:'aviation'; bins:number; fmax:number; time:number; ownship:Track; environment:Environment; contacts:Contact[]; buoys:Buoy[]; /** Paired BT/SSP for FE graph (Mackenzie). */waterColumn?:import('./waterColumn.js').WaterColumnProfile;
   dropAltitudeM?:number; descentRateMps?:number; integrationTimeS?:number; buoyStartMode?:import('./deploySequence.js').BuoyStartMode; autoDropPattern?:boolean }
 export type ContactInput=Omit<Contact,'params'> & {params?:Signature};
 export type ScenarioInput=Omit<Scenario,'contacts'> & {contacts:ContactInput[]};
@@ -44,7 +44,7 @@ function track(t:Track):boolean { return !!t && finite(t.x,-1e9,1e9)&&finite(t.y
 export function validateScenario(value:unknown):asserts value is ScenarioInput {
   const s=value as ScenarioInput;
   if(!s || s.v!==1 || s.mode!=='aviation' || !finite(s.seed,0,4294967295)||!Number.isInteger(s.seed)||!finite(s.bins,2,16384)||!Number.isInteger(s.bins)||!finite(s.fmax,1,1e6)||!finite(s.time,0,1e9)||!track(s.ownship)) throw new Error('Invalid scenario header/ownship');
-  if(s.fMax!==undefined&&!finite(s.fMax,1,1e6))throw new Error('Invalid fMax');if(s.fBin!==undefined&&!finite(s.fBin,1e-12,1e6))throw new Error('Invalid fBin');if(s.surfaceTraffic!==undefined&&!finite(s.surfaceTraffic,0,1))throw new Error('Invalid surfaceTraffic');if(s.band!==undefined&&(!Array.isArray(s.band)||s.band.length!==2||!finite(s.band[0],0,1e6)||!finite(s.band[1],s.band[0]+1e-9,1e6)))throw new Error('Invalid default band');
+  if(s.fMax!==undefined&&!finite(s.fMax,1,1e6))throw new Error('Invalid fMax');if(s.fBin!==undefined&&!finite(s.fBin,1e-12,1e6))throw new Error('Invalid fBin');if(s.surfaceTraffic!==undefined&&!finite(s.surfaceTraffic,0,1))throw new Error('Invalid surfaceTraffic');if(s.backgroundAisOnly!==undefined&&typeof s.backgroundAisOnly!=='boolean')throw new Error('Invalid backgroundAisOnly');if(s.band!==undefined&&(!Array.isArray(s.band)||s.band.length!==2||!finite(s.band[0],0,1e6)||!finite(s.band[1],s.band[0]+1e-9,1e6)))throw new Error('Invalid default band');
   const e=s.environment;
   if(!e||!finite(e.seaState,0,6)||!['light','moderate','heavy'].includes(e.shipping)||!finite(e.soundSpeed,1300,1800)||!['spherical','cylindrical','hybrid'].includes(e.spreading)||!finite(e.transition,1,1e9)||(e.temperatureC!==undefined&&!finite(e.temperatureC,-2,40))||(e.salinityPsu!==undefined&&!finite(e.salinityPsu,0,42))) throw new Error('Invalid environment');
   if(!Array.isArray(s.contacts)||s.contacts.length>250||!Array.isArray(s.buoys)||s.buoys.length>128) throw new Error('Invalid counts');
@@ -61,7 +61,7 @@ export function validateScenario(value:unknown):asserts value is ScenarioInput {
     if(c.transients!==undefined && (!Array.isArray(c.transients)||c.transients.length>512||c.transients.some(badTransient)))throw new Error('Invalid transient (only hydp/engine-ramp/swath/transient are live; other kinds reserved)');
     if(c.behaviour!==undefined&&!BEHAVIOUR_KINDS.includes(c.behaviour))throw new Error('Invalid behaviour');
   }
-  ids.clear(); for(const b of s.buoys){ if(!track(b)||typeof b.id!=='string'||!b.id||ids.has(b.id)||!['passive-omni','difar'].includes(b.type)||!finite(b.rfChannel,0,9999)||!Number.isInteger(b.rfChannel)||!finite(b.deployedAt,0,1e9)||!finite(b.life,.001,1e9)) throw new Error('Invalid buoy');ids.add(b.id); }
+  ids.clear(); for(const b of s.buoys){ const planned=b.placed===false&&!(typeof b.deployedAt==='number'&&Number.isFinite(b.deployedAt)); if(!track(b)||typeof b.id!=='string'||!b.id||ids.has(b.id)||!['passive-omni','difar'].includes(b.type)||!finite(b.rfChannel,0,9999)||!Number.isInteger(b.rfChannel)||(!planned&&!finite(b.deployedAt,0,1e9))||!finite(b.life,.001,1e9)) throw new Error('Invalid buoy');ids.add(b.id); }
 }
 const receiver=(id:string,x:number,y:number):Buoy => ({id,x,y,depth:40,course:0,speed:0,rfChannel:Number(id.replace(/\D/g,''))||1,deployedAt:0,life:7200,type:'difar'});
 /** Generic fictional maritime patrol aircraft operator lays these patterns; no real platform signatures. */
@@ -105,7 +105,8 @@ function errorPath(value:unknown):string {
   }
   ids.clear();for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],p=`$.buoys[${i}]`,bad=trackPath(b,p);if(bad)return bad;if(typeof b.id!=='string'||!b.id||ids.has(b.id))return `${p}.id`;ids.add(b.id);
     if(!['passive-omni','difar'].includes(b.type))return `${p}.type`;
-    for(const [key,lo,hi] of [['rfChannel',0,9999],['deployedAt',0,1e9],['life',.001,1e9]] as const)if(!finite(b[key],lo,hi)||(key==='rfChannel'&&!Number.isInteger(b[key])))return `${p}.${key}`;
+    const planned=b.placed===false&&!(typeof b.deployedAt==='number'&&Number.isFinite(b.deployedAt));
+    for(const [key,lo,hi] of [['rfChannel',0,9999],['life',.001,1e9],...((planned?[]:[['deployedAt',0,1e9]]) as [string,number,number][])] as const)if(!finite((b as any)[key],lo,hi)||(key==='rfChannel'&&!Number.isInteger(b.rfChannel)))return `${p}.${key}`;
   }return '$';
 }
 export const exampleScenarios:Record<string,Scenario>={'m1-cpa-pass':cpaScenario(),'benchmark-busy-field':busyScenario()};

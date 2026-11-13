@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {AcousticEngine,cpaScenario,MAX_RF_CHANNELS,WorkerRuntime} from '../src/index.js';
+import {AcousticEngine,cpaScenario,MAX_RF_CHANNELS,WorkerRuntime,splashTime} from '../src/index.js';
 import type {Command,WorkerRequest,WorkerResponse,Tactical} from '../src/protocol.js';
 
 it('tactical health defaults ok; setBuoyFault toggles yellow fault and clears',()=>{
@@ -15,7 +15,8 @@ it('fault is independent of falling/live/dead life cycle',()=>{
   e.dropBuoy({channel:2,kind:'omni',x:0,y:0,hydrophoneDepthM:40,lifeS:.5});
   e.setBuoyFault(2,true);
   expect(e.tactical().buoys[1]).toMatchObject({state:'live',health:'fault',channel:2});
-  e.advance(.5);expect(e.tactical().buoys[1]).toMatchObject({state:'dead',health:'fault',channel:2});
+  const b2=e.scenario.buoys[1]!;
+  e.advance(splashTime(b2)+b2.life-e.time);expect(e.tactical().buoys[1]).toMatchObject({state:'dead',health:'fault',channel:2});
 });
 
 it('detune releases RF for reuse; retune reassigns; streams NaN while detuned',()=>{
@@ -52,7 +53,8 @@ it('idempotent detune; dead life still works after detune',()=>{
   e.dropBuoy({id:3,channel:3,kind:'difar',x:0,y:0,hydrophoneDepthM:40,lifeS:.25});
   e.detuneBuoy(3);e.detuneBuoy(3);
   expect(e.tactical().buoys.find(b=>b.id===3)).toMatchObject({channel:0,state:'live'});
-  e.advance(.25);
+  const b3=e.scenario.buoys.find(b=>b.id==='buoy-3'||(b as {id:string}).id.endsWith('3'))??e.scenario.buoys.at(-1)!;
+  e.advance(splashTime(b3)+b3.life-e.time);
   expect(e.tactical().buoys.find(b=>b.id===3)).toMatchObject({channel:0,state:'dead'});
 });
 

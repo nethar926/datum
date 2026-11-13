@@ -1,0 +1,17 @@
+{
+  "seed": 7,
+  "contacts": [
+    {
+      "sourceId": "fictional-1",
+      "id": 1,
+      "kind": "submarine",
+      "category": "subsurface",
+      "x": 95.67653215883284,
+      "y": 53.7134545275808,
+      "depthM": 91.26179402694106,
+      "crsDeg": 250.77017507986082,
+      "spdMps": 3.086666666666667,
+      "active": true
+    }
+  ]
+}

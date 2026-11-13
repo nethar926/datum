@@ -25,17 +25,29 @@ export {DrainHandle} from './warmRings.js';
 export {HISTORY_RING_SPAN_S,historyRingRows,historyRingRowsForRes,PRECISION_DB,BEARING_STEP_DEG,BEARING_PRECISION_DEG} from './warmRings.js';
 
 import {sharedScratchBytes,invalidateSpanCache} from './resGram.js';
-import {buoyDeployStatus,BUOY_STATUS_SCREEN_ROWS,type BuoyStatus} from './buoyStatus.js';
+import {buoyDeployStatus,linkQualityAt,weakSignalByStepping,BUOY_STATUS_SCREEN_ROWS,type BuoyStatus} from './buoyStatus.js';
 import {DEFAULT_DROP_ALTITUDE_M,DEFAULT_DESCENT_RATE_MPS,DEFAULT_INTEGRATION_TIME_S,firstEmitTime,isPlaced,validateDrop,validateIntegration,liveTime,type BuoyStartMode} from './deploySequence.js';
 import {btProfile, dropBtBuoy, type BtProfile, type BtProfileOpts, type BtDrop} from './btProfile.js';
 import {autoBearingsFromState, sendBearingFromPeakAt, type AutoBearing, type AliPeakBearing, type ContactPose} from './autoBearings.js';
+import {bfiBandSamplesForBuoy, type BfiBand, type BfiBandSamples} from './bfiBandSamples.js';
+import {FreqTrackBook, freqTrackBearingsFromState, type FreqTrackBearing} from './freqTrack.js';
+import {routeIsReady, pose, type PlaneRouteSpec} from './planeRoute.js';
+import {createAisTrackSource,AIS_DEFAULT_COUNT,AIS_POSITION_JITTER_M,type AisType,type SeededAisTrackSource} from './aisTrackSource.js';
+export {AIS_POSITION_JITTER_M} from './aisTrackSource.js';
+import {DROP_CAPTURE_TOL_S, firstCaptureTime, isPlanned, type PlannedDrop} from './planeDrop.js';
 /** @deprecated Retained for API compat; HYDP no longer curves high→fixed (Wilson squally bar). */
 export const HYDP_START_OFFSET_PCT=1.5;
 /** Simultaneous tuned RF channels (= FE field cap / bench budget). */
 export const MAX_RF_CHANNELS=32;
 /** Surface-only AIS track at a sim time. `x`/`y` are engine metres (Reveal frame: x east, y north).
- * `name` is the fictional deterministic signature label (`displayName` of the surface template). */
-export interface AisTrack {id:string;name:string;x:number;y:number;/** degrees true, [0, 360) */crsDeg:number;spdMps:number}
+ * `name` is the fictional deterministic signature label (`displayName` of the surface template).
+ * Identity and reported heading/COG come from SeededAisTrackSource.decorate on the same truth pose.
+ * `class` is an alias of `shipClass` for the web card. */
+export interface AisTrack {id:string;name:string;x:number;y:number;/** degrees true, [0, 360) */crsDeg:number;spdMps:number;callsign:string;shipClass:string;class:string;type:AisType;hdgDeg:number|null;hdgAvailable:boolean}
+/** Crew host policy. Nil/unset on the engine means solo mode (ungated). Field names match Swift HostPolicy. */
+export interface HostPolicy {maxCrew?:number;allowLateJoin?:boolean;allowRevealLocation:boolean;allowAisConnectivity:boolean}
+/** Reveal / AIS split: submarines only in Reveal; surface contacts only in AIS. */
+export function isSubmarineContact(c:{category?:string}):boolean {return (c.category??'subsurface')!=='surface';}
 /** Engine options (all default off = current behaviour, bit-exact goldens). Swift: SimEngineOptions. */
 export interface AcousticEngineOptions {
   /** Drop-run buoys (Swift SimEngineOptions.deferUndeployed). While engine time < a buoy's deployedAt, every
@@ -75,7 +87,25 @@ export class AcousticEngine {
   private deployIntegrationTimeS=DEFAULT_INTEGRATION_TIME_S;
   private readonly lineWanders:LineWander[]=[];
   private readonly truthState:{contacts:TruthContact[]};
+  /** Reveal view (submarines only). Reused by tactical().truth. */
+  private readonly revealState:{contacts:TruthContact[]};
   private readonly allContacts:Contact[];
+  private readonly aisSource:SeededAisTrackSource;
+  private backgroundAisSource:SeededAisTrackSource|undefined;
+  /** Non-null only when this engine is attached to a crew session. Null is solo mode (ungated). */
+  crewHostPolicy:HostPolicy|null=null;
+  /** Crew session's noAisConnectivity. Ignored in solo mode. */
+  crewNoAisConnectivity=false;
+  get isCrewSession():boolean {return this.crewHostPolicy!=null;}
+  get aisConnectivityAllowed():boolean {
+    if(!this.crewHostPolicy)return true;
+    if(this.crewNoAisConnectivity)return false;
+    return this.crewHostPolicy.allowAisConnectivity;
+  }
+  get revealLocationAllowed():boolean {
+    if(!this.crewHostPolicy)return true;
+    return this.crewHostPolicy.allowRevealLocation;
+  }
   /** Engine-wide source-state history shared by every RES stream. */
   readonly history:StateHistory;private historyOn=false;private historyStart=0;
   /** Sim time at construction (real-history origin for cold LSTI fill). */
@@ -110,6 +140,12 @@ export class AcousticEngine {
   private nextStreamId=1;
   private readonly bearingStorage=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
   private readonly tacticalState:Tactical={v:1,type:'tactical',simT:0,aircraft:{x:0,y:0,altM:300,hdgDeg:0,gsMps:0},buoys:[],bearings:[]};
+  private readonly freqBook=new FreqTrackBook();
+  private planeRoute:PlaneRouteSpec|null=null;
+  /** weakSignal flags keyed by buoy id, last evaluated on the row clock at `this.time`. */
+  weakSignal=new Map<string,boolean>();
+
+  private nextPlannedOrder=0;
   constructor(scenario:ScenarioInput,seed?:number,options:AcousticEngineOptions={}){this.options={deferUndeployed:!!options.deferUndeployed,lstiWarm:!!options.lstiWarm,warmRes:options.warmRes!==false,ringSpanS:options.ringSpanS??HISTORY_RING_SPAN_S,warmFill:options.warmFill==='eager'?'eager':'lazy'};if(seed!==undefined)scenario={...scenario,seed};const resolved=loadScenario(scenario);this.scenario=structuredClone(resolved);const s=this.scenario;
     (this as {startTime:number}).startTime=s.time;
     this.integrationModes.length=0;for(let i=0;i<s.buoys.length;i++)this.integrationModes.push('sti');
@@ -124,7 +160,7 @@ export class AcousticEngine {
     s.surfacePool??=createSurfacePool(s.seed,Math.min(18,250-s.contacts.length));this.baseContacts=s.contacts.filter(c=>!s.surfacePool!.some(p=>p.id===c.id));this.allContacts=this.baseContacts.concat(s.surfacePool);
     if(s.surfacePool){const n=surfaceCount(s.surfaceTraffic??0,s.surfacePool.length);s.contacts.length=0;s.contacts.push(...this.baseContacts);for(let i=0;i<s.surfacePool.length;i++){s.surfacePool[i].active=i<n;if(i<n)s.contacts.push(s.surfacePool[i]);}}
     for(const c of this.allContacts){for(const leg of c.motion)if(leg.at<=s.time){c.course=leg.course;c.speed=leg.speed;c.depth=leg.depth;}}
-    this.aisStartTime=s.time;this.aisStarts=this.allContacts.map(c=>({x:c.x,y:c.y,depth:c.depth,course:c.course,speed:c.speed}));
+    this.aisStartTime=s.time;this.aisStarts=this.allContacts.map(c=>({x:c.x,y:c.y,depth:c.depth,course:c.course,speed:c.speed}));this.aisSource=createAisTrackSource({seed:s.seed,count:0});
     for(const c of this.allContacts)if(c.catalogRef)this.catalogStates.push({contact:c,params:resolveReference(c.catalogRef).params,speed:c.speed,depth:c.depth});
     for(const c of this.allContacts)if(c.params.plantSpec?.hydp&&c.transients?.some(x=>x.kind==='hydp'))c.params.hydpTransient={offsetFrac:0,gain:0,shape:pickHydpShape(s.seed,c.id)};
     for(const c of this.allContacts){configurePropulsion(c.params,s.seed,c.id,c.operatingMode??'normal');if(c.params.plantSpec){const state=this.catalogStates.find(s=>s.contact===c);if(state)updateDerivedSignature(c.params,state.params,mpsToKnots(c.speed),c.depth,c.operatingMode??'normal');else{updatePropulsion(c.params,c.params.shaftHz*60/c.params.plantSpec.maxPsrpm,c.operatingMode??'normal');writePlantTonals(c.params,c.operatingMode??'normal');}}const w=new LineWander(c.params,s.seed,c.id);c.lines=w.lines;this.lineWanders.push(w);}
@@ -138,7 +174,7 @@ export class AcousticEngine {
       if(sheet.length){const idx=c.params.tonals!.findIndex(l=>l.lineFamily==='TRANSIENT');if(idx>=0){const events=narrow.length?narrow:[{at:90,kind:'transient' as const,params:{durationS:sheet[0].durationS,hz:sheet[0].hz,harmonics:sheet[0].harmonics.length}}];this.narrowTransientStates.push({contact:c,index:idx,hz:sheet[0].hz,harmonics:sheet[0].harmonics.length,at:Float64Array.from(events,x=>x.at),durationS:Float64Array.from(events,x=>Number(x.params.durationS))});}}
     }
     for(const c of this.allContacts){c.params.dutyClockS=s.time;applyIntermittentAuxPowers(c.params);}this.updateHydp();this.updateEngineRamps(true);this.updateSwaths();this.updateNarrowTransients();
-    this.truthState={contacts:this.allContacts.map((c,i)=>({speedGated:c.params.speedGated??[],id:i+1,sourceId:c.id,label:c.catalogRef?`${c.params.label} ${resolveReference(c.catalogRef).klass.hulls.find(h=>h.id===c.catalogRef!.hullId)?.number??c.id}`:`${c.params.label} ${c.id}`,propulsion:c.params.propulsion!,spdKts:mpsToKnots(c.speed),active:c.active!==false,category:c.category??'subsurface',...(c.behaviour?{behaviour:c.behaviour}:{}),classificationTarget:c.category!=='surface'&&c.classificationTarget!==false,x:c.x,y:c.y,depthM:c.depth,crsDeg:c.course*180/Math.PI,spdMps:c.speed,lines:c.lines!.map(l=>({eda:l.eda,reactorId:l.reactorId,lineFamily:l.lineFamily,fundamentalHz:l.fundamentalHz,harmonic:l.harmonic,engineId:l.engineId,shaftIndex:l.shaftIndex,id:l.id!,family:l.family,f0Hz:l.hz,freqHz:l.frequencyHz??l.hz,power:l.power,stability:l.stability!,width:l.width!,sigmaBins:l.sigmaBins??0}))}))};this.tacticalState.truth=this.truthState;
+    this.truthState={contacts:this.allContacts.map((c,i)=>({speedGated:c.params.speedGated??[],id:i+1,sourceId:c.id,label:c.catalogRef?`${c.params.label} ${resolveReference(c.catalogRef).klass.hulls.find(h=>h.id===c.catalogRef!.hullId)?.number??c.id}`:`${c.params.label} ${c.id}`,propulsion:c.params.propulsion!,spdKts:mpsToKnots(c.speed),active:c.active!==false,category:c.category??'subsurface',...(c.behaviour?{behaviour:c.behaviour}:{}),classificationTarget:c.category!=='surface'&&c.classificationTarget!==false,x:c.x,y:c.y,depthM:c.depth,crsDeg:c.course*180/Math.PI,spdMps:c.speed,lines:c.lines!.map(l=>({eda:l.eda,reactorId:l.reactorId,lineFamily:l.lineFamily,fundamentalHz:l.fundamentalHz,harmonic:l.harmonic,engineId:l.engineId,shaftIndex:l.shaftIndex,id:l.id!,family:l.family,f0Hz:l.hz,freqHz:l.frequencyHz??l.hz,power:l.power,stability:l.stability!,width:l.width!,sigmaBins:l.sigmaBins??0}))}))};for(const c of this.truthState.contacts)if(isSubmarineContact(c))c.kind='submarine';this.revealState={contacts:this.truthState.contacts.filter(c=>c.kind==='submarine')};this.tacticalState.truth=this.revealState;
     this.generators=s.buoys.map(b=>new LofarGenerator(b,this.allContacts,s.bins,s.band?.[1]??s.fMax??s.fmax,s.seed,s.environment,s.band?.[0]??0));
     this.syncPropagationContext();
     s.buoys.forEach((_,i)=>{this.streams.set(i+1,i);this.legacyIndices.set(i+1,0);});
@@ -147,7 +183,9 @@ export class AcousticEngine {
     this.history=new StateHistory(this.allContacts);invalidateSpanCache();
     if(autoDrop){
       for(const b of pattern){
-        this.addBuoy({...b,placed:false,deployedAt:this.time,
+        const order=this.nextPlannedOrder++;
+        this.addBuoy({...b,placed:false,deployedAt:undefined,
+          plannedDrop:{x:b.x,y:b.y,order},
           dropAltitudeM:s.dropAltitudeM??b.dropAltitudeM??this.deployAltitudeM,
           descentRateMps:s.descentRateMps??b.descentRateMps??this.deployDescentRateMps,
           integrationTimeS:s.integrationTimeS??b.integrationTimeS??this.deployIntegrationTimeS});
@@ -181,18 +219,39 @@ export class AcousticEngine {
   /** Status of buoy `index` (scenario.buoys order) for the RES `res` window on that buoy's row grid (row ends at
    * rowPhaseS + m·rowPeriodS, the grid of every RES stream of the buoy). Every RES is processed all the time,
    * so this depends only on time, deployedAt and the grid: a RES change never resets it. Read-only, O(1). */
-  buoyStatus(index:number,res:ResLevel,screenRows=BUOY_STATUS_SCREEN_ROWS):BuoyStatus{
+  buoyStatus(index:number,res:ResLevel,screenRows=BUOY_STATUS_SCREEN_ROWS,atSimTime?:number):BuoyStatus{
     const bs=this.scenario.buoys,b=bs[index];if(!b)throw new Error('Unknown buoy index');
     void screenRows;
-    return {...buoyDeployStatus(this.time,b),isTuned:isTuned(b),...this.integrationFields(index,res)};
+    return this.statusAt(b,index,res,atSimTime??this.time);
   }
   /** Same for the buoy and row grid of a subscribed stream (RES, FULLBAND, LOFAR or DEMON); undefined if unknown. */
-  buoyStatusForStream(streamId:number,screenRows=BUOY_STATUS_SCREEN_ROWS):BuoyStatus|undefined{
+  buoyStatusForStream(streamId:number,screenRows=BUOY_STATUS_SCREEN_ROWS,atSimTime?:number):BuoyStatus|undefined{
     const s=this.subscriptions.get(streamId),i=this.streams.get(streamId);if(!s||i===undefined)return undefined;
     void screenRows;
     const b=this.scenario.buoys[i]!;
     const res=(s.config.res??9) as ResLevel;
-    return {...buoyDeployStatus(this.time,b),isTuned:isTuned(b),...this.integrationFields(i,res)};
+    return this.statusAt(b,i,res,atSimTime??this.time);
+  }
+  /** Plane pose at `t`, or null when no route is set (linkQuality is then 1). */
+  planePoseAt(t:number){
+    const spec=this.planeRoute;return (spec&&routeIsReady(spec))?pose(spec,t):null;
+  }
+  private statusAt(b:Buoy,index:number,res:ResLevel,t:number):BuoyStatus{
+    const qualityAt=(tau:number)=>linkQualityAt({x:b.x,y:b.y},this.planePoseAt(tau));
+    const st=buoyDeployStatus(t,b,this.planePoseAt(t),qualityAt);
+    const out={...st,isTuned:isTuned(b),...this.integrationFields(index,res)};
+    if(t===this.time)this.weakSignal.set(b.id,out.weakSignal);
+    return out;
+  }
+  /** Recompute weakSignal for every buoy by stepping the row clock to `t` (default: now). */
+  refreshWeakSignal(t=this.time):Map<string,boolean>{
+    const bs=this.scenario.buoys;
+    for(let i=0;i<bs.length;i++){
+      const b=bs[i]!;
+      const qualityAt=(tau:number)=>linkQualityAt({x:b.x,y:b.y},this.planePoseAt(tau));
+      this.weakSignal.set(b.id,weakSignalByStepping(t,qualityAt));
+    }
+    return this.weakSignal;
   }
   /** Requested mode, current (emitting) span, and cold-LSTI fill. `res` selects the Δf used for the span. */
   integrationFields(index:number,res:ResLevel=9):Pick<BuoyStatus,'integrationMode'|'integrationSpanS'|'lstiFill'|'lstiEtaSeconds'>{
@@ -257,6 +316,8 @@ export class AcousticEngine {
   registerStream(id:number,channel:number):void {if(!(channel>0))throw new Error('Unknown RF channel');const i=this.scenario.buoys.findIndex(b=>b.rfChannel===channel);if(i<0)throw new Error('Unknown RF channel');this.streams.set(id,i);if(!this.legacyIndices.has(id))this.legacyIndices.set(id,0);}
   addBuoy(b:Buoy):void {
     if(b.placed===false){validateDrop(b.dropAltitudeM??this.deployAltitudeM,b.descentRateMps??this.deployDescentRateMps);validateIntegration(b.integrationTimeS??this.deployIntegrationTimeS);}
+    if(isPlanned(b)&&!b.plannedDrop)b={...b,plannedDrop:{x:b.x,y:b.y,order:this.nextPlannedOrder++}};
+    else if(b.plannedDrop)this.nextPlannedOrder=Math.max(this.nextPlannedOrder,b.plannedDrop.order+1);
     const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);g.setWaterColumn?.(this.scenario.waterColumn);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:g.row});invalidateSpanCache();this.integrationModes.push('sti');this.syncTacticalBuoys();if(this.historyOn)this.warm.ensure();}
   /** Subscription rows are ready at 4 Hz since subscribe; legacy registered streams remain pull-based.
    * If multiple rows accumulate, each is rendered using current geometry (no historical snapshot queue). */
@@ -652,8 +713,30 @@ export class AcousticEngine {
     const id=spec.id??max+1;if(!Number.isInteger(id)||id<1||id>2147483647)throw new Error('Invalid buoy id');
     const alt=spec.dropAltitudeM??this.deployAltitudeM,rate=spec.descentRateMps??this.deployDescentRateMps,integ=spec.integrationTimeS??this.deployIntegrationTimeS;
     validateDrop(alt,rate);validateIntegration(integ);
-    this.addBuoy({id:`buoy-${id}`,rfChannel:spec.channel,type:spec.kind==='omni'?'passive-omni':'difar',x:spec.x,y:spec.y,depth:spec.hydrophoneDepthM,course:0,speed:0,deployedAt:this.time,life:spec.lifeS??7200,
-      placed:false,dropAltitudeM:alt,descentRateMps:rate,integrationTimeS:integ});return id;
+    const planned=!!(this.planeRoute&&routeIsReady(this.planeRoute));
+    this.addBuoy({id:`buoy-${id}`,rfChannel:spec.channel,type:spec.kind==='omni'?'passive-omni':'difar',x:spec.x,y:spec.y,depth:spec.hydrophoneDepthM,course:0,speed:0,
+      ...(planned?{}:{deployedAt:this.time}),life:spec.lifeS??7200,
+      placed:false,dropAltitudeM:alt,descentRateMps:rate,integrationTimeS:integ,
+      ...(planned?{plannedDrop:{x:spec.x,y:spec.y,order:this.nextPlannedOrder} as PlannedDrop}:{})});return id;
+  }
+
+  /** Arm or clear the aircraft route used to capture planned drops. Does not move ownship. Releases only happen on `advance`. */
+  setPlaneRoute(spec:PlaneRouteSpec|null):void{this.planeRoute=spec;}
+  private resolvePlannedDrops(t0:number,t1:number):void{
+    const spec=this.planeRoute;if(!spec||!routeIsReady(spec))return;
+    const hits:{i:number;t:number;order:number}[]=[];
+    const buoys=this.scenario.buoys;
+    for(let i=0;i<buoys.length;i++){
+      const b=buoys[i]!;if(!isPlanned(b))continue;
+      const d=b.plannedDrop??{x:b.x,y:b.y,order:i};
+      const t=firstCaptureTime(spec,d.x,d.y,t0,t1);if(t!==null)hits.push({i,t,order:d.order});
+    }
+    hits.sort((a,c)=>a.t-c.t||a.order-c.order||a.i-c.i);
+    const taken:number[]=[];
+    for(const h of hits){
+      if(taken.some(t=>Math.abs(t-h.t)<=DROP_CAPTURE_TOL_S))continue;
+      taken.push(h.t);buoys[h.i]!.deployedAt=h.t;
+    }
   }
 
   /** Numeric buoy id (`buoy-N` → N) or -1. */
@@ -696,6 +779,14 @@ export class AcousticEngine {
     for(const sub of this.subscriptions.values()){const si=this.streams.get(sub.config.streamId);if(si===i)sub.config.channel=ch;}
     return ch;
   }
+  /** End this buoy's stream from the current sim time. Further rows are NaN / skipped like pre-live. Idempotent. */
+  scuttleBuoy(buoyId:number):void{
+    const i=this.buoyIndex(buoyId);if(i<0)throw new Error('Unknown buoyId');
+    const b=this.scenario.buoys[i];
+    if(typeof b.scuttledAt==='number'&&Number.isFinite(b.scuttledAt))return;
+    b.scuttledAt=this.time;
+    this.rows[i].alive=isFeeding(b,this.time);
+  }
   /** Degrees true in [0, 360). Matches Swift SimEngine.degreesTrue / LiveEngine. */
   static degreesTrue(rad:number):number{let d=rad*180/Math.PI;d=d%360;if(d<0)d+=360;return d;}
   private aisPose(t:number,i:number):{x:number;y:number;depth:number;course:number;speed:number}{
@@ -710,19 +801,57 @@ export class AcousticEngine {
    * Read-only: does not step or mutate the engine. Duplicate ids are returned once. */
   aisTracks(atSimTime:number=this.time):AisTrack[]{
     if(!Number.isFinite(atSimTime))throw new Error('Invalid AIS time');
+    if(!this.aisConnectivityAllowed)return [];
     const seen=new Set<string>(),out:AisTrack[]=[];
     for(let i=0;i<this.allContacts.length;i++){
       const c=this.allContacts[i]!;
       if(c.category!=='surface'||c.active===false||c.classificationTarget===true)continue;
       if(seen.has(c.id))continue;seen.add(c.id);
-      // Live pose at current sim time is bit-identical to Reveal; closed-form replay otherwise.
+      // Live pose at current sim time matches truth kinematics; closed-form replay otherwise.
       let x:number,y:number,crs:number,spd:number;
       if(atSimTime===this.time){x=c.x;y=c.y;crs=c.course;spd=c.speed;}
       else{const p=this.aisPose(atSimTime,i);x=p.x;y=p.y;crs=p.course;spd=p.speed;}
       const name=(c.params.label??'').trim();
-      out.push({id:c.id,name:name||c.id,x,y,crsDeg:AcousticEngine.degreesTrue(crs),spdMps:spd});
+      out.push(this.aisSource.decorate({id:c.id,name:name||c.id,x,y,crsDeg:AcousticEngine.degreesTrue(crs),spdMps:spd},atSimTime));
+    }
+    // Opt-in planner ships that make no gram signal. Off by default.
+    if(this.scenario.backgroundAisOnly){
+      if(!this.backgroundAisSource)this.backgroundAisSource=createAisTrackSource({seed:this.scenario.seed,count:AIS_DEFAULT_COUNT});
+      for(const t of this.backgroundAisSource.aisTracks(atSimTime)){
+        if(seen.has(t.id))continue;seen.add(t.id);
+        out.push(t);
+      }
     }
     return out;
+  }
+  /**
+   * Full unfiltered truth list (surface and subsurface). Not the Reveal path;
+   * use `truth()` / `truthContacts()` for Reveal. Not HostPolicy-gated.
+   */
+  allTruthContacts(atSimTime:number=this.time):TruthContact[]{
+    if(!Number.isFinite(atSimTime))throw new Error('Invalid truth time');
+    const out:TruthContact[]=[];
+    for(let i=0;i<this.allContacts.length;i++){
+      const c=this.allContacts[i]!,base=this.truthState.contacts[i]!;
+      let x:number,y:number,depth:number,course:number,speed:number;
+      if(atSimTime===this.time){x=c.x;y=c.y;depth=c.depth;course=c.course;speed=c.speed;}
+      else{const p=this.aisPose(atSimTime,i);x=p.x;y=p.y;depth=p.depth;course=p.course;speed=p.speed;}
+      const rec:TruthContact={...base,active:c.active!==false,x,y,depthM:depth,crsDeg:AcousticEngine.degreesTrue(course),spdMps:speed,spdKts:mpsToKnots(speed)};
+      if(isSubmarineContact(c))rec.kind='submarine';else delete rec.kind;
+      out.push(rec);
+    }
+    return out;
+  }
+  /** Ground-truth contact list for Reveal: submarines only, each with kind `'submarine'`.
+   * Returns undefined in a crew session when HostPolicy.allowRevealLocation is false. Solo is ungated. */
+  truthContacts(atSimTime:number=this.time):TruthContact[]|undefined{
+    if(!this.revealLocationAllowed)return undefined;
+    return this.allTruthContacts(atSimTime).filter(c=>c.kind==='submarine');
+  }
+  /** Reveal state (same gate and filter as `truthContacts()`). */
+  truth(atSimTime:number=this.time):{contacts:TruthContact[]}|undefined{
+    const contacts=this.truthContacts(atSimTime);
+    return contacts?{contacts}:undefined;
   }
   /** Seeded BT/SSP for this scenario (Mackenzie 1981, fictional 3-layer shape). */
   btProfile(opts?:BtProfileOpts):BtProfile { return btProfile(this.scenario, opts); }
@@ -771,6 +900,56 @@ export class AcousticEngine {
     const band=typeof freqHzOrBand==='number'?undefined:freqHzOrBand;
     return sendBearingFromPeakAt({buoy:b,buoyIndex:i,contacts,environment:s.environment,seed:s.seed,atSimTime,freqHz,band,dfHz});
   }
+  /**
+   * BFI per-band samples at `atSimTime` for Dorian's pointsFromBandSamples seam.
+   * DIFAR only (throws on omni / unknown). Each band is a band-integrated
+   * level-versus-bearing curve (`bearingDeg[]`, `levelDb[]`). Read-only.
+   */
+  bfiBandSamples(buoyId:number, bands?:BfiBand[], atSimTime:number=this.time):BfiBandSamples {
+    if(!Number.isFinite(atSimTime))throw new Error('Invalid BFI time');
+    const s=this.scenario, dfHz=s.fBin??(s.fmax/Math.max(1,s.bins-1));
+    const contacts:ContactPose[]=[];
+    for(let j=0;j<this.allContacts.length;j++){
+      const c=this.allContacts[j]!;
+      const p=atSimTime===this.time?c:this.aisPose(atSimTime,j);
+      contacts.push({id:c.id,x:p.x,y:p.y,depth:p.depth,course:p.course,speed:p.speed,active:c.active,lines:c.lines,params:c.params});
+    }
+    return bfiBandSamplesForBuoy({buoys:s.buoys,buoyId,contacts,environment:s.environment,seed:s.seed,atSimTime,bands,dfHz});
+  }
+  /**
+   * Start a DIFAR frequency track at `freqHz` (optional gate width, default 10 Hz).
+   * Returns a numeric `trackId`. Throws on a non-DIFAR or unknown buoy. The track
+   * is evaluated from the current sim time until `stopFreqTrack`.
+   */
+  startFreqTrack(buoyId:number, freqHz:number, gateHz?:number):number {
+    return this.freqBook.start(buoyId, freqHz, gateHz, this.time, this.scenario.buoys);
+  }
+  /** Drop a persisted frequency track. Throws on an unknown `trackId`. */
+  stopFreqTrack(trackId:number):void { this.freqBook.stop(trackId); }
+  /**
+   * Frequency-track bearings at `atSimTime`. Each record is
+   * `{trackId, buoyId, freqHz, brgDeg, sigmaDeg, snrDb, quality, locked, state}`.
+   * `quality` is SNR in dB (same as autoBearings). `locked` is true only while
+   * `state` is `'tracking'`. Reconstructs coast/lost/reacquire from start.
+   * Read-only: does not step or mutate engine time.
+   */
+  freqTrackBearings(atSimTime:number=this.time):FreqTrackBearing[] {
+    if(!Number.isFinite(atSimTime))throw new Error('Invalid frequency-track time');
+    const s=this.scenario, dfHz=s.fBin??(s.fmax/Math.max(1,s.bins-1));
+    const contactsAt=(t:number)=>{
+      const contacts:ContactPose[]=[];
+      for(let j=0;j<this.allContacts.length;j++){
+        const c=this.allContacts[j]!;
+        const p=t===this.time?c:this.aisPose(t,j);
+        contacts.push({id:c.id,x:p.x,y:p.y,depth:p.depth,course:p.course,speed:p.speed,active:c.active,lines:c.lines,params:c.params});
+      }
+      return contacts;
+    };
+    return freqTrackBearingsFromState({
+      tracks:this.freqBook.specs(),buoys:s.buoys,contactsAt,
+      environment:s.environment,seed:s.seed,atSimTime,dfHz,
+    });
+  }
     /** Inject/clear yellow fault health (engine-truth for FE chrome). */
   setBuoyFault(buoyId:number,fault:boolean):void{
     const i=this.buoyIndex(buoyId);if(i<0)throw new Error('Unknown buoyId');
@@ -783,7 +962,15 @@ export class AcousticEngine {
     let count=0;for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],out=t.buoys[i];out.x=b.x;out.y=b.y;out.hydrophoneDepthM=b.depth;out.channel=b.rfChannel;out.lifeRemainingS=Math.max(0,b.deployedAt+b.life-this.time);out.batteryFrac=Math.max(0,Math.min(1,out.lifeRemainingS/b.life));out.state=this.time<b.deployedAt?'falling':isAlive(b,this.time)?'live':'dead';out.health=b.fault?'fault':'ok';
       if(b.type==='difar'&&isFeeding(b,this.time)){const g=this.generators[i];for(let j=0;j<g.lineCount;j++){const src=g.lines[j],dst=this.bearingStorage[count];dst.buoyId=out.id;dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;t.bearings[count++]=dst;}}
     }t.bearings.length=count;
-    for(let i=0;i<this.allContacts.length;i++){const c=this.allContacts[i],out=this.truthState.contacts[i];out.active=c.active!==false;out.x=c.x;out.y=c.y;out.depthM=c.depth;out.crsDeg=(c.course*180/Math.PI+360)%360;out.spdMps=c.speed;out.spdKts=mpsToKnots(c.speed);for(let j=0;j<out.lines.length;j++){const line=c.lines![j],dst=out.lines[j];dst.f0Hz=line.hz;dst.freqHz=line.frequencyHz??line.hz;dst.power=line.power;dst.stability=line.stability!;dst.width=line.width!;dst.sigmaBins=line.sigmaBins??0;dst.eda=line.eda;dst.reactorId=line.reactorId;dst.lineFamily=line.lineFamily;dst.fundamentalHz=line.fundamentalHz;dst.harmonic=line.harmonic;dst.engineId=line.engineId;dst.shaftIndex=line.shaftIndex;}}return t;
+    for(let i=0;i<this.allContacts.length;i++){const c=this.allContacts[i],out=this.truthState.contacts[i];out.active=c.active!==false;out.x=c.x;out.y=c.y;out.depthM=c.depth;out.crsDeg=(c.course*180/Math.PI+360)%360;out.spdMps=c.speed;out.spdKts=mpsToKnots(c.speed);for(let j=0;j<out.lines.length;j++){const line=c.lines![j],dst=out.lines[j];dst.f0Hz=line.hz;dst.freqHz=line.frequencyHz??line.hz;dst.power=line.power;dst.stability=line.stability!;dst.width=line.width!;dst.sigmaBins=line.sigmaBins??0;dst.eda=line.eda;dst.reactorId=line.reactorId;dst.lineFamily=line.lineFamily;dst.fundamentalHz=line.fundamentalHz;dst.harmonic=line.harmonic;dst.engineId=line.engineId;dst.shaftIndex=line.shaftIndex;}}
+    if(this.revealLocationAllowed){
+      this.revealState.contacts=this.truthState.contacts.filter(c=>isSubmarineContact(c));
+      for(const c of this.revealState.contacts)c.kind='submarine';
+      t.truth=this.revealState;
+    }else{
+      t.truth=undefined;
+    }
+    return t;
   }
   advance(dt:number):void {
     bumpDemonWeightTick();
@@ -798,6 +985,7 @@ export class AcousticEngine {
       const b=s.buoys[i],r=this.rows[i];advance(b,dt);r.alive=isFeeding(b,s.time);r.depth=b.depth;r.rfChannel=b.rfChannel;
       if(!r.alive){r.bearing=null;this.generators[i].lineCount=0;}
     }
+    this.resolvePlannedDrops(from,s.time);
     // RES span averaging: one engine-wide source-STATE record per frame (stateHistory.ts); rows re-evaluate the modelled spectrum per frame (not a waveform FFT).
     if(this.historyOn)this.history.record(s.time);
     if(this.options.deferUndeployed)this.consumeAboardRows();
@@ -808,7 +996,7 @@ export class AcousticEngine {
    * advancing each cursor as writeRow does for a non-feeding buoy (NaN row: no render, no RNG draw). */
   private consumeAboardRows():void{
     for(const [id,sub] of this.subscriptions){
-      const i=this.streams.get(id);if(i===undefined)continue;const b=this.scenario.buoys[i];if(!b||!(this.time<b.deployedAt))continue;
+      const i=this.streams.get(id);if(i===undefined)continue;const b=this.scenario.buoys[i];if(!b||!(isPlanned(b)||(typeof b.deployedAt==='number'&&this.time<b.deployedAt)))continue;
       if(sub.fullAxis){this.enqueueFullAxis(sub as {fullAxis:NonNullable<typeof sub.fullAxis>;start:number;config:GramConfig});const n=sub.fullAxis.queue.length;sub.read+=n;this.aboardRowsSkipped+=n;sub.fullAxis.queue.length=0;}
       else{const due=Math.max(0,Math.floor((this.time-sub.start)*sub.config.rowRateHz+1e-9));if(due>sub.read){this.aboardRowsSkipped+=due-sub.read;sub.read=due;}}
     }
