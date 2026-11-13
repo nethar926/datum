@@ -1486,7 +1486,7 @@ export default function App() {
               }} />
             <div className="plot-float">
               <button className="glass glass-btn float-btn" data-testid="layers-open" aria-label="Plot layers" onClick={() => setLayersSheet(true)}><IcLayers /></button>
-              <button className="glass glass-btn float-btn" data-testid="ais-toggle" aria-pressed={aisEff}
+              <button className="glass glass-btn float-btn ais-toggle" data-testid="ais-toggle" aria-pressed={aisEff}
                 aria-label={aisAvail ? (aisEff ? 'AIS on, showing surface tracks' : 'AIS off') : 'AIS unavailable on Difficult'}
                 disabled={!aisAvail}
                 onClick={() => { if (aisAvail) setAisOn((v) => !v) }}>AIS</button>

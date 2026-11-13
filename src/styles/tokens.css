@@ -75,6 +75,10 @@
   --glass-accent-tint: rgba(48, 209, 88, 0.36);
   --glass-accent-tint-reduced: rgba(30, 110, 50, 0.94);
   --on-glass-accent: #f2fff4; /* text on green glass over dark (≥4.5:1) */
+  /* System secondary (Color.secondary / --sys-label-2) for the AIS trigger, not the green accent. */
+  --glass-secondary-tint: rgba(235, 235, 245, 0.6);
+  --glass-secondary-tint-reduced: rgba(199, 199, 204, 0.94);
+  --on-glass-secondary: #0b0c0e; /* dark text on light-gray secondary glass (≥4.5:1) */
   --on-accent: #04140a;     /* text on solid green fills (white fails contrast on #30d158) */
   --switch-on: #30d158;
   /* Liquid Glass */
@@ -101,6 +105,8 @@
   --select: #248a3d; --select-fill: rgba(36, 138, 61, 0.18); --select-ring: rgba(36, 138, 61, 0.75);
   --glass-accent-tint: rgba(36, 138, 61, 0.28); --glass-accent-tint-reduced: rgba(36, 138, 61, 0.88);
   --on-glass-accent: #04140a;
+  --glass-secondary-tint: rgba(60, 60, 67, 0.6); --glass-secondary-tint-reduced: rgba(72, 72, 74, 0.88);
+  --on-glass-secondary: #f2f3f5; /* light text on dark secondary glass in light chrome */
   --glass-tint: rgba(255, 255, 255, 0.52);
   --glass-tint-reduced: rgba(249, 249, 251, 0.96);
   --glass-rim: rgba(255, 255, 255, 0.95);
@@ -117,4 +123,8 @@
   --bg-0: #0b0c0e; --bg-1: #131418; --bg-2: #1b1d22; --bg-3: #24262d;
   --hairline: rgba(255, 255, 255, 0.08); --hairline-strong: rgba(255, 255, 255, 0.14);
   --text-1: #f2f3f5; --text-2: #a4a7b0; --text-3: #6c707a; --accent: #30d158;
+  /* Plot chrome stays dark in light appearance: AIS trigger uses dark-mode secondary glass. */
+  --glass-secondary-tint: rgba(235, 235, 245, 0.6);
+  --glass-secondary-tint-reduced: rgba(199, 199, 204, 0.94);
+  --on-glass-secondary: #0b0c0e;
 }
