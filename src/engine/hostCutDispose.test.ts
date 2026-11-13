@@ -79,7 +79,6 @@ describe('SimHost CutSession.dispose', () => {
     expect(liveSession(host)).toBeNull()
   })
 
-  // 54e9c30 UserCut + bearing-time book makes a first seek heavier (~1.7s → ~6s on this box). This test asserts dispose, not latency.
   it('disposes the previous session when seek replaces it', () => {
     const { host, cut } = cutHost(true)
     const before = liveSession(host)!
@@ -95,7 +94,7 @@ describe('SimHost CutSession.dispose', () => {
     host.handle({ type: 'seekCut', simT: target + 20 })
     expect(mid.isDisposed).toBe(true)
     expect(liveSession(host)!.isDisposed).toBe(false)
-  }, 15_000)
+  })
 
   it('disposes abandoned backfill when a newer scrub cancels it', () => {
     const msgs: FromWorker[] = []
