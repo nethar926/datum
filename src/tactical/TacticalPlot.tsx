@@ -36,7 +36,7 @@ import { NIGHT_BEACON, NIGHT_NAV_LIGHTS, nightBeaconOn } from '../displayFx'
 import { PlaneMenu } from './PlaneMenu'
 
 // Only confident DIFAR lines are drawn, to keep the plot readable (lines arrive strongest-first, up to 8 per buoy).
-const MIN_DRAW_Q = 10
+export const MIN_DRAW_Q = 10
 // Bearing lines are drawn to a finite length and fade out toward the end.
 const BEARING_LEN_M = 7000
 const SEL_TOL_HZ = 1.5
@@ -230,7 +230,6 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       }
 
       // Z-order: nav line, then the plane glyph, then the green trail (nav before the glyph, trail after).
-      const st = client.status
       const wall = simTWall.current
       if (wall.t !== st.simT) { wall.t = st.simT; wall.wall = performance.now() / 1000 }
       const simT = displaySimTime(st.simT, st.playing, st.rate, wall.wall, performance.now() / 1000)

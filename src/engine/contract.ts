@@ -34,7 +34,7 @@ export interface TacticalBuoy {
   /** Engine deploy-sequence status (phase, fill, etaSeconds, splashTime, liveTime). */
   status?: { phase: string; fill: number; etaSeconds: number; splashTime: number; liveTime: number; isTuned?: boolean }
 }
-export interface Bearing { buoyId: number; freqHz: number; brgDeg: number; quality: number }
+export interface Bearing { buoyId: number; freqHz: number; brgDeg: number; quality: number; contactId?: string; snrDb?: number; sigmaDeg?: number }
 export interface TruthContact { id: number; label: string; x: number; y: number; crsDeg: number; spdMps: number
   /** v1.2 (m3-lines) fields, optional so older engines still work. */
   active?: boolean; depthM?: number; spdKts?: number

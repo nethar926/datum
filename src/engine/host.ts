@@ -785,6 +785,8 @@ export class SimHost {
   }
 
 
+
+
   private dropBtBuoys(msg: Extract<ToWorker, { type: 'dropBtBuoys' }>): void {
     const engine = this.engine!
     const out: import('./contract').BtDrop[] = []
@@ -834,7 +836,6 @@ export class SimHost {
     t.simT = s.time
     t.aircraft.x = s.ownship.x; t.aircraft.y = s.ownship.y
     t.aircraft.hdgDeg = rad2deg(s.ownship.course); t.aircraft.gsMps = s.ownship.speed
-    const bearings: Bearing[] = []
     for (let i = 0; i < s.buoys.length; i++) {
       const b = s.buoys[i], tb = t.buoys[i]
       const alive = isAlive(b, s.time)
@@ -849,15 +850,14 @@ export class SimHost {
         try { const st = engine.buoyStatus(i); tb.status = { phase: st.phase, fill: st.fill, etaSeconds: st.etaSeconds, splashTime: st.splashTime, liveTime: st.liveTime, isTuned: st.isTuned } }
         catch { tb.status = undefined }
       }
-      if (alive && b.type === 'difar') {
-        const g = engine.generators[i]
-        for (let k = 0; k < g.lineCount; k++) {
-          const l = g.lines[k]
-          bearings.push({ buoyId: b.rfChannel, freqHz: l.freqHz, brgDeg: l.brgDeg, quality: l.quality })
-        }
-      }
     }
-    t.bearings = bearings
+    // Sonya's autoBearings(atSimTime): quality is SNR dB, floor 10. Not generator placeholder lines.
+    try {
+      t.bearings = engine.autoBearings(engine.time).map((b) => ({
+        buoyId: b.buoyId, freqHz: b.freqHz, brgDeg: b.brgDeg, quality: b.quality,
+        contactId: b.contactId, snrDb: b.snrDb, sigmaDeg: b.sigmaDeg,
+      }))
+    } catch { t.bearings = [] }
     // m3-lines engines publish full truth (propulsion, TPK, propulsor, speed-gated lines); use it as is.
     // The engine reuses those records, and postMessage clones them, so this allocates nothing per step.
     const et = (engine as unknown as { tactical?: () => { truth?: { contacts: TruthContact[] } } }).tactical?.().truth
