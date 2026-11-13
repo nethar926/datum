@@ -5,7 +5,8 @@ import { BT_GLYPH, BT_HIT_RADIUS_PT, btGlyphLabel, hitBtDrop } from './btStyle'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { LONG_PRESS_MS, capDpr, exceedsSlop } from '../touch/gestures'
-import { fitView, toScreenX, toScreenY, toWorld, type PlotView, PLOT_CAMERA_FITTED, PLOT_WHEEL_FACTOR, panPlotCamera, recentrePlotCamera, zoomPlotCamera, type PlotCamera } from './transform'
+import { fitView, toScreenX, toScreenY, toWorld, type PlotView, PLOT_CAMERA_FITTED, PLOT_WHEEL_FACTOR, panPlotCamera, plotInsets, recentrePlotCamera, scaleInsets, zoomPlotCamera, type PlotCamera } from './transform'
+import { makePlotLabelScratch, placePlotLabels, plotLabelLeaderEnd, plotLabelSize, type PlotLabelItem, type PlotLabelRect } from './plotLabelLayout'
 import { plotCameraAllows, plotDoubleTap, type PlotDoubleTapState } from './plotCameraGestures'
 import { bearingTo, distToRay, type FixSource, type ManualBearings } from './manual'
 import type { DropController } from './dropController'
@@ -41,6 +42,12 @@ export const MIN_DRAW_Q = 10
 // Bearing lines are drawn to a finite length and fade out toward the end.
 const BEARING_LEN_M = 7000
 const SEL_TOL_HZ = 1.5
+
+function fitPlot(canvas: { width: number; height: number; clientWidth: number }, cam: PlotCamera): PlotView {
+  const dpr = canvas.width / Math.max(1, canvas.clientWidth)
+  const insets = scaleInsets(plotInsets({ dropBar: canvas.clientWidth >= 360 }), dpr)
+  return fitView(canvas.width, canvas.height, cam.spanM, cam.cx, cam.cy, insets)
+}
 
 interface Props {
   client: SimClient; showReveal: boolean; showAis?: boolean; difficulty?: PlotDifficulty; spanM?: number; selectedChannel?: number; selectedHz?: number | null; allBearings?: boolean
@@ -119,6 +126,47 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
     const hitPool: { id: number | string; x: number; y: number; r: number }[] = Array.from({ length: MAX_REVEAL }, () => ({ id: 0, x: 0, y: 0, r: 0 }))
     revealHits.current = hitPool
     const hitCount = { n: 0 }
+    const labelScratch = makePlotLabelScratch()
+    const labelItems: PlotLabelItem[] = []
+    const labelText: string[] = []
+    const labelColor: string[] = []
+    const labelSymbols: PlotLabelRect[] = []
+    const markSymbol = (x: number, y: number, r: number) => {
+      labelSymbols.push({ x: x - r, y: y - r, w: 2 * r, h: 2 * r })
+    }
+    const queueLabel = (id: string, x: number, y: number, text: string, fontSize: number, color: string) => {
+      const sz = plotLabelSize(text, fontSize)
+      labelItems.push({ id, ax: x, ay: y, width: sz.w, height: sz.h })
+      labelText.push(text)
+      labelColor.push(color)
+    }
+    const flushLabels = (ctx: CanvasRenderingContext2D, v: PlotView, dpr: number) => {
+      placePlotLabels(labelItems, labelSymbols, [], v.ux, v.uy, v.uw, v.uh, labelScratch)
+      ctx.save()
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      for (let i = 0; i < labelScratch.placed.length; i++) {
+        const p = labelScratch.placed[i]!, item = labelItems[i]!, text = labelText[i]!, col = labelColor[i]!
+        if (p.leader) {
+          const end = plotLabelLeaderEnd(p, item.ax, item.ay, item.width, item.height)
+          ctx.strokeStyle = col
+          ctx.globalAlpha = 0.7
+          ctx.lineWidth = 0.6 * dpr
+          ctx.beginPath(); ctx.moveTo(item.ax, item.ay); ctx.lineTo(end.x, end.y); ctx.stroke()
+          ctx.globalAlpha = 1
+        }
+        const fontSize = item.height - 3
+        const bold = item.id.startsWith('ais-') || item.id.startsWith('rev-')
+        ctx.font = `${bold ? '600 ' : ''}${fontSize}px ui-monospace, Menlo, monospace`
+        ctx.fillStyle = col
+        ctx.fillText(text, p.x, p.y)
+      }
+      ctx.restore()
+      labelItems.length = 0
+      labelText.length = 0
+      labelColor.length = 0
+      labelSymbols.length = 0
+    }
     // Overlay: new-buoy splash rings (each frame only while one runs) and the drop ghost.
     const drawOverlay = (v: PlotView, w: number, h: number, dpr: number, t: typeof client.status.tactical, now: number) => {
       if (!octx || !over) return
@@ -179,7 +227,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       const key = `${w}x${h}:${reveal}:${span}:${cam.cx}:${cam.cy}:${camTick.current}:${sel}:${selHz}:${all}:${sa}:${sm}:${fs}:${armKey}:${dtSnap}:${fixSnap}:${JSON.stringify(man)}:${nightOn ? '1' : '0'}:${nightFlash}:${fadeKey}:${selectedBtId}:${(t?.btDrops ?? []).map((d) => d.id).join(',')}`
       const base = !(t?.simT === lastT && key === lastKey)
       if (!base && gv === lastGhost && !splashing) return
-      const v = fitView(w, h, span, cam.cx, cam.cy)
+      const v = fitPlot(canvas, cam)
       viewRef.current = v
       if (gv !== lastGhost || splashing || base) { lastGhost = gv; drawOverlay(v, w, h, dpr, t, now) }
       if (!base) return
@@ -254,6 +302,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         }
       }
       ctx.restore()
+      markSymbol(ax, ay, 10 * dpr)
       drawPlaneTrail(ctx, ps.trail, toSX, toSY, ps.trailStyle, dpr)
       if (ps.centre) {
         const sx = toSX(ps.centre.x), sy = toSY(ps.centre.y)
@@ -292,8 +341,8 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         const dashed = b.state === 'falling' || health === 'integrating'
         // Type symbol replaces only the base glyph; selected ring, health colour, dash and tag stay.
         drawBuoyTypeGlyph(ctx, sx, sy, BUOY_TYPE_MARK_SIZE * dpr, buoyTypeLetter(b.kind), colS, C.bg || '#05080a', dashed, (selected ? 2.5 : 1.5) * dpr)
-        ctx.fillStyle = colS
-        ctx.fillText(label, sx + 8 * dpr, sy + 4 * dpr)
+        markSymbol(sx, sy, 9 * dpr)
+        queueLabel(`buoy-${b.channel}`, sx, sy, label, 10 * dpr, colS)
         // Armed aim: ring the chosen DIFAR buoy.
         if (armSt?.phase === 'aim' && armSt.buoyId === b.id) {
           ctx.strokeStyle = C.man; ctx.lineWidth = 2 * dpr; ctx.setLineDash([3 * dpr, 3 * dpr])
@@ -309,8 +358,8 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           ctx.beginPath(); ctx.arc(sx, sy, 11 * dpr, 0, Math.PI * 2); ctx.stroke()
         }
         drawBuoyTypeGlyph(ctx, sx, sy, BUOY_TYPE_MARK_SIZE * dpr, 'B', btCol, C.bg || '#05080a')
-        ctx.fillStyle = btCol
-        ctx.fillText(btGlyphLabel(d.id), sx + 8 * dpr, sy + 4 * dpr)
+        markSymbol(sx, sy, 9 * dpr)
+        queueLabel(`bt-${d.id}`, sx, sy, btGlyphLabel(d.id), 10 * dpr, btCol)
       }
 
       // Armed badge on the plot (bearing arm; drop has its own hint bar).
@@ -423,11 +472,8 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       hitCount.n = 0
       if (reveal && t.truth) {
         const contacts = revealContacts(t.truth.contacts, true)
-        if (contacts.length > bag.cap) bag = makeBag(Math.max(contacts.length, t.truth.contacts.length))
-        const { ax, ay, tw, th, outX, outY, obs, hit, tagCh, tagN } = bag
-        let n = 0, sN = 0
+        let sN = 0
         ctx.strokeStyle = C.reveal; ctx.fillStyle = C.reveal; ctx.lineWidth = 1.25 * dpr
-        ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
         for (let i = 0; i < contacts.length; i++) {
           const c = contacts[i]
           if (c.active === false || !isSubmarineContact(c)) continue
@@ -442,31 +488,12 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           ctx.lineTo(sx - hx * r * 0.7 - hy * r * 0.7, sy - hy * r * 0.7 + hx * r * 0.7)
           ctx.closePath(); ctx.stroke()
           const tag = TAG_S[num - 1] ?? ('S' + num)
-          ax[n] = sx; ay[n] = sy
-          tw[n] = ctx.measureText(tag).width + 4 * dpr; th[n] = 12 * dpr
-          hit[n] = i; tagCh[n] = 0; tagN[n] = num
+          markSymbol(sx, sy, 8 * dpr)
+          queueLabel(`rev-${c.id}`, sx, sy, tag, 10 * dpr, C.reveal)
           if (hitCount.n < hitPool.length) {
             const h = hitPool[hitCount.n++]
             h.id = c.id; h.x = sx; h.y = sy; h.r = 14 * dpr
           }
-          n++
-        }
-        let mObs = 0
-        const pushObs = (x: number, y: number, ow: number, oh: number) => {
-          obs[mObs * 4] = x; obs[mObs * 4 + 1] = y; obs[mObs * 4 + 2] = ow; obs[mObs * 4 + 3] = oh; mObs++
-        }
-        pushObs(0, 0, w, 36 * dpr)
-        pushObs(0, h - 52 * dpr, w, 52 * dpr)
-        pushObs(w - 160 * dpr, 0, 160 * dpr, 40 * dpr)
-        for (const b of t.buoys) {
-          const bx = toScreenX(v, b.x), by = toScreenY(v, b.y)
-          pushObs(bx - 8 * dpr, by - 8 * dpr, 16 * dpr, 16 * dpr)
-          pushObs(bx + 6 * dpr, by - 4 * dpr, 18 * dpr, 12 * dpr)
-        }
-        placeRevealTagsInPlace(n, ax, ay, tw, th, outX, outY, obs, mObs, w, h, 4 * dpr)
-        ctx.fillStyle = C.reveal
-        for (let i = 0; i < n; i++) {
-          ctx.fillText(TAG_S[tagN[i] - 1]!, outX[i] + 2 * dpr, outY[i] + 10 * dpr)
         }
       }
       // AIS: engine list as given (name on the plot; course/speed on the card). No truth fallback.
@@ -491,15 +518,16 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           if (c.hdgAvailable && c.hdgDeg != null) {
             drawAisHeading(ctx, sx, sy, c.hdgDeg, color, 16 * dpr, (pickedAis ? 1.5 : 1) * dpr)
           }
-          ctx.fillStyle = color
           const name = (c.callsign || c.label || c.sourceId || `C${c.id}`).toUpperCase()
-          ctx.fillText(name, sx + 10 * dpr, sy + 4 * dpr)
+          markSymbol(sx, sy, 9 * dpr)
+          queueLabel(`ais-${shipId}`, sx, sy, name, 9 * dpr, color)
           if (hitCount.n < hitPool.length) {
             const h = hitPool[hitCount.n++]
             h.id = c.id; h.x = sx; h.y = sy; h.r = 14 * dpr
           }
         }
       }
+      flushLabels(ctx, v, dpr)
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
@@ -573,7 +601,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
   const clientWorld = (cam: PlotCamera, clientX: number, clientY: number) => {
     const c = ref.current; if (!c) return null
     const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
-    const v = fitView(c.width, c.height, cam.spanM, cam.cx, cam.cy)
+    const v = fitPlot(c, cam)
     return toWorld(v, (clientX - rect.left) * dpr, (clientY - rect.top) * dpr)
   }
   useEffect(() => {
@@ -671,7 +699,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
             const c = ref.current
             if (c) {
               const rect = c.getBoundingClientRect(), dpr = c.width / Math.max(1, rect.width)
-              const v = fitView(c.width, c.height, start.cam.spanM, start.cam.cx, start.cam.cy)
+              const v = fitPlot(c, start.cam)
               const dx = -(e.clientX - start.x) * dpr * v.mPerPx
               const dy = (e.clientY - start.y) * dpr * v.mPerPx
               setCam(panPlotCamera(start.cam, dx, dy))
