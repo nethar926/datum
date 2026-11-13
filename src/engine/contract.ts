@@ -40,20 +40,23 @@ export interface TruthContact { id: number; label: string; x: number; y: number;
   active?: boolean; depthM?: number; spdKts?: number
   propulsion?: import('../gram/truthFamilies').PropulsionTruthLite; lines?: import('../gram/truthFamilies').TruthLineLite[]
   speedGated?: import('../gram/truthFamilies').SpeedGatedLite[]; sourceId?: string; category?: 'surface' | 'subsurface'
+  /** Sonya's Reveal kind. `"submarine"` on truthContacts(); absent on surface rows of allTruthContacts(). */
+  kind?: string
 }
 export interface Tactical {
   v: 1; type: 'tactical'; simT: number
   aircraft: { x: number; y: number; altM: number; hdgDeg: number; gsMps: number }
   buoys: TacticalBuoy[]; bearings: Bearing[]; truth?: { contacts: TruthContact[] }
-  /** Surface-only AIS from AcousticEngine.aisTracks (plotContactSource). Optional callsign/class/type are the seam for Sonya's upcoming richer tracks. */
+  /** Surface-only AIS from AcousticEngine.aisTracks (plotContactSource). */
   aisTracks?: AisTrack[]
   /** BT drops from dropBtBuoy — not in `buoys`. */
   btDrops?: BtDrop[]
 }
-/** Engine AIS track. `callsign` / `class` / `type` are the seam for Sonya's upcoming richer tracks. */
+/** Engine AIS track. Use `shipClass` (not `class`). `hdgDeg` is null when `hdgAvailable` is false. */
 export interface AisTrack {
   id: string; name: string; x: number; y: number; crsDeg: number; spdMps: number
-  callsign?: string; class?: string; type?: string
+  callsign?: string; shipClass?: string; type?: string
+  hdgDeg?: number | null; hdgAvailable?: boolean
 }
 export interface StreamSet { v: 1; type: 'streams'; configs: GramConfig[] }
 export interface WorkerError { v: 1; type: 'error'; message: string }

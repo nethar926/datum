@@ -34,13 +34,14 @@ export type AisEngineTrack = {
   id: string
   name?: string
   callsign?: string
-  class?: string
   shipClass?: string
   type?: string
   x: number
   y: number
   crsDeg: number
   spdMps: number
+  hdgDeg?: number | null
+  hdgAvailable?: boolean
 }
 
 export type AisTrackSource = {
@@ -97,7 +98,7 @@ export function aisInfoFromTrack(t: AisEngineTrack, source?: AisTrackSource, atS
   return {
     id: t.id,
     callsign,
-    shipClass: blankToUndef(src.shipClass ?? src.class ?? t.shipClass ?? t.class),
+    shipClass: blankToUndef(src.shipClass ?? t.shipClass),
     type: blankToUndef(typeof typ === 'string' ? typ : typ != null ? String(typ) : undefined),
     x: src.x, y: src.y, crsDeg: src.crsDeg, spdMps: src.spdMps,
     spdKts: src.spdMps * 1.943844,
@@ -198,5 +199,26 @@ export function drawSailboat(
     ctx.arc(0, 0, s * 0.85, 0, Math.PI * 2)
     ctx.stroke()
   }
+  ctx.restore()
+}
+
+/** Short heading tick in degrees true (0° north / -Y). Omit when hdgAvailable is false. */
+export function drawAisHeading(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  hdgDeg: number,
+  color: string,
+  length: number,
+  lineWidth: number,
+): void {
+  const rad = (hdgDeg * Math.PI) / 180
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.lineWidth = lineWidth
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(x, y)
+  ctx.lineTo(x + Math.sin(rad) * length, y - Math.cos(rad) * length)
+  ctx.stroke()
   ctx.restore()
 }

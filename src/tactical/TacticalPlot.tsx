@@ -25,7 +25,7 @@ import {
 import {
   AIS_AFFILIATIONS, AIS_AFFILIATION_LABEL, AIS_AFFILIATION_RGB,
   aisAffiliation, aisAffiliationVersion, aisCardFrame, aisInfoFromTrack, aisSourceForSeed,
-  drawSailboat, setAisAffiliation, subscribeAisAffiliations,
+  drawAisHeading, drawSailboat, setAisAffiliation, subscribeAisAffiliations,
   type AisAffiliation,
 } from './aisStyle'
 import {
@@ -474,7 +474,12 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       // AIS: engine list as given (name on the plot; course/speed on the card). No truth fallback.
       const ships = aisDisplayTracks(t.aisTracks ?? [], props.current.showAis, props.current.difficulty)
       if (ships.length) {
-        const drawn = ships.map((a) => ({ id: a.id, label: a.name, sourceId: a.id, x: a.x, y: a.y, crsDeg: a.crsDeg, spdMps: a.spdMps, category: 'surface' as const, active: true }))
+        const drawn = ships.map((a) => ({
+          id: a.id, label: a.name, sourceId: a.id, x: a.x, y: a.y, crsDeg: a.crsDeg, spdMps: a.spdMps,
+          callsign: a.callsign, shipClass: a.shipClass, type: a.type,
+          hdgDeg: a.hdgDeg, hdgAvailable: a.hdgAvailable,
+          category: 'surface' as const, active: true,
+        }))
         ctx.font = `600 ${10 * dpr}px ui-monospace, Menlo, monospace`
         for (const c of drawn) {
           const sx = toScreenX(v, c.x), sy = toScreenY(v, c.y)
@@ -483,9 +488,13 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           const color = AIS_AFFILIATION_RGB[aff]
           const pk = props.current.picked
           const pickedAis = !!pk && pk.category === 'surface' && String(pk.sourceId ?? pk.id) === shipId
+          // Existing ship styling: sailboat + affiliation colour; type/shipClass go to the card.
           drawSailboat(ctx, sx, sy, c.crsDeg, color, 11 * dpr, (pickedAis ? 2 : 1.25) * dpr, pickedAis)
+          if (c.hdgAvailable && c.hdgDeg != null) {
+            drawAisHeading(ctx, sx, sy, c.hdgDeg, color, 16 * dpr, (pickedAis ? 1.5 : 1) * dpr)
+          }
           ctx.fillStyle = color
-          const name = (c.label || c.sourceId || `C${c.id}`).toUpperCase()
+          const name = (c.callsign || c.label || c.sourceId || `C${c.id}`).toUpperCase()
           ctx.fillText(name, sx + 10 * dpr, sy + 4 * dpr)
           if (hitCount.n < hitPool.length) {
             const h = hitPool[hitCount.n++]

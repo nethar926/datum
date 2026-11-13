@@ -831,11 +831,10 @@ export class SimHost {
       id: b.rfChannel, channel: b.rfChannel, kind: b.type === 'passive-omni' ? 'omni' : 'difar',
       x: b.x, y: b.y, hydrophoneDepthM: b.depth, batteryFrac: 1, lifeRemainingS: b.life, state: 'falling',
     }))
-    const contacts: TruthContact[] = s.contacts.map((c, i) => ({ id: i + 1, label: c.params.label, x: c.x, y: c.y, crsDeg: 0, spdMps: 0 }))
     const t: Tactical = {
       v: 1, type: 'tactical', simT: 0,
       aircraft: { x: 0, y: 0, altM: AIRCRAFT_ALT_M, hdgDeg: 0, gsMps: 0 },
-      buoys, bearings: [], truth: { contacts },
+      buoys, bearings: [],
     }
     this.tactical = t
     this.updateTactical()
@@ -850,12 +849,13 @@ export class SimHost {
     for (let i = 0; i < s.buoys.length; i++) {
       const b = s.buoys[i], tb = t.buoys[i]
       const alive = isAlive(b, s.time)
-      const remaining = Math.max(0, b.deployedAt + b.life - s.time)
+      const deployedAt = b.deployedAt ?? 0
+      const remaining = Math.max(0, deployedAt + b.life - s.time)
       tb.x = b.x; tb.y = b.y; tb.hydrophoneDepthM = b.depth
       const r = this.active.rx[i]
       if (r && this.rxEnabled && (this.active.mode !== 'res' || this.active.filter === 'BB')) { if (tb.rx) { tb.rx.gainDb = r.gainDb; tb.rx.overload = r.overload } else tb.rx = { gainDb: r.gainDb, overload: r.overload } } else tb.rx = undefined
-      tb.state = s.time < b.deployedAt ? 'falling' : alive ? 'live' : 'dead'
-      tb.lifeRemainingS = s.time < b.deployedAt ? b.life : remaining
+      tb.state = s.time < deployedAt ? 'falling' : alive ? 'live' : 'dead'
+      tb.lifeRemainingS = s.time < deployedAt ? b.life : remaining
       tb.batteryFrac = Math.min(1, tb.lifeRemainingS / b.life)
       if (typeof engine.buoyStatus === 'function') {
         try { const res: ResLevel = isResLevel(this.active.req.res) ? this.active.req.res : 9; const st = engine.buoyStatus(i, res); tb.status = { phase: st.phase, fill: st.fill, etaSeconds: st.etaSeconds, splashTime: st.splashTime, liveTime: st.liveTime, isTuned: st.isTuned } }
@@ -869,18 +869,10 @@ export class SimHost {
         contactId: b.contactId, snrDb: b.snrDb, sigmaDeg: b.sigmaDeg,
       }))
     } catch { t.bearings = [] }
-    // m3-lines engines publish full truth (propulsion, TPK, propulsor, speed-gated lines); use it as is.
-    // The engine reuses those records, and postMessage clones them, so this allocates nothing per step.
-    const et = (engine as unknown as { tactical?: () => { truth?: { contacts: TruthContact[] } } }).tactical?.().truth
-    if (et?.contacts) { t.truth = et; t.aisTracks = plotContactSource(engine); t.btDrops = this.btDrops; return }
-    // Contacts can be added/removed at runtime (v1.1 surface traffic); resync the truth list when the count changes.
-    if (t.truth!.contacts.length !== s.contacts.length)
-      t.truth!.contacts = s.contacts.map((c, i) => ({ id: i + 1, label: c.params?.label ?? `C${i + 1}`, x: c.x, y: c.y, crsDeg: 0, spdMps: 0 }))
-    const contacts = t.truth!.contacts
-    for (let i = 0; i < s.contacts.length; i++) {
-      const c = s.contacts[i], tc = contacts[i]
-      tc.x = c.x; tc.y = c.y; tc.crsDeg = rad2deg(c.course); tc.spdMps = c.speed
-    }
+    // Reveal: engine.truthContacts() only (undefined in crew when allowRevealLocation is false).
+    // Never allContacts / allTruthContacts / scenario.contacts for the plot.
+    const revealed = engine.truthContacts(engine.time)
+    t.truth = revealed ? { contacts: revealed } : undefined
     t.aisTracks = plotContactSource(engine)
     t.btDrops = this.btDrops
   }

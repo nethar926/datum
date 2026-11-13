@@ -21,6 +21,7 @@ export type PlotLayerContact = {
   /** Sonya's upcoming `kind: 'submarine'` field; optional until the engine lands it. */
   kind?: string | null
   id?: string | number
+  sourceId?: string
   x?: number
   y?: number
 }
@@ -69,9 +70,13 @@ export function visible<T extends PlotLayerContact>(
   return contacts.filter((c) => isVisible(c.category, c.active, aisOn, revealOn, difficulty))
 }
 
-/** Reveal layer: submarines only (never surface / merchant contacts). */
-export function revealContacts<T extends PlotLayerContact>(contacts: readonly T[], revealOn: boolean): T[] {
-  if (!revealOn) return []
+/** Reveal layer: submarines only (never surface / merchant contacts).
+ * `null`/`undefined` contacts (crew mode, allowRevealLocation false) draw nothing. */
+export function revealContacts<T extends PlotLayerContact>(
+  contacts: readonly T[] | null | undefined,
+  revealOn: boolean,
+): T[] {
+  if (!revealOn || contacts == null) return []
   return contacts.filter((c) => c.active !== false && isSubmarineContact(c))
 }
 

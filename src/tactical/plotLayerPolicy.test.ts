@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { AcousticEngine, clampParams, generateScenario } from '@acoustics'
 import { describe, expect, it } from 'vitest'
 import {
   PLOT_DIFFICULTY_HARDEST,
@@ -130,5 +133,64 @@ describe('display mapping: Reveal subs vs engine AIS', () => {
       expect(ship.x).toBe(gram!.x)
       expect(ship.y).toBe(gram!.y)
     }
+  })
+})
+
+const revealFxPath = fileURLToPath(new URL('../../ios/DatumAcoustics/Fixtures/reveal-seed7.json', import.meta.url))
+const aisFxPath = fileURLToPath(new URL('../../ios/DatumAcoustics/Fixtures/ais-tracks-seed7.json', import.meta.url))
+
+function engine7() {
+  return new AcousticEngine(generateScenario(clampParams({ seed: 7 })), 7)
+}
+
+describe('seed-7 parity fixtures and engine mapping', () => {
+  it('Reveal shows exactly fictional-1; AIS ids match gram surface contacts at the same x/y; IDs are disjoint', () => {
+    const revealFx = JSON.parse(readFileSync(revealFxPath, 'utf8')) as {
+      contacts: { sourceId: string; kind: string; category: string; x: number; y: number; active: boolean }[]
+    }
+    const aisFx = JSON.parse(readFileSync(aisFxPath, 'utf8')) as {
+      ids: string[]
+      at: { t0: { id: string; x: number; y: number; callsign: string; shipClass: string; type: string }[] }
+    }
+
+    const fromFx = revealContacts(revealFx.contacts, true)
+    expect(fromFx.map((c) => c.sourceId)).toEqual(['fictional-1'])
+    expect(fromFx.every((c) => c.kind === 'submarine')).toBe(true)
+
+    const e = engine7()
+    const revealed = revealContacts(e.truthContacts(), true)
+    expect(revealed.map((c) => c.sourceId)).toEqual(['fictional-1'])
+    expect(revealed.every((c) => c.kind === 'submarine')).toBe(true)
+
+    const ais = aisDisplayTracks(e.aisTracks(0), true, 'regular' as PlotDifficulty)
+    expect(ais.map((t) => t.id)).toEqual(aisFx.ids)
+    const surface = e.allTruthContacts().filter((c) => c.category === 'surface' && c.active !== false)
+    expect(ais.map((t) => t.id).sort()).toEqual(surface.map((c) => c.sourceId).sort())
+    for (const ship of ais) {
+      const gram = surface.find((c) => c.sourceId === ship.id)
+      expect(gram).toBeDefined()
+      expect(ship.x).toBe(gram!.x)
+      expect(ship.y).toBe(gram!.y)
+      const fx = aisFx.at.t0.find((t) => t.id === ship.id)
+      expect(fx).toBeDefined()
+      expect(ship.x).toBe(fx!.x)
+      expect(ship.y).toBe(fx!.y)
+      expect(ship.shipClass).toBe(fx!.shipClass)
+      expect(ship.type).toBe(fx!.type)
+    }
+
+    const revIds = new Set(revealed.map((c) => String(c.sourceId ?? c.id)))
+    const aisIds = new Set(ais.map((t) => t.id))
+    expect([...revIds].some((id) => aisIds.has(id))).toBe(false)
+    expect(aisIds.has('fictional-1')).toBe(false)
+  })
+
+  it('crew mode with allowRevealLocation false draws no reveal', () => {
+    const e = engine7()
+    e.crewHostPolicy = { allowRevealLocation: false, allowAisConnectivity: true }
+    expect(e.truthContacts()).toBeUndefined()
+    expect(revealContacts(e.truthContacts(), true)).toEqual([])
+    expect(revealContacts(undefined, true)).toEqual([])
+    expect(revealContacts(null, true)).toEqual([])
   })
 })

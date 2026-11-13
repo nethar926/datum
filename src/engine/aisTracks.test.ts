@@ -28,26 +28,25 @@ describe('aisTracks / plotContactSource', () => {
     expect(plotContactSource(e).map((t) => t.name)).toEqual(ais.map((t) => t.name))
   })
 
-  it('plot coords match Reveal truth at the current sim time', () => {
+  it('plot coords match gram surface contacts at the current sim time', () => {
     const e = seed7Engine()
     e.step(10)
     const ais = e.aisTracks(e.time)
-    const truth = e.tactical().truth!.contacts
+    const surface = e.allTruthContacts().filter((c) => c.category === 'surface' && c.active !== false)
+    const reveal = e.truthContacts()!
     expect(ais.length).toBeGreaterThan(0)
-for (const t of ais) {
-      const r = truth.find((c) => c.sourceId === t.id) ?? truth.find((c) => c.label === t.name)
-      expect(r, `Reveal contact for ${t.id} ${t.name}`).toBeTruthy()
-      expect(r!.category).toBe('surface')
+    expect(reveal.every((c) => c.kind === 'submarine')).toBe(true)
+    expect(reveal.some((c) => c.sourceId === 'fictional-1')).toBe(true)
+    for (const t of ais) {
+      const r = surface.find((c) => c.sourceId === t.id)
+      expect(r, `gram surface contact for ${t.id} ${t.name}`).toBeTruthy()
       expect(t.x).toBe(r!.x)
       expect(t.y).toBe(r!.y)
       expect(t.crsDeg).toBeCloseTo(r!.crsDeg, 10)
       expect(t.spdMps).toBe(r!.spdMps)
     }
-    expect(truth.some((c) => c.category === 'subsurface')).toBe(true)
-    expect(ais.every((t) => {
-      const r = truth.find((c) => c.sourceId === t.id) ?? truth.find((c) => c.label === t.name)
-      return r?.category === 'surface'
-    })).toBe(true)
+    expect(new Set(ais.map((t) => t.id))).toEqual(new Set(surface.map((c) => c.sourceId)))
+    expect(reveal.every((c) => !ais.some((t) => t.id === c.sourceId))).toBe(true)
   })
 
   it('host publishes aisTracks on the tactical picture', () => {
@@ -60,12 +59,8 @@ for (const t of ais) {
     if (t?.aisTracks) {
       expect(t.aisTracks.every((a) => !a.id.startsWith('fictional-'))).toBe(true)
       for (const a of t.aisTracks) {
-        const reveal = t.truth?.contacts.find((c) => c.sourceId === a.id)
-        if (reveal) {
-          expect(reveal.category).toBe('surface')
-          expect(a.x).toBe(reveal.x)
-          expect(a.y).toBe(reveal.y)
-        }
+        expect(t.truth?.contacts.every((c) => c.kind === 'submarine' || c.category === 'subsurface')).toBe(true)
+        expect(t.truth?.contacts.some((c) => c.sourceId === a.id)).toBeFalsy()
       }
     }
   })
