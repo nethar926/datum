@@ -32,6 +32,7 @@ import {autoBearingsFromState, sendBearingFromPeakAt, numericBuoyId, type AutoBe
 import {
   bearingTimeFromState, bearingEnergyFromState,
   BearingEnergyBook, BEARING_ENERGY_F_LO, BEARING_ENERGY_F_HI, BEARING_TIME_PERIOD_S,
+  BEARING_ENERGY_TAU_S, computeBearingEnergy,
   type BearingTimeEntry, type BearingEnergyRow,
 } from './bearingTime.js';
 import {bfiBandSamplesForBuoy, type BfiBand, type BfiBandSamples} from './bfiBandSamples.js';
@@ -149,6 +150,9 @@ export class AcousticEngine {
   readonly bearingBook=new BearingEnergyBook();
   private bearingFilledThrough:number|undefined;
   private bearingEnergyBand:[number,number]=[BEARING_ENERGY_F_LO,BEARING_ENERGY_F_HI];
+  private bearingEnergyTauS=BEARING_ENERGY_TAU_S;
+  private readonly bearingEnergyPrev=new Map<number,Float64Array>();
+  private readonly bearingEnergyPrevT=new Map<number,number>();
   private planeRoute:PlaneRouteSpec|null=null;
   /** weakSignal flags keyed by buoy id, last evaluated on the row clock at `this.time`. */
   weakSignal=new Map<string,boolean>();
@@ -918,6 +922,13 @@ export class AcousticEngine {
     const lo=band[0],hi=band[1];
     if(!Number.isFinite(lo)||!Number.isFinite(hi)||!(hi>lo)||lo<0)throw new Error('Invalid bearing-energy band');
     this.bearingEnergyBand=[lo,hi];
+    this.bearingEnergyPrev.clear();
+    this.bearingEnergyPrevT.clear();
+  }
+  getBearingEnergyIntegration():number{return this.bearingEnergyTauS;}
+  setBearingEnergyIntegration(tauS:number):void{
+    if(!Number.isFinite(tauS)||tauS<0)throw new Error('Invalid bearing-energy integration time');
+    this.bearingEnergyTauS=tauS;
   }
   /** Per-line and per-band bearing-time entries at `atSimTime` (default now). Read-only. */
   bearingTime(atSimTime:number=this.time):BearingTimeEntry[]{
@@ -927,6 +938,11 @@ export class AcousticEngine {
   /** 360-bin bearing-energy row for one DIFAR buoy, or undefined for omni/BT/unknown. */
   bearingEnergy(buoyId:number, atSimTime:number=this.time, band?:[number,number]):BearingEnergyRow|undefined{
     if(!Number.isFinite(atSimTime))throw new Error('Invalid bearing-energy time');
+    if(!band){
+      this.ensureBearingHistory(atSimTime);
+      const booked=this.bearingBook.energyAt(buoyId,atSimTime);
+      if(booked)return booked;
+    }
     const st=this.bearingState(atSimTime);
     if(band)st.band=band;
     return bearingEnergyFromState(st,buoyId)??undefined;
@@ -970,8 +986,15 @@ export class AcousticEngine {
       this.bearingBook.recordEntries(bearingTimeFromState(st));
       for(let i=0;i<this.scenario.buoys.length;i++){
         const id=numericBuoyId(this.scenario.buoys[i]!.id,i);
-        const row=bearingEnergyFromState(st,id);
-        if(row)this.bearingBook.recordEnergy(row);
+        const prev=this.bearingEnergyPrev.get(id);
+        const prevT=this.bearingEnergyPrevT.get(id);
+        const dt=prevT===undefined?0:t-prevT;
+        const computed=computeBearingEnergy(st,id,dt>0?prev:undefined,dt,this.bearingEnergyTauS);
+        if(computed){
+          this.bearingBook.recordEnergy(computed.row);
+          this.bearingEnergyPrev.set(id,computed.hist);
+          this.bearingEnergyPrevT.set(id,t);
+        }
       }
     }
   }

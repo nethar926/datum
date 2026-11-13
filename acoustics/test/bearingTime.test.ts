@@ -3,9 +3,12 @@ import {
   AcousticEngine, cpaScenario, fictionalSignature, geometry, createGeometry,
   compassBiasDeg, bearingTimeSigmaDeg, bearingTimeFromState, bearingEnergyFromState,
   addWrappedGaussian, quantizeU8, quantizeEnergyRow, wrapDeg,
+  splitWindowBearingBackground, applyBearingEnergyIntegration,
   bearingEnergyRawBytes, energyRowCount, energyRowTimes,
   BEARING_TIME_SIGMA_FLOOR_DEG, BEARING_TIME_DETECT_SNR, BEARING_ENERGY_BINS,
   BEARING_ENERGY_F_LO, BEARING_ENERGY_F_HI, BEARING_TIME_PERIOD_S,
+  BEARING_ENERGY_TAU_S, BEARING_ENERGY_SCALE, BEARING_ENERGY_PACK_VERSION,
+  BEARING_ENERGY_DB_STEP, BEARING_ENERGY_DB_MAX,
   packBearingEnergy, decodeBearingEnergy, makeUserCut, loadUserCut, userCutSizeBytes, userCutJsonBytes,
   clampParams, presetToParams, generateScenario,
   type ContactPose,
@@ -206,7 +209,8 @@ describe('bearing-energy row',()=>{
     expect(row.energy).toHaveLength(BEARING_ENERGY_BINS);
     expect(row.fLo).toBe(BEARING_ENERGY_F_LO);
     expect(row.fHi).toBe(BEARING_ENERGY_F_HI);
-    expect(Math.max(...row.energy)).toBe(255);
+    expect(row.scale).toBe(BEARING_ENERGY_SCALE);
+    expect(Math.max(...row.energy)).toBeGreaterThanOrEqual(100); // ≥10 dB above background
     const bias=compassBiasDeg(7,1);
     const g=geometry(c,difar(),createGeometry());
     const expectDeg=wrapDeg(g.bearing*180/Math.PI+bias);
@@ -228,8 +232,31 @@ describe('bearing-energy row',()=>{
     expect(quantizeU8(2.5)).toBe(3);
     expect(quantizeU8(0)).toBe(0);
     expect(quantizeU8(255.2)).toBe(255);
-    const acc=new Float64Array([1,0.5,0]);
-    expect([...quantizeEnergyRow(acc)]).toEqual([255,128,0]);
+    expect(quantizeU8(BEARING_ENERGY_DB_MAX/BEARING_ENERGY_DB_STEP)).toBe(255);
+  });
+
+  it('encodes dB above the circular split-window background at 0.1 dB/step',()=>{
+    const flat=new Float64Array(360).fill(2);
+    expect([...quantizeEnergyRow(flat)].every(v=>v===0)).toBe(true);
+    const empty=new Float64Array(360);
+    expect([...quantizeEnergyRow(empty)].every(v=>v===0)).toBe(true);
+    const spike=new Float64Array(360);
+    spike[10]=100;
+    const enc=quantizeEnergyRow(spike);
+    expect(enc[10]).toBe(255); // bg≈0 → clamp 25.5 dB
+    expect(enc[10+31]??0).toBe(0); // well outside the 5° guard, on the zero background
+    expect(splitWindowBearingBackground(spike,10)).toBe(0);
+  });
+
+  it('exponentially averages a histogram with τ and copies when τ or dt is 0',()=>{
+    const prev=new Float64Array([1,0]);
+    const inst=new Float64Array([0,1]);
+    const a=Math.exp(-1/8);
+    const out=applyBearingEnergyIntegration(prev,inst,1,8);
+    expect(out[0]).toBeCloseTo(a*1+(1-a)*0,12);
+    expect(out[1]).toBeCloseTo(a*0+(1-a)*1,12);
+    expect([...applyBearingEnergyIntegration(prev,inst,1,0)]).toEqual([0,1]);
+    expect([...applyBearingEnergyIntegration(undefined,inst,1,8)]).toEqual([0,1]);
   });
 
   it('accepts a configurable [fLo, fHi] band',()=>{
@@ -261,6 +288,10 @@ describe('history, seek, UserCut, and size',()=>{
     e.setBearingEnergyBand([20,400]);
     expect(e.getBearingEnergyBand()).toEqual([20,400]);
     e.setBearingEnergyBand([10,1000]);
+    expect(e.getBearingEnergyIntegration()).toBe(BEARING_ENERGY_TAU_S);
+    e.setBearingEnergyIntegration(4);
+    expect(e.getBearingEnergyIntegration()).toBe(4);
+    e.setBearingEnergyIntegration(BEARING_ENERGY_TAU_S);
   });
 
   it('seek-then-read bearingTimeHistory and bearingEnergyHistory equal a live run exactly',()=>{
@@ -300,11 +331,37 @@ describe('history, seek, UserCut, and size',()=>{
     expect(skipT.map(e=>e.valid)).toEqual(liveT.map(e=>e.valid));
   });
 
+  it('a noise-only row stays near 0 dB, and a ≥10 dB contact peaks by t=60 s',()=>{
+    const quiet=new AcousticEngine(envOf([]));
+    quiet.advance(5);
+    const noise=quiet.bearingEnergy(1,5)!;
+    expect(noise.scale).toBe(BEARING_ENERGY_SCALE);
+    const db=[...noise.energy].map(v=>v*BEARING_ENERGY_DB_STEP).sort((a,b)=>a-b);
+    const median=0.5*(db[179]!+db[180]!);
+    const p99=db[Math.floor(0.99*(db.length-1))]!;
+    expect(median).toBeLessThan(1);
+    expect(p99).toBeLessThan(6);
+
+    const e=new AcousticEngine(envOf([contactAt('alpha',45,400)]));
+    e.advance(60);
+    const row=e.bearingEnergy(1,60)!;
+    const band=e.bearingTime(60).find(r=>r.band)!;
+    expect(band.snrDb).toBeGreaterThanOrEqual(10);
+    const bias=compassBiasDeg(7,1);
+    const g=geometry(contactAt('alpha',45,400),difar(),createGeometry());
+    const truth=wrapDeg(g.bearing*180/Math.PI+bias);
+    const pk=peakBin(row.energy);
+    expect(row.energy[pk]!*BEARING_ENERGY_DB_STEP).toBeGreaterThanOrEqual(10);
+    expect(circDiff(pk,truth)).toBeLessThanOrEqual(2*band.sigmaDeg);
+  });
+
   it('UserCut packs, decodes, and counts energy rows in sizeBytes',()=>{
     const s=envOf([contactAt('alpha',45,400)]);
     const e=new AcousticEngine(s);
     e.advance(2);
     const pack=packBearingEnergy(e,0,2,[1]);
+    expect(pack.version).toBe(BEARING_ENERGY_PACK_VERSION);
+    expect(pack.scale).toBe(BEARING_ENERGY_SCALE);
     expect(pack.bins).toBe(360);
     expect(pack.periodS).toBe(BEARING_TIME_PERIOD_S);
     expect(pack.fLo).toBe(10);
@@ -330,6 +387,17 @@ describe('history, seek, UserCut, and size',()=>{
     const sess=loadUserCut(cut);
     expect(sess.bearingEnergy?.periodS).toBe(1);
     expect(sess.bearingEnergy?.bins).toBe(360);
+    expect(sess.bearingEnergy?.version).toBe(BEARING_ENERGY_PACK_VERSION);
+    expect(sess.bearingEnergy?.scale).toBe(BEARING_ENERGY_SCALE);
+
+    // Legacy packs (no version / scale) still decode; display mapping is max-norm-u8.
+    const legacy={...pack} as typeof pack;
+    delete (legacy as {version?:unknown}).version;
+    delete (legacy as {scale?:unknown}).scale;
+    const old=decodeBearingEnergy(legacy);
+    expect(old.version).toBe(1);
+    expect(old.scale).toBe('max-norm-u8');
+    expect(old.buoys[0]!.rows.length).toBe(decoded.buoys[0]!.rows.length);
   });
 
   it('four buoys × 900 s add about 1.3 MB of raw energy',()=>{

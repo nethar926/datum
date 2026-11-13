@@ -28,7 +28,7 @@ import type {Contact} from '../scenario.js';
 import type {GramFilter,ResLevel} from '../protocol.js';
 import type {Buoy} from '../buoys.js';
 import {inferBuoyType} from '../buoys.js';
-import {energyRowTimes,BEARING_ENERGY_BINS,BEARING_TIME_PERIOD_S} from '../bearingTime.js';
+import {energyRowTimes,BEARING_ENERGY_BINS,BEARING_TIME_PERIOD_S,BEARING_ENERGY_PACK_VERSION,BEARING_ENERGY_SCALE} from '../bearingTime.js';
 
 export const USER_CUT_VERSION=2;
 export const USER_CUT_KIND='user';
@@ -144,7 +144,12 @@ export interface UserCutBearingEnergyBuoy {
   encoding:UserCutBearingEnergyEncoding;
   data:string;
 }
+export type UserCutBearingEnergyScale='db-above-bg-0.1'|'max-norm-u8';
 export interface UserCutBearingEnergy {
+  /** 2 = dB-above-background u8; omitted or 1 = legacy max-normalised u8. */
+  version?:number;
+  /** Display mapping. Omitted on legacy packs (treat as max-norm-u8). */
+  scale?:UserCutBearingEnergyScale;
   periodS:number;
   bins:number;
   fLo:number;
@@ -157,6 +162,7 @@ export interface UserCutBearingEnergy {
 }
 export type DecodedBearingEnergyRow={buoyId:number;t0:number;count:number;rows:Uint8Array[]};
 export type DecodedBearingEnergy={
+  version:number;scale:UserCutBearingEnergyScale;
   periodS:number;bins:number;fLo:number;fHi:number;simT0:number;simT1:number;
   buoys:DecodedBearingEnergyRow[];
 };
@@ -641,7 +647,7 @@ export function packBearingEnergy(engine:AcousticEngine,t0:number,t1:number,buoy
     const p=packEnergyBytes(u);
     packed.push({buoyId:id,t0:times[0]??t0,count:times.length,encoding:p.encoding,data:p.text});
   }
-  return {periodS:BEARING_TIME_PERIOD_S,bins:BEARING_ENERGY_BINS,fLo:band[0],fHi:band[1],simT0:t0,simT1:t1,buoys:packed,rawBytes};
+  return {version:BEARING_ENERGY_PACK_VERSION,scale:BEARING_ENERGY_SCALE,periodS:BEARING_TIME_PERIOD_S,bins:BEARING_ENERGY_BINS,fLo:band[0],fHi:band[1],simT0:t0,simT1:t1,buoys:packed,rawBytes};
 }
 
 export function decodeBearingEnergy(pack:UserCutBearingEnergy):DecodedBearingEnergy{
@@ -652,7 +658,9 @@ export function decodeBearingEnergy(pack:UserCutBearingEnergy):DecodedBearingEne
     for(let k=0;k<b.count;k++)rows.push(u.slice(k*pack.bins,(k+1)*pack.bins));
     buoys.push({buoyId:b.buoyId,t0:b.t0,count:b.count,rows});
   }
-  return {periodS:pack.periodS,bins:pack.bins,fLo:pack.fLo,fHi:pack.fHi,simT0:pack.simT0,simT1:pack.simT1,buoys};
+  const version=pack.version===2?2:1;
+  const scale=pack.scale??(version===2?BEARING_ENERGY_SCALE:'max-norm-u8');
+  return {version,scale,periodS:pack.periodS,bins:pack.bins,fLo:pack.fLo,fHi:pack.fHi,simT0:pack.simT0,simT1:pack.simT1,buoys};
 }
 
 export function packFallback(streams:ExactStreamRows[]):UserCutFallbackRows{

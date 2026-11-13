@@ -33,6 +33,18 @@ export const BEARING_ENERGY_F_HI = 1000;
 export const BEARING_ENERGY_DF_HZ = 1;
 /** Frames retained per buoy (900 s window + LSTI/late margin + 2). */
 export const BEARING_ENERGY_CAPACITY = 1000;
+/** Default exponential-average time constant for bearing-energy rows. */
+export const BEARING_ENERGY_TAU_S = 8;
+/** Circular split-window half-width / excluded guard, in degrees (1° bins). */
+export const BEARING_ENERGY_NZ_WINDOW_DEG = 30;
+export const BEARING_ENERGY_NZ_GUARD_DEG = 5;
+/** Encoded dynamic range: 0..25.5 dB above background, 0.1 dB per uint8 step. */
+export const BEARING_ENERGY_DB_STEP = 0.1;
+export const BEARING_ENERGY_DB_MAX = 25.5;
+export const BEARING_ENERGY_SCALE = 'db-above-bg-0.1' as const;
+export type BearingEnergyScale = typeof BEARING_ENERGY_SCALE;
+/** UserCut bearingEnergy pack version for the dB-above-background encoding. */
+export const BEARING_ENERGY_PACK_VERSION = 2;
 
 export type BearingTimeEntry = {
   t: number;
@@ -53,8 +65,9 @@ export type BearingEnergyRow = {
   buoyId: number;
   fLo: number;
   fHi: number;
-  /** 360 one-degree bins, 0…359° true, max-normalised and quantised to uint8. */
+  /** 360 one-degree bins, 0…359° true, dB above background at 0.1 dB/step (0..25.5 dB). */
   energy: Uint8Array;
+  scale: BearingEnergyScale;
 };
 
 export type BearingTrackSpec = {buoyId: number; freqHz: number};
@@ -288,18 +301,64 @@ export function quantizeU8(x: number): number {
   return Math.max(0, Math.min(255, Math.floor(x + 0.5)));
 }
 
-export function quantizeEnergyRow(acc: Float64Array): Uint8Array {
-  const out = new Uint8Array(acc.length);
-  let peak = 0;
-  for (let i = 0; i < acc.length; i++) if (acc[i]! > peak) peak = acc[i]!;
-  if (!(peak > 0)) return out;
-  const s = 255 / peak;
-  for (let i = 0; i < acc.length; i++) out[i] = quantizeU8(acc[i]! * s);
+/** Circular split-window background at bin `i`: mean over ±window°, excluding ±guard°. */
+export function splitWindowBearingBackground(
+  acc: ArrayLike<number>,
+  i: number,
+  window: number = BEARING_ENERGY_NZ_WINDOW_DEG,
+  guard: number = BEARING_ENERGY_NZ_GUARD_DEG,
+): number {
+  const n = acc.length;
+  if (n <= 0) return 0;
+  let sum = 0, count = 0;
+  for (let d = guard + 1; d <= window; d++) {
+    let L = i - d; if (L < 0) L += n;
+    let R = i + d; if (R >= n) R -= n;
+    sum += acc[L]! + acc[R]!;
+    count += 2;
+  }
+  return count > 0 ? sum / count : 0;
+}
+
+/** Exponential average of a bearing histogram. `prev` undefined or `tauS`/`dt` ≤ 0 → copy of `inst`. */
+export function applyBearingEnergyIntegration(
+  prev: Float64Array | undefined,
+  inst: Float64Array,
+  dt: number,
+  tauS: number,
+): Float64Array {
+  const out = new Float64Array(inst.length);
+  if (!prev || prev.length !== inst.length || !(tauS > 0) || !(dt > 0)) {
+    out.set(inst);
+    return out;
+  }
+  const a = Math.exp(-dt / tauS), b = 1 - a;
+  for (let i = 0; i < inst.length; i++) out[i] = a * prev[i]! + b * inst[i]!;
   return out;
 }
 
-/** One 360-bin energy row for a DIFAR buoy. Null for omni/BT/unknown/not feeding. */
-export function bearingEnergyFromState(state: BearingTimeState, buoyId: number): BearingEnergyRow | null {
+/**
+ * Encode a linear-power bearing histogram as dB above the circular split-window
+ * background, clamped to 0..25.5 dB, then quantised at 0.1 dB per uint8 step.
+ */
+export function quantizeEnergyRow(acc: Float64Array): Uint8Array {
+  const n = acc.length;
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const v = acc[i]!;
+    const bg = splitWindowBearingBackground(acc, i);
+    let db = 0;
+    if (v > 0 && bg > 0) db = powerToDb(v / bg);
+    else if (v > 0) db = BEARING_ENERGY_DB_MAX;
+    if (db < 0) db = 0;
+    if (db > BEARING_ENERGY_DB_MAX) db = BEARING_ENERGY_DB_MAX;
+    out[i] = quantizeU8(db / BEARING_ENERGY_DB_STEP);
+  }
+  return out;
+}
+
+/** Instantaneous 360-bin linear-power histogram for a DIFAR buoy, or null. */
+export function bearingEnergyHistogramFromState(state: BearingTimeState, buoyId: number): Float64Array | null {
   const t = state.atSimTime;
   const env = state.environment;
   const dfHz = state.dfHz ?? BEARING_ENERGY_DF_HZ;
@@ -345,7 +404,39 @@ export function bearingEnergyFromState(state: BearingTimeState, buoyId: number):
     const sig = bearingTimeSigmaDeg(s, dfHz, integ);
     addWrappedGaussian(acc, brgDeg, sig, s);
   }
-  return {t, buoyId, fLo, fHi, energy: quantizeEnergyRow(acc)};
+  return acc;
+}
+
+export type BearingEnergyCompute = {row: BearingEnergyRow; hist: Float64Array};
+
+/** Instantaneous or integrated energy row plus the linear histogram for the next tick. */
+export function computeBearingEnergy(
+  state: BearingTimeState,
+  buoyId: number,
+  prev?: Float64Array,
+  dt: number = 0,
+  tauS: number = BEARING_ENERGY_TAU_S,
+): BearingEnergyCompute | null {
+  const inst = bearingEnergyHistogramFromState(state, buoyId);
+  if (!inst) return null;
+  const hist = applyBearingEnergyIntegration(prev, inst, dt, tauS);
+  const band = bandOf(state);
+  return {
+    row: {
+      t: state.atSimTime, buoyId, fLo: band[0], fHi: band[1],
+      energy: quantizeEnergyRow(hist), scale: BEARING_ENERGY_SCALE,
+    },
+    hist,
+  };
+}
+
+/** One 360-bin energy row for a DIFAR buoy. Null for omni/BT/unknown/not feeding. */
+export function bearingEnergyFromState(
+  state: BearingTimeState,
+  buoyId: number,
+  opts?: {prev?: Float64Array; dt?: number; tauS?: number},
+): BearingEnergyRow | null {
+  return computeBearingEnergy(state, buoyId, opts?.prev, opts?.dt ?? 0, opts?.tauS ?? BEARING_ENERGY_TAU_S)?.row ?? null;
 }
 
 export function bearingEnergyRawBytes(buoyCount: number, durationS: number, periodS = BEARING_TIME_PERIOD_S): number {
