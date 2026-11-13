@@ -912,3 +912,24 @@ button.ios-row:active { background: var(--sys-fill); }
 .buoy-seg { min-width: 0; max-width: 100%; overflow-x: auto; }
 
 .scenario-btn { min-width: 76px; min-height: 44px; flex-shrink: 0; padding-inline: 8px; }
+
+/* Accent swatches (Settings › Accent). 44 px hit target, 32 px colour well, selected ring. */
+.accent-swatches { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.accent-swatch {
+  width: 44px; height: 44px; padding: 6px; border: 0; border-radius: 50%;
+  background-clip: content-box; background-color: var(--swatch, #30d158);
+  box-shadow: none; cursor: pointer;
+}
+.accent-swatch[data-accent='green'] { --swatch: #30d158; }
+.accent-swatch[data-accent='blue'] { --swatch: #5ac8fa; }
+.accent-swatch[data-accent='amber'] { --swatch: #ff9f0a; }
+.accent-swatch[data-accent='red'] { --swatch: #ff453a; }
+.accent-swatch[data-accent='gray'] { --swatch: #8e8e93; }
+:root[data-scheme='light'] .accent-swatch[data-accent='green'] { --swatch: #248a3d; }
+:root[data-scheme='light'] .accent-swatch[data-accent='blue'] { --swatch: #007399; }
+:root[data-scheme='light'] .accent-swatch[data-accent='amber'] { --swatch: #9a5b00; }
+:root[data-scheme='light'] .accent-swatch[data-accent='red'] { --swatch: #c0131a; }
+:root[data-scheme='light'] .accent-swatch[data-accent='gray'] { --swatch: #6c6c70; }
+.accent-swatch[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2px var(--swatch);
+}

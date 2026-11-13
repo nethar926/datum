@@ -128,3 +128,137 @@
   --glass-secondary-tint-reduced: rgba(199, 199, 204, 0.94);
   --on-glass-secondary: #0b0c0e;
 }
+
+/* Accent colour overrides (Settings › Accent). Chrome tint only.
+   Green is the default on :root / :root[data-scheme='light'] above.
+   --select-blue and --plot-buoy-* stay fixed. */
+:root[data-accent='blue'] {
+  --accent: #5ac8fa;
+  --tint: #5ac8fa;
+  --tint-fill: rgba(90, 200, 250, 0.22);
+  --select: #5ac8fa;
+  --select-fill: rgba(90, 200, 250, 0.22);
+  --select-ring: rgba(132, 216, 255, 0.85);
+  --glass-accent-tint: rgba(90, 200, 250, 0.36);
+  --glass-accent-tint-reduced: rgba(10, 90, 130, 0.94);
+  --on-glass-accent: #f2f8ff;
+  --on-accent: #041018;
+  --switch-on: #5ac8fa;
+}
+:root[data-scheme='light'][data-accent='blue'] {
+  --accent: #007399;
+  --tint: #007399;
+  --tint-fill: rgba(0, 115, 153, 0.14);
+  --select: #007399;
+  --select-fill: rgba(0, 115, 153, 0.18);
+  --select-ring: rgba(0, 115, 153, 0.75);
+  --glass-accent-tint: rgba(0, 115, 153, 0.28);
+  --glass-accent-tint-reduced: rgba(0, 115, 153, 0.88);
+  --on-glass-accent: #041018;
+  --on-accent: #fff;
+  --switch-on: #5ac8fa;
+}
+:root[data-accent='amber'] {
+  --accent: #ff9f0a;
+  --tint: #ff9f0a;
+  --tint-fill: rgba(255, 159, 10, 0.22);
+  --select: #ff9f0a;
+  --select-fill: rgba(255, 159, 10, 0.22);
+  --select-ring: rgba(255, 196, 80, 0.85);
+  --glass-accent-tint: rgba(255, 159, 10, 0.36);
+  --glass-accent-tint-reduced: rgba(140, 80, 0, 0.94);
+  --on-glass-accent: #fff8f0;
+  --on-accent: #1a0e00;
+  --switch-on: #ff9f0a;
+}
+:root[data-scheme='light'][data-accent='amber'] {
+  --accent: #9a5b00;
+  --tint: #9a5b00;
+  --tint-fill: rgba(154, 91, 0, 0.14);
+  --select: #9a5b00;
+  --select-fill: rgba(154, 91, 0, 0.18);
+  --select-ring: rgba(154, 91, 0, 0.75);
+  --glass-accent-tint: rgba(154, 91, 0, 0.28);
+  --glass-accent-tint-reduced: rgba(154, 91, 0, 0.88);
+  --on-glass-accent: #1a0e00;
+  --on-accent: #fff;
+  --switch-on: #ff9f0a;
+}
+:root[data-accent='red'] {
+  --accent: #ff453a;
+  --tint: #ff453a;
+  --tint-fill: rgba(255, 69, 58, 0.22);
+  --select: #ff453a;
+  --select-fill: rgba(255, 69, 58, 0.22);
+  --select-ring: rgba(255, 120, 110, 0.85);
+  --glass-accent-tint: rgba(255, 69, 58, 0.36);
+  --glass-accent-tint-reduced: rgba(140, 30, 24, 0.94);
+  --on-glass-accent: #fff5f4;
+  --on-accent: #1a0404;
+  --switch-on: #ff453a;
+}
+:root[data-scheme='light'][data-accent='red'] {
+  --accent: #c0131a;
+  --tint: #c0131a;
+  --tint-fill: rgba(192, 19, 26, 0.14);
+  --select: #c0131a;
+  --select-fill: rgba(192, 19, 26, 0.18);
+  --select-ring: rgba(192, 19, 26, 0.75);
+  --glass-accent-tint: rgba(192, 19, 26, 0.28);
+  --glass-accent-tint-reduced: rgba(192, 19, 26, 0.88);
+  --on-glass-accent: #1a0404;
+  --on-accent: #fff;
+  --switch-on: #ff453a;
+}
+:root[data-accent='gray'] {
+  --accent: #8e8e93;
+  --tint: #8e8e93;
+  --tint-fill: rgba(142, 142, 147, 0.22);
+  --select: #8e8e93;
+  --select-fill: rgba(142, 142, 147, 0.22);
+  --select-ring: rgba(200, 200, 205, 0.85);
+  --glass-accent-tint: rgba(142, 142, 147, 0.36);
+  --glass-accent-tint-reduced: rgba(72, 72, 74, 0.94);
+  --on-glass-accent: #f5f5f7;
+  --on-accent: #1c1c1e;
+  --switch-on: #8e8e93;
+}
+:root[data-scheme='light'][data-accent='gray'] {
+  --accent: #6c6c70;
+  --tint: #6c6c70;
+  --tint-fill: rgba(108, 108, 112, 0.14);
+  --select: #6c6c70;
+  --select-fill: rgba(108, 108, 112, 0.18);
+  --select-ring: rgba(108, 108, 112, 0.75);
+  --glass-accent-tint: rgba(108, 108, 112, 0.28);
+  --glass-accent-tint-reduced: rgba(108, 108, 112, 0.88);
+  --on-glass-accent: #1c1c1e;
+  --on-accent: #fff;
+  --switch-on: #8e8e93;
+}
+/* Dark instruments in light appearance use the dark-mode (phosphor) accent of the current choice. */
+:root[data-scheme='light'][data-accent='blue'] :is(.panel-body, .difar-applet-scrim, .compendium, .modal-scrim, .gram-note, .lm-panel, .reveal-card, .ais-card) {
+  --accent: #5ac8fa;
+  --tint: #5ac8fa;
+  --tint-fill: rgba(90, 200, 250, 0.22);
+  --select: #5ac8fa;
+  --select-fill: rgba(90, 200, 250, 0.22);
+  --select-ring: rgba(132, 216, 255, 0.85);
+  --glass-accent-tint: rgba(90, 200, 250, 0.36);
+  --glass-accent-tint-reduced: rgba(10, 90, 130, 0.94);
+  --on-glass-accent: #f2f8ff;
+  --on-accent: #041018;
+  --switch-on: #5ac8fa;
+}
+:root[data-scheme='light'][data-accent='amber'] :is(.panel-body, .difar-applet-scrim, .compendium, .modal-scrim, .gram-note, .lm-panel, .reveal-card, .ais-card) {
+  --accent: #ff9f0a; --tint: #ff9f0a; --select: #ff9f0a;
+  --glass-accent-tint: rgba(255, 159, 10, 0.36); --on-glass-accent: #fff8f0; --on-accent: #1a0e00;
+}
+:root[data-scheme='light'][data-accent='red'] :is(.panel-body, .difar-applet-scrim, .compendium, .modal-scrim, .gram-note, .lm-panel, .reveal-card, .ais-card) {
+  --accent: #ff453a; --tint: #ff453a; --select: #ff453a;
+  --glass-accent-tint: rgba(255, 69, 58, 0.36); --on-glass-accent: #fff5f4; --on-accent: #1a0404;
+}
+:root[data-scheme='light'][data-accent='gray'] :is(.panel-body, .difar-applet-scrim, .compendium, .modal-scrim, .gram-note, .lm-panel, .reveal-card, .ais-card) {
+  --accent: #8e8e93; --tint: #8e8e93; --select: #8e8e93;
+  --glass-accent-tint: rgba(142, 142, 147, 0.36); --on-glass-accent: #f5f5f7; --on-accent: #1c1c1e;
+}

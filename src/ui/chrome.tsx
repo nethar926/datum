@@ -6,8 +6,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { toolbarChevronState, toolbarPagedOffset } from './toolbarScroll'
 import { IcChevron, IcCuts, IcGear, IcLive, IcPlot } from './icons'
 import {
-  TABS, TAB_LABEL, clampSplit, loadGlass, loadScheme, resolveGlass, resolveScheme, saveGlass, saveScheme, saveSplit,
-  type GlassPref, type SchemePref, type Tab,
+  TABS, TAB_LABEL, clampSplit, loadAccent, loadGlass, loadScheme, resolveGlass, resolveScheme, saveAccent, saveGlass, saveScheme, saveSplit,
+  type AccentChoice, type GlassPref, type SchemePref, type Tab,
 } from './prefs'
 
 const mq = (q: string) => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q) : null)
@@ -40,6 +40,17 @@ export function useAppearance() {
   }, [scheme])
   useEffect(() => saveScheme(pref), [pref])
   return { pref, setPref, scheme }
+}
+
+
+/** Accent colour → data-accent on <html>. Chrome tint only; buoy health, palettes and the selected-buoy cue stay fixed. */
+export function useAccent() {
+  const [pref, setPref] = useState<AccentChoice>(loadAccent)
+  useLayoutEffect(() => {
+    document.documentElement.dataset.accent = pref
+  }, [pref])
+  useEffect(() => saveAccent(pref), [pref])
+  return { pref, setPref }
 }
 
 /** Glass strength: full Liquid Glass, or a more opaque fallback (prefers-reduced-transparency or the Settings switch). */

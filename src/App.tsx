@@ -62,7 +62,7 @@ import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
-import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, useAppearance, useGlass } from './ui/chrome'
+import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, useAccent, useAppearance, useGlass } from './ui/chrome'
 import { DISPLAY_BLOOM_LEVELS, DISPLAY_BLOOM_LABEL, loadDisplayBloom, loadDisplayNight, saveDisplayBloom, saveDisplayNight, type DisplayBloom } from './displayFx'
 import {
   ALTITUDE_UNITS, ALTITUDE_UNIT_LABEL, DEPTH_UNITS, DEPTH_UNIT_LABEL, DISTANCE_UNITS, DISTANCE_UNIT_LABEL,
@@ -86,7 +86,7 @@ import { IcAli, IcBfi, IcBrg, IcChevron, IcComb, IcContrast, IcDop, IcFix, IcHar
 import { Splash } from './ui/Splash'
 import { hardReloadApp } from './ui/appReload'
 import { useStandalone, useUpdateAvailable } from './ui/useAppUpdate'
-import { SPLIT_DEFAULT_H, SPLIT_KEY_H, loadAli, loadBfi, loadBfiPreset, loadBfiRanges, loadHorz, loadSplit, parseTab, saveAli, saveBfi, saveBfiPreset, saveBfiRanges, saveHorz, type Tab } from './ui/prefs'
+import { ACCENT_LABEL, ACCENTS, SPLIT_DEFAULT_H, SPLIT_KEY_H, loadAli, loadBfi, loadBfiPreset, loadBfiRanges, loadHorz, loadSplit, parseTab, saveAli, saveBfi, saveBfiPreset, saveBfiRanges, saveHorz, type Tab } from './ui/prefs'
 import { BFI_PRESETS, bfiPresetTitle, bfiRangeFor, type BfiPreset, type BfiRanges } from './gram/bfi'
 import { installAudioUnlock } from './touch/audioUnlock'
 import { useListen } from './audio/useListen'
@@ -262,6 +262,7 @@ export default function App() {
   // iOS app structure: tabs, appearance, glass strength, split, tab bar minimize.
   const [tab, setTab] = useState<Tab>(() => parseTab(new URLSearchParams(location.search).get('tab')))
   const appearance = useAppearance()
+  const accent = useAccent()
   const standalone = useStandalone()
   const updateAvailable = useUpdateAvailable()
   const glass = useGlass()
@@ -1610,6 +1611,14 @@ export default function App() {
                 <div className="seg ios-seg" role="group" aria-label="Glass" data-testid="glass-seg">
                   {(['auto', 'full', 'reduced'] as const).map((k) => <button key={k} aria-pressed={glass.pref === k} data-testid={`glass-${k}`} onClick={() => glass.setPref(k)}>{k === 'auto' ? 'Auto' : k === 'full' ? 'Full' : 'Reduced'}</button>)}
                 </div></div>
+              <div className="ios-row"><span className="row-label">Accent<small>Tints controls and icons. Buoy status colours, gram palettes and the selected-buoy cue stay the same.</small></span>
+                <div className="accent-swatches" role="group" aria-label="Accent">
+                  {ACCENTS.map((k) => (
+                    <button key={k} type="button" className="accent-swatch" data-accent={k}
+                      aria-label={ACCENT_LABEL[k]} aria-pressed={accent.pref === k}
+                      data-testid={`accent-${k}`} onClick={() => accent.setPref(k)} />
+                  ))}
+                </div></div>
               <div className="ios-row"><span className="row-label">Bloom &amp; phosphor noise<small>A single cheap pass on the plot, chrome and overlays. Grams are never included. Off adds no cost.</small></span>
                 <div className="seg ios-seg" role="group" aria-label="Bloom and phosphor noise" data-testid="display-bloom">
                   {DISPLAY_BLOOM_LEVELS.map((k) => <button key={k} type="button" aria-pressed={displayBloom === k} data-testid={`display-bloom-${k}`} onClick={() => setDisplayBloom(k)}>{DISPLAY_BLOOM_LABEL[k]}</button>)}
@@ -1635,7 +1644,7 @@ export default function App() {
                   <span>Hz</span>
                 </div></div>
             </div>
-            <p className="ios-foot">Grams, LOFAR palettes and the DIFAR wheel stay dark in both modes. Bloom never covers the grams. Night is the plane glyph only.</p>
+            <p className="ios-foot">Grams, LOFAR palettes and the DIFAR wheel stay dark in both modes. Accent tints controls and icons only — buoy status colours, gram palettes and the plot's selected-buoy cue do not change. Bloom never covers the grams. Night is the plane glyph only.</p>
           </div>
           <div className="ios-section" data-testid="settings-units">
             <h3>Units</h3>

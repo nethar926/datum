@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   ALI_KEY, BFI_KEY, BFI_PRESET_KEY, BFI_RANGES_KEY, HORZ_KEY, SPLIT_DEFAULT_V, SPLIT_KEY_V, SPLIT_MIN_GRAM_PX, SPLIT_MIN_PLOT_PX,
   clampSplit, loadAli, loadBfi, loadBfiPreset, loadBfiRanges, loadHorz, loadSplit,
-  parseBfiPreset, parseGlass, parseScheme, parseTab, resolveGlass, resolveScheme,
+  ACCENT_DEFAULT, ACCENT_KEY, ACCENT_LABEL, ACCENT_PAIRED_ICON, ACCENTS,
+  parseAccent, parseBfiPreset, parseGlass, parseScheme, parseTab, resolveGlass, resolveScheme, loadAccent, saveAccent,
   saveAli, saveBfi, saveBfiPreset, saveBfiRanges, saveHorz, saveSplit,
 } from './prefs'
 import { BFI_DEFAULT_RANGES } from '../gram/bfi'
@@ -144,4 +145,27 @@ describe('appearance, glass and tab parsing', () => {
     expect(resolveGlass('auto', true)).toBe('reduced'); expect(resolveGlass('auto', false)).toBe('full'); expect(resolveGlass('full', true)).toBe('full')
   })
   it('tab', () => { expect(parseTab('plot')).toBe('plot'); expect(parseTab('nope')).toBe('live') })
+})
+
+describe('accent colour', () => {
+  it('parses the five choices, defaults to green, and migrates graphite', () => {
+    expect(ACCENTS).toEqual(['green', 'blue', 'amber', 'red', 'gray'])
+    expect(ACCENT_DEFAULT).toBe('green')
+    expect(ACCENT_LABEL.blue).toBe('Blue')
+    expect(parseAccent('blue')).toBe('blue')
+    expect(parseAccent('graphite')).toBe('gray')
+    expect(parseAccent('teal')).toBe('green')
+    expect(parseAccent(null)).toBe('green')
+    expect(loadAccent()).toBe('green')
+    saveAccent('blue')
+    expect(mem.get(ACCENT_KEY)).toBe('blue')
+    expect(loadAccent()).toBe('blue')
+  })
+  it('pairs Blue with the DATUM Blue CRT icon id', () => {
+    expect(ACCENT_PAIRED_ICON.green).toBe('')
+    expect(ACCENT_PAIRED_ICON.blue).toBe('AppIcon-BlueCRT')
+    expect(ACCENT_PAIRED_ICON.red).toBe('AppIcon-RedCRT')
+    expect(ACCENT_PAIRED_ICON.amber).toBeNull()
+    expect(ACCENT_PAIRED_ICON.gray).toBeNull()
+  })
 })

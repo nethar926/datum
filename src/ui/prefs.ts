@@ -129,6 +129,29 @@ export function saveGlass(g: GlassPref): void { try { localStorage.setItem(GLASS
 /** 'auto' follows prefers-reduced-transparency. */
 export const resolveGlass = (pref: GlassPref, reducedTransparency: boolean): 'full' | 'reduced' => (pref === 'auto' ? (reducedTransparency ? 'reduced' : 'full') : pref)
 
+// ---------- Accent colour (chrome tint only; buoy health, gram palettes and the selected-buoy cue stay fixed) ----------
+export const ACCENT_KEY = 'datum.accent'
+export const ACCENTS = ['green', 'blue', 'amber', 'red', 'gray'] as const
+export type AccentChoice = (typeof ACCENTS)[number]
+export const ACCENT_DEFAULT: AccentChoice = 'green'
+export const ACCENT_LABEL: Record<AccentChoice, string> = {
+  green: 'Green', blue: 'Blue', amber: 'Amber', red: 'Red', gray: 'Gray',
+}
+/** Blue pairs with the DATUM Blue CRT icon when that alternate ships. */
+export const ACCENT_PAIRED_ICON: Record<AccentChoice, string | null> = {
+  green: '',          // DATUM / Green CRT primary
+  blue: 'AppIcon-BlueCRT',
+  red: 'AppIcon-RedCRT',
+  amber: null,
+  gray: null,
+}
+export function parseAccent(v: unknown): AccentChoice {
+  if (v === 'graphite') return 'gray'
+  return (ACCENTS as readonly string[]).includes(v as string) ? (v as AccentChoice) : ACCENT_DEFAULT
+}
+export function loadAccent(): AccentChoice { try { return parseAccent(localStorage.getItem(ACCENT_KEY)) } catch { return ACCENT_DEFAULT } }
+export function saveAccent(a: AccentChoice): void { try { localStorage.setItem(ACCENT_KEY, a) } catch { /* private mode */ } }
+
 // ---------- Tabs ----------
 export type Tab = 'live' | 'cuts' | 'plot' | 'settings'
 export const TABS: readonly Tab[] = ['live', 'cuts', 'plot', 'settings']
