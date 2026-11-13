@@ -44,6 +44,22 @@ export interface CutSeekBuffers {
   bearingDeg?: Float32Array
 }
 
+
+type CpuSnap = { user: number; system: number }
+
+/** Main-thread CPU snapshot (Node). null in the browser. */
+function threadCpuStart(): CpuSnap | null {
+  const proc = (globalThis as { process?: { threadCpuUsage?: (prev?: CpuSnap) => CpuSnap } }).process
+  return proc?.threadCpuUsage?.() ?? null
+}
+
+function threadCpuMs(start: CpuSnap | null): number {
+  const proc = (globalThis as { process?: { threadCpuUsage?: (prev?: CpuSnap) => CpuSnap } }).process
+  if (!start || !proc?.threadCpuUsage) return 0
+  const used = proc.threadCpuUsage(start)
+  return (used.user + used.system) / 1000
+}
+
 export interface CutSeekResult {
   session: CutSession
   simT: number
@@ -51,6 +67,8 @@ export interface CutSeekResult {
   bins: number
   streamId: number
   elapsedMs: number
+  /** Main-thread CPU time (ms) of this fill; 0 when threadCpuUsage is unavailable. */
+  cpuMs: number
 }
 
 function rampBasesFor(session: CutSession): Map<TonalLine, number> {
@@ -88,6 +106,7 @@ export function fillCutSeekFast(
   windowRows = CUT_SEEK_FIRST_ROWS,
 ): CutSeekResult {
   const t0 = performance.now()
+  const cpu0 = threadCpuStart()
   const session = renderCut(cutId)
   const eng = session.engine
   const sid = session.lofar.streamId
@@ -127,7 +146,7 @@ export function fillCutSeekFast(
     eng.advance(target - eng.time)
     fidelity(eng.time)
   }
-  return { session, simT: eng.time, rowCount: n, bins, streamId: sid, elapsedMs: performance.now() - t0 }
+  return { session, simT: eng.time, rowCount: n, bins, streamId: sid, elapsedMs: performance.now() - t0, cpuMs: threadCpuMs(cpu0) }
 }
 
 /** @deprecated — use fillCutSeekFast for first paint; CutSeekPlayback for deterministic windows. */
@@ -158,9 +177,11 @@ export class CutSeekPlayback {
   private written = 0
   private compacted = false
   private readonly t0: number
+  private readonly cpu0: CpuSnap | null
 
   constructor(cutId: string, targetS: number, out: CutSeekBuffers, windowRows: number) {
     this.t0 = performance.now()
+    this.cpu0 = threadCpuStart()
     this.session = renderCut(cutId)
     this.out = out
     this.windowRows = windowRows
@@ -184,6 +205,7 @@ export class CutSeekPlayback {
     return this.session.simT + 1e-9 >= this.targetS || this.session.done
   }
   get elapsedMs(): number { return performance.now() - this.t0 }
+  get cpuMs(): number { return threadCpuMs(this.cpu0) }
   get totalWritten(): number { return this.written }
 
   /** Write up to `maxRows` more rows into the ring. Returns rows written this call. */
@@ -246,6 +268,7 @@ export class CutSeekPlayback {
       bins: this.bins,
       streamId: this.streamId,
       elapsedMs: this.elapsedMs,
+      cpuMs: this.cpuMs,
     }
   }
 }

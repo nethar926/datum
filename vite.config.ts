@@ -13,11 +13,23 @@ export default defineConfig({
   worker: { format: 'es' },
   test: {
     environment: 'node',
-    // Warm-seek 150 ms budget is wall-clock CPU-sensitive. Keep CutSession-heavy
-    // visibility work and the seek latency tests off the shared parallel pool so
-    // they cannot starve each other (or be starved by host/cutNorm render work).
-    // groupOrder runs projects sequentially; failures still fail the suite.
+    // Warm-seek first-paint budget is measured in main-thread CPU time
+    // (process.threadCpuUsage), not wall clock, so sibling-worker contention
+    // and shared-box preemption cannot inflate the sample. Run seek-latency
+    // first (groupOrder 0), alone, with maxWorkers 1, so unit/visibility work
+    // cannot contend with the fill. Failures still fail the suite.
     projects: [
+      {
+        resolve: { alias },
+        test: {
+          name: 'seek-latency',
+          include: ['src/cuts/seek.test.ts', 'src/engine/hostCutSeek.test.ts'],
+          environment: 'node',
+          fileParallelism: false,
+          maxWorkers: 1,
+          sequence: { groupOrder: 0 },
+        },
+      },
       {
         resolve: { alias },
         test: {
@@ -29,17 +41,6 @@ export default defineConfig({
             'src/engine/hostCutSeek.test.ts',
           ],
           environment: 'node',
-          sequence: { groupOrder: 0 },
-        },
-      },
-      {
-        resolve: { alias },
-        test: {
-          name: 'seek-latency',
-          include: ['src/cuts/seek.test.ts', 'src/engine/hostCutSeek.test.ts'],
-          environment: 'node',
-          fileParallelism: false,
-          maxWorkers: 1,
           sequence: { groupOrder: 1 },
         },
       },

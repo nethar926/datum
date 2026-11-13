@@ -575,7 +575,7 @@ export class SimHost {
 
     const filled = fillCutSeekFast(cutId, targetS, this.cutSeekBuf, firstRows)
     this.installCutSession(filled.session, this.cutDemonOn, this.cutRowRate)
-    this.postCutSeeked(gen, 'first', filled.simT, filled.streamId, filled.bins, filled.rowCount, this.cutSeekBuf, filled.elapsedMs, fullRows)
+    this.postCutSeeked(gen, 'first', filled.simT, filled.streamId, filled.bins, filled.rowCount, this.cutSeekBuf, filled.elapsedMs, fullRows, filled.cpuMs)
     this.updateTactical()
     this.post(this.tactical!)
 
@@ -639,6 +639,7 @@ export class SimHost {
     buf: CutSeekBuffers,
     elapsedMs: number,
     fullRows: number,
+    cpuMs = 0,
   ): void {
     const data = new Float32Array(rowCount * bins)
     if (rowCount) data.set(buf.data.subarray(0, rowCount * bins))
@@ -646,7 +647,7 @@ export class SimHost {
     if (rowCount) rowIndex.set(buf.rowIndex.subarray(0, rowCount))
     this.post({
       v: 1, type: 'cutSeeked', simT, streamId, bins, rowCount, rowIndex, data,
-      elapsedMs, gen, phase, fullRows,
+      elapsedMs, cpuMs, gen, phase, fullRows,
     }, [rowIndex.buffer, data.buffer])
   }
 
@@ -678,7 +679,7 @@ export class SimHost {
     fill.compact()
     this.installCutSession(fill.session, this.cutDemonOn, this.cutRowRate)
     this.rowCount = fill.rowCount > 0 ? fill.out.rowIndex[fill.rowCount - 1]! + 1 : 0
-    this.postCutSeeked(gen, 'done', fill.session.simT, fill.streamId, fill.bins, fill.rowCount, fill.out, fill.elapsedMs, this.cutFullRows)
+    this.postCutSeeked(gen, 'done', fill.session.simT, fill.streamId, fill.bins, fill.rowCount, fill.out, fill.elapsedMs, this.cutFullRows, fill.cpuMs)
     this.updateTactical()
     this.post(this.tactical!)
     this.cutBackfill = null

@@ -78,6 +78,8 @@ export interface CutSeeked {
   rowIndex: Uint32Array; data: Float32Array; bearingDeg?: Float32Array
   /** Host-measured fill latency (ms) for this message's rows. */
   elapsedMs: number
+  /** Main-thread CPU time (ms) of the fill; omitted or 0 when unmeasured. */
+  cpuMs?: number
   /** Monotonic seek generation — a newer scrub cancels stale backfills. */
   gen: number
   phase: CutSeekPhase
