@@ -105,25 +105,29 @@ describe('CON contrast in toolbar trailing', () => {
     expect(html).toContain('has-trailing')
   })
 
-  it('forces ToolScroll (not tool-scroll-full) when trailing is pinned so labels are not mid-clipped', () => {
+  it('always uses ToolScroll with reserved chevron slots, even when full is set and trailing is absent', () => {
     const withTrail = renderToStaticMarkup(createElement(ToolsToolbar, {
       testId: 'gram-tools',
       full: true,
       trailing: createElement('div', { 'data-testid': 'contrast' }, 'x'),
       children: createElement('button', { className: 'tool' }, 'LM'),
     }))
-    // ToolScroll wraps children in .tool-scroll-wrap; full-without-trailing uses .tool-scroll-full.
     expect(withTrail).toContain('tool-scroll-wrap')
     expect(withTrail).not.toContain('tool-scroll-full')
     expect(withTrail).toContain('data-full="0"')
+    expect(withTrail).toContain('aria-label="Previous tools"')
+    expect(withTrail).toContain('aria-label="More tools"')
 
     const noTrail = renderToStaticMarkup(createElement(ToolsToolbar, {
       testId: 'gram-tools',
       full: true,
       children: createElement('button', { className: 'tool' }, 'LM'),
     }))
-    expect(noTrail).toContain('tool-scroll-full')
-    expect(noTrail).toContain('data-full="1"')
+    expect(noTrail).toContain('tool-scroll-wrap')
+    expect(noTrail).not.toContain('tool-scroll-full')
+    expect(noTrail).toContain('data-full="0"')
+    expect(noTrail).toContain('aria-label="Previous tools"')
+    expect(noTrail).toContain('aria-label="More tools"')
   })
 
   it('pins a compact CON control (value + short slider) with 44px targets', () => {

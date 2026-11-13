@@ -839,7 +839,7 @@ button, select { font: inherit; color: inherit; }
   letter-spacing: .02em;
 }
 .tool.armed { color: var(--plot-fix, #5cff7a); }
-.toolbar-glass { display: flex; align-items: center; gap: 2px; }
+.toolbar-glass { display: flex; align-items: center; gap: var(--toolbar-gap, 2px); }
 .fix-pin { flex: 0 0 auto; z-index: 2; }
 .layout-phonePortrait .fix-toolbar .fix-btn span,
 .layout-phoneLandscape .fix-toolbar .fix-btn.primary span { font-size: 11px; }

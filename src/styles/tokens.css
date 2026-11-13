@@ -41,6 +41,13 @@
 
   /* Space & shape */
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+  /* Shared tool-bar metrics (top chrome + bottom gram tools; match native ToolbarMetrics). */
+  --toolbar-hit: 44px;
+  --toolbar-icon: 18px;
+  --toolbar-gap: 2px;
+  --toolbar-pad: 4px;
+  --toolbar-bar-h: 52px; /* pad + hit + pad */
+  --toolbar-chevron-slot: 44px;
   --radius-s: 6px; --radius-m: 10px; --radius-l: 14px;
   --motion-fast: 120ms; --motion: 200ms; --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 

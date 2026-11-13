@@ -3,6 +3,7 @@
  * (large title collapsing to inline), the gram/plot split grabber and the Cuts placeholder screen.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { toolbarChevronState, toolbarPagedOffset } from './toolbarScroll'
 import { IcChevron, IcCuts, IcGear, IcLive, IcPlot } from './icons'
 import {
   TABS, TAB_LABEL, clampSplit, loadGlass, loadScheme, resolveGlass, resolveScheme, saveGlass, saveScheme, saveSplit,
@@ -212,33 +213,92 @@ function handleSize(ws: HTMLElement, axis: 'x' | 'y'): number {
 }
 
 /**
- * Horizontally scrolling tool strip with an honest overflow affordance: the edge that has more content fades
- * (mask) and a 44 pt chevron pages it, so a tool is never just sliced mid-glyph at the toolbar edge. Tools
- * scroll-snap to their start edge so the strip rests on whole buttons.
+ * Horizontally scrolling tool strip shared by the top chrome bar and the bottom gram tools.
+ * When content overflows, both edges keep a fixed 44 pt chevron slot so chips never shift as
+ * the glyphs fade in or out. Chevrons auto-hide while the user is scrolling and return when
+ * scrolling stops if more content remains. A tap pages by one visible width. Reduce Motion
+ * skips the scroll animation and the fade. VoiceOver: "Previous tools" / "More tools".
  */
-export function ToolScroll({ children, testId }: { children: ReactNode; testId?: string }) {
+export function ToolScroll({ children, testId, className }: { children: ReactNode; testId?: string; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [edge, setEdge] = useState({ l: false, r: false })
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [edge, setEdge] = useState({ reserve: false, l: false, r: false })
+  const [scrolling, setScrolling] = useState(false)
+  const scrollingRef = useRef(false)
   useLayoutEffect(() => {
-    const el = ref.current; if (!el) return
-    const upd = () => {
-      const l = el.scrollLeft > 2, r = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
-      setEdge((e) => (e.l === l && e.r === r ? e : { l, r }))
+    const el = ref.current, wrap = wrapRef.current; if (!el) return
+    let hideTimer = 0
+    const upd = (isScrolling = scrollingRef.current) => {
+      const box = wrap?.clientWidth ?? el.clientWidth
+      const s = toolbarChevronState(el.scrollWidth, box, el.scrollLeft, isScrolling)
+      setEdge((e) => (e.reserve === s.reserveSlots && e.l === s.leadingVisible && e.r === s.trailingVisible)
+        ? e : { reserve: s.reserveSlots, l: s.leadingVisible, r: s.trailingVisible })
     }
-    upd()
-    el.addEventListener('scroll', upd, { passive: true })
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(upd) : null
+    const onScroll = () => {
+      scrollingRef.current = true
+      setScrolling(true)
+      upd(true)
+      window.clearTimeout(hideTimer)
+      hideTimer = window.setTimeout(() => {
+        scrollingRef.current = false
+        setScrolling(false)
+        upd(false)
+      }, 120)
+    }
+    const onScrollEnd = () => {
+      window.clearTimeout(hideTimer)
+      scrollingRef.current = false
+      setScrolling(false)
+      upd(false)
+    }
+    upd(false)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener('scrollend', onScrollEnd)
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => upd()) : null
+    if (wrap) ro?.observe(wrap)
     ro?.observe(el); for (const c of Array.from(el.children)) ro?.observe(c)
-    const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(upd) : null
+    const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(() => upd()) : null
     mo?.observe(el, { childList: true, subtree: true, characterData: true })
-    return () => { el.removeEventListener('scroll', upd); ro?.disconnect(); mo?.disconnect() }
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('scrollend', onScrollEnd)
+      window.clearTimeout(hideTimer)
+      ro?.disconnect(); mo?.disconnect()
+    }
   }, [])
-  const page = (dir: 1 | -1) => { const el = ref.current; if (el) el.scrollBy({ left: dir * el.clientWidth * 0.7, behavior: 'smooth' }) }
+  const page = (dir: 1 | -1) => {
+    const el = ref.current; if (!el) return
+    const reduce = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const target = toolbarPagedOffset(el.scrollLeft, el.clientWidth, el.scrollWidth, dir)
+    el.scrollTo({ left: target, behavior: reduce ? 'auto' : 'smooth' })
+  }
   return (
-    <div className="tool-scroll-wrap" data-more-l={edge.l ? '1' : '0'} data-more-r={edge.r ? '1' : '0'}>
-      <div ref={ref} className="tool-scroll" data-testid={testId}>{children}</div>
-      {edge.l && <button type="button" className="tool-more tool-more-l" aria-label="Scroll tools left" tabIndex={-1} onClick={() => page(-1)}><IcChevron /></button>}
-      {edge.r && <button type="button" className="tool-more tool-more-r" aria-label="More tools" data-testid={testId ? `${testId}-more` : undefined} tabIndex={-1} onClick={() => page(1)}><IcChevron /></button>}
+    <div
+      ref={wrapRef}
+      className="tool-scroll-wrap"
+      data-more-l={edge.l ? '1' : '0'}
+      data-more-r={edge.r ? '1' : '0'}
+      data-reserve={edge.reserve ? '1' : '0'}
+      data-scrolling={scrolling ? '1' : '0'}
+    >
+      <button
+        type="button"
+        className="tool-more tool-more-l"
+        aria-label="Previous tools"
+        tabIndex={edge.l ? 0 : -1}
+        aria-hidden={edge.l ? undefined : true}
+        onClick={() => page(-1)}
+      ><IcChevron /></button>
+      <div ref={ref} className={className ? `tool-scroll ${className}` : 'tool-scroll'} data-testid={testId}>{children}</div>
+      <button
+        type="button"
+        className="tool-more tool-more-r"
+        aria-label="More tools"
+        data-testid={testId ? `${testId}-more` : undefined}
+        tabIndex={edge.r ? 0 : -1}
+        aria-hidden={edge.r ? undefined : true}
+        onClick={() => page(1)}
+      ><IcChevron /></button>
     </div>
   )
 }

@@ -62,7 +62,7 @@ import { PALETTE_IDS, isPaletteId, type PaletteId } from './gl/colormap'
 import { useLayout } from './touch/useLayout'
 import { loadGramDir, saveGramDir, type GramDir } from './gram/timeAxis'
 import { Sheet } from './touch/Sheet'
-import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, useAppearance, useGlass } from './ui/chrome'
+import { GlassDefs, LargeTitleScreen, NavBar, SplitHandle, TabBar, ToolScroll, useAppearance, useGlass } from './ui/chrome'
 import { DISPLAY_BLOOM_LEVELS, DISPLAY_BLOOM_LABEL, loadDisplayBloom, loadDisplayNight, saveDisplayBloom, saveDisplayNight, type DisplayBloom } from './displayFx'
 import {
   ALTITUDE_UNITS, ALTITUDE_UNIT_LABEL, DEPTH_UNITS, DEPTH_UNIT_LABEL, DISTANCE_UNITS, DISTANCE_UNIT_LABEL,
@@ -1219,7 +1219,7 @@ export default function App() {
 
       {tab === 'live' && (
         <div className="chrome-bar glass" role="toolbar" aria-label="Gram chrome" data-testid="chrome-bar">
-          <div className="chrome-scroll panel-head gram-head">
+          <ToolScroll testId="chrome-scroll" className="chrome-scroll panel-head gram-head">
             <h2 data-testid="gram-title">{gramMode === 'demon' ? 'DEMON' : gramMode === 'difar' ? 'DIFAR' : 'LOFAR'}{gramMode !== 'demon' ? ` · ${filter}` : ''}</h2>
             {(() => {
               void detuneSnap
@@ -1296,7 +1296,7 @@ export default function App() {
             <button className="btn icon info-btn" data-testid="buoy-info" aria-label="Buoy info" onClick={() => setBuoySheet(true)} disabled={!buoy}><IcInfo /></button>
             <span className="readout" data-testid="view-readout">{viewReadout}</span>
             {buoy?.rx?.overload && <span className="ovld" data-testid="ovld">OVLD</span>}
-          </div>
+          </ToolScroll>
         </div>
       )}
 

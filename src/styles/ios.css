@@ -190,30 +190,25 @@ body { background: var(--sys-grouped); color: var(--sys-label); font-family: -ap
 .tabbar button:active { transform: scale(.94); }
 .layout-phonePortrait .tabbar button { width: 56px; }
 .layout-phonePortrait .tabbar button span { font-size: 10px; }
-.toolbar-glass { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0; height: 60px; padding: 4px; border-radius: 999px; overflow: hidden; }
-.tool-scroll { display: flex; align-items: center; gap: 2px; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x;
-  border-radius: 999px; overscroll-behavior-x: contain; scroll-padding-inline: 4px; scroll-snap-type: x proximity; }
+.toolbar-glass { display: flex; align-items: center; gap: var(--toolbar-gap); flex: 1 1 auto; min-width: 0; height: var(--toolbar-bar-h); padding: var(--toolbar-pad); border-radius: 999px; overflow: hidden; }
+.tool-scroll { display: flex; align-items: center; gap: var(--toolbar-gap); height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; touch-action: pan-x;
+  border-radius: 999px; overscroll-behavior-x: contain; scroll-padding-inline: var(--toolbar-pad); scroll-snap-type: x proximity; }
 .tool-scroll > * { scroll-snap-align: start; }
-/* Overflow affordance: fade only the edge that has more, plus a chevron that pages the strip. */
-.tool-scroll-wrap { position: relative; flex: 1 1 auto; height: 100%; min-width: 0; border-radius: 999px; overflow: hidden;
-  --fl: 0px; --fr: 0px; }
-.tool-scroll-wrap[data-more-l='1'] { --fl: 40px; }
-.tool-scroll-wrap[data-more-r='1'] { --fr: 52px; }
-.tool-scroll-wrap > .tool-scroll {
-  /* Content is fully faded out under the chevron (last ~34px), easing in over the 30px before it. */
-  --ml: calc(var(--fl) * .85); --mr: calc(var(--fr) * .65);
-  -webkit-mask-image: linear-gradient(90deg, transparent var(--ml), #000 calc(var(--ml) + var(--fl) * .7), #000 calc(100% - var(--mr) - var(--fr) * .6), transparent calc(100% - var(--mr)));
-  mask-image: linear-gradient(90deg, transparent var(--ml), #000 calc(var(--ml) + var(--fl) * .7), #000 calc(100% - var(--mr) - var(--fr) * .6), transparent calc(100% - var(--mr))); }
-.tool-more { position: absolute; top: 50%; width: 44px; height: 44px; margin-top: -22px; display: grid; place-items: center; padding: 0;
-  border: 0; border-radius: 999px; background: transparent; color: var(--sys-label-2); cursor: pointer; z-index: 1;
-  transition: transform var(--t-fast) var(--spring), color var(--t-fast) ease; }
-.tool-more:active { transform: scale(.9); color: var(--tint); }
-.tool-more .ic { width: 18px; height: 18px; }
-.tool-more-r { right: 0; }
-.tool-more-l { left: 0; }
+/* Reserved 44 pt chevron slots: width stays when a glyph fades, so chips never shift. */
+.tool-scroll-wrap { display: flex; align-items: center; position: relative; flex: 1 1 auto; height: 100%; min-width: 0; border-radius: 999px; overflow: hidden; }
+.tool-scroll-wrap > .tool-scroll { flex: 1 1 auto; min-width: 0; }
+.tool-more { flex: 0 0 0; width: 0; height: var(--toolbar-hit); overflow: hidden; opacity: 0; pointer-events: none;
+  display: grid; place-items: center; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--sys-label-2);
+  cursor: pointer; z-index: 1; transition: opacity var(--t-fast) ease; }
+.tool-scroll-wrap[data-reserve='1'] .tool-more { flex-basis: var(--toolbar-chevron-slot); width: var(--toolbar-chevron-slot); }
+.tool-scroll-wrap[data-more-l='1'] .tool-more-l,
+.tool-scroll-wrap[data-more-r='1'] .tool-more-r { opacity: 1; pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .tool-more { transition: none; } }
+.tool-more:active { color: var(--tint); }
+.tool-more .ic { width: var(--toolbar-icon); height: var(--toolbar-icon); }
 .tool-more-l .ic { transform: scaleX(-1); }
 .tool-scroll::-webkit-scrollbar { display: none; }
-.tool { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; height: 52px; padding: 0 14px 0 12px; border: 0; border-radius: 999px;
+.tool { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; min-height: var(--toolbar-hit); min-width: var(--toolbar-hit); height: var(--toolbar-hit); padding: 0 14px 0 12px; border: 0; border-radius: 999px;
   background: transparent; color: var(--sys-label); cursor: pointer; font: 600 12px/1 inherit; letter-spacing: .02em; white-space: nowrap;
   transition: background-color var(--t-fast) ease, color var(--t-fast) ease, transform var(--t-fast) var(--spring); }
 .tool .ic { flex: none; }
@@ -361,10 +356,10 @@ button.ios-row:active { background: var(--sys-fill); }
 .app.ios.layout-phoneLandscape .dock {
   min-height: 44px; padding-top: 0; padding-bottom: max(2px, env(safe-area-inset-bottom));
 }
-.app.ios.layout-phoneLandscape .tabbar,
-.app.ios.layout-phoneLandscape .toolbar-glass { height: 44px; }
+.app.ios.layout-phoneLandscape .tabbar { height: 44px; }
 .app.ios.layout-phoneLandscape .tabbar button { height: 44px; width: 56px; }
-.app.ios.layout-phoneLandscape .tool { height: 44px; }
+.app.ios.layout-phoneLandscape .toolbar-glass { height: var(--toolbar-bar-h); }
+.app.ios.layout-phoneLandscape .toolbar-glass .tool { height: var(--toolbar-hit); }
 /* Single slim head row: hide the redundant title (mode/filter segs already show LOFAR·NB). */
 .app.ios.layout-phoneLandscape .panel-head {
   min-height: 44px; max-height: 44px; padding-block: 0; padding-inline: 6px 4px; gap: 4px;
@@ -762,54 +757,43 @@ button.ios-row:active { background: var(--sys-fill); }
 
 /* ---------- LAY1: detached chrome bar (sibling of display boxes) ---------- */
 .chrome-bar {
-  display: flex; align-items: center; min-height: 52px; max-height: 52px; padding: 0;
+  display: flex; align-items: center; min-height: var(--toolbar-bar-h); max-height: var(--toolbar-bar-h); height: var(--toolbar-bar-h); padding: 0;
   border-radius: 18px; overflow: hidden; z-index: 6; position: relative;
-  /* Stable row: never reflows when the workspace split changes. */
+  /* Stable row: never reflows when the workspace split changes; same height as the bottom tool bar. */
   flex: 0 0 auto;
 }
+.chrome-bar .tool-scroll-wrap { height: 100%; }
 .chrome-bar .chrome-scroll {
-  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 52px; max-height: 52px;
-  padding: 4px 6px 4px 14px; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+  display: flex; align-items: center; gap: var(--toolbar-gap); width: 100%; min-height: 0; max-height: none; height: 100%;
+  padding: 0 var(--toolbar-pad); flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
   scrollbar-width: none; touch-action: pan-x; background: transparent; border-bottom: 0;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
 }
 .chrome-bar .chrome-scroll::-webkit-scrollbar { display: none; }
 .chrome-bar .chrome-scroll > * { flex: 0 0 auto; }
-.app.ios.layout-wide .chrome-bar { max-height: none; }
-.app.ios.layout-wide .chrome-bar .chrome-scroll {
-  flex-wrap: wrap; max-height: none; row-gap: 6px; padding-block: 6px;
-  -webkit-mask-image: none; mask-image: none;
-}
+/* Always one scrolling row (no wrap on wide) so chip order and position match iPhone and Duo. */
+.app.ios.layout-wide .chrome-bar { max-height: var(--toolbar-bar-h); }
+.app.ios.layout-wide .chrome-bar .chrome-scroll { flex-wrap: nowrap; max-height: none; }
 /* Wheel slot: reserved centered cell so the control is never flush left/right. */
 .wheel-slot {
   display: grid; place-items: center; place-content: center;
-  width: 48px; min-width: 48px; height: 44px; flex: 0 0 48px;
+  width: 48px; min-width: 48px; height: var(--toolbar-hit); flex: 0 0 48px;
 }
 .wheel-slot:empty { display: none; width: 0; min-width: 0; flex-basis: 0; }
 .chrome-bar .panel-head h2 { font: 600 13px/1 var(--font-mono); letter-spacing: .04em; color: var(--sys-label); }
 .chrome-bar .panel-head .readout { color: var(--sys-label-2); margin-left: auto; padding-right: 10px; }
-.chrome-bar .panel-head .btn { min-height: 44px; border-radius: 999px; border: 0; background: var(--sys-fill); color: var(--sys-label); padding: 0 14px; }
+.chrome-bar .panel-head .btn { min-height: var(--toolbar-hit); height: var(--toolbar-hit); border-radius: 999px; border: 0; background: var(--sys-fill); color: var(--sys-label); padding: 0 14px; }
 .chrome-bar .panel-head .btn.vernier { color: var(--sys-label); background: var(--sys-fill); border: 1px dashed var(--sys-label-3); font: 600 11px/1 var(--font-mono); }
 .chrome-bar .panel-head .btn.vernier.on { background: var(--tint-fill); border: 1px solid var(--tint); }
 .chrome-bar .panel-head .btn.vernier.pick { background: var(--tint-fill); border-style: solid; border-color: var(--tint); }
 .chrome-bar .panel-head .btn.center-btn { background: var(--tint); color: var(--on-accent, #fff); border: 0; }
-.chrome-bar .info-btn { width: 44px; padding: 0; display: inline-grid; place-items: center; color: var(--tint); background: transparent !important; }
+.chrome-bar .info-btn { width: var(--toolbar-hit); height: var(--toolbar-hit); padding: 0; display: inline-grid; place-items: center; color: var(--tint); background: transparent !important; }
 .chrome-bar .hz-field input { background: var(--sys-fill); color: var(--sys-label); border: 0; border-radius: 999px; padding: 0 14px; }
-.app.ios.layout-phonePortrait .chrome-bar .panel-head h2,
-.app.ios.layout-phoneLandscape .chrome-bar .panel-head h2,
-.app.ios.layout-phonePortrait .chrome-bar .panel-head .readout,
-.app.ios.layout-phoneLandscape .chrome-bar .panel-head .readout { display: none; }
-.app.ios.layout-phoneLandscape .chrome-bar { min-height: 44px; max-height: 44px; }
-.app.ios.layout-phoneLandscape .chrome-bar .chrome-scroll { min-height: 44px; max-height: 44px; padding-block: 0; }
-
-/* Full-width tools (Duo / wide): no overflow chevron. */
-.toolbar-glass.full { overflow: visible; }
-.toolbar-glass.full .tool-scroll-full {
-  display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 0;
-  height: 100%; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+/* Keep the same chip order and 52 pt bar height on every layout, including landscape. */
+.app.ios.layout-phoneLandscape .chrome-bar,
+.app.ios.layout-phoneLandscape .chrome-bar .panel-head {
+  min-height: var(--toolbar-bar-h); max-height: var(--toolbar-bar-h); height: var(--toolbar-bar-h); padding-block: 0;
 }
-.toolbar-glass.full .tool-scroll-full::-webkit-scrollbar { display: none; }
+
 
 /* ---------- LAY1: phone-portrait plot detents (translate push) ---------- */
 .app.ios .workspace.detent-stack {
