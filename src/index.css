@@ -1031,6 +1031,32 @@ button, select { font: inherit; color: inherit; }
 .bt-controls { position: absolute; top: 6px; right: 52px; z-index: 2; display: flex; gap: 8px; }
 .bt-controls .seg button { font: 600 11px/1 inherit; padding: 6px 8px; }
 .bt-controls .seg button:disabled { opacity: .4; }
+/*
+ * Phone / coarse pointer: 44 pt HIG zoom chips must not sit on the gram.
+ * Reserve a chrome row above the canvas and park the controls there.
+ * Desktop (fine pointer) keeps the compact overlay at top-right, unchanged.
+ */
+@media (pointer: coarse) {
+  .gram.bt-plot { grid-template-rows: 44px minmax(0, 1fr) 22px; }
+  .gram.bt-plot > canvas,
+  .gram.bt-plot > .gl-error { grid-row: 2; }
+  .gram.bt-plot .axis-y { grid-row: 2; }
+  .gram.bt-plot .axis-x { grid-row: 3; }
+  .gram.bt-plot .gram-corner { grid-row: 3; }
+  .gram.bt-plot .bt-controls {
+    position: relative;
+    top: auto;
+    right: auto;
+    grid-column: 1;
+    grid-row: 1;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 44px;
+    padding: 0 8px;
+    box-sizing: border-box;
+  }
+  .gram.bt-plot .bt-controls .seg button { min-height: 44px; min-width: 44px; }
+}
 .bt-empty {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   z-index: 3; pointer-events: none;
