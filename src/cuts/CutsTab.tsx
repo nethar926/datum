@@ -20,6 +20,8 @@ import { cutPickerTitle } from './cutLabel'
 import type { CutController } from './session'
 import type { Band, GramConfig, Tactical } from '../engine/contract'
 import { DemonPane } from '../gram/DemonPane'
+import { BtPlot } from '../gram/BtPlot'
+import { btAvailable } from '../gram/bt'
 import { cutsDemonHintForCut } from './demonExpectationUi'
 import { LloydsOverlay, lloydText, type CpaGeom, type LloydState } from '../gram/LloydsOverlay'
 import { DopplerOverlay, DopplerReadout } from '../gram/DopplerOverlay'
@@ -201,13 +203,13 @@ export function CutsTab({
           {gramModeSeg}
         </div>
       )}
-      <div className="cut-gram panel gram-panel" data-testid="cut-gram" hidden={gramMode === 'demon'} style={gramMode === 'demon' ? { display: 'none' } : undefined}>
+      <div className="cut-gram panel gram-panel" data-testid="cut-gram" hidden={gramMode === 'demon' || gramMode === 'bt'} style={gramMode === 'demon' || gramMode === 'bt' ? { display: 'none' } : undefined}>
         <div className="panel-body">
           {configs.length > 0 ? (
             <Gram client={client} configs={configs} streamIndex={0} view={view}
               onView={(v) => onView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[band]))}
               normalized={cfg?.filter !== 'BB'} palette={palette} contrast={contrast} wheel={wheel}
-              mode={gramMode === 'demon' ? 'lofar' : gramMode} tactical={tactical ?? undefined} handoff={undefined}
+              mode={gramMode === 'difar' ? 'difar' : 'lofar'} tactical={tactical ?? undefined} handoff={undefined}
               onCursorHz={t?.onCursorHz} cursorSuffix={t?.cursorSuffix ?? undefined}
               onPickPoint={t?.onPickPoint} onDragPoint={t?.onDragPoint}
               dragLocked={t?.dragLocked} dragLockable={t?.dragLockable} onDragLockTap={t?.onDragLockTap}
@@ -264,6 +266,15 @@ export function CutsTab({
           )}
         </div>
       </div>
+      {configs.length > 0 && (
+        <section className="panel gram-panel gram-box bt-panel" data-testid="cut-bt-panel"
+          hidden={gramMode !== 'bt'} style={gramMode !== 'bt' ? { display: 'none' } : undefined}>
+          <div className="panel-body">
+            <BtPlot client={client} configs={configs} streamIndex={0} palette={palette}
+              dir={gramDir} zuluOriginMs={zuluOriginMs} nowS={simT} available={btAvailable(tactical?.buoys[0])} buoyId={tactical?.buoys[0]?.id} />
+          </div>
+        </section>
+      )}
       {demonConfigs.length > 0 && (
         <DemonPane client={client} configs={demonConfigs} palette={palette} streamIndex={0}
           context="cuts"

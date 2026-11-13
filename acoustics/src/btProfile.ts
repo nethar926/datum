@@ -60,6 +60,8 @@ export type BtDrop = {
   id: number;
   x: number;
   y: number;
+  type: 'bt';
+  difar: false;
   profile: BtProfile;
 };
 
@@ -197,6 +199,6 @@ export function btProfile(src: BtProfileSource, opts: BtProfileOpts = {}): BtPro
 export function dropBtBuoy(src: BtProfileSource, spec: BtDropSpec): BtDrop {
   const profile = btProfile(src, {maxDepthM: spec.maxDepthM, samples: spec.samples});
   const id = spec.id ?? 1;
-  return {id, x: spec.x, y: spec.y, profile};
+  return {id, x: spec.x, y: spec.y, type: 'bt', difar: false, profile};
 }
 

@@ -6,9 +6,11 @@ import { SimClient } from './engine/client'
 import type { Band } from './engine/contract'
 import { Gram } from './gram/Gram'
 import { BfiPlot } from './gram/BfiPlot'
+import { BtPlot } from './gram/BtPlot'
 import { loadSecondary, resolveSecondary, saveSecondary, type SecondaryDisplay } from './gram/secondaryDisplay'
 import { DemonPane } from './gram/DemonPane'
 import { isGramMode, type GramMode } from './gram/difarBearing'
+import { BT_AVAILABLE_TITLE, BT_UNAVAILABLE_TITLE, btAvailable } from './gram/bt'
 import { DifarWheelButton } from './gram/DifarLegend'
 import { DifarApplet } from './gram/DifarApplet'
 import { loadWheel, saveWheel } from './gram/wheelSettings'
@@ -666,6 +668,11 @@ export default function App() {
   useEffect(() => {
     if (gramMode === 'demon' && demonCfgs.length === 0) setGramMode('lofar')
   }, [gramMode, demonCfgs.length])
+  const selectedIsDifar = btAvailable(st.tactical?.buoys[stream])
+  useEffect(() => {
+    // Known non-DIFAR (omni / DICASS / bathythermograph): drop back to LOFAR, like BFI.
+    if (gramMode === 'bt' && st.tactical && !selectedIsDifar) setGramMode('lofar')
+  }, [gramMode, selectedIsDifar, st.tactical])
   const cfg = lofarCfgs[stream]
   // Keep MATCHED honest as the waterfall advances (same gate as peak ticks; does not move marks).
   useEffect(() => {
@@ -1221,7 +1228,7 @@ export default function App() {
       {tab === 'live' && (
         <div className="chrome-bar glass" role="toolbar" aria-label="Gram chrome" data-testid="chrome-bar">
           <ToolScroll testId="chrome-scroll" className="chrome-scroll panel-head gram-head">
-            <h2 data-testid="gram-title">{gramMode === 'demon' ? 'DEMON' : gramMode === 'difar' ? 'DIFAR' : 'LOFAR'}{gramMode !== 'demon' ? ` · ${filter}` : ''}</h2>
+            <h2 data-testid="gram-title">{gramMode === 'demon' ? 'DEMON' : gramMode === 'difar' ? 'DIFAR' : gramMode === 'bt' ? 'BT' : 'LOFAR'}{gramMode !== 'demon' ? ` · ${filter}` : ''}</h2>
             {(() => {
               void detuneSnap
               const fe = buoy ? detune.get(buoy.id) : undefined
@@ -1239,6 +1246,8 @@ export default function App() {
               <button type="button" aria-pressed={gramMode === 'lofar'} data-testid="gram-mode-lofar" onClick={() => setGramMode('lofar')} title={`Amplitude as ${PALETTE_LABEL[palette].toLowerCase()} brightness`}>LOFAR</button>
               <button type="button" aria-pressed={gramMode === 'difar'} data-testid="gram-mode-difar" onClick={() => setGramMode('difar')} title="Bearing as hue (N red, E yellow, S blue, W violet), intensity as brightness">DIFAR</button>
               <button type="button" aria-pressed={gramMode === 'demon'} data-testid="gram-mode-demon" onClick={() => setGramMode('demon')} title="DEMON: shaft / blade rate (propulsion)" disabled={demonCfgs.length === 0}>DEMON</button>
+              <button type="button" aria-pressed={gramMode === 'bt'} data-testid="gram-mode-bt" onClick={() => setGramMode('bt')} disabled={!btAvailable(buoy)}
+                title={btAvailable(buoy) ? BT_AVAILABLE_TITLE : BT_UNAVAILABLE_TITLE}>BT</button>
             </div>
             <div className="wheel-slot" data-testid="wheel-slot">
               {gramMode === 'difar' && (
@@ -1313,14 +1322,14 @@ export default function App() {
         } as React.CSSProperties}
         >
         <div className="workspace-left stack-gram">
-        <section className="panel gram-panel gram-box" data-testid="live-gram-panel" hidden={gramMode === 'demon'} style={gramMode === 'demon' ? { display: 'none' } : undefined}>
+        <section className="panel gram-panel gram-box" data-testid="live-gram-panel" hidden={gramMode === 'demon' || gramMode === 'bt'} style={gramMode === 'demon' || gramMode === 'bt' ? { display: 'none' } : undefined}>
           <div className="panel-body">
             {lofarCfgs.length > 0 && tab !== 'cuts' && (<>
               <div data-testid="lofar-gram-wrap" hidden={bfiOn && bfiAvailable} style={bfiOn && bfiAvailable ? { display: 'none' } : undefined}>
               <Gram client={client} configs={lofarCfgs} streamIndex={stream} view={view}
                 onView={(v) => setView(cfg ? clampView(v, fullView(cfg).hi, minSpanOf(cfg), cfg.f0) : clampView(v, BAND_MAX[st.band]))}
                 normalized={filter === 'NB'} palette={palette} contrast={contrast} wheel={wheel} selectedHz={selHz} onSelectHz={setSelHz}
-                mode={gramMode === 'demon' ? 'lofar' : gramMode} tactical={st.tactical} handoff={st.handoff}
+                mode={gramMode === 'difar' ? 'difar' : 'lofar'} tactical={st.tactical} handoff={st.handoff}
                 onCenterFreq={applyCenter} onCursorHz={setCursorHz} cursorSuffix={focusSuffix} bearingAtRef={bearingAtRef} rowSamplerRef={rowSamplerRef}
                 onPickPoint={isPickFreq(brgArm) ? (hz) => { sendBrgAtFreq(hz) }
                   : vernierPick ? (hz) => centerVernier(hz)
@@ -1429,6 +1438,15 @@ export default function App() {
             {st.error && <div className="gl-error">Simulation error: {st.error}</div>}
           </div>
         </section>
+        {lofarCfgs.length > 0 && tab !== 'cuts' && (
+          <section className="panel gram-panel gram-box bt-panel" data-testid="bt-panel"
+            hidden={gramMode !== 'bt'} style={gramMode !== 'bt' ? { display: 'none' } : undefined}>
+            <div className="panel-body">
+              <BtPlot client={client} configs={lofarCfgs} streamIndex={stream} palette={palette}
+                dir={gramDir} zuluOriginMs={zuluOriginMs} nowS={st.simT} available={btAvailable(buoy)} buoyId={buoy?.id} />
+            </div>
+          </section>
+        )}
         {demonCfgs.length > 0 && tab !== 'cuts' && (
           <DemonPane client={client} configs={demonCfgs} palette={palette}
             context="live"
@@ -1542,6 +1560,8 @@ export default function App() {
               <button type="button" aria-pressed={gramMode === 'lofar'} data-testid="cut-gram-mode-lofar" onClick={() => setGramMode('lofar')}>LOFAR</button>
               <button type="button" aria-pressed={gramMode === 'difar'} data-testid="cut-gram-mode-difar" onClick={() => setGramMode('difar')}>DIFAR</button>
               <button type="button" aria-pressed={gramMode === 'demon'} data-testid="cut-gram-mode-demon" onClick={() => setGramMode('demon')} disabled={demonCfgs.length === 0}>DEMON</button>
+              <button type="button" aria-pressed={gramMode === 'bt'} data-testid="cut-gram-mode-bt" onClick={() => setGramMode('bt')} disabled={!btAvailable(cutBuoy)}
+                title={btAvailable(cutBuoy) ? BT_AVAILABLE_TITLE : BT_UNAVAILABLE_TITLE}>BT</button>
             </div>
           }
           tools={cuts.session ? ({

@@ -1,7 +1,7 @@
 import {AcousticEngine} from './engine.js';
 import {generateScenario,clampParams,type ScenarioParams} from './scenario/presets.js';
 import type {Scenario} from './scenario.js';
-import {isAlive,isFeeding} from './buoys.js';
+import {isAlive,isFeeding,inferBuoyType} from './buoys.js';
 import type {GramConfig,GramRows,Tactical,WorkerRequest,WorkerResponse} from './protocol.js';
 type Frame={message:GramRows;transfer:ArrayBuffer[]};
 /** Row period: legacy grams 0.25 s; RES grams P=1/rowRateHz (exact: 8, 4 or 2 s). */
@@ -47,11 +47,12 @@ export class WorkerRuntime {
       case 'setSurfaceTraffic':e.setSurfaceTraffic(m.value);this.sendTactical();break;
       case 'seek':this.seek(m.simT);break;
       case 'dropBuoy':{
-        if(m.kind!=='omni'&&m.kind!=='difar')throw new Error('Receiver type pending approved plan');
+        const typ=inferBuoyType({type:m.buoyType,kind:m.kind,difar:m.difar});
+        if(typ!=='omni'&&typ!=='difar')throw new Error('Receiver type pending approved plan');
         if(!(m.channel>0)||!Number.isInteger(m.channel))throw new Error('Invalid RF channel');
         const id=m.id??(Math.max(0,...this.tactical.buoys.map(b=>b.id))+1);
         if(!Number.isInteger(id)||id<1||this.tactical.buoys.some(b=>b.id===id))throw new Error('Invalid buoy id');
-        e.addBuoy({id:`buoy-${id}`,rfChannel:m.channel,type:m.kind==='omni'?'passive-omni':'difar',x:m.x,y:m.y,depth:m.hydrophoneDepthM,course:0,speed:0,deployedAt:e.time,life:m.lifeS??7200,placed:false,dropAltitudeM:m.dropAltitudeM,descentRateMps:m.descentRateMps,integrationTimeS:m.integrationTimeS});
+        e.addBuoy({id:`buoy-${id}`,rfChannel:m.channel,type:typ,difar:typ==='difar',x:m.x,y:m.y,depth:m.hydrophoneDepthM,course:0,speed:0,deployedAt:e.time,life:m.lifeS??7200,placed:false,dropAltitudeM:m.dropAltitudeM,descentRateMps:m.descentRateMps,integrationTimeS:m.integrationTimeS});
         this.rebuildTactical();this.sendTactical();break;
       }
       case 'subscribe':{
@@ -160,10 +161,10 @@ export class WorkerRuntime {
     e.advance(target-e.time);
     this.sendTactical();
   }catch(error){this.error(error);}}
-  private rebuildTactical():void{const e=this.engine!;this.tactical.buoys=e.scenario.buoys.map((b,i)=>({id:Number(b.id.replace(/\D/g,''))||i+1,channel:b.rfChannel,kind:b.type==='difar'?'difar':'omni',x:b.x,y:b.y,hydrophoneDepthM:b.depth,batteryFrac:1,lifeRemainingS:b.life,state:'live',health:b.fault?'fault':'ok'}));}
+  private rebuildTactical():void{const e=this.engine!;this.tactical.buoys=e.scenario.buoys.map((b,i)=>{const typ=inferBuoyType(b);return {id:Number(b.id.replace(/\D/g,''))||i+1,channel:b.rfChannel,kind:typ,type:typ,difar:typ==='difar',x:b.x,y:b.y,hydrophoneDepthM:b.depth,batteryFrac:1,lifeRemainingS:b.life,state:'live' as const,health:b.fault?'fault' as const:'ok' as const};});}
   private sendTactical():void{
     const e=this.engine!,s=e.scenario,t=this.tactical;t.simT=e.time;t.aircraft.x=s.ownship.x;t.aircraft.y=s.ownship.y;t.aircraft.hdgDeg=(s.ownship.course*180/Math.PI+360)%360;t.aircraft.gsMps=s.ownship.speed;
-    let count=0;for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],out=t.buoys[i];out.x=b.x;out.y=b.y;out.hydrophoneDepthM=b.depth;out.channel=b.rfChannel;out.lifeRemainingS=Math.max(0,b.deployedAt+b.life-e.time);out.batteryFrac=Math.max(0,Math.min(1,out.lifeRemainingS/b.life));out.state=e.time<b.deployedAt?'falling':isAlive(b,e.time)?'live':'dead';out.health=b.fault?'fault':'ok';
+    let count=0;for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],out=t.buoys[i];out.x=b.x;out.y=b.y;out.hydrophoneDepthM=b.depth;out.channel=b.rfChannel;out.type=inferBuoyType(b);out.difar=out.type==='difar';out.kind=out.type;const releasedAt=b.deployedAt??Number.POSITIVE_INFINITY;out.lifeRemainingS=Number.isFinite(releasedAt)?Math.max(0,releasedAt+b.life-e.time):b.life;out.batteryFrac=Math.max(0,Math.min(1,out.lifeRemainingS/b.life));out.state=e.time<releasedAt?'falling':isAlive(b,e.time)?'live':'dead';out.health=b.fault?'fault':'ok';
       if(b.type==='difar'&&isFeeding(b,e.time)){const g=e.generators[i];for(let j=0;j<g.lineCount;j++){const src=g.lines[j],dst=this.bearingStore[count];dst.buoyId=out.id;dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;t.bearings[count++]=dst;}}
     }t.bearings.length=count;t.truth=e.tactical().truth;this.emit(t);
   }

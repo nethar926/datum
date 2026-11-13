@@ -31,8 +31,8 @@ describe('live gram height (DEMON toggle layout)', () => {
     expect(ios).toMatch(/\.cut-player:has\(\[data-testid='demon-panel'\]\[data-visible='1'\]\):has\(\[data-testid='cut-gram'\]\[hidden\]\)/)
   })
 
-  it('hides the LOFAR gram-box while DEMON is selected so it cannot keep an empty cell', () => {
-    expect(app).toMatch(/live-gram-panel[\s\S]*hidden=\{gramMode === 'demon'\}/)
+  it('hides the LOFAR gram-box while DEMON or BT is selected so it cannot keep an empty cell', () => {
+    expect(app).toMatch(/live-gram-panel[\s\S]*hidden=\{gramMode === 'demon' \|\| gramMode === 'bt'\}/)
   })
 })
 

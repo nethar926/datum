@@ -1,8 +1,8 @@
 import type { Bearing, GramConfig, TacticalBuoy } from '../engine/contract'
 
-export type GramMode = 'lofar' | 'difar' | 'demon'
-export const GRAM_MODES: readonly GramMode[] = ['lofar', 'difar', 'demon']
-export const isGramMode = (v: unknown): v is GramMode => v === 'lofar' || v === 'difar' || v === 'demon'
+export type GramMode = 'lofar' | 'difar' | 'demon' | 'bt'
+export const GRAM_MODES: readonly GramMode[] = ['lofar', 'difar', 'demon', 'bt']
+export const isGramMode = (v: unknown): v is GramMode => v === 'lofar' || v === 'difar' || v === 'demon' || v === 'bt'
 
 /**
  * Interim per-bin bearing row until the engine streams one (gram kind 'bearing').

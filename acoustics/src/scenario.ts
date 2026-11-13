@@ -5,7 +5,7 @@ import {mpsToKnots} from './units.js';
 import type { Track } from './kinematics.js';
 import type { Signature,TonalLine } from './sourceModel.js';
 import { fictionalSignature } from './sourceModel.js';
-import type { Buoy } from './buoys.js';
+import { isBuoyTypeInput, type Buoy } from './buoys.js';
 import type { Shipping } from './ambientNoise.js';
 import type { Spreading } from './transmissionLoss.js';
 import {BEHAVIOUR_KINDS,type BehaviourKind} from './behaviours.js';
@@ -61,7 +61,7 @@ export function validateScenario(value:unknown):asserts value is ScenarioInput {
     if(c.transients!==undefined && (!Array.isArray(c.transients)||c.transients.length>512||c.transients.some(badTransient)))throw new Error('Invalid transient (only hydp/engine-ramp/swath/transient are live; other kinds reserved)');
     if(c.behaviour!==undefined&&!BEHAVIOUR_KINDS.includes(c.behaviour))throw new Error('Invalid behaviour');
   }
-  ids.clear(); for(const b of s.buoys){ const planned=b.placed===false&&!(typeof b.deployedAt==='number'&&Number.isFinite(b.deployedAt)); if(!track(b)||typeof b.id!=='string'||!b.id||ids.has(b.id)||!['passive-omni','difar'].includes(b.type)||!finite(b.rfChannel,0,9999)||!Number.isInteger(b.rfChannel)||(!planned&&!finite(b.deployedAt,0,1e9))||!finite(b.life,.001,1e9)) throw new Error('Invalid buoy');ids.add(b.id); }
+  ids.clear(); for(const b of s.buoys){ const planned=b.placed===false&&!(typeof b.deployedAt==='number'&&Number.isFinite(b.deployedAt)); if(!track(b)||typeof b.id!=='string'||!b.id||ids.has(b.id)||!isBuoyTypeInput(b.type)||!finite(b.rfChannel,0,9999)||!Number.isInteger(b.rfChannel)||(!planned&&!finite(b.deployedAt,0,1e9))||!finite(b.life,.001,1e9)) throw new Error('Invalid buoy');ids.add(b.id); }
 }
 const receiver=(id:string,x:number,y:number):Buoy => ({id,x,y,depth:40,course:0,speed:0,rfChannel:Number(id.replace(/\D/g,''))||1,deployedAt:0,life:7200,type:'difar'});
 /** Generic fictional maritime patrol aircraft operator lays these patterns; no real platform signatures. */
@@ -104,7 +104,7 @@ function errorPath(value:unknown):string {
     }if(c.transients!==undefined){if(!Array.isArray(c.transients)||c.transients.length>512)return `${p}.transients`;const k=c.transients.findIndex(badTransient);if(k>=0)return `${p}.transients[${k}]`;}if(c.behaviour!==undefined&&!BEHAVIOUR_KINDS.includes(c.behaviour))return `${p}.behaviour`;
   }
   ids.clear();for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],p=`$.buoys[${i}]`,bad=trackPath(b,p);if(bad)return bad;if(typeof b.id!=='string'||!b.id||ids.has(b.id))return `${p}.id`;ids.add(b.id);
-    if(!['passive-omni','difar'].includes(b.type))return `${p}.type`;
+    if(!isBuoyTypeInput(b.type))return `${p}.type`;
     const planned=b.placed===false&&!(typeof b.deployedAt==='number'&&Number.isFinite(b.deployedAt));
     for(const [key,lo,hi] of [['rfChannel',0,9999],['life',.001,1e9],...((planned?[]:[['deployedAt',0,1e9]]) as [string,number,number][])] as const)if(!finite((b as any)[key],lo,hi)||(key==='rfChannel'&&!Number.isInteger(b.rfChannel)))return `${p}.${key}`;
   }return '$';

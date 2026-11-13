@@ -26,8 +26,12 @@ export interface GramRows {
   bearingDeg?: Float32Array
 }
 export type BuoyKind = 'omni' | 'difar' | 'dicass' | 'vlad' | 'bt'
+/** Canonical engine buoy type (a333bc6). Prefer this over `kind` for DIFAR gating. */
+export type EngineBuoyType = 'bt' | 'omni' | 'difar' | 'dicass'
 export interface TacticalBuoy {
   id: number; channel: number; kind: BuoyKind; x: number; y: number; hydrophoneDepthM: number
+  /** Engine `type` field; used to gate bearing-time (DIFAR only). */
+  type?: EngineBuoyType
   batteryFrac: number; lifeRemainingS: number; state: 'falling' | 'live' | 'dead'
   /** Receiver front end: AGC gain relative to settled (dB) and whether the last row clipped. */
   rx?: { gainDb: number; overload: boolean }
@@ -96,7 +100,25 @@ export interface DrainProgress {
   data: Float32Array
   bearingDeg?: Float32Array
 }
-export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped | BtBuoysDropped | AliPeakBearingMsg | CutSeeked | DrainProgress
+
+/** Engine 360-bin bearing-energy row (degrees true, already max-normalised uint8). */
+export interface BearingEnergyRow {
+  t: number; buoyId: number; fLo: number; fHi: number; energy: Uint8Array
+}
+/** Engine per-line / per-band bearing-time entry (degrees true, compass bias included). */
+export interface BearingTimeEntry {
+  t: number; buoyId: number; freqHz?: number; band?: [number, number]
+  bearingDeg: number; sigmaDeg: number; snrDb: number; valid: boolean
+}
+/** Live or history payload for the bearing-time display. `replace` refills the ring (seek / cut / new sim). */
+export interface BearingBtMsg {
+  v: 1; type: 'bearingBt'
+  replace: boolean
+  energy: BearingEnergyRow[]
+  entries: BearingTimeEntry[]
+}
+
+export type FromWorker = StreamSet | GramRows | Tactical | WorkerError | PendingStreamSet | BuoysDropped | BtBuoysDropped | AliPeakBearingMsg | CutSeeked | DrainProgress | BearingBtMsg
 
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 export type Band = 'lofar1k' | 'lofar2k'

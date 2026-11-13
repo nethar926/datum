@@ -2,6 +2,8 @@
  * Transport-agnostic; used by crew sync and by UserCut.actions. */
 import type {AcousticEngine} from './engine.js';
 import {DEFAULT_RADIUS_M,type PlaneRouteMode,type PlaneRouteSpec,type PlaneWayPoint} from './planeRoute.js';
+import {inferBuoyType} from './buoys.js';
+import type {BuoyKind, DropBuoy} from './protocol.js';
 
 export const CREW_ACTION_KINDS=['dropBuoy','setPlaneRoute','manualBearing','startFreqTrack','stopFreqTrack','mark','scuttleBuoy'] as const;
 export type CrewActionKind=typeof CREW_ACTION_KINDS[number];
@@ -58,8 +60,10 @@ export function applyCrewAction(engine:AcousticEngine,a:CrewAction):void{
   switch(a.kind){
     case 'dropBuoy':{
       const channel=int(p.channel),kind=str(p.kind),x=num(p.x),y=num(p.y),depth=num(p.hydrophoneDepthM);
-      if(channel===undefined||!kind||x===undefined||y===undefined||depth===undefined)throw new Error('invalidPayload: dropBuoy');
-      engine.dropBuoy({id:int(p.id),channel,kind:kind as 'omni'|'difar',x,y,hydrophoneDepthM:depth,lifeS:num(p.lifeS),
+      if(channel===undefined||x===undefined||y===undefined||depth===undefined)throw new Error('invalidPayload: dropBuoy');
+      if(!kind && p.type===undefined && p.difar===undefined)throw new Error('invalidPayload: dropBuoy');
+      const typ=inferBuoyType(p);
+      engine.dropBuoy({id:int(p.id),channel,kind:(kind??typ) as BuoyKind,type:typ,difar:typ==='difar',x,y,hydrophoneDepthM:depth,lifeS:num(p.lifeS),
         dropAltitudeM:num(p.dropAltitudeM),descentRateMps:num(p.descentRateMps),integrationTimeS:num(p.integrationTimeS)});
       return;
     }
@@ -71,6 +75,7 @@ export function applyCrewAction(engine:AcousticEngine,a:CrewAction):void{
         mode:mode as PlaneRouteMode,speedMps:speed,altitudeFt:alt,t0:num(p.t0)??0,
         centerX:num(p.centerX)??0,centerY:num(p.centerY)??0,radiusM:num(p.radiusM)??DEFAULT_RADIUS_M,
         phase0:num(p.phase0)??0,points:asPoints(p.points),
+        maxTurnRateRadS:num(p.maxTurnRateRadS),boxAspect:num(p.boxAspect),boxHeadingRad:num(p.boxHeadingRad),
       };
       engine.setPlaneRoute(spec);
       return;
@@ -104,4 +109,16 @@ export function applyCrewAction(engine:AcousticEngine,a:CrewAction):void{
     default:
       throw new Error(`invalidPayload: ${(a as CrewAction).kind}`);
   }
+}
+
+/** Serialize a drop for crew-sync / UserCut. Always writes canonical `type` and derived `difar`. */
+export function dropBuoyPayload(spec:DropBuoy):Record<string,unknown>{
+  const typ=inferBuoyType(spec);
+  const out:Record<string,unknown>={channel:spec.channel,kind:spec.kind??typ,type:typ,difar:typ==='difar',x:spec.x,y:spec.y,hydrophoneDepthM:spec.hydrophoneDepthM};
+  if(spec.id!==undefined)out.id=spec.id;
+  if(spec.lifeS!==undefined)out.lifeS=spec.lifeS;
+  if(spec.dropAltitudeM!==undefined)out.dropAltitudeM=spec.dropAltitudeM;
+  if(spec.descentRateMps!==undefined)out.descentRateMps=spec.descentRateMps;
+  if(spec.integrationTimeS!==undefined)out.integrationTimeS=spec.integrationTimeS;
+  return out;
 }

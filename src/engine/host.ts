@@ -1,7 +1,7 @@
 import * as Acoustics from '@acoustics'
 import { Receiver } from './receiver'
-import { AcousticEngine, isAlive, isResLevel, renderCut, type CutSession, type ResLevel } from '@acoustics'
-import type { Band, Bearing, DropSpec, FromWorker, GramConfig, GramRows, LofarBandPresetId, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
+import { AcousticEngine, inferBuoyType, isAlive, isResLevel, renderCut, type CutSession, type ResLevel } from '@acoustics'
+import type { Band, Bearing, BearingBtMsg, DropSpec, EngineBuoyType, FromWorker, GramConfig, GramRows, LofarBandPresetId, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
 import { DEMON_CARRIER_BAND } from '../gram/demonConfig'
 import { buildScenario } from '../scenarios/training'
 import { parseCutScenarioId } from '../cuts/api'
@@ -52,6 +52,16 @@ interface LofarSet { mode: 'legacy' | 'res' | 'band'; ids: Int32Array; configs: 
   /** Subscribe request the set was made with (kept current by setGram), so a dropped buoy gets a matching stream. */
   req: { res?: number; filter?: 'NB' | 'BB'; vernierHz?: number; bandPreset?: LofarBandPresetId } }
 
+
+function feBuoyType(b: { type?: unknown; kind?: unknown; difar?: unknown }): EngineBuoyType {
+  const t = inferBuoyType(b)
+  return t === 'bt' || t === 'omni' || t === 'difar' || t === 'dicass' ? t : 'difar'
+}
+
+function engineNumericId(b: { id: unknown }, index: number): number {
+  return Number(String(b.id).replace(/\D/g, '')) || index + 1
+}
+
 /** Worker-side host: owns an AcousticEngine and speaks the data contract. Pure enough to unit test without a Worker. */
 export class SimHost {
   private engine?: AcousticEngine
@@ -79,6 +89,9 @@ export class SimHost {
   private rowRateHz = 2
   private rowCount = 0
   private tactical?: Tactical
+  /** Last sim time a live bearingBt message was posted (1 s cadence). */
+  private lastBtT = Number.NEGATIVE_INFINITY
+  private btFillGen = 0
   private rxEnabled = true
   private demonConfigs: GramConfig[] = []
   /** Displayed LOFAR set (one receiver front end per stream; rxEnabled=false gives an ideal receiver). */
@@ -213,6 +226,8 @@ export class SimHost {
     this.demonConfigs = configs.filter((c) => c.kind === 'demon')
     this.post({ v: 1, type: 'streams', configs })
     this.post(this.tactical)
+    this.lastBtT = Number.NEGATIVE_INFINITY
+    this.postBearingBt(true)
     if (msg.surfaceTraffic !== undefined) this.setSurfaceTraffic(msg.surfaceTraffic)
   }
 
@@ -371,13 +386,13 @@ export class SimHost {
       if (this.demonIds.length) { this.demonPool = []; for (let k = 0; k < POOL_FRAMES; k++) this.demonPool.push(this.newDemonFrame()) }
       this.post({ v: 1, type: 'streams', configs: [...this.active.configs, ...this.demonConfigs] })
       if (this.pending) this.post({ v: 1, type: 'pendingStreams', gen: this.pendingGen, configs: this.pending.configs })
-      this.updateTactical(); this.post(this.tactical!)
+      this.updateTactical(); this.post(this.tactical!); this.postBearingBt(false)
     }
     this.post({ v: 1, type: 'dropped', seq: msg.seq, source: msg.source, channels, ...(error ? { error } : {}) })
   }
 
   /** Streams + display records for the buoy just added at index i. */
-  private attachBuoy(i: number, d: DropSpec): void {
+  private attachBuoy(i: number, _d: DropSpec): void {
     const engine = this.engine!, b = engine.scenario.buoys[i]
     const add = (set: LofarSet) => {
       let c: GramConfig, id: number
@@ -407,7 +422,8 @@ export class SimHost {
       this.demonIds.push(id)
       this.demonConfigs = [...this.demonConfigs, { v: 1, type: 'gramConfig', streamId: id, kind: 'demon', channel: dc.channel, bins: dc.bins, f0: dc.f0, fBin: dc.fBin, rowRateHz: this.rowRateHz, dbFloor: dc.dbFloor, dbCeil: dc.dbCeil, ...(dc.demodBandHz ? { demodBandHz: dc.demodBandHz } : {}) }]
     }
-    this.tactical!.buoys.push({ id: b.rfChannel, channel: b.rfChannel, kind: d.kind, x: b.x, y: b.y, hydrophoneDepthM: b.depth, batteryFrac: 1, lifeRemainingS: b.life, state: 'live' })
+    const typ = feBuoyType(b)
+    this.tactical!.buoys.push({ id: b.rfChannel, channel: b.rfChannel, kind: typ, type: typ, x: b.x, y: b.y, hydrophoneDepthM: b.depth, batteryFrac: 1, lifeRemainingS: b.life, state: 'live' })
   }
 
   private ensurePool(bins: number): void {
@@ -547,6 +563,7 @@ export class SimHost {
     if (due) this.stepDemon() // DEMON skipToLatest alongside displayed LOFAR rows (same simT)
     this.updateTactical()
     this.post(this.tactical!)
+    this.postBearingBt(false)
   }
 
   private anyReady(ids: Int32Array): boolean {
@@ -578,6 +595,8 @@ export class SimHost {
     this.postCutSeeked(gen, 'first', filled.simT, filled.streamId, filled.bins, filled.rowCount, this.cutSeekBuf, filled.elapsedMs, fullRows, filled.cpuMs)
     this.updateTactical()
     this.post(this.tactical!)
+    this.lastBtT = Number.NEGATIVE_INFINITY
+    this.postBearingBt(true)
 
     // Progressive backfill: a fresh fill of the full window, posted in idle chunks.
     if (fullRows > firstRows && targetS > 0) {
@@ -682,6 +701,8 @@ export class SimHost {
     this.postCutSeeked(gen, 'done', fill.session.simT, fill.streamId, fill.bins, fill.rowCount, fill.out, fill.elapsedMs, this.cutFullRows, fill.cpuMs)
     this.updateTactical()
     this.post(this.tactical!)
+    this.lastBtT = Number.NEGATIVE_INFINITY
+    this.postBearingBt(true)
     this.cutBackfill = null
   }
 
@@ -698,6 +719,7 @@ export class SimHost {
       if (session.done) disposeCutSession(session)
       this.updateTactical()
       this.post(this.tactical!)
+      this.postBearingBt(false)
       return
     }
     frame.streamIds[0] = a.ids[0]
@@ -722,6 +744,7 @@ export class SimHost {
     }
     this.updateTactical()
     this.post(this.tactical!)
+    this.postBearingBt(false)
   }
 
   private writeLofar(frame: Frame, set: LofarSet): void {
@@ -828,10 +851,13 @@ export class SimHost {
 
   private makeTactical(): Tactical {
     const s = this.engine!.scenario
-    const buoys: TacticalBuoy[] = s.buoys.map((b) => ({
-      id: b.rfChannel, channel: b.rfChannel, kind: b.type === 'passive-omni' ? 'omni' : 'difar',
-      x: b.x, y: b.y, hydrophoneDepthM: b.depth, batteryFrac: 1, lifeRemainingS: b.life, state: 'falling',
-    }))
+    const buoys: TacticalBuoy[] = s.buoys.map((b) => {
+      const typ = feBuoyType(b)
+      return {
+        id: b.rfChannel, channel: b.rfChannel, kind: typ, type: typ,
+        x: b.x, y: b.y, hydrophoneDepthM: b.depth, batteryFrac: 1, lifeRemainingS: b.life, state: 'falling' as const,
+      }
+    })
     const t: Tactical = {
       v: 1, type: 'tactical', simT: 0,
       aircraft: { x: 0, y: 0, altM: AIRCRAFT_ALT_M, hdgDeg: 0, gsMps: 0 },
@@ -840,6 +866,75 @@ export class SimHost {
     this.tactical = t
     this.updateTactical()
     return t
+  }
+
+
+  private feIdForEngineBuoy(engineId: number): number {
+    const s = this.engine?.scenario.buoys
+    if (!s) return engineId
+    for (let i = 0; i < s.length; i++) {
+      const b = s[i]!
+      if (engineNumericId(b, i) === engineId) return b.rfChannel
+    }
+    return engineId
+  }
+
+  /** Post live or history bearing-time rows. `replace` clears the display ring (seek / cut / new sim).
+   *  History refill is scheduled so CUT first-paint stays off the 250 ms seek budget.
+   */
+  private postBearingBt(replace: boolean): void {
+    const engine = this.engine
+    if (!engine || typeof engine.bearingEnergyHistory !== 'function') return
+    if (replace) {
+      this.post({ v: 1, type: 'bearingBt', replace: true, energy: [], entries: [] })
+      this.lastBtT = Number.NEGATIVE_INFINITY
+      const gen = ++this.btFillGen
+      const handle: unknown = this.schedule(() => { if (gen === this.btFillGen) this.postBearingBtFill() }, 0)
+      // Node Timeout: don't keep the event loop (and vitest workers) alive for a fill.
+      if (handle && typeof handle === 'object' && 'unref' in handle && typeof (handle as { unref: () => void }).unref === 'function') {
+        (handle as { unref: () => void }).unref()
+      }
+      return
+    }
+    this.postBearingBtLive()
+  }
+
+  private postBearingBtLive(): void {
+    const engine = this.engine
+    if (!engine || typeof engine.bearingEnergyHistory !== 'function') return
+    try {
+      const t = engine.time
+      if (!(t >= this.lastBtT + 1 - 1e-9)) return
+      const t0 = Math.max(0, t - 1.001)
+      const energy = engine.bearingEnergyHistory(undefined, t0, t).map((row) => ({
+        t: row.t, buoyId: this.feIdForEngineBuoy(row.buoyId), fLo: row.fLo, fHi: row.fHi,
+        energy: new Uint8Array(row.energy),
+      }))
+      const entries = engine.bearingTimeHistory(t0, t).map((e) => ({
+        ...e, buoyId: this.feIdForEngineBuoy(e.buoyId),
+      }))
+      if (energy.length === 0 && entries.length === 0) return
+      this.lastBtT = Math.max(this.lastBtT, t)
+      this.post({ v: 1, type: 'bearingBt', replace: false, energy, entries })
+    } catch { /* a missing book must not break the gram step */ }
+  }
+
+  private postBearingBtFill(): void {
+    const engine = this.engine
+    if (!engine || typeof engine.bearingEnergyHistory !== 'function') return
+    try {
+      const t1 = engine.time
+      const t0 = Math.max(0, t1 - 900)
+      const energy = engine.bearingEnergyHistory(undefined, t0, t1).map((row) => ({
+        t: row.t, buoyId: this.feIdForEngineBuoy(row.buoyId), fLo: row.fLo, fHi: row.fHi,
+        energy: new Uint8Array(row.energy),
+      }))
+      const entries = engine.bearingTimeHistory(t0, t1).map((e) => ({
+        ...e, buoyId: this.feIdForEngineBuoy(e.buoyId),
+      }))
+      this.lastBtT = t1
+      this.post({ v: 1, type: 'bearingBt', replace: true, energy, entries })
+    } catch { /* cut engines without a book must not break seek */ }
   }
 
   private updateTactical(): void {
@@ -853,6 +948,7 @@ export class SimHost {
       const deployedAt = b.deployedAt ?? 0
       const remaining = Math.max(0, deployedAt + b.life - s.time)
       tb.x = b.x; tb.y = b.y; tb.hydrophoneDepthM = b.depth
+      const typ = feBuoyType(b); tb.type = typ; tb.kind = typ
       const r = this.active.rx[i]
       if (r && this.rxEnabled && (this.active.mode !== 'res' || this.active.filter === 'BB')) { if (tb.rx) { tb.rx.gainDb = r.gainDb; tb.rx.overload = r.overload } else tb.rx = { gainDb: r.gainDb, overload: r.overload } } else tb.rx = undefined
       tb.state = s.time < deployedAt ? 'falling' : alive ? 'live' : 'dead'

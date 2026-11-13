@@ -27,18 +27,26 @@ import {DEMON_CARRIER_BAND} from './norm.js';
 import type {Contact} from '../scenario.js';
 import type {GramFilter,ResLevel} from '../protocol.js';
 import type {Buoy} from '../buoys.js';
+import {inferBuoyType} from '../buoys.js';
+import {energyRowTimes,BEARING_ENERGY_BINS,BEARING_TIME_PERIOD_S} from '../bearingTime.js';
 
-export const USER_CUT_VERSION=1;
+export const USER_CUT_VERSION=2;
 export const USER_CUT_KIND='user';
-export const USER_CUT_MODEL_VERSION='m4-usercut-1';
+export const USER_CUT_MODEL_VERSION='m4-usercut-2';
 export const USER_CUT_WINDOW_S=900;
 export const USER_CUT_FALLBACK_LABEL='Saved by an older version, analysis limited';
+/** Per-buoy UI status when a fallback cut has no packed rows for that buoy. */
+export const USER_CUT_NOT_SAVED_STATUS='notSaved';
+export const USER_CUT_NOT_SAVED_LABEL='Not saved in this cut';
+/** Max buoys packed into fallbackRows (on-screen set, deterministic id order). */
+export const USER_CUT_FALLBACK_BUOY_CAP=4;
 /** Prefill so the first window row has a full LSTI RES1 span plus late margin. */
 export const USER_CUT_HISTORY_PREFILL_S=HISTORY_MAX_SPAN_S+HISTORY_LATE_MARGIN_S;
 
 export type UserCutPlant='diesel'|'nuclear';
 export type UserCutDifficulty='easy'|'medium'|'hard';
 export type UserCutMode='exact'|'fallback'|'mismatch';
+export type UserCutBuoyPlaybackStatus='saved'|'notSaved';
 export type UserCutStreamKind='lofar'|'demon';
 
 export interface UserCutFilters {
@@ -100,7 +108,7 @@ export interface UserCutFallbackRows {
 }
 
 export interface UserCut {
-  v:1;
+  v:1|2;
   kind:'user';
   id:string;
   name:string;
@@ -118,11 +126,49 @@ export interface UserCut {
   filters:UserCutFilters;
   check:UserCutCheck;
   fallbackRows?:UserCutFallbackRows;
+  /** Buoy ids whose grams were packed into fallbackRows, already clamped and sorted. */
+  fallbackBuoyIds?:number[];
+  /** Single RES level packed into fallbackRows. */
+  fallbackRes?:ResLevel;
+  /** UTF-8 JSON byte length of the cut (fallback included, this field omitted from the count). */
+  sizeBytes?:number;
+  /** Packed 360-bin DIFAR bearing-energy rows (1 Hz) for fallbackBuoyIds. */
+  bearingEnergy?:UserCutBearingEnergy;
 }
+
+export type UserCutBearingEnergyEncoding='u8-b64'|'u8-deflate-b64';
+export interface UserCutBearingEnergyBuoy {
+  buoyId:number;
+  t0:number;
+  count:number;
+  encoding:UserCutBearingEnergyEncoding;
+  data:string;
+}
+export interface UserCutBearingEnergy {
+  periodS:number;
+  bins:number;
+  fLo:number;
+  fHi:number;
+  simT0:number;
+  simT1:number;
+  buoys:UserCutBearingEnergyBuoy[];
+  /** Raw uint8 bytes (buoys × rows × 360). */
+  rawBytes:number;
+}
+export type DecodedBearingEnergyRow={buoyId:number;t0:number;count:number;rows:Uint8Array[]};
+export type DecodedBearingEnergy={
+  periodS:number;bins:number;fLo:number;fHi:number;simT0:number;simT1:number;
+  buoys:DecodedBearingEnergyRow[];
+};
+
 
 export interface MakeUserCutOptions {
   params:ScenarioParams;
-  /** RES levels in view at save time. Default [5]. */
+  /** Single RES in view at save time. Preferred over `resInView`. Default 5. */
+  viewRes?:ResLevel;
+  /** On-screen buoy ids at save time. Clamped to 4 in ascending id order. Default: all scenario buoys. */
+  visibleBuoyIds?:number[];
+  /** @deprecated Prefer `viewRes`. If `viewRes` is omitted, the first valid entry is used. */
   resInView?:ResLevel[];
   actions?:CrewAction[];
   /** Default true: DEMON rows (512 bins @ 4 Hz) are cheap next to a RES stream. */
@@ -147,6 +193,13 @@ export interface DecodedFallbackStream {
   bearing?:Float32Array;
 }
 
+export interface UserCutBuoyStatus {
+  buoyId:number;
+  status:UserCutBuoyPlaybackStatus;
+  /** `USER_CUT_NOT_SAVED_LABEL` when status is `notSaved`. */
+  label?:string;
+}
+
 export interface UserCutSession {
   cut:UserCut;
   mode:UserCutMode;
@@ -155,6 +208,9 @@ export interface UserCutSession {
   /** Exact mode: engine parked at simT0, ready to play to simT1. */
   engine?:AcousticEngine;
   fallback?:DecodedFallbackStream[];
+  /** Per-buoy playback. In fallback mode unsaved buoys are `notSaved`. */
+  buoyStatus:UserCutBuoyStatus[];
+  bearingEnergy?:DecodedBearingEnergy;
 }
 
 export function filterDifficultyFromEngine(d:string):UserCutDifficulty{
@@ -193,6 +249,72 @@ export function inferFilterDifficulty(params:ScenarioParams,preset?:string):User
 
 export function numericBuoyId(b:Buoy,index:number):number{
   return Number(String(b.id).replace(/\D/g,''))||index+1;
+}
+
+export function resolveViewRes(opts:{viewRes?:ResLevel;resInView?:ResLevel[]}):ResLevel{
+  if(isResLevel(opts.viewRes))return opts.viewRes;
+  return normalizeResInView(opts.resInView)[0]!;
+}
+
+/** Unique ids present in `available`, sorted ascending, clamped to `USER_CUT_FALLBACK_BUOY_CAP`. */
+export function clampFallbackBuoyIds(ids:number[]|undefined,available:number[]):number[]{
+  const allow=new Set(available.filter(id=>Number.isInteger(id)&&id>0));
+  const src=ids&&ids.length?ids:available;
+  const seen=new Set<number>(),out:number[]=[];
+  for(const id of src){
+    if(!Number.isInteger(id)||id<=0||!allow.has(id)||seen.has(id))continue;
+    seen.add(id);out.push(id);
+  }
+  out.sort((a,b)=>a-b);
+  return out.slice(0,USER_CUT_FALLBACK_BUOY_CAP);
+}
+
+export function engineBuoyIds(engine:AcousticEngine):number[]{
+  return engine.scenario.buoys.map((b,i)=>numericBuoyId(b,i));
+}
+
+/** Scenario buoys after replaying drop actions (kinematics only, no gram history). */
+export function inventoryBuoyIds(cut:UserCut):number[]{
+  const params=clampParams(cut.params);
+  const engine=recipeEngine({params,seed:cut.seed,actions:cut.actions,to:cut.simT1});
+  return engineBuoyIds(engine).sort((a,b)=>a-b);
+}
+
+export function buildBuoyStatus(cut:UserCut,mode:UserCutMode):UserCutBuoyStatus[]{
+  const all=inventoryBuoyIds(cut);
+  const saved=new Set(cut.fallbackBuoyIds??[]);
+  return all.map(buoyId=>{
+    if(mode==='exact'||saved.has(buoyId))return {buoyId,status:'saved' as const};
+    return {buoyId,status:'notSaved' as const,label:USER_CUT_NOT_SAVED_LABEL};
+  });
+}
+
+function uniqueSortedIds(ids:number[]):number[]{
+  return [...new Set(ids.filter(id=>Number.isInteger(id)&&id>0))].sort((a,b)=>a-b);
+}
+
+function derivedFallbackBuoyIds(cut:UserCut):number[]{
+  const fromRows=(cut.fallbackRows?.streams??[]).map(s=>s.buoyId);
+  if(fromRows.length)return uniqueSortedIds(fromRows);
+  return uniqueSortedIds((cut.check.rowHash??[]).map(r=>r.buoyId));
+}
+
+function derivedFallbackRes(cut:UserCut):ResLevel{
+  const fromRows=(cut.fallbackRows?.streams??[]).find(s=>s.kind==='lofar'&&isResLevel(s.res));
+  if(fromRows&&isResLevel(fromRows.res))return fromRows.res;
+  const fromHash=(cut.check.rowHash??[]).find(r=>r.kind==='lofar'&&isResLevel(r.res));
+  if(fromHash&&isResLevel(fromHash.res))return fromHash.res;
+  return RES_DEFAULT;
+}
+
+/** Upgrade a v1 cut (or any cut missing the cap fields) to the current format. */
+export function migrateUserCut(cut:UserCut):UserCut{
+  const next:UserCut={...cut};
+  if(!next.fallbackBuoyIds?.length)next.fallbackBuoyIds=derivedFallbackBuoyIds(next);
+  if(!isResLevel(next.fallbackRes))next.fallbackRes=derivedFallbackRes(next);
+  next.v=USER_CUT_VERSION;
+  next.sizeBytes=userCutSizeBytes(next);
+  return next;
 }
 
 function classificationContacts(contacts:readonly Contact[]):Contact[]{
@@ -480,6 +602,59 @@ function quantizePlane(rows:{data:Float32Array;bearing?:Float32Array}[],bins:num
   return u;
 }
 
+
+function packEnergyBytes(u:Uint8Array):{encoding:UserCutBearingEnergyEncoding;text:string}{
+  const z=nodeZlib();
+  if(z){
+    const c=z.deflateSync(u,{level:9});
+    return {encoding:'u8-deflate-b64',text:b64encode(c instanceof Uint8Array?c:new Uint8Array(c))};
+  }
+  return {encoding:'u8-b64',text:b64encode(u)};
+}
+function unpackEnergyBytes(text:string,encoding:UserCutBearingEnergyEncoding):Uint8Array{
+  const raw=b64decode(text);
+  if(encoding==='u8-b64')return raw;
+  const z=nodeZlib();
+  if(!z)throw new Error('inflate requires node:zlib to decode bearingEnergy');
+  const o=z.inflateSync(raw);
+  return o instanceof Uint8Array?o:new Uint8Array(o);
+}
+
+/** Pack 1 Hz 360-bin energy rows for DIFAR buoys in `buoyIds` over [t0, t1]. */
+export function packBearingEnergy(engine:AcousticEngine,t0:number,t1:number,buoyIds:number[]):UserCutBearingEnergy{
+  const band=engine.getBearingEnergyBand();
+  const times=energyRowTimes(t0,t1);
+  const packed:UserCutBearingEnergyBuoy[]=[];
+  let rawBytes=0;
+  for(const id of buoyIds){
+    const i=engine.scenario.buoys.findIndex((b,idx)=>numericBuoyId(b,idx)===id);
+    if(i<0)continue;
+    if(inferBuoyType(engine.scenario.buoys[i]!)!=='difar')continue;
+    const hist=engine.bearingEnergyHistory(id,t0,t1);
+    const u=new Uint8Array(times.length*BEARING_ENERGY_BINS);
+    for(let k=0;k<times.length;k++){
+      const tk=times[k]!;
+      const row=hist.find(r=>Math.abs(r.t-tk)<=1e-9)??engine.bearingEnergy(id,tk);
+      if(row)u.set(row.energy,k*BEARING_ENERGY_BINS);
+    }
+    rawBytes+=u.length;
+    const p=packEnergyBytes(u);
+    packed.push({buoyId:id,t0:times[0]??t0,count:times.length,encoding:p.encoding,data:p.text});
+  }
+  return {periodS:BEARING_TIME_PERIOD_S,bins:BEARING_ENERGY_BINS,fLo:band[0],fHi:band[1],simT0:t0,simT1:t1,buoys:packed,rawBytes};
+}
+
+export function decodeBearingEnergy(pack:UserCutBearingEnergy):DecodedBearingEnergy{
+  const buoys:DecodedBearingEnergyRow[]=[];
+  for(const b of pack.buoys){
+    const u=unpackEnergyBytes(b.data,b.encoding);
+    const rows:Uint8Array[]=[];
+    for(let k=0;k<b.count;k++)rows.push(u.slice(k*pack.bins,(k+1)*pack.bins));
+    buoys.push({buoyId:b.buoyId,t0:b.t0,count:b.count,rows});
+  }
+  return {periodS:pack.periodS,bins:pack.bins,fLo:pack.fLo,fHi:pack.fHi,simT0:pack.simT0,simT1:pack.simT1,buoys};
+}
+
 export function packFallback(streams:ExactStreamRows[]):UserCutFallbackRows{
   let encoding:UserCutFallbackEncoding='u8-0.5db-deflate-b64';
   const out:UserCutFallbackStream[]=[];
@@ -535,10 +710,13 @@ function normalizeResInView(list?:ResLevel[]):ResLevel[]{
   return out;
 }
 
-function collectStreams(engine:AcousticEngine,resInView:ResLevel[],filter:GramFilter,includeDemon:boolean,simT0:number,simT1:number,historyStart:number):ExactStreamRows[]{
+function collectStreams(engine:AcousticEngine,resInView:ResLevel[],filter:GramFilter,includeDemon:boolean,simT0:number,simT1:number,historyStart:number,buoyIds?:number[]):ExactStreamRows[]{
   const streams:ExactStreamRows[]=[];
   const buoys=engine.scenario.buoys;
+  const allow=buoyIds?new Set(buoyIds):null;
   for(let i=0;i<buoys.length;i++){
+    const id=numericBuoyId(buoys[i]!,i);
+    if(allow&&!allow.has(id))continue;
     for(const res of resInView)streams.push(renderExactRes(engine,i,res,filter,simT0,simT1,historyStart));
     if(includeDemon){const d=renderDemon(engine,i,simT0,simT1);if(d)streams.push(d);}
   }
@@ -551,24 +729,28 @@ export function makeUserCut(engine:AcousticEngine,simT1:number,name:string,opts:
   const t1=Math.max(0,Math.min(Number.isFinite(simT1)?simT1:engine.time,engine.time));
   const t0=Math.max(0,t1-USER_CUT_WINDOW_S);
   const durationS=t1-t0;
-  const resInView=normalizeResInView(opts.resInView);
+  const viewRes=resolveViewRes(opts);
+  const fallbackBuoyIds=clampFallbackBuoyIds(opts.visibleBuoyIds,engineBuoyIds(engine));
   const includeDemon=opts.includeDemon!==false;
   const filter=opts.filter??'NB';
   const actions=[...(opts.actions??[])].filter(a=>a.simT<=t1+1e-9).sort((a,b)=>a.seq-b.seq||a.simT-b.simT);
   const historyStart=Math.max(0,t0-USER_CUT_HISTORY_PREFILL_S);
-  const demonIds=includeDemon?engine.scenario.buoys.map((b,i)=>numericBuoyId(b,i)):undefined;
-  const rendered=recipeEngine({params,seed,actions,to:t1,recordFrom:historyStart,historyRes:resInView[0],demonBuoyIds:demonIds});
+  const demonIds=includeDemon?fallbackBuoyIds:undefined;
+  const rendered=recipeEngine({params,seed,actions,to:t1,recordFrom:historyStart,historyRes:viewRes,demonBuoyIds:demonIds});
   const reveal=buildReveal(rendered);
   const filters=buildFilters(reveal,params,opts.preset);
-  const streams=collectStreams(rendered,resInView,filter,includeDemon,t0,t1,historyStart);
+  const streams=collectStreams(rendered,[viewRes],filter,includeDemon,t0,t1,historyStart,fallbackBuoyIds);
   rendered.refreshWeakSignal(t1);
   const check:UserCutCheck={stateHashT1:stateHashAt(rendered,t1),rowHash:streams.map(lastRowHash)};
   const fallbackRows=packFallback(streams);
-  return {
-    v:1,kind:'user',id:opts.id??newUserCutId(),name,createdAt:opts.createdAt??new Date().toISOString(),
+  const cut:UserCut={
+    v:USER_CUT_VERSION,kind:'user',id:opts.id??newUserCutId(),name,createdAt:opts.createdAt??new Date().toISOString(),
     modelVersion:USER_CUT_MODEL_VERSION,seed,params,simT0:t0,simT1:t1,durationS,actions,
-    reveal,filters,check,fallbackRows,
+    reveal,filters,check,fallbackRows,fallbackBuoyIds,fallbackRes:viewRes,
+    bearingEnergy:packBearingEnergy(rendered,t0,t1,fallbackBuoyIds),
   };
+  cut.sizeBytes=userCutSizeBytes(cut);
+  return cut;
 }
 
 function checkMatches(cut:UserCut,stateHashT1:string,rowHash:UserCutRowHash[]):boolean{
@@ -582,19 +764,20 @@ function checkMatches(cut:UserCut,stateHashT1:string,rowHash:UserCutRowHash[]):b
   return true;
 }
 
-export function loadUserCut(cut:UserCut):UserCutSession{
-  if(cut.v!==1||cut.kind!=='user')throw new Error('Unsupported UserCut');
+export function loadUserCut(raw:UserCut):UserCutSession{
+  if((raw.v!==1&&raw.v!==2)||raw.kind!=='user')throw new Error('Unsupported UserCut');
+  const cut=migrateUserCut(raw);
   const params=clampParams(cut.params);
-  const resInView=normalizeResInView(cut.check.rowHash.filter(r=>r.kind==='lofar'&&isResLevel(r.res)).map(r=>r.res as ResLevel));
+  const viewRes=isResLevel(cut.fallbackRes)?cut.fallbackRes:derivedFallbackRes(cut);
+  const buoyIds=cut.fallbackBuoyIds??derivedFallbackBuoyIds(cut);
   const includeDemon=cut.check.rowHash.some(r=>r.kind==='demon')||!!cut.fallbackRows?.streams.some(s=>s.kind==='demon');
   const filter=(cut.fallbackRows?.streams.find(s=>s.filter)?.filter??'NB') as GramFilter;
   const historyStart=Math.max(0,cut.simT0-USER_CUT_HISTORY_PREFILL_S);
   let verified=false;
   try{
-    const probe=new AcousticEngine(generateScenario(params,cut.seed),cut.seed,{warmRes:true});
-    const demonIds=includeDemon?probe.scenario.buoys.map((b,i)=>numericBuoyId(b,i)):undefined;
-    const render=recipeEngine({params,seed:cut.seed,actions:cut.actions,to:cut.simT1,recordFrom:historyStart,historyRes:resInView[0],demonBuoyIds:demonIds});
-    const streams=collectStreams(render,resInView,filter,includeDemon,cut.simT0,cut.simT1,historyStart);
+    const demonIds=includeDemon?buoyIds:undefined;
+    const render=recipeEngine({params,seed:cut.seed,actions:cut.actions,to:cut.simT1,recordFrom:historyStart,historyRes:viewRes,demonBuoyIds:demonIds});
+    const streams=collectStreams(render,[viewRes],filter,includeDemon,cut.simT0,cut.simT1,historyStart,buoyIds);
     render.refreshWeakSignal(cut.simT1);
     verified=checkMatches(cut,stateHashAt(render,cut.simT1),streams.map(lastRowHash));
   }catch{
@@ -602,19 +785,25 @@ export function loadUserCut(cut:UserCut):UserCutSession{
   }
   const reveal=cut.reveal;
   if(verified){
-    const sessionEngine=recipeEngine({params,seed:cut.seed,actions:cut.actions,to:cut.simT0,recordFrom:historyStart,historyRes:resInView[0]});
-    return {cut,mode:'exact',reveal,engine:sessionEngine};
+    const sessionEngine=recipeEngine({params,seed:cut.seed,actions:cut.actions,to:cut.simT0,recordFrom:historyStart,historyRes:viewRes});
+    return {cut,mode:'exact',reveal,engine:sessionEngine,buoyStatus:buildBuoyStatus(cut,'exact'),bearingEnergy:cut.bearingEnergy?decodeBearingEnergy(cut.bearingEnergy):undefined};
   }
   if(cut.fallbackRows&&cut.fallbackRows.streams.length){
-    return {cut,mode:'fallback',label:USER_CUT_FALLBACK_LABEL,reveal,fallback:decodeFallback(cut.fallbackRows)};
+    return {cut,mode:'fallback',label:USER_CUT_FALLBACK_LABEL,reveal,fallback:decodeFallback(cut.fallbackRows),buoyStatus:buildBuoyStatus(cut,'fallback'),bearingEnergy:cut.bearingEnergy?decodeBearingEnergy(cut.bearingEnergy):undefined};
   }
-  return {cut,mode:'mismatch',label:USER_CUT_FALLBACK_LABEL,reveal};
+  return {cut,mode:'mismatch',label:USER_CUT_FALLBACK_LABEL,reveal,buoyStatus:buildBuoyStatus(cut,'mismatch'),bearingEnergy:cut.bearingEnergy?decodeBearingEnergy(cut.bearingEnergy):undefined};
 }
 
-/** JSON byte length of a UserCut (UTF-8). startSnapshot is never present. */
+/** JSON byte length of a UserCut (UTF-8). `sizeBytes` is omitted from the count. startSnapshot is never present. */
 export function userCutJsonBytes(cut:UserCut,opts?:{includeFallback?:boolean}):number{
-  const body=opts?.includeFallback===false?{...cut,fallbackRows:undefined}:cut;
+  const {sizeBytes:_omit,...rest}=cut;
+  const body=opts?.includeFallback===false?{...rest,fallbackRows:undefined}:rest;
   return new TextEncoder().encode(JSON.stringify(body)).length;
+}
+
+/** Cuts-list helper: UTF-8 JSON bytes including fallbackRows, excluding the `sizeBytes` field itself. */
+export function userCutSizeBytes(cut:UserCut):number{
+  return userCutJsonBytes(cut,{includeFallback:true});
 }
 
 /** Advance a recipe engine from t=0 to `to` with no gram / history (pre-roll timing). */

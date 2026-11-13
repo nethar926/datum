@@ -1,4 +1,4 @@
-import type { AliPeakBearingMsg, Band, BtBuoysDropped, BuoysDropped, DrainProgress, DropSource, DropSpec, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
+import type { AliPeakBearingMsg, Band, BearingBtMsg, BtBuoysDropped, BuoysDropped, DrainProgress, DropSource, DropSpec, FromWorker, GramConfig, GramRows, GramSettings, LofarBandPresetId, Tactical, ToWorker } from './contract'
 import { engineStartOptions } from '../tactical/buoySequence'
 import type { ScenarioParams } from '../scenarios/acousticsApi'
 import { HandoffMachine, handoffLabel, type HandoffEvent, type HandoffTarget } from '../gram/handoff'
@@ -45,6 +45,7 @@ export class SimClient {
   private worker?: Worker
   private rowsListeners = new Set<RowsListener>()
   private drainListeners = new Set<DrainListener>()
+  private bearingBtListeners = new Set<(m: BearingBtMsg) => void>()
   private statusListeners = new Set<() => void>()
   private raf = 0
   private last = 0
@@ -212,6 +213,7 @@ export class SimClient {
   setBand(band: Band): void { if (band !== this.status.band) this.start(this.status.seed, this.status.scenarioId, band) }
 
   onRows(cb: RowsListener): () => void { this.rowsListeners.add(cb); return () => this.rowsListeners.delete(cb) }
+  onBearingBt(cb: (m: BearingBtMsg) => void): () => void { this.bearingBtListeners.add(cb); return () => this.bearingBtListeners.delete(cb) }
   onDrainProgress(cb: DrainListener): () => void { this.drainListeners.add(cb); return () => this.drainListeners.delete(cb) }
   subscribe = (cb: () => void): (() => void) => { this.statusListeners.add(cb); return () => this.statusListeners.delete(cb) }
   getStatus = (): SimStatus => this.status
@@ -220,7 +222,7 @@ export class SimClient {
     cancelAnimationFrame(this.raf); this.raf = 0
     this.stopWorker()
     this.handoff.cancel()
-    this.rowsListeners.clear(); this.statusListeners.clear(); this.handoffListeners.clear(); this.cutSeekListeners.clear(); this.drainListeners.clear()
+    this.rowsListeners.clear(); this.statusListeners.clear(); this.handoffListeners.clear(); this.cutSeekListeners.clear(); this.drainListeners.clear(); this.bearingBtListeners.clear()
   }
 
   private stopWorker(): void { this.worker?.terminate(); this.worker = undefined }
@@ -362,6 +364,9 @@ export class SimClient {
         this.send({ type: 'release', buffers: bufs }, bufs)
         break
       }
+      case 'bearingBt':
+        for (const l of this.bearingBtListeners) l(m)
+        break
       case 'tactical': // last message of a step / seek (after every gramRows), so it ends the in-flight step
         this.inFlight = false
         if (!this.cutSeekAwaitingDone) this.seekingCut = false

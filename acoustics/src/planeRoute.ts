@@ -3,13 +3,14 @@
  * `pose(spec, t)` is pure and deterministic in sim time `t`. The UI samples
  * once per frame and never integrates.
  *
- * Public, unclassified path geometry only (circular arcs and a two-lobe
- * figure-8 of circular arcs). No real platform trajectories.
+ * Public, unclassified path geometry only (circular arcs, a two-lobe
+ * figure-8 of circular arcs, and a filleted rectangular box). No real
+ * platform trajectories.
  */
 
 import { NMI_M } from './convergenceZone.js';
 
-export const PLANE_MODES = ['circle', 'pointToPoint', 'figure8'] as const;
+export const PLANE_MODES = ['circle', 'pointToPoint', 'figure8', 'box'] as const;
 export type PlaneRouteMode = (typeof PLANE_MODES)[number];
 
 export type PlaneWayPoint = { x: number; y: number };
@@ -27,8 +28,12 @@ export type PlaneRouteSpec = {
   phase0: number;
   /** 2–10 waypoints; the route loops. Used by `pointToPoint`. */
   points: PlaneWayPoint[];
-  /** Optional PTP fillet bound (rad/s). Default `DEFAULT_MAX_TURN_RATE_RAD_S`. */
+  /** Optional PTP / box fillet bound (rad/s). Default `DEFAULT_MAX_TURN_RATE_RAD_S`. */
   maxTurnRateRadS?: number;
+  /** Width/height ratio of the `box` route. Default 1 (square). */
+  boxAspect?: number;
+  /** Rotation of the `box` route, engine heading (0 = north, clockwise). Default 0. */
+  boxHeadingRad?: number;
 };
 
 /**
@@ -357,16 +362,94 @@ function pointToPointPose(spec: PlaneRouteSpec, t: number): PlanePose {
     return holdPose(p.x, p.y, 0, spec, false);
   }
   const path = buildPointToPoint(spec);
+  return poseOnPath(path, spec, t, pts[0]!);
+}
+
+type BoxGeom = {
+  halfW: number; halfH: number;
+  a: number; b: number;
+  r: number;
+  psi: number;
+  cx: number; cy: number;
+};
+
+/** Rectangle width `a`, height `b`, and fillet radius for a box route. */
+export function boxGeom(spec: PlaneRouteSpec): BoxGeom {
+  const aspect = (spec.boxAspect !== undefined && Number.isFinite(spec.boxAspect) && spec.boxAspect > 0)
+    ? spec.boxAspect : 1;
+  const halfH = Math.max(0, spec.radiusM);
+  const halfW = halfH * aspect;
+  const v = Math.max(1e-6, spec.speedMps);
+  const omega0 = Math.max(1e-9, spec.maxTurnRateRadS ?? DEFAULT_MAX_TURN_RATE_RAD_S);
+  const r = Math.min(v / omega0, Math.min(halfW, halfH));
+  return {
+    halfW, halfH,
+    a: 2 * halfW, b: 2 * halfH,
+    r,
+    psi: spec.boxHeadingRad ?? 0,
+    cx: spec.centerX, cy: spec.centerY,
+  };
+}
+
+/** Filleted-rectangle perimeter: 2(a+b) − 8r + 2πr. */
+export function boxPerimeterM(a: number, b: number, r: number): number {
+  return 2 * (a + b) - 8 * r + 2 * PI * r;
+}
+
+function boxPeriodS(spec: PlaneRouteSpec): number {
+  const g = boxGeom(spec);
+  return boxPerimeterM(g.a, g.b, g.r) / Math.max(1e-6, spec.speedMps);
+}
+
+/** Rotate local (east, north) offsets by engine heading `psi` about the centre. */
+function boxXf(cx: number, cy: number, psi: number, x: number, y: number): { x: number; y: number } {
+  const c = Math.cos(psi), s = Math.sin(psi);
+  return { x: cx + x * c + y * s, y: cy - x * s + y * c };
+}
+
+function buildBox(spec: PlaneRouteSpec): BuiltPath {
+  const g = boxGeom(spec);
+  const { halfW, halfH, a, b, r, psi, cx, cy } = g;
+  const hE = PI / 2 + psi;
+  const hN = psi;
+  const hW = -PI / 2 + psi;
+  const hS = PI + psi;
+  const P = (x: number, y: number) => boxXf(cx, cy, psi, x, y);
+  const midW = a - 2 * r;
+  const midH = b - 2 * r;
+  const arcLen = (PI / 2) * r;
+  const pieces: Piece[] = [];
+  const pushStraight = (x0l: number, y0l: number, x1l: number, y1l: number, len: number, heading: number) => {
+    if (len <= 1e-9) return;
+    const p0 = P(x0l, y0l), p1 = P(x1l, y1l);
+    pieces.push({ kind: 'straight', x0: p0.x, y0: p0.y, dx: p1.x - p0.x, dy: p1.y - p0.y, length: len, headingRad: heading });
+  };
+  const pushArc = (cxl: number, cyl: number, h0: number) => {
+    const c = P(cxl, cyl);
+    pieces.push({ kind: 'arc', cx: c.x, cy: c.y, radius: r, h0, dHeading: -PI / 2, length: arcLen });
+  };
+  // CCW: south (eastbound), SE fillet, east (northbound), NE, north (westbound), NW, west (southbound), SW.
+  pushStraight(-halfW + r, -halfH, halfW - r, -halfH, midW, hE);
+  pushArc(halfW - r, -halfH + r, hE);
+  pushStraight(halfW, -halfH + r, halfW, halfH - r, midH, hN);
+  pushArc(halfW - r, halfH - r, hN);
+  pushStraight(halfW - r, halfH, -halfW + r, halfH, midW, hW);
+  pushArc(-halfW + r, halfH - r, hW);
+  pushStraight(-halfW, halfH - r, -halfW, -halfH + r, midH, hS);
+  pushArc(-halfW + r, -halfH + r, hS);
+  const total = boxPerimeterM(a, b, r);
+  return { pieces, total, maxOmega: r > 0 ? Math.max(1e-6, spec.speedMps) / r : 0 };
+}
+
+function poseOnPath(path: BuiltPath, spec: PlaneRouteSpec, t: number, fallback: PlaneWayPoint, movingIfEmpty = false): PlanePose {
   if (path.total <= 1e-9) {
-    const p = pts[0]!;
-    return holdPose(p.x, p.y, 0, spec, false);
+    return holdPose(fallback.x, fallback.y, 0, spec, movingIfEmpty);
   }
   const period = path.total / Math.max(1e-6, spec.speedMps);
   const tau = wrapPeriod(t - spec.t0, period);
   let s = spec.speedMps * tau;
   if (s < 0) s = 0;
   if (s >= path.total) s = path.total;
-  // Walk pieces; last piece absorbs a possible 1-ulp leftover.
   let acc = 0;
   for (let i = 0; i < path.pieces.length; i++) {
     const p = path.pieces[i]!;
@@ -378,14 +461,19 @@ function pointToPointPose(spec: PlaneRouteSpec, t: number): PlanePose {
     }
     acc = end;
   }
-  const p = pts[0]!;
-  return holdPose(p.x, p.y, 0, spec, true);
+  return holdPose(fallback.x, fallback.y, 0, spec, true);
+}
+
+function boxPose(spec: PlaneRouteSpec, t: number): PlanePose {
+  const path = buildBox(spec);
+  return poseOnPath(path, spec, t, { x: spec.centerX, y: spec.centerY });
 }
 
 export function periodS(spec: PlaneRouteSpec): number {
   if (!routeIsReady(spec)) return 0;
   if (spec.mode === 'circle') return circlePeriodS(spec);
   if (spec.mode === 'figure8') return figure8PeriodS(spec);
+  if (spec.mode === 'box') return boxPeriodS(spec);
   const path = buildPointToPoint(spec);
   return path.total / Math.max(1e-6, spec.speedMps);
 }
@@ -397,6 +485,10 @@ export function maxTurnRateRadS(spec: PlaneRouteSpec): number {
   if (spec.mode === 'circle' || spec.mode === 'figure8') {
     const r = Math.max(1, spec.radiusM);
     return v / r;
+  }
+  if (spec.mode === 'box') {
+    const g = boxGeom(spec);
+    return g.r > 0 ? v / g.r : 0;
   }
   const path = buildPointToPoint(spec);
   return path.maxOmega;
@@ -410,6 +502,7 @@ export function pose(spec: PlaneRouteSpec, t: number): PlanePose {
   }
   if (spec.mode === 'circle') return circlePose(spec, t);
   if (spec.mode === 'figure8') return figure8Pose(spec, t);
+  if (spec.mode === 'box') return boxPose(spec, t);
   return pointToPointPose(spec, t);
 }
 

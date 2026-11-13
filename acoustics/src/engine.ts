@@ -10,7 +10,7 @@ import type {Contact} from './scenario.js';
 import {mpsToKnots,clamp} from './units.js';
 import { validateScenario, loadScenario, type Scenario, type ScenarioInput, type Environment } from './scenario.js';
 import { advance } from './kinematics.js';
-import { isAlive, isFeeding, isTuned, type ReceiverType, type Buoy } from './buoys.js';
+import { isAlive, isFeeding, isTuned, inferBuoyType, isDifarBuoy, normalizeBuoy, receiverTypeOf, type ReceiverType, type Buoy } from './buoys.js';
 import { LofarGenerator } from './lofar.js';
 import {ResLofarGenerator,normalizeResSettings} from './resGram.js';
 import {RES_BINS,RES_FRAME_S,TILE_BINS,tileCountFor,tileIndexForHz,priorityTileOrder,tileBand,resSpanS,resParams,resBand,isIntegrationMode,isResLevel,type ResGramSettings,type IntegrationMode} from './res.js';
@@ -28,7 +28,12 @@ import {sharedScratchBytes,invalidateSpanCache} from './resGram.js';
 import {buoyDeployStatus,linkQualityAt,weakSignalByStepping,BUOY_STATUS_SCREEN_ROWS,type BuoyStatus} from './buoyStatus.js';
 import {DEFAULT_DROP_ALTITUDE_M,DEFAULT_DESCENT_RATE_MPS,DEFAULT_INTEGRATION_TIME_S,firstEmitTime,isPlaced,validateDrop,validateIntegration,liveTime,type BuoyStartMode} from './deploySequence.js';
 import {btProfile, dropBtBuoy, type BtProfile, type BtProfileOpts, type BtDrop} from './btProfile.js';
-import {autoBearingsFromState, sendBearingFromPeakAt, type AutoBearing, type AliPeakBearing, type ContactPose} from './autoBearings.js';
+import {autoBearingsFromState, sendBearingFromPeakAt, numericBuoyId, type AutoBearing, type AliPeakBearing, type ContactPose} from './autoBearings.js';
+import {
+  bearingTimeFromState, bearingEnergyFromState,
+  BearingEnergyBook, BEARING_ENERGY_F_LO, BEARING_ENERGY_F_HI, BEARING_TIME_PERIOD_S,
+  type BearingTimeEntry, type BearingEnergyRow,
+} from './bearingTime.js';
 import {bfiBandSamplesForBuoy, type BfiBand, type BfiBandSamples} from './bfiBandSamples.js';
 import {FreqTrackBook, freqTrackBearingsFromState, type FreqTrackBearing} from './freqTrack.js';
 import {routeIsReady, pose, type PlaneRouteSpec} from './planeRoute.js';
@@ -141,12 +146,14 @@ export class AcousticEngine {
   private readonly bearingStorage=Array.from({length:128*8},()=>({buoyId:0,freqHz:0,brgDeg:0,quality:0}));
   private readonly tacticalState:Tactical={v:1,type:'tactical',simT:0,aircraft:{x:0,y:0,altM:300,hdgDeg:0,gsMps:0},buoys:[],bearings:[]};
   private readonly freqBook=new FreqTrackBook();
+  readonly bearingBook=new BearingEnergyBook();
+  private bearingEnergyBand:[number,number]=[BEARING_ENERGY_F_LO,BEARING_ENERGY_F_HI];
   private planeRoute:PlaneRouteSpec|null=null;
   /** weakSignal flags keyed by buoy id, last evaluated on the row clock at `this.time`. */
   weakSignal=new Map<string,boolean>();
 
   private nextPlannedOrder=0;
-  constructor(scenario:ScenarioInput,seed?:number,options:AcousticEngineOptions={}){this.options={deferUndeployed:!!options.deferUndeployed,lstiWarm:!!options.lstiWarm,warmRes:options.warmRes!==false,ringSpanS:options.ringSpanS??HISTORY_RING_SPAN_S,warmFill:options.warmFill==='eager'?'eager':'lazy'};if(seed!==undefined)scenario={...scenario,seed};const resolved=loadScenario(scenario);this.scenario=structuredClone(resolved);const s=this.scenario;
+  constructor(scenario:ScenarioInput,seed?:number,options:AcousticEngineOptions={}){this.options={deferUndeployed:!!options.deferUndeployed,lstiWarm:!!options.lstiWarm,warmRes:options.warmRes!==false,ringSpanS:options.ringSpanS??HISTORY_RING_SPAN_S,warmFill:options.warmFill==='eager'?'eager':'lazy'};if(seed!==undefined)scenario={...scenario,seed};const resolved=loadScenario(scenario);this.scenario=structuredClone(resolved);this.scenario.buoys=this.scenario.buoys.map(b=>normalizeBuoy(b));const s=this.scenario;
     (this as {startTime:number}).startTime=s.time;
     this.integrationModes.length=0;for(let i=0;i<s.buoys.length;i++)this.integrationModes.push('sti');
     // unplaced clears buoys below — modes are rebuilt after that.
@@ -178,13 +185,16 @@ export class AcousticEngine {
     this.generators=s.buoys.map(b=>new LofarGenerator(b,this.allContacts,s.bins,s.band?.[1]??s.fMax??s.fmax,s.seed,s.environment,s.band?.[0]??0));
     this.syncPropagationContext();
     s.buoys.forEach((_,i)=>{this.streams.set(i+1,i);this.legacyIndices.set(i+1,0);});
-    this.rows=s.buoys.map((b,i)=>({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:this.generators[i].row}));
+    this.rows=s.buoys.map((b,i)=>({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:receiverTypeOf(b.type),alive:false,bearing:null,row:this.generators[i].row}));
     s.classificationTargets??=this.baseContacts.filter(c=>c.category!=='surface'&&c.classificationTarget!==false).map(c=>c.id);this.syncTacticalBuoys();
     this.history=new StateHistory(this.allContacts);invalidateSpanCache();
     if(autoDrop){
+      // No aircraft route yet: release at t0 so the pattern walks the sequence.
+      // A ready route (if one is ever set at construct) keeps them planned for capture.
+      const hold=!!(this.planeRoute&&routeIsReady(this.planeRoute));
       for(const b of pattern){
         const order=this.nextPlannedOrder++;
-        this.addBuoy({...b,placed:false,deployedAt:undefined,
+        this.addBuoy({...b,placed:false,deployedAt:hold?undefined:this.time,
           plannedDrop:{x:b.x,y:b.y,order},
           dropAltitudeM:s.dropAltitudeM??b.dropAltitudeM??this.deployAltitudeM,
           descentRateMps:s.descentRateMps??b.descentRateMps??this.deployDescentRateMps,
@@ -192,6 +202,7 @@ export class AcousticEngine {
       }
     }
     this.warm=new WarmBank(this.asWarmHost());
+    this.captureBearingTime(this.time,this.time);
   }
   private asWarmHost():WarmHost{
     const e=this;
@@ -315,10 +326,11 @@ export class AcousticEngine {
   setSurfaceTraffic(v:number):void{v=Number.isFinite(v)?clamp(v,0,1):.5;this.scenario.surfaceTraffic=v;const pool=this.scenario.surfacePool;if(pool){const n=surfaceCount(v,pool.length),contacts=this.scenario.contacts;contacts.length=this.baseContacts.length;for(let i=0;i<pool.length;i++){pool[i].active=i<n;if(i<n)contacts.push(pool[i]);}}this.setEnvironment({...this.scenario.environment,shippingDensity:v,shipping:v<.33?'light':v<.67?'moderate':'heavy'});}
   registerStream(id:number,channel:number):void {if(!(channel>0))throw new Error('Unknown RF channel');const i=this.scenario.buoys.findIndex(b=>b.rfChannel===channel);if(i<0)throw new Error('Unknown RF channel');this.streams.set(id,i);if(!this.legacyIndices.has(id))this.legacyIndices.set(id,0);}
   addBuoy(b:Buoy):void {
+    b=normalizeBuoy(b);
     if(b.placed===false){validateDrop(b.dropAltitudeM??this.deployAltitudeM,b.descentRateMps??this.deployDescentRateMps);validateIntegration(b.integrationTimeS??this.deployIntegrationTimeS);}
     if(isPlanned(b)&&!b.plannedDrop)b={...b,plannedDrop:{x:b.x,y:b.y,order:this.nextPlannedOrder++}};
     else if(b.plannedDrop)this.nextPlannedOrder=Math.max(this.nextPlannedOrder,b.plannedDrop.order+1);
-    const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);g.setWaterColumn?.(this.scenario.waterColumn);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:b.type,alive:false,bearing:null,row:g.row});invalidateSpanCache();this.integrationModes.push('sti');this.syncTacticalBuoys();if(this.historyOn)this.warm.ensure();}
+    const next={...this.scenario,buoys:[...this.scenario.buoys,b]};validateScenario(next);if(b.rfChannel>0&&this.scenario.buoys.some(x=>x.rfChannel===b.rfChannel))throw new Error('RF channel already used');this.scenario.buoys.push({...b});const owned=this.scenario.buoys[this.scenario.buoys.length-1];const g=new LofarGenerator(owned,this.allContacts,this.scenario.bins,this.scenario.fmax,this.scenario.seed,this.scenario.environment);g.setWaterColumn?.(this.scenario.waterColumn);this.generators.push(g);this.rows.push({id:b.id,rfChannel:b.rfChannel,depth:b.depth,type:receiverTypeOf(b.type),alive:false,bearing:null,row:g.row});invalidateSpanCache();this.integrationModes.push('sti');this.syncTacticalBuoys();if(this.historyOn)this.warm.ensure();}
   /** Subscription rows are ready at 4 Hz since subscribe; legacy registered streams remain pull-based.
    * If multiple rows accumulate, each is rendered using current geometry (no historical snapshot queue). */
   subscribe(req:{kind:'demon';buoyId:number;band?:[number,number]}):number;
@@ -707,14 +719,15 @@ export class AcousticEngine {
     out.set((sub?.res??sub?.lofar??this.generators[i]).bearingRow,offset);
   }
   dropBuoy(spec:DropBuoy):number {
-    if(spec.kind!=='omni'&&spec.kind!=='difar')throw new Error('Receiver type pending approved plan');
+    const typ=inferBuoyType(spec);
+    if(typ!=='omni'&&typ!=='difar')throw new Error('Receiver type pending approved plan');
     if(!(spec.channel>0)||!Number.isInteger(spec.channel))throw new Error('Invalid RF channel');
     let max=0;for(const b of this.scenario.buoys)max=Math.max(max,Number(b.id.replace(/\D/g,''))||0);
     const id=spec.id??max+1;if(!Number.isInteger(id)||id<1||id>2147483647)throw new Error('Invalid buoy id');
     const alt=spec.dropAltitudeM??this.deployAltitudeM,rate=spec.descentRateMps??this.deployDescentRateMps,integ=spec.integrationTimeS??this.deployIntegrationTimeS;
     validateDrop(alt,rate);validateIntegration(integ);
     const planned=!!(this.planeRoute&&routeIsReady(this.planeRoute));
-    this.addBuoy({id:`buoy-${id}`,rfChannel:spec.channel,type:spec.kind==='omni'?'passive-omni':'difar',x:spec.x,y:spec.y,depth:spec.hydrophoneDepthM,course:0,speed:0,
+    this.addBuoy({id:`buoy-${id}`,rfChannel:spec.channel,type:typ,difar:typ==='difar',x:spec.x,y:spec.y,depth:spec.hydrophoneDepthM,course:0,speed:0,
       ...(planned?{}:{deployedAt:this.time}),life:spec.lifeS??7200,
       placed:false,dropAltitudeM:alt,descentRateMps:rate,integrationTimeS:integ,
       ...(planned?{plannedDrop:{x:spec.x,y:spec.y,order:this.nextPlannedOrder} as PlannedDrop}:{})});return id;
@@ -856,8 +869,8 @@ export class AcousticEngine {
   /** Seeded BT/SSP for this scenario (Mackenzie 1981, fictional 3-layer shape). */
   btProfile(opts?:BtProfileOpts):BtProfile { return btProfile(this.scenario, opts); }
   /**
-   * BT buoy drop: returns the scenario profile. Does not insert a BT receiver into
-   * `scenario.buoys` (those stay omni/difar only). `dropBuoy({kind:'bt'})` still throws.
+   * BT buoy drop: returns the scenario profile with `type: 'bt'`. Does not insert a BT
+   * receiver into `scenario.buoys` (gram inventory). `dropBuoy({kind:'bt'})` still throws.
    */
   dropBtBuoy(spec:{x:number;y:number;id?:number;maxDepthM?:number;samples?:number}):BtDrop {
     let max=0;for(const b of this.scenario.buoys)max=Math.max(max,Number(b.id.replace(/\D/g,''))||0);
@@ -881,6 +894,68 @@ export class AcousticEngine {
     }
     return autoBearingsFromState({buoys:s.buoys,contacts,environment:s.environment,seed:s.seed,atSimTime,minQuality:opts?.minQuality,dfHz});
   }
+
+  posedContactsAt(atSimTime:number):ContactPose[]{
+    const contacts:ContactPose[]=[];
+    for(let i=0;i<this.allContacts.length;i++){
+      const c=this.allContacts[i]!;
+      const p=atSimTime===this.time?c:this.aisPose(atSimTime,i);
+      contacts.push({id:c.id,x:p.x,y:p.y,depth:p.depth,course:p.course,speed:p.speed,active:c.active,lines:c.lines,params:c.params});
+    }
+    return contacts;
+  }
+  private bearingState(atSimTime:number){
+    const s=this.scenario;
+    return {
+      buoys:s.buoys,contacts:this.posedContactsAt(atSimTime),environment:s.environment,seed:s.seed,atSimTime,
+      band:this.bearingEnergyBand,
+      tracks:this.freqBook.specs().map(t=>({buoyId:t.buoyId,freqHz:t.freqHz})),
+    };
+  }
+  /** Default / current broadband band used for energy rows and the band time-entry. */
+  getBearingEnergyBand():[number,number]{return [this.bearingEnergyBand[0],this.bearingEnergyBand[1]];}
+  setBearingEnergyBand(band:[number,number]):void{
+    const lo=band[0],hi=band[1];
+    if(!Number.isFinite(lo)||!Number.isFinite(hi)||!(hi>lo)||lo<0)throw new Error('Invalid bearing-energy band');
+    this.bearingEnergyBand=[lo,hi];
+  }
+  /** Per-line and per-band bearing-time entries at `atSimTime` (default now). Read-only. */
+  bearingTime(atSimTime:number=this.time):BearingTimeEntry[]{
+    if(!Number.isFinite(atSimTime))throw new Error('Invalid bearing-time');
+    return bearingTimeFromState(this.bearingState(atSimTime));
+  }
+  /** 360-bin bearing-energy row for one DIFAR buoy, or undefined for omni/BT/unknown. */
+  bearingEnergy(buoyId:number, atSimTime:number=this.time, band?:[number,number]):BearingEnergyRow|undefined{
+    if(!Number.isFinite(atSimTime))throw new Error('Invalid bearing-energy time');
+    const st=this.bearingState(atSimTime);
+    if(band)st.band=band;
+    return bearingEnergyFromState(st,buoyId)??undefined;
+  }
+  bearingEnergyHistory(buoyId?:number,t0?:number,t1?:number):BearingEnergyRow[]{
+    if(buoyId!==undefined)return this.bearingBook.energy(buoyId,t0,t1);
+    const ids=new Set<number>();
+    const out:BearingEnergyRow[]=[];
+    for(let i=0;i<this.scenario.buoys.length;i++)ids.add(numericBuoyId(this.scenario.buoys[i]!.id,i));
+    for(const id of ids)out.push(...this.bearingBook.energy(id,t0,t1));
+    return out.sort((a,c)=>a.t-c.t||a.buoyId-c.buoyId);
+  }
+  bearingTimeHistory(t0?:number,t1?:number,buoyId?:number):BearingTimeEntry[]{
+    return this.bearingBook.timeEntries(t0,t1,buoyId);
+  }
+  private captureBearingTime(t0:number,t1:number):void{
+    if(!this.scenario.buoys.some(b=>isDifarBuoy(b)))return;
+    const start=t0===t1?t0:Math.ceil((t0+1e-12)/BEARING_TIME_PERIOD_S)*BEARING_TIME_PERIOD_S;
+    for(let t=start;t<=t1+1e-12;t+=BEARING_TIME_PERIOD_S){
+      const st=this.bearingState(t);
+      this.bearingBook.recordEntries(bearingTimeFromState(st));
+      for(let i=0;i<this.scenario.buoys.length;i++){
+        const id=numericBuoyId(this.scenario.buoys[i]!.id,i);
+        const row=bearingEnergyFromState(st,id);
+        if(row)this.bearingBook.recordEnergy(row);
+      }
+    }
+  }
+
   /**
    * ALI peak-to-bearing: DIFAR math at a frequency or the strongest line in a band.
    * Returns `{bearingDeg, sigmaDeg, snrDb, freqHz}` for Dorian's AliEngineSource seam.
@@ -955,11 +1030,11 @@ export class AcousticEngine {
     const i=this.buoyIndex(buoyId);if(i<0)throw new Error('Unknown buoyId');
     this.scenario.buoys[i].fault=!!fault;
   }
-  private syncTacticalBuoys():void{this.tacticalState.buoys=this.scenario.buoys.map((b,i)=>({id:Number(b.id.replace(/\D/g,''))||i+1,channel:b.rfChannel,kind:b.type==='difar'?'difar':'omni',x:b.x,y:b.y,hydrophoneDepthM:b.depth,batteryFrac:1,lifeRemainingS:b.life,state:'live',health:b.fault?'fault':'ok'}));}
+  private syncTacticalBuoys():void{this.tacticalState.buoys=this.scenario.buoys.map((b,i)=>{const typ=inferBuoyType(b);return {id:Number(b.id.replace(/\D/g,''))||i+1,channel:b.rfChannel,kind:typ,type:typ,difar:typ==='difar',x:b.x,y:b.y,hydrophoneDepthM:b.depth,batteryFrac:1,lifeRemainingS:b.life,state:'live' as const,health:b.fault?'fault' as const:'ok' as const};});}
   /** Reuses the tactical object/records; callers needing snapshots should structuredClone it. */
   tactical():Tactical {
     const s=this.scenario,t=this.tacticalState;t.simT=this.time;const a=t.aircraft;a.x=s.ownship.x;a.y=s.ownship.y;a.hdgDeg=(s.ownship.course*180/Math.PI+360)%360;a.gsMps=s.ownship.speed;
-    let count=0;for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],out=t.buoys[i];out.x=b.x;out.y=b.y;out.hydrophoneDepthM=b.depth;out.channel=b.rfChannel;out.lifeRemainingS=Math.max(0,b.deployedAt+b.life-this.time);out.batteryFrac=Math.max(0,Math.min(1,out.lifeRemainingS/b.life));out.state=this.time<b.deployedAt?'falling':isAlive(b,this.time)?'live':'dead';out.health=b.fault?'fault':'ok';
+    let count=0;for(let i=0;i<s.buoys.length;i++){const b=s.buoys[i],out=t.buoys[i];out.x=b.x;out.y=b.y;out.hydrophoneDepthM=b.depth;out.channel=b.rfChannel;const releasedAt=b.deployedAt??Number.POSITIVE_INFINITY;out.lifeRemainingS=Number.isFinite(releasedAt)?Math.max(0,releasedAt+b.life-this.time):b.life;out.batteryFrac=Math.max(0,Math.min(1,out.lifeRemainingS/b.life));out.state=this.time<releasedAt?'falling':isAlive(b,this.time)?'live':'dead';out.health=b.fault?'fault':'ok';
       if(b.type==='difar'&&isFeeding(b,this.time)){const g=this.generators[i];for(let j=0;j<g.lineCount;j++){const src=g.lines[j],dst=this.bearingStorage[count];dst.buoyId=out.id;dst.freqHz=src.freqHz;dst.brgDeg=src.brgDeg;dst.quality=src.quality;t.bearings[count++]=dst;}}
     }t.bearings.length=count;
     for(let i=0;i<this.allContacts.length;i++){const c=this.allContacts[i],out=this.truthState.contacts[i];out.active=c.active!==false;out.x=c.x;out.y=c.y;out.depthM=c.depth;out.crsDeg=(c.course*180/Math.PI+360)%360;out.spdMps=c.speed;out.spdKts=mpsToKnots(c.speed);for(let j=0;j<out.lines.length;j++){const line=c.lines![j],dst=out.lines[j];dst.f0Hz=line.hz;dst.freqHz=line.frequencyHz??line.hz;dst.power=line.power;dst.stability=line.stability!;dst.width=line.width!;dst.sigmaBins=line.sigmaBins??0;dst.eda=line.eda;dst.reactorId=line.reactorId;dst.lineFamily=line.lineFamily;dst.fundamentalHz=line.fundamentalHz;dst.harmonic=line.harmonic;dst.engineId=line.engineId;dst.shaftIndex=line.shaftIndex;}}
@@ -988,6 +1063,7 @@ export class AcousticEngine {
     this.resolvePlannedDrops(from,s.time);
     // RES span averaging: one engine-wide source-STATE record per frame (stateHistory.ts); rows re-evaluate the modelled spectrum per frame (not a waveform FFT).
     if(this.historyOn)this.history.record(s.time);
+    this.captureBearingTime(from,s.time);
     if(this.options.deferUndeployed)this.consumeAboardRows();
     if(this.historyOn){this.warm.ensure();this.warm.tick();}
     this.consumePreLiveRows();

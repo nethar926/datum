@@ -8,7 +8,7 @@ import type {Contact} from '../src/scenario.js';
 import type {Buoy} from '../src/buoys.js';
 import type {ContactPose} from '../src/autoBearings.js';
 
-function contactAt(id: string, bearingDeg: number, rangeM: number, over: Partial<Contact> & {params?: Partial<Contact['params']>} = {}): Contact {
+function contactAt(id: string, bearingDeg: number, rangeM: number, over: Omit<Partial<Contact>, 'params'> & {params?: Partial<Contact['params']>} = {}): Contact {
   const rad = bearingDeg * Math.PI / 180;
   const {params: paramOver, ...rest} = over;
   const params = {

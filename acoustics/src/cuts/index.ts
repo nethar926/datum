@@ -65,9 +65,13 @@ export type {LessonContrast} from './visibility.js';
 
 export {
  USER_CUT_VERSION,USER_CUT_KIND,USER_CUT_MODEL_VERSION,USER_CUT_WINDOW_S,USER_CUT_FALLBACK_LABEL,USER_CUT_HISTORY_PREFILL_S,
- makeUserCut,loadUserCut,userCutJsonBytes,prerollRecipe,decodeFallback,packFallback,
+ USER_CUT_FALLBACK_BUOY_CAP,USER_CUT_NOT_SAVED_STATUS,USER_CUT_NOT_SAVED_LABEL,
+ makeUserCut,loadUserCut,migrateUserCut,userCutJsonBytes,userCutSizeBytes,prerollRecipe,decodeFallback,packFallback,packBearingEnergy,decodeBearingEnergy,
+ clampFallbackBuoyIds,resolveViewRes,inventoryBuoyIds,engineBuoyIds,buildBuoyStatus,
  inferFilterDifficulty,filterDifficultyFromEngine,engineDifficultyFromFilter,buildReveal,buildFilters,stateHashAt,hashRowData,
  type UserCut,type UserCutSession,type UserCutReveal,type UserCutRevealContact,type UserCutFilters,
  type UserCutCheck,type UserCutRowHash,type UserCutFallbackRows,type UserCutFallbackStream,
  type UserCutMode,type UserCutDifficulty,type UserCutPlant,type MakeUserCutOptions,type DecodedFallbackStream,
+ type UserCutBuoyStatus,type UserCutBuoyPlaybackStatus,
+ type UserCutBearingEnergy,type UserCutBearingEnergyBuoy,type DecodedBearingEnergy,type DecodedBearingEnergyRow,
 } from './userCut.js';

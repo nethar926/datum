@@ -64,6 +64,7 @@ export * from './planeDrop.js';
 export * from './aisTrackSource.js';
 export * from './btProfile.js';
 export * from './autoBearings.js';
+export * from './bearingTime.js';
 export * from './bfiBandSamples.js';
 export * from './freqTrack.js';
 

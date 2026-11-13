@@ -7,7 +7,7 @@
  */
 import {deployStatus,splashTime,type DeployBuoy} from './deploySequence.js';
 import type {PlanePose} from './planeRoute.js';
-import {isTuned,type Buoy} from './buoys.js';
+import {isTuned,inferBuoyType,type Buoy,type BuoyType} from './buoys.js';
 import {clamp} from './units.js';
 
 /** Default rows for a full waterfall screen (web FE CURRENT_HISTORY_ROWS). Kept for API compatibility;
@@ -80,6 +80,10 @@ export interface BuoyStatus {
   linkQuality:number;
   /** Hysteresis flag on the row clock: enters below WEAK_SIGNAL_ENTER, clears above WEAK_SIGNAL_CLEAR. */
   weakSignal:boolean;
+  /** Canonical inventory type. Always set on engine queries; defaults to `omni` on the pure helper. */
+  type:BuoyType;
+  /** Derived: `type === 'difar'`. Kept for backward compatibility. */
+  difar:boolean;
 }
 
 /** Drain start: splashTime for sequence buoys, deployedAt (= splash) for placed. Infinity if still planned. */
@@ -158,9 +162,13 @@ function etaToFrac(t:number,b:DeployBuoy&{life:number},frac:number):number{
 }
 
 /** Deploy-sequence status. `anchor`/`period`/`screenRows` are accepted for call-site compatibility and ignored. */
+function typeFields(b:object):{type:BuoyType;difar:boolean}{
+  const type=inferBuoyType(b as {type?:unknown;kind?:unknown;difar?:unknown});
+  return {type,difar:type==='difar'};
+}
 function withDropFields(s:BuoyStatus,b:DeployBuoy):BuoyStatus{
   const d=b.deployedAt;
-  return {...s,plannedDrop:b.plannedDrop??null,releaseAt:typeof d==='number'&&Number.isFinite(d)?d:null};
+  return {...s,...typeFields(b),plannedDrop:b.plannedDrop??null,releaseAt:typeof d==='number'&&Number.isFinite(d)?d:null};
 }
 
 

@@ -163,7 +163,7 @@ export class WarmBank {
   private fillSlot(slot:ResSlot,buoy:number,h:WarmHost):void{
     const t=h.time,b=h.scenario.buoys[buoy];if(!b)return;
     const due=Math.max(0,Math.floor((t-slot.start)*slot.rowRateHz+1e-9));
-    const aboard=h.options.deferUndeployed&&t<b.deployedAt;
+    const aboard=h.options.deferUndeployed&&t<(b.deployedAt??Number.POSITIVE_INFINITY);
     if(aboard){if(due>slot.written)slot.written=due;return;}
     while(slot.written<due){
       const k=slot.written,tEnd=slot.start+(k+1)/slot.rowRateHz,out=this.tmpNb;
@@ -176,7 +176,7 @@ export class WarmBank {
   private fillDemon(slot:DemonSlot,h:WarmHost):void{
     const t=h.time,b=h.scenario.buoys[slot.buoy];if(!b)return;
     const due=Math.max(0,Math.floor((t-slot.start)*slot.rowRateHz+1e-9));
-    const aboard=h.options.deferUndeployed&&t<b.deployedAt;
+    const aboard=h.options.deferUndeployed&&t<(b.deployedAt??Number.POSITIVE_INFINITY);
     if(aboard){if(due>slot.written)slot.written=due;return;}
     while(slot.written<due){
       const k=slot.written,out=this.tmpDemon;

@@ -416,6 +416,23 @@ button.ios-row:active { background: var(--sys-fill); }
   background: var(--gram-bg, #000);
 }
 .cut-player .cut-gram .gram { background: var(--gram-bg, #000); }
+.cut-player .bt-panel.gram-panel,
+.app.ios .cut-player .panel.gram-panel.bt-panel {
+  min-height: 0; height: 100%; border-radius: 22px; overflow: hidden; box-shadow: var(--shadow-panel);
+  display: grid; grid-template-rows: minmax(0, 1fr) !important; grid-template-columns: minmax(0, 1fr);
+  background: var(--gram-bg, #000); color: var(--text-1, #d7e0d7);
+}
+.cut-player .bt-panel .panel-body {
+  position: relative; min-height: 0; min-width: 0; height: 100%;
+  background: var(--gram-bg, #000);
+}
+.cut-player .bt-panel .gram { background: var(--gram-bg, #000); }
+.cut-player:has([data-testid='cut-bt-panel']:not([hidden])):has([data-testid='cut-gram'][hidden]) {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.cut-player:has([data-testid='cut-bt-panel']:not([hidden])):has([data-testid='cut-gram'][hidden]):not(:has(> .cut-chrome-row)) {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
 .cut-player:has([data-testid='demon-panel']) {
   grid-template-rows: auto auto minmax(0, 1fr) minmax(220px, 0.5fr) auto;
 }
@@ -732,10 +749,23 @@ button.ios-row:active { background: var(--sys-fill); }
   gap: 0;
 }
 .app.ios[data-demon='1'] .workspace-left > .gram-box,
-.app.ios[data-demon='1'] .workspace-left > .demon-panel {
+.app.ios[data-demon='1'] .workspace-left > .demon-panel,
+.app.ios[data-demon='1'] .workspace-left > .bt-panel {
   grid-area: 1 / 1;
   min-height: 0;
   height: 100%;
+}
+.app.ios .workspace-left > .bt-panel {
+  grid-area: 1 / 1;
+  min-height: 0;
+  height: 100%;
+}
+.app.ios .bt-panel.gram-panel,
+.app.ios .panel.gram-panel.bt-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+.app.ios .bt-panel .panel-body {
+  position: relative; min-height: 0; min-width: 0; height: 100%;
 }
 /* DemonPane: head + optional hint + body — body must own the 1fr (hint used to steal it). */
 .app.ios .demon-panel.gram-panel,

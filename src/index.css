@@ -893,10 +893,22 @@ button, select { font: inherit; color: inherit; }
   grid-template-columns: minmax(0, 1fr);
 }
 .app[data-demon='1'] .workspace-left > .gram-box,
-.app[data-demon='1'] .workspace-left > .demon-panel {
+.app[data-demon='1'] .workspace-left > .demon-panel,
+.app[data-demon='1'] .workspace-left > .bt-panel {
   grid-area: 1 / 1;
   min-height: 0;
   height: 100%;
+}
+.workspace-left > .bt-panel {
+  grid-area: 1 / 1;
+  min-height: 0;
+  height: 100%;
+}
+.app .bt-panel.gram-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+.app .bt-panel .panel-body {
+  position: relative; min-height: 0; min-width: 0; height: 100%;
 }
 .app .demon-panel.gram-panel {
   grid-template-rows: auto minmax(0, 1fr);
@@ -996,6 +1008,31 @@ button, select { font: inherit; color: inherit; }
 [data-testid="secondary-display-bfi"]:disabled,
 [data-testid="secondary-display-sheet-bfi"]:disabled { opacity: .4; }
 .tac-panel .panel-body[data-testid="secondary-bfi-pane"] { position: relative; min-height: 0; background: #000; }
+
+
+/* ---------- BT: bearing-time waterfall (true bearing vs time) ---------- */
+.bt-plot { background: #000; }
+.bt-plot canvas { background: #000; touch-action: none; }
+.bt-label, .bt-readout {
+  position: absolute; left: 8px; z-index: 3; pointer-events: none;
+  font: 10px/1 var(--font-mono); letter-spacing: .04em; color: var(--phosphor);
+  padding: 3px 6px; border-radius: 999px;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(8px);
+}
+.bt-label { top: 6px; }
+.bt-readout { top: 26px; }
+.bt-controls { position: absolute; top: 6px; right: 52px; z-index: 2; display: flex; gap: 8px; }
+.bt-controls .seg button { font: 600 11px/1 inherit; padding: 6px 8px; }
+.bt-controls .seg button:disabled { opacity: .4; }
+.bt-empty {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 3; pointer-events: none;
+  font: 600 13px/1 var(--font-mono); letter-spacing: .06em; color: var(--phosphor-dim, #6a8a6e);
+  padding: 8px 12px; border-radius: 8px; background: rgba(0,0,0,.45);
+}
+[data-testid="gram-mode-bt"]:disabled,
+[data-testid="cut-gram-mode-bt"]:disabled { opacity: .4; }
 
 /* ---------- ALI: dark-tinted glass strip at the newest-data edge (small area only) ---------- */
 /* ALI amplitude bar chart: a grid row under the waterfall, never over the hinge crease. */
