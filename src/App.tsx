@@ -241,6 +241,7 @@ export default function App() {
   const ctrTimer = useRef(0)
   const [brgFlash, setBrgFlash] = useState<string | null>(null)
   const brgTimer = useRef(0)
+  const pendingAli = useRef<{ seq: number; id: number; channel: number; hz: number } | null>(null)
   const bearingAtRef = useRef<((hz: number) => number | null) | null>(null)
   const [hzField, setHzField] = useState('')
   const [brgArm, setBrgArm] = useState<BearingArm>(ARM_IDLE)
@@ -833,6 +834,23 @@ export default function App() {
     flashBrg(formatBrgHud(deg, hz, b.channel))
     return true
   }
+  /** ALI send-bearing: hook the existing action to Sonya's sendBearingFromPeak. */
+  const sendAliAtFreq = (hz: number): boolean => {
+    const b = buoy
+    if (!b || b.kind !== 'difar' || b.state !== 'live') return sendBrgAtFreq(hz)
+    const seq = client.sendBearingFromPeak(b.id, hz, st.simT)
+    pendingAli.current = { seq, id: b.id, channel: b.channel, hz }
+    return true
+  }
+  const lastAliPeak = st.lastAliPeak
+  useEffect(() => {
+    const p = pendingAli.current, msg = lastAliPeak
+    if (!p || !msg || msg.seq !== p.seq) return
+    pendingAli.current = null
+    if (msg.error) { flashBrg(NO_BRG_MSG); return }
+    onManual(p.id, msg.bearingDeg, true)
+    flashBrg(formatBrgHud(msg.bearingDeg, msg.freqHz, p.channel))
+  }, [lastAliPeak]) // eslint-disable-line react-hooks/exhaustive-deps
   /** Desktop/iPad: if the pointer is over the gram, B sends BRG at cursorHz; else arm tactical. */
   const tryBrgFromCursor = (): boolean => {
     if (cursorHz === null) return false
@@ -1312,7 +1330,7 @@ export default function App() {
                 dragLocked={(tool === 'harm' && locks.harm) || (tool === 'comb' && locks.comb) || (tool === 'lm' && locks.lm)}
                 dragLockable={(tool === 'harm' && harmF0 !== null) || (tool === 'comb' && combCentreHz !== null) || tool === 'lm'}
                 onDragLockTap={() => flipLock(tool === 'lm' ? 'lm' : tool === 'comb' ? 'comb' : 'harm')}
-                horz={horzOn} ali={aliOn} onAliSend={sendBrgAtFreq} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
+                horz={horzOn} ali={aliOn} onAliSend={sendAliAtFreq} nowS={st.simT} dir={gramDir} zuluOriginMs={zuluOriginMs}
                 paused={!st.playing} scrollBackS={scrollBackS} onScrollBack={setScrollBackS}
                 onReturnToLive={() => setScrollBackS(returnToLive())}
                 overlay={ruler.placed || dopMode || tool === 'lm' || harmF0 !== null || combCentreHz !== null ? (ctx) => (<>

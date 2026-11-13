@@ -116,6 +116,7 @@ export class SimHost {
       if (msg.type === 'dropGram') { if (msg.gen === this.pendingGen) this.dropPending(); return }
       if (msg.type === 'dropBuoys') return this.dropBuoys(msg)
       if (msg.type === 'dropBtBuoys') return this.dropBtBuoys(msg)
+      if (msg.type === 'sendBearingFromPeak') return this.sendBearingFromPeak(msg)
       if (msg.type === 'setReceiver') { this.rxEnabled = !!msg.enabled; for (const r of this.active.rx) r.reset(); for (const r of this.pending?.rx ?? []) r.reset(); return }
       throw new Error('Unknown message')
     } catch (e) {
@@ -786,6 +787,16 @@ export class SimHost {
 
 
 
+  private sendBearingFromPeak(msg: Extract<ToWorker, { type: 'sendBearingFromPeak' }>): void {
+    try {
+      const freq = msg.freqHz !== undefined ? msg.freqHz : msg.band
+      if (freq === undefined) throw new Error('Missing ALI frequency')
+      const r = this.engine!.sendBearingFromPeak(msg.buoyId, freq, msg.atSimTime)
+      this.post({ v: 1, type: 'aliPeakBearing', seq: msg.seq, bearingDeg: r.bearingDeg, sigmaDeg: r.sigmaDeg, snrDb: r.snrDb, freqHz: r.freqHz })
+    } catch (e) {
+      this.post({ v: 1, type: 'aliPeakBearing', seq: msg.seq, bearingDeg: 0, sigmaDeg: 90, snrDb: 0, freqHz: msg.freqHz ?? 0, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
 
   private dropBtBuoys(msg: Extract<ToWorker, { type: 'dropBtBuoys' }>): void {
     const engine = this.engine!
