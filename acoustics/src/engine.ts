@@ -631,7 +631,7 @@ export class AcousticEngine {
       sub.config={...sub.config,f0:t.f0,liveBins:t.liveBins,bandLimited:t.bandLimited,simT:this.time};
       return rowIndex;
     }
-    if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);sub?.res?.bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset);else if(sub?.res)sub.res.generateAt(sub.start+(rowIndex+1)/sub.config.rowRateHz,out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
+    if(!isFeeding(b,this.time)){out.fill(NaN,offset,offset+bins);this.generators[i].lineCount=0;this.generators[i].bearingRow.fill(NaN);sub?.res?.bearingRow.fill(NaN);return rowIndex;}if(sub?.renderer)sub.renderer.write(out,offset,rowIndex);else if(sub?.res)sub.res.generateAt(sub.start+(rowIndex+1)/sub.config.rowRateHz,out,offset);else (sub?.lofar??this.generators[i]).generate(out,offset);return rowIndex;
   }
   /** Copy the last generated per-bin DIFAR bearings (call after writeRow). NaN for omni/DEMON/dead. */
   writeBearingRow(streamId:number,out:Float32Array,offset=0):void {

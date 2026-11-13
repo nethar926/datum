@@ -181,7 +181,7 @@ export class WarmBank {
     while(slot.written<due){
       const k=slot.written,out=this.tmpDemon;
       if(!isFeeding(b,t)||!isTuned(b))out.fill(NaN);
-      else slot.renderer.write(out,0);
+      else slot.renderer.write(out,0,k);
       slot.ring.push(k,out);
       slot.written++;
     }

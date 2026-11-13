@@ -10,6 +10,7 @@ import type {WaterColumnProfile} from './waterColumn.js';
 import type {Contact,Environment} from './scenario.js';
 import type {Buoy} from './buoys.js';
 import {DEMON_NORM} from './cuts/norm.js';
+import {demonStageDumpEnabled,demonStageDumpMatches,stageF32,stageF64,emitDemonStageDump,hashF32} from './demonStageDump.js';
 const DEMON_DB_FLOOR=DEMON_NORM.clampFloorDb;
 const SIZE=4096,FS=SIZE*100/511;
 /** New envelope samples per 4 Hz row: rows slide a 5.1 s analysis window (≈95 % overlap), like a real DEMON STFT. */
@@ -184,7 +185,7 @@ export class DemonStream {
  }
  setEnvironment(e:Environment):void{this.environment=e;}
  setWaterColumn(profile:WaterColumnProfile|undefined):void{this.waterColumn=profile;}
- write(out:Float32Array,offset:number):void {
+ write(out:Float32Array,offset:number,row?:number):void {
   this.signal.fill(0);let total=0;
   const e=this.environment,sigma=seaSurfaceSigma(e?.seaState??0),cSpeed=e?.soundSpeed??C;
   const spreadMode=e?.spreading??'hybrid',transition=e?.transition??1000;
@@ -204,7 +205,7 @@ export class DemonStream {
    }
    this.weights[j]=w;total+=w;refresh(c.params,this.tables[j]);
   }
-  if(total<=1e-30){out.fill(NaN,offset,offset+512);return;}
+  if(total<=1e-30){out.fill(NaN,offset,offset+512);if(row!==undefined&&demonStageDumpMatches(row))emitDemonStageDump(row,[stageF32('floor',out.subarray(offset,offset+512))],{total,didWrite:false});return;}
   // Weights stay relative between contacts (no ambient dilution; see m3-acoustics-demon-tune notes):
   // only each contact's cavitation share carries shaft/blade modulation.
   this.signal.fill(1);
@@ -222,5 +223,25 @@ export class DemonStream {
   for(let i=0;i<512;i++){const nr=.5*uRe[i+1]-.25*(uRe[i]+uRe[i+2]),ni=.5*uIm[i+1]-.25*(uIm[i]+uIm[i+2]),a=re[i]+nr,b=im[i]+ni;this.median[i]=this.spectrum[i]=(a*a+b*b)/(SIZE*SIZE);}
   const median=Math.max(1e-30,(select(this.median,255)+select(this.median,256))/2);
   for(let i=0;i<512;i++)out[offset+i]=Math.max(DEMON_DB_FLOOR,powerToDb(this.spectrum[i]/median));
+  if(row!==undefined&&demonStageDumpEnabled&&demonStageDumpMatches(row))this.dumpStages(row,out,offset,total,varU,median);
+ }
+ private dumpStages(row:number,out:Float32Array,offset:number,total:number,varU:number,median:number):void{
+  const n=SIZE,W=this.fft.window;let wsum=0,wmean=0;for(let i=0;i<n;i++)wsum+=W[i];
+  for(let i=0;i<n;i++)wmean+=this.signal[i]*W[i];wmean/=wsum;
+  const windowed=new Float64Array(n);for(let i=0;i<n;i++)windowed[i]=(this.signal[i]-wmean)*W[i];
+  const fftRI=new Float64Array(1024);fftRI.set(this.fft.real.subarray(0,512),0);fftRI.set(this.fft.imag.subarray(0,512),512);
+  const ar=new Float64Array(1028);ar.set(this.uRe,0);ar.set(this.uIm,514);
+  const db=new Float64Array(512);for(let i=0;i<512;i++)db[i]=powerToDb(this.spectrum[i]/median);
+  const floor=out.subarray(offset,offset+512);
+  emitDemonStageDump(row,[
+    stageF64('input',this.weights),
+    stageF32('envelope',this.signal),
+    stageF64('window',windowed),
+    stageF64('fft',fftRI),
+    stageF64('arNoise',ar),
+    stageF64('db',db),
+    stageF32('floor',floor),
+  ],{total,bEff:this.bEff,varU,rho:ROW_RHO,median,rowHash:hashF32(floor).hash,didWrite:true});
  }
 }
+

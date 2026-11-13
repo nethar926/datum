@@ -58,3 +58,5 @@ export * from './spawnGeometry.js';
 export * from './stateBroadband.js';
 export * from './sources.js';
 export * from './stateHistory.js';
+export * from './planeRoute.js';
+export * from './aisTrackSource.js';
