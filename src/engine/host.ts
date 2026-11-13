@@ -1,6 +1,6 @@
 import * as Acoustics from '@acoustics'
 import { Receiver } from './receiver'
-import { AcousticEngine, isAlive, renderCut, type CutSession } from '@acoustics'
+import { AcousticEngine, isAlive, isResLevel, renderCut, type CutSession, type ResLevel } from '@acoustics'
 import type { Band, Bearing, DropSpec, FromWorker, GramConfig, GramRows, LofarBandPresetId, Tactical, TacticalBuoy, TruthContact, ToWorker } from './contract'
 import { DEMON_CARRIER_BAND } from '../gram/demonConfig'
 import { buildScenario } from '../scenarios/training'
@@ -858,7 +858,7 @@ export class SimHost {
       tb.lifeRemainingS = s.time < b.deployedAt ? b.life : remaining
       tb.batteryFrac = Math.min(1, tb.lifeRemainingS / b.life)
       if (typeof engine.buoyStatus === 'function') {
-        try { const st = engine.buoyStatus(i); tb.status = { phase: st.phase, fill: st.fill, etaSeconds: st.etaSeconds, splashTime: st.splashTime, liveTime: st.liveTime, isTuned: st.isTuned } }
+        try { const res: ResLevel = isResLevel(this.active.req.res) ? this.active.req.res : 9; const st = engine.buoyStatus(i, res); tb.status = { phase: st.phase, fill: st.fill, etaSeconds: st.etaSeconds, splashTime: st.splashTime, liveTime: st.liveTime, isTuned: st.isTuned } }
         catch { tb.status = undefined }
       }
     }

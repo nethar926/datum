@@ -18,7 +18,7 @@ import type { TruthContact } from '../engine/contract'
 import { BUOY_STATUS_COLOR, paintHealth, type DetuneStore } from './detune'
 import type { FixStore } from './fixStore'
 import {
-  DEFAULT_FIX_COLOR, FIX_COLOR_RGB, FIX_COLORS, FIX_HIT_PX, FIX_LINE, FIX_SHAPES,
+  DEFAULT_FIX_COLOR, DEFAULT_FIX_SHAPE, FIX_COLOR_RGB, FIX_COLORS, FIX_HIT_PX, FIX_LINE, FIX_SHAPES,
   drawFixShape, fixLineAlpha, fixMenuFrame, hitFix, loadFixFadeS,
   type FixColor, type FixShape,
 } from './fixStyle'
@@ -160,7 +160,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         if (known.n >= 0 && t.buoys.length > known.n) { for (let i = known.n; i < t.buoys.length && i < MAX_SPLASH; i++) splash[i] = now; splashing = true }
         known.n = t.buoys.length
       }
-      const { showReveal: reveal, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: _fs, arm: armSt } = props.current
+      const { showReveal: reveal, selectedChannel: sel, selectedHz: selHz, allBearings: all, showAuto: sa, showManual: sm, manual: man, fixSource: fs, arm: armSt } = props.current
       const dpr = capDpr(devicePixelRatio)
       const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr)
       // New run: recentre on the buoy field (same as native `load()`).

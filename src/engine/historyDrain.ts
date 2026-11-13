@@ -1,7 +1,7 @@
 /** App-side controller for Sonya's chunked beginDrain / pumpDrain / cancelDrain.
  * Draw keys off filledFrom, never NaN: unfilled rows (k < filledFrom) are a clear "filling" state.
  * Every start() cancels the previous handle and drops the listener so a switch-back cannot mix rows or leak. */
-import type { AcousticEngine, DrainHandle, DrainState } from '@acoustics'
+import { isResLevel, type AcousticEngine, type DrainHandle, type DrainState, type ResLevel } from '@acoustics'
 
 export const FILLING_SENTINEL = 1e10
 export const FILLING_SENTINEL_THRESHOLD = 1e9
@@ -64,7 +64,9 @@ export class HistoryDrain {
     this.release()
     this.streamIndex = streamIndex
     this.progress = onProgress
-    const h = this.engine.beginDrain(streamId, res, totalRows, {
+    if (res !== null && !isResLevel(res)) throw new Error(`beginDrain: invalid res ${res}`)
+    const drainRes: ResLevel | null = res
+    const h = this.engine.beginDrain(streamId, drainRes, totalRows, {
       onDrainProgress: (handle, from, to) => {
         const ev = eventFrom(handle, from, to, this.streamIndex)
         this.progress?.(ev)

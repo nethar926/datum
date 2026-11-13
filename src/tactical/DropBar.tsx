@@ -24,7 +24,9 @@ export const dropSpecs = (p: DropPlan, n: number, channels: number[], lifeS?: nu
   const prefs = loadSequencePrefs()
   const out: DropSpec[] = []
   for (let i = 0; i < Math.min(n, p.n, channels.length); i++) {
-    out.push({ kind: p.kinds[i], x: p.xy[2 * i], y: p.xy[2 * i + 1], channel: channels[i],
+    const kind = p.kinds[i]
+    if (kind !== 'omni' && kind !== 'difar') continue
+    out.push({ kind, x: p.xy[2 * i], y: p.xy[2 * i + 1], channel: channels[i],
       ...(lifeS ? { lifeS } : {}),
       dropAltitudeM: prefs.dropAltitudeM, descentRateMps: DESCENT_RATE_MPS, integrationTimeS: prefs.integrationTimeS })
   }

@@ -53,20 +53,23 @@ describe('SimHost dropBuoys', () => {
       expect(t.buoys.slice(n0).map((b) => [b.kind, b.x, b.y, b.state, b.hydrophoneDepthM])).toEqual([
         ['difar', 1000, 1000, 'live', 60], ['omni', -1000, 500, 'live', 150], ['difar', 0, -3000, 'live', 60]])
       // dropBuoy always walks the sequence: deployed (1 s) → descending (50.8 s) → integrating.
-      // First real gram row waits for the full post-splash integration window.
+      // AcousticEngine.consumePreLiveRows (same as Swift SimEngine) skips rows until
+      // firstEmitTime = max(liveTime, splash+P), so the first real gram row waits for the
+      // full post-splash integration window. Until then writeRow / skipToLatest return -1
+      // and the host reports streamId -1 (no new row). Legacy pull streams still occupy
+      // a slot every step and are filled with NaN while the buoy is not feeding.
       expect(t.buoys.slice(n0).every((b) => b.status?.phase === 'deployed')).toBe(true)
       const mark = out.length
-      step(12) // 6 s: still descending; new streams may emit NaN but no real data
+      step(12) // 6 s: still descending, well before liveTime (~58 s)
       const rows = out.slice(mark).filter((m): m is GramRows => m.type === 'gramRows')
       expect(rows.length).toBeGreaterThan(0)
       const width = n0 + 3
       for (const r of rows) expect(r.streamIds.length).toBe(width)
-      const ids = new Set(fresh.map((c) => c.streamId)), seen = new Set<number>()
+      const ids = new Set(fresh.map((c) => c.streamId))
       for (const r of rows) {
         const bins = r.data.length / width
-        r.streamIds.forEach((id, k) => { if (ids.has(id)) { seen.add(id); const row = r.data.subarray(k * bins, (k + 1) * bins); expect(row.some(Number.isFinite)).toBe(false) } })
+        r.streamIds.forEach((id, k) => { if (ids.has(id)) { const row = r.data.subarray(k * bins, (k + 1) * bins); expect(row.some(Number.isFinite)).toBe(false) } })
       }
-      expect(seen.size).toBe(3)
       expect(errors(out)).toHaveLength(0)
     })
   }
