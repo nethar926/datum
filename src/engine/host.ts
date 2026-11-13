@@ -92,6 +92,7 @@ export class SimHost {
   /** Last sim time a live bearingBt message was posted (1 s cadence). */
   private lastBtT = Number.NEGATIVE_INFINITY
   private btFillGen = 0
+  private btFillTimer: ReturnType<typeof setTimeout> | undefined
   private rxEnabled = true
   private demonConfigs: GramConfig[] = []
   /** Displayed LOFAR set (one receiver front end per stream; rxEnabled=false gives an ideal receiver). */
@@ -161,11 +162,13 @@ export class SimHost {
   /** Abandon CUT mode in the worker: cancel backfill and dispose the live session. Engine stays until next init. */
   private disposeCutMode(): void {
     this.cancelCutBackfill()
+    this.cancelBtFill()
     this.disposeLiveCut()
   }
 
   private init(msg: Extract<ToWorker, { type: 'init' }>): void {
     this.cancelCutBackfill()
+    this.cancelBtFill()
     this.cancelDrains()
 
     const band = BANDS[msg.band]
@@ -879,8 +882,18 @@ export class SimHost {
     return engineId
   }
 
+  /** Drop a pending bearing-time history fill. Generation bumps so a late timer is a no-op. */
+  private cancelBtFill(): void {
+    this.btFillGen++
+    if (this.btFillTimer !== undefined) {
+      clearTimeout(this.btFillTimer)
+      this.btFillTimer = undefined
+    }
+  }
+
   /** Post live or history bearing-time rows. `replace` clears the display ring (seek / cut / new sim).
-   *  History refill is scheduled so CUT first-paint stays off the 250 ms seek budget.
+   *  History refill uses its own setTimeout so CUT first-paint stays off the 250 ms seek budget,
+   *  and so tests that drain LOFAR backfill synchronously do not also pull a 15 min BT fill onto the seek path.
    */
   private postBearingBt(replace: boolean): void {
     const engine = this.engine
@@ -888,12 +901,16 @@ export class SimHost {
     if (replace) {
       this.post({ v: 1, type: 'bearingBt', replace: true, energy: [], entries: [] })
       this.lastBtT = Number.NEGATIVE_INFINITY
-      const gen = ++this.btFillGen
-      const handle: unknown = this.schedule(() => { if (gen === this.btFillGen) this.postBearingBtFill() }, 0)
-      // Node Timeout: don't keep the event loop (and vitest workers) alive for a fill.
+      this.cancelBtFill()
+      const gen = this.btFillGen
+      const handle = setTimeout(() => {
+        if (this.btFillTimer === handle) this.btFillTimer = undefined
+        if (gen === this.btFillGen) this.postBearingBtFill()
+      }, 0)
       if (handle && typeof handle === 'object' && 'unref' in handle && typeof (handle as { unref: () => void }).unref === 'function') {
         (handle as { unref: () => void }).unref()
       }
+      this.btFillTimer = handle
       return
     }
     this.postBearingBtLive()
