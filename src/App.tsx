@@ -1430,8 +1430,8 @@ export default function App() {
               {st.tactical && (() => {
                 const ps = planeState()
                 const hdg = ps.spec ? headingDeg(ps.pose.headingRad) : st.tactical.aircraft.hdgDeg
-                const speedMps = ps.spec ? mpsFromSpeed(ps.speedKts, 'kts') : st.tactical.aircraft.gsMps
-                const altM = ps.spec ? ps.altitudeFt * 0.3048 : st.tactical.aircraft.altM
+                const speedMps = ps.spec ? ps.pose.speedMps : st.tactical.aircraft.gsMps
+                const altM = ps.spec ? ps.pose.altM : st.tactical.aircraft.altM
                 return (
                   <button type="button" data-testid="ac-readout" aria-label={ps.menuOpen ? 'Close plane menu' : 'Aircraft menu'}
                     onClick={() => togglePlaneMenu()}>

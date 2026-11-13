@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import {
   AIS_AFFILIATION_RGB, AIS_GLYPH, DEFAULT_AIS_AFFILIATION,
-  aisAffiliation, aisAvoidsCrease, aisCardFrame, aisInfoFromTrack,
+  aisAffiliation, aisAvoidsCrease, aisCardFrame, aisInfoFromTrack, aisSourceForSeed,
   resetAisAffiliations, setAisAffiliation, type AisEngineTrack, type AisTrackSource,
 } from './aisStyle'
 import { aisContacts, aisEffective, aisAvailable, revealContacts, type PlotDifficulty } from './plotLayerPolicy'
@@ -86,5 +86,25 @@ describe('AIS style', () => {
     expect(aisContacts([ship], false, 'regular' as PlotDifficulty)).toEqual([])
     expect(aisContacts([ship, sub], true, 'regular' as PlotDifficulty).map((c) => c.id)).toEqual([1])
     expect(aisContacts([ship], true, 'difficult' as PlotDifficulty)).toEqual([])
+  })
+
+  it('decorates class, type and callsign from SeededAisTrackSource onto an existing contact', () => {
+    const src = aisSourceForSeed(7)
+    const info = aisInfoFromTrack(lumen, src, 0)
+    expect(info.callsign.length).toBeGreaterThan(0)
+    expect(info.callsign).not.toBe('—')
+    expect(info.shipClass).toBeTruthy()
+    expect(info.type).toBeTruthy()
+    expect(info.callsign.toLowerCase()).not.toContain('fictional ')
+    expect(info.x).toBe(100)
+    expect(info.y).toBe(200)
+    expect(info.crsDeg).toBe(47)
+    expect(info.spdMps).toBe(6.17)
+    const a = src.aisTracks(12)
+    const b = src.aisTracks(12)
+    expect(a).toEqual(b)
+    expect(a.length).toBeGreaterThan(0)
+    expect(a[0]!.shipClass.length).toBeGreaterThan(0)
+    expect(a[0]!.class).toBe(a[0]!.shipClass)
   })
 })

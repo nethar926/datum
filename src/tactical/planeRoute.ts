@@ -2,9 +2,9 @@
  * Plane routes and drawing style. Sonya owns the closed-form kinematics: for
  * each route (circle, point-to-point, figure 8), position and heading are a
  * pure function of sim time `t`. The UI samples that once per frame and never
- * integrates step by step. This file is the UI-side placeholder until her
- * source lands, plus the capped trail ring and persisted line styles.
+ * integrates step by step. Pose comes from Sonya's `planeRouteSource`.
  */
+import { planeRouteSource as sonyaPlaneRouteSource } from '@acoustics'
 import { fixAvoidsCrease, fixMenuFrame, type FixLayoutRect } from './fixStyle'
 
 export const PLANE_MODES = ['circle', 'pointToPoint', 'figure8'] as const
@@ -23,7 +23,7 @@ export const LINE_WEIGHTS = ['thin', 'thick'] as const
 export type PlaneLineWeight = (typeof LINE_WEIGHTS)[number]
 export const LINE_WIDTH: Record<PlaneLineWeight, number> = { thin: 1.5, thick: 3.25 }
 
-export type PlanePose = { x: number; y: number; headingRad: number }
+export type PlanePose = { x: number; y: number; headingRad: number; altM: number; speedMps: number }
 export type PlaneWayPoint = { x: number; y: number }
 
 export type PlaneRouteSpec = {
@@ -36,6 +36,8 @@ export type PlaneRouteSpec = {
   radiusM: number
   phase0: number
   points: PlaneWayPoint[]
+  /** Optional PTP fillet bound (rad/s). Undefined keeps Sonya's default (~15 deg/s). */
+  maxTurnRateRadS?: number
 }
 
 export type PlaneRouteSource = {
@@ -54,6 +56,14 @@ export const MAX_POINTS = 10
 export const TRAIL_CAP = 240
 export const NAV_CAP = 64
 export const NAV_HORIZON_M = 8 * NMI_M
+/** ~15 deg/s; a missing spec value leaves Sonya's default for PTP fillets. */
+export const DEFAULT_MAX_TURN_RATE_RAD_S = 15 * Math.PI / 180
+
+/** Web chevron points north (−Y). Compass heading (0 = north, clockwise) rotates by heading alone.
+ *  Native SF "airplane" points east, so it uses heading − 90°. */
+export function glyphRotationRad(headingRad: number): number {
+  return headingRad
+}
 export const PLANE_MENU_W = 268
 export const PLANE_MENU_H = 348
 export const TRAIL_RGB = '#30d158'
@@ -168,75 +178,35 @@ export class PlaneTrail {
   }
 }
 
-function circlePose(spec: PlaneRouteSpec, t: number): PlanePose {
-  const r = Math.max(1, spec.radiusM)
-  const w = spec.speedMps / r
-  const phi = spec.phase0 + w * (t - spec.t0)
-  const s = Math.sin(phi), c = Math.cos(phi)
-  return { x: spec.centerX + r * s, y: spec.centerY + r * c, headingRad: headingRad(r * w * c, -r * w * s) }
-}
-
-function figure8Pose(spec: PlaneRouteSpec, t: number): PlanePose {
-  const r = Math.max(1, spec.radiusM)
-  const periodS = (6 * r) / Math.max(1e-6, spec.speedMps)
-  const w = (2 * Math.PI) / periodS
-  const phi = spec.phase0 + w * (t - spec.t0)
-  const s = Math.sin(phi), c = Math.cos(phi)
+function toEngineSpec(spec: PlaneRouteSpec): Parameters<typeof sonyaPlaneRouteSource.pose>[0] {
   return {
-    x: spec.centerX + r * s,
-    y: spec.centerY + r * s * c,
-    headingRad: headingRad(r * w * c, r * w * (c * c - s * s)),
+    mode: spec.mode,
+    speedMps: spec.speedMps,
+    altitudeFt: spec.altitudeFt,
+    t0: spec.t0,
+    centerX: spec.centerX,
+    centerY: spec.centerY,
+    radiusM: spec.radiusM,
+    phase0: spec.phase0,
+    points: spec.points,
+    maxTurnRateRadS: spec.maxTurnRateRadS,
   }
 }
 
-function pointToPointPose(spec: PlaneRouteSpec, t: number): PlanePose {
-  const pts = spec.points
-  if (pts.length < 2) {
-    const p = pts[0] ?? { x: spec.centerX, y: spec.centerY }
-    return { x: p.x, y: p.y, headingRad: 0 }
-  }
-  const lengths = new Array<number>(pts.length)
-  let total = 0
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[i]!, b = pts[(i + 1) % pts.length]!
-    total += Math.hypot(b.x - a.x, b.y - a.y)
-    lengths[i] = total
-  }
-  if (total <= 1e-6) return { x: pts[0]!.x, y: pts[0]!.y, headingRad: 0 }
-  let s = (spec.speedMps * (t - spec.t0)) % total
-  if (s < 0) s += total
-  let prev = 0
-  for (let i = 0; i < pts.length; i++) {
-    const end = lengths[i]!
-    if (s <= end || i === pts.length - 1) {
-      const a = pts[i]!, b = pts[(i + 1) % pts.length]!
-      const u = (s - prev) / Math.max(1e-9, end - prev)
-      return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, headingRad: headingRad(b.x - a.x, b.y - a.y) }
-    }
-    prev = end
-  }
-  return { x: pts[0]!.x, y: pts[0]!.y, headingRad: 0 }
+function fromEnginePose(p: { x: number; y: number; headingRad: number; altM: number; speedMps: number }): PlanePose {
+  return { x: p.x, y: p.y, headingRad: p.headingRad, altM: p.altM, speedMps: p.speedMps }
 }
 
-/** UI-side placeholder. Sonya's closed-form source replaces this. */
+/** Sonya's closed-form `planeRouteSource.pose(spec, atSimTime)`. */
 export function planePose(spec: PlaneRouteSpec, atSimTime: number): PlanePose {
-  if (spec.mode === 'circle') return circlePose(spec, atSimTime)
-  if (spec.mode === 'figure8') return figure8Pose(spec, atSimTime)
-  return pointToPointPose(spec, atSimTime)
+  return fromEnginePose(sonyaPlaneRouteSource.pose(toEngineSpec(spec), atSimTime))
 }
 
 export function planeNavPoints(spec: PlaneRouteSpec, atSimTime: number, xs: Float64Array, ys: Float64Array): number {
-  const cap = Math.min(xs.length, ys.length, NAV_CAP)
-  if (cap < 2 || !routeIsReady(spec)) return 0
-  const horizonT = NAV_HORIZON_M / Math.max(1e-6, spec.speedMps)
-  for (let i = 0; i < cap; i++) {
-    const p = planePose(spec, atSimTime + horizonT * i / (cap - 1))
-    xs[i] = p.x; ys[i] = p.y
-  }
-  return cap
+  return sonyaPlaneRouteSource.navPoints(toEngineSpec(spec), atSimTime, xs, ys)
 }
 
-export const placeholderPlaneSource: PlaneRouteSource = {
+export const enginePlaneSource: PlaneRouteSource = {
   pose: planePose,
   navPoints: planeNavPoints,
 }
@@ -333,13 +303,13 @@ const trail = new PlaneTrail()
 const navX = new Float64Array(NAV_CAP)
 const navY = new Float64Array(NAV_CAP)
 let navCount = 0
-let pose: PlanePose = { x: 0, y: 7000, headingRad: Math.PI / 2 }
+let pose: PlanePose = { x: 0, y: 7000, headingRad: Math.PI / 2, altM: DEFAULT_ALTITUDE_FT * FT_M, speedMps: mpsFromKts(DEFAULT_SPEED_KTS) }
 let lastTrailT = Number.NaN
 let version = 0
-let source: PlaneRouteSource = placeholderPlaneSource
+let source: PlaneRouteSource = enginePlaneSource
 
 export function setPlaneRouteSource(s: PlaneRouteSource | null): void {
-  source = s ?? placeholderPlaneSource
+  source = s ?? enginePlaneSource
 }
 
 export function planeState() {
@@ -468,12 +438,12 @@ export function measurePlaneFrame(buoyCount = 64, repeats = 30, rate = 1): { sec
   }
   const dt = rate / 30
   for (let i = 0; i < TRAIL_CAP; i++) {
-    preparePlaneFrame(buoyCount, trailBuf, navXs, navYs, specIn, placeholderPlaneSource, 390, 844, i * dt)
+    preparePlaneFrame(buoyCount, trailBuf, navXs, navYs, specIn, enginePlaneSource, 390, 844, i * dt)
   }
   const t0 = performance.now()
   let marks = 0
   for (let r = 0; r < repeats; r++) {
-    marks = preparePlaneFrame(buoyCount, trailBuf, navXs, navYs, specIn, placeholderPlaneSource, 390, 844, (TRAIL_CAP + r) * dt)
+    marks = preparePlaneFrame(buoyCount, trailBuf, navXs, navYs, specIn, enginePlaneSource, 390, 844, (TRAIL_CAP + r) * dt)
   }
   return { seconds: (performance.now() - t0) / 1000 / Math.max(1, repeats), marks, trailCount: trailBuf.count }
 }

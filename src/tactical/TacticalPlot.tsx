@@ -22,12 +22,12 @@ import {
 } from './fixStyle'
 import {
   AIS_AFFILIATIONS, AIS_AFFILIATION_LABEL, AIS_AFFILIATION_RGB,
-  aisAffiliation, aisAffiliationVersion, aisCardFrame, aisInfoFromTrack,
+  aisAffiliation, aisAffiliationVersion, aisCardFrame, aisInfoFromTrack, aisSourceForSeed,
   drawSailboat, setAisAffiliation, subscribeAisAffiliations,
   type AisAffiliation,
 } from './aisStyle'
 import {
-  NAV_RGB, displaySimTime, drawPlaneNav, drawPlaneTrail, handlePlaneTap,
+  NAV_RGB, displaySimTime, drawPlaneNav, drawPlaneTrail, glyphRotationRad, handlePlaneTap,
   planeMenuFrame, planeState, planeVersion, samplePlane, subscribePlane,
 } from './planeRoute'
 import { NIGHT_BEACON, NIGHT_NAV_LIGHTS, nightBeaconOn } from '../displayFx'
@@ -231,13 +231,13 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       const wall = simTWall.current
       if (wall.t !== st.simT) { wall.t = st.simT; wall.wall = performance.now() / 1000 }
       const simT = displaySimTime(st.simT, st.playing, st.rate, wall.wall, performance.now() / 1000)
-      const enginePose = { x: t.aircraft.x, y: t.aircraft.y, headingRad: (t.aircraft.hdgDeg * Math.PI) / 180 }
+      const enginePose = { x: t.aircraft.x, y: t.aircraft.y, headingRad: (t.aircraft.hdgDeg * Math.PI) / 180, altM: t.aircraft.altM, speedMps: t.aircraft.gsMps }
       const pose = samplePlane(simT, enginePose)
       const toSX = (x: number) => toScreenX(v, x), toSY = (y: number) => toScreenY(v, y)
       const ps = planeState()
       drawPlaneNav(ctx, ps.navX, ps.navY, ps.navCount, toSX, toSY, ps.navStyle, dpr)
       const ax = toSX(pose.x), ay = toSY(pose.y)
-      ctx.save(); ctx.translate(ax, ay); ctx.rotate(pose.headingRad); ctx.fillStyle = C.ac
+      ctx.save(); ctx.translate(ax, ay); ctx.rotate(glyphRotationRad(pose.headingRad)); ctx.fillStyle = C.ac
       ctx.beginPath(); ctx.moveTo(0, -8 * dpr); ctx.lineTo(6 * dpr, 6 * dpr); ctx.lineTo(0, 3 * dpr); ctx.lineTo(-6 * dpr, 6 * dpr); ctx.closePath(); ctx.fill()
       if (props.current.night) {
         for (const l of NIGHT_NAV_LIGHTS) {
@@ -739,7 +739,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
         id: String(picked.sourceId ?? picked.id),
         name: picked.label,
         x: picked.x, y: picked.y, crsDeg: picked.crsDeg, spdMps: picked.spdMps,
-      })
+      }, aisSourceForSeed(client.status.seed), client.status.simT)
       const aff = aisAffiliation(info.id)
       const v = viewRef.current, c = ref.current
       if (!v || !c) return null

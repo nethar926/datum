@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import {
   DEFAULT_RADIUS_M, DEFAULT_RADIUS_NMI, FRAME_BUDGET_S, MAX_POINTS, MIN_POINTS, NAV_CAP, TRAIL_CAP,
   PlaneTrail, loadNavStyle, loadTrailStyle, measurePlaneFrame, planeAvoidsCrease, planeMenuFrame,
-  planeNavPoints, planePose, placeholderPlaneSource, resetPlaneForTests, resetPlaneStylesForTests,
+  planeNavPoints, planePose, enginePlaneSource, glyphRotationRad, DEFAULT_MAX_TURN_RATE_RAD_S, resetPlaneForTests, resetPlaneStylesForTests,
   routeIsReady, saveNavStyle, saveTrailStyle, type PlaneRouteSpec,
 } from './planeRoute'
 
@@ -108,11 +108,11 @@ describe('plane route', () => {
   it('uses the seam to fill nav into a preallocated buffer starting at the current pose', () => {
     const spec = circle()
     const t = 5
-    const a = placeholderPlaneSource.pose(spec, t)
+    const a = enginePlaneSource.pose(spec, t)
     expect(a).toEqual(planePose(spec, t))
     const xs = new Float64Array(NAV_CAP)
     const ys = new Float64Array(NAV_CAP)
-    const n = placeholderPlaneSource.navPoints(spec, t, xs, ys)
+    const n = enginePlaneSource.navPoints(spec, t, xs, ys)
     expect(n).toBe(NAV_CAP)
     expect(xs.length).toBe(NAV_CAP)
     expect(xs[0]).toBeCloseTo(a.x, 9)
@@ -125,6 +125,30 @@ describe('plane route', () => {
       expect(r.trailCount).toBe(TRAIL_CAP)
       expect(r.marks).toBeGreaterThan(64)
       expect(r.seconds).toBeLessThan(FRAME_BUDGET_S)
+    }
+  })
+
+  it('rotates the north-pointing chevron by heading alone', () => {
+    expect(glyphRotationRad(0)).toBe(0)
+    expect(glyphRotationRad(Math.PI / 2)).toBeCloseTo(Math.PI / 2, 12)
+    expect(DEFAULT_MAX_TURN_RATE_RAD_S).toBeCloseTo(15 * Math.PI / 180, 12)
+  })
+
+  it('matches native pose goldens at t = 20 s (Sonya 9746fda)', () => {
+    const cases: [ReturnType<typeof circle>, number, number, number][] = [
+      [circle(), 2130.1622536855925, 7095.1302153641345, 1.8624629934615633],
+      [figure8(), 3130.1622536855925, -187.13021536413464, 1.27912966012823],
+      [p2p(), 1996.8605598172558, 361.8517452642101, 0.12343043289495492],
+    ]
+    const speed = 210 * 1852 / 3600
+    const alt = 1476 * 0.3048
+    for (const [spec, x, y, hdg] of cases) {
+      const p = planePose(spec, 20)
+      expect(p.x).toBeCloseTo(x, 9)
+      expect(p.y).toBeCloseTo(y, 9)
+      expect(p.headingRad).toBeCloseTo(hdg, 9)
+      expect(p.altM).toBeCloseTo(alt, 9)
+      expect(p.speedMps).toBeCloseTo(speed, 9)
     }
   })
 })

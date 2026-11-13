@@ -2,8 +2,9 @@
  * AIS surface-contact style: sailboat placeholder glyph, affiliation colours
  * (unknown yellow, suspect red, friendly blue, neutral green), session-only
  * persistence, and a crease-safe card. Class / type come from Sonya's upcoming
- * AIS tracks when present; existing contacts only supply callsign, course, speed.
+ * AIS tracks when present; `SeededAisTrackSource.decorate` fills class and type.
  */
+import { SeededAisTrackSource, type DecorateIn } from '@acoustics'
 import { fixAvoidsCrease, fixMenuFrame, type FixLayoutRect } from './fixStyle'
 
 export const AIS_AFFILIATIONS = ['unknown', 'suspect', 'friendly', 'neutral'] as const
@@ -43,7 +44,9 @@ export type AisEngineTrack = {
 }
 
 export type AisTrackSource = {
-  aisTrack(id: string): AisEngineTrack | undefined
+  aisTrack(id: string, atSimTime?: number): AisEngineTrack | undefined
+  aisTracks?(atSimTime?: number): AisEngineTrack[]
+  decorate?(track: DecorateIn, atSimTime?: number): AisEngineTrack
 }
 
 export type AisTrackInfo = {
@@ -70,15 +73,32 @@ function firstNonEmpty(...values: (string | undefined)[]): string {
   return '—'
 }
 
-export function aisInfoFromTrack(t: AisEngineTrack, source?: AisTrackSource): AisTrackInfo {
-  const eng = source?.aisTrack(t.id)
+const seededByKey = new Map<number, SeededAisTrackSource>()
+
+/** Seed-keyed `SeededAisTrackSource` so the AIS card can show class and type. */
+export function aisSourceForSeed(seed: number): SeededAisTrackSource {
+  let s = seededByKey.get(seed)
+  if (!s) {
+    s = new SeededAisTrackSource({ seed })
+    seededByKey.set(seed, s)
+  }
+  return s
+}
+
+export function aisInfoFromTrack(t: AisEngineTrack, source?: AisTrackSource, atSimTime = 0): AisTrackInfo {
+  const decorated = source?.decorate?.(
+    { id: t.id, name: t.name, x: t.x, y: t.y, crsDeg: t.crsDeg, spdMps: t.spdMps },
+    atSimTime,
+  )
+  const eng = decorated ?? source?.aisTrack(t.id, atSimTime)
   const src = eng ?? t
   const callsign = firstNonEmpty(src.callsign, src.name, t.callsign, t.name, t.id)
+  const typ = src.type ?? t.type
   return {
     id: t.id,
     callsign,
     shipClass: blankToUndef(src.shipClass ?? src.class ?? t.shipClass ?? t.class),
-    type: blankToUndef(src.type ?? t.type),
+    type: blankToUndef(typeof typ === 'string' ? typ : typ != null ? String(typ) : undefined),
     x: src.x, y: src.y, crsDeg: src.crsDeg, spdMps: src.spdMps,
     spdKts: src.spdMps * 1.943844,
   }
