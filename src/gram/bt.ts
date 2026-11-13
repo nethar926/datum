@@ -327,6 +327,8 @@ export type BtOverlayBar = {
 }
 
 const SIGMA_BAR_MIN_FRAC = 1.5 / 360
+/** Display clamp: engine invalid entries carry σ = 90° (a 180° bar) and would wash the gram. */
+export const BT_OVERLAY_MAX_SIGMA_DEG = 15
 
 /** Overlay bars in the visible time window for one buoy. */
 export function btOverlayBars(
@@ -339,10 +341,14 @@ export function btOverlayBars(
   for (const e of entries) {
     if (e.buoyId !== buoyId) continue
     if (!Number.isFinite(e.t) || e.t < t0 - 1e-9 || e.t > newest + 1e-9) continue
-    const sigma = Number.isFinite(e.sigmaDeg) ? Math.max(0, e.sigmaDeg) : 0
+    const raw = Number.isFinite(e.sigmaDeg) ? Math.max(0, e.sigmaDeg) : 0
+    // Invalid detections are uniform in bearing with σ = 90°. A stacked 180° bar
+    // at even modest alpha paints the energy gram into a solid mint wash.
+    // Keep a faint marker (half = 0 → dot only) and cap valid bars.
+    const sigma = e.valid ? Math.min(BT_OVERLAY_MAX_SIGMA_DEG, raw) : 0
     out.push({
       x: 0, // filled by the caller with the current centre
-      half: Math.max(SIGMA_BAR_MIN_FRAC, sigma / 360),
+      half: e.valid ? Math.max(SIGMA_BAR_MIN_FRAC, sigma / 360) : 0,
       agoS: newest - e.t,
       valid: e.valid,
       bearingDeg: e.bearingDeg,
@@ -417,17 +423,19 @@ export function drawBtOverlays(
   const dpr = opts.dpr ?? 1
   for (const bar of bars) {
     const y = yFromAgo(bar.agoS, height, windowS, dir)
-    const segs = sigmaBarSegments(bar.bearingDeg, bar.half, centreDeg)
+    const segs = bar.half > 0 ? sigmaBarSegments(bar.bearingDeg, bar.half, centreDeg) : []
     ctx.save()
     ctx.globalAlpha = bar.valid ? 0.9 : 0.25
     ctx.strokeStyle = bar.valid ? 'rgba(220,255,230,0.95)' : 'rgba(220,255,230,0.7)'
     ctx.lineWidth = Math.max(1, 2 * dpr)
-    ctx.beginPath()
-    for (const s of segs) {
-      ctx.moveTo(s.lo * width, y)
-      ctx.lineTo(s.hi * width, y)
+    if (segs.length) {
+      ctx.beginPath()
+      for (const s of segs) {
+        ctx.moveTo(s.lo * width, y)
+        ctx.lineTo(s.hi * width, y)
+      }
+      ctx.stroke()
     }
-    ctx.stroke()
     const x = bearingToAxisFrac(bar.bearingDeg, centreDeg) * width
     ctx.beginPath()
     ctx.arc(x, y, Math.max(1.5, 2.5 * dpr), 0, Math.PI * 2)

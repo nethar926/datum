@@ -3,7 +3,7 @@ import { formatZuluHms } from '../touch/scrollBack'
 import {
   BT_BINS, BT_EMPTY_LABEL, BT_ENERGY_BYTES, BT_MAX_BUOYS, BT_MAX_ROWS, BT_WINDOW_S, BT_ZOOM_WINDOWS_S,
   BT_ZULU_TICK, BtRing, BtStore, applyBtSeekClear, axisFracToBearing, bearingBin, bearingRateDegPerS,
-  bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars,
+  BT_OVERLAY_MAX_SIGMA_DEG, bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars,
   BT_DB_ABOVE_BG_MAX, BT_DB_ABOVE_BG_SCALE, BT_DB_ABOVE_BG_STEP, btPaletteIndex, btRowFromEngine,
   btTimeAxisMinWidthPx, fillBtRingFromHistory, formatBtBearingTick, formatBtCursor, lutForPalette,
   sigmaBarSegments, wrapBearingDeg,
@@ -280,6 +280,18 @@ describe('overlay σ bars', () => {
     expect(bars[0]!.valid).toBe(true)
     expect(bars[0]!.half).toBeCloseTo(3 / 360, 10)
     expect(bars[1]!.valid).toBe(false)
+    // Invalid engine entries use σ = 90° (a 180° bar). Do not paint that wash.
+    expect(bars[1]!.half).toBe(0)
+  })
+  it('clamps wide valid σ bars and drops the bar on invalid 90° entries', () => {
+    const bars = btOverlayBars([
+      { t: 10, buoyId: 1, bearingDeg: 47, sigmaDeg: 90, snrDb: 8, valid: true },
+      { t: 10, buoyId: 1, bearingDeg: 12, sigmaDeg: 90, snrDb: -8, valid: false },
+    ], { buoyId: 1, newest: 10, windowS: 5 })
+    expect(bars).toHaveLength(2)
+    expect(bars[0]!.half).toBeCloseTo(BT_OVERLAY_MAX_SIGMA_DEG / 360, 10)
+    expect(bars[0]!.half).toBeLessThan(90 / 360)
+    expect(bars[1]!.half).toBe(0)
   })
   it('splits a σ bar that wraps at 0/360 on an uncentred axis', () => {
     const segs = sigmaBarSegments(0, 10 / 360, null)
