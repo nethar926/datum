@@ -3,8 +3,9 @@ import { formatZuluHms } from '../touch/scrollBack'
 import {
   BT_BINS, BT_EMPTY_LABEL, BT_ENERGY_BYTES, BT_MAX_BUOYS, BT_MAX_ROWS, BT_WINDOW_S, BT_ZOOM_WINDOWS_S,
   BT_ZULU_TICK, BtRing, BtStore, applyBtSeekClear, axisFracToBearing, bearingBin, bearingRateDegPerS,
-  bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars, btRowFromEngine,
-  btTimeAxisMinWidthPx, fillBtRingFromHistory, formatBtBearingTick, formatBtCursor,
+  bearingToAxisFrac, btAvailable, btAxisTickAlign, btAxisTicks, btOverlayBars,
+  BT_DB_ABOVE_BG_MAX, BT_DB_ABOVE_BG_SCALE, BT_DB_ABOVE_BG_STEP, btPaletteIndex, btRowFromEngine,
+  btTimeAxisMinWidthPx, fillBtRingFromHistory, formatBtBearingTick, formatBtCursor, lutForPalette,
   sigmaBarSegments, wrapBearingDeg,
 } from './bt'
 
@@ -77,6 +78,44 @@ describe('btRowFromEngine', () => {
     let lit = 0
     for (let i = 0; i < BT_BINS; i++) if (out[i]) lit++
     expect(lit).toBe(1)
+  })
+
+  it('keeps max-normalised behaviour when scale is omitted (legacy Cuts)', () => {
+    const energy = new Uint8Array(BT_BINS)
+    energy[10] = 0
+    energy[11] = 128
+    energy[12] = 255
+    const out = new Uint8Array(BT_BINS)
+    btRowFromEngine({ energy }, out)
+    expect(out[10]).toBe(0)
+    expect(out[11]).toBe(128)
+    expect(out[12]).toBe(255)
+    expect(btPaletteIndex(0)).toBe(0)
+    expect(btPaletteIndex(255)).toBe(255)
+  })
+
+  it('maps db-above-bg-0.1 linearly onto the palette (0 dB near black, 25.5 dB at the top)', () => {
+    expect(BT_DB_ABOVE_BG_STEP).toBe(0.1)
+    expect(BT_DB_ABOVE_BG_MAX).toBeCloseTo(255 * BT_DB_ABOVE_BG_STEP, 10)
+    expect(btPaletteIndex(0, BT_DB_ABOVE_BG_SCALE)).toBe(0)
+    expect(btPaletteIndex(10, BT_DB_ABOVE_BG_SCALE)).toBe(10) // 1.0 dB
+    expect(btPaletteIndex(255, BT_DB_ABOVE_BG_SCALE)).toBe(255)
+    const energy = new Uint8Array(BT_BINS)
+    energy[0] = 0
+    energy[90] = 25   // 2.5 dB
+    energy[180] = 255 // 25.5 dB
+    const out = new Uint8Array(BT_BINS)
+    btRowFromEngine({ energy, scale: BT_DB_ABOVE_BG_SCALE }, out)
+    expect(out[0]).toBe(0)
+    expect(out[90]).toBe(25)
+    expect(out[180]).toBe(255)
+    const lut = lutForPalette('green')
+    // Palette index 0 is the first stop (near black); 255 is the last stop (not black).
+    const lum0 = lut[0]! + lut[1]! + lut[2]!
+    const lumTop = lut[255 * 4]! + lut[255 * 4 + 1]! + lut[255 * 4 + 2]!
+    expect(lum0).toBeLessThan(40)
+    expect(lumTop).toBeGreaterThan(lum0)
+    expect(lumTop).toBeGreaterThan(200)
   })
 })
 

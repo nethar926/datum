@@ -62,6 +62,18 @@ function engineNumericId(b: { id: unknown }, index: number): number {
   return Number(String(b.id).replace(/\D/g, '')) || index + 1
 }
 
+/** Copy an engine energy row onto the FE contract, preserving `scale` when present. */
+function feBearingEnergyRow(
+  row: { t: number; buoyId: number; fLo: number; fHi: number; energy: Uint8Array; scale?: string },
+  buoyId: number,
+): import('./contract').BearingEnergyRow {
+  const out: import('./contract').BearingEnergyRow = {
+    t: row.t, buoyId, fLo: row.fLo, fHi: row.fHi, energy: new Uint8Array(row.energy),
+  }
+  if (row.scale === 'db-above-bg-0.1') out.scale = 'db-above-bg-0.1'
+  return out
+}
+
 /** Worker-side host: owns an AcousticEngine and speaks the data contract. Pure enough to unit test without a Worker. */
 export class SimHost {
   private engine?: AcousticEngine
@@ -923,10 +935,8 @@ export class SimHost {
       const t = engine.time
       if (!(t >= this.lastBtT + 1 - 1e-9)) return
       const t0 = Math.max(0, t - 1.001)
-      const energy = engine.bearingEnergyHistory(undefined, t0, t).map((row) => ({
-        t: row.t, buoyId: this.feIdForEngineBuoy(row.buoyId), fLo: row.fLo, fHi: row.fHi,
-        energy: new Uint8Array(row.energy),
-      }))
+      const energy = engine.bearingEnergyHistory(undefined, t0, t).map((row) =>
+        feBearingEnergyRow(row, this.feIdForEngineBuoy(row.buoyId)))
       const entries = engine.bearingTimeHistory(t0, t).map((e) => ({
         ...e, buoyId: this.feIdForEngineBuoy(e.buoyId),
       }))
@@ -942,10 +952,8 @@ export class SimHost {
     try {
       const t1 = engine.time
       const t0 = Math.max(0, t1 - 900)
-      const energy = engine.bearingEnergyHistory(undefined, t0, t1).map((row) => ({
-        t: row.t, buoyId: this.feIdForEngineBuoy(row.buoyId), fLo: row.fLo, fHi: row.fHi,
-        energy: new Uint8Array(row.energy),
-      }))
+      const energy = engine.bearingEnergyHistory(undefined, t0, t1).map((row) =>
+        feBearingEnergyRow(row, this.feIdForEngineBuoy(row.buoyId)))
       const entries = engine.bearingTimeHistory(t0, t1).map((e) => ({
         ...e, buoyId: this.feIdForEngineBuoy(e.buoyId),
       }))

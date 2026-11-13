@@ -6,7 +6,9 @@
  * from the same newest edge and at the same rate as the LOFAR waterfall.
  *
  * Energy rows come from the engine (`bearingEnergy` / `bearingEnergyHistory`):
- * 360 uint8 bins, 0…359° true, already max-normalised. `btRowFromEngine` copies
+ * 360 uint8 bins, 0…359° true. Legacy rows (no `scale`) are max-normalised;
+ * `scale: 'db-above-bg-0.1'` is dB above background at 0.1 dB/step (0–25.5 dB),
+ * mapped linearly onto the palette (noise near black). `btRowFromEngine` writes
  * that row into the ring. Per-line overlay dots come from `bearingTime` entries;
  * σ is drawn as a short horizontal bar (faint when `valid` is false).
  *
@@ -121,13 +123,38 @@ export function axisFracToBearing(frac: number, centreDeg: number | null): numbe
   return wrapBearingDeg(t * 360 + wrapBearingDeg(centreDeg) - 180)
 }
 
+export const BT_DB_ABOVE_BG_SCALE = 'db-above-bg-0.1' as const
+/** dB per uint8 step when `scale === 'db-above-bg-0.1'`. */
+export const BT_DB_ABOVE_BG_STEP = 0.1
+/** Full-scale range: 255 × 0.1 dB. */
+export const BT_DB_ABOVE_BG_MAX = 25.5
+
 /**
- * Copy a 360-bin engine energy row (already uint8, max-normalised, 0…359° true)
- * into `out`. No second normalisation. `out` is length 360.
+ * Map one engine energy sample onto a 256-step BT palette index.
+ * `db-above-bg-0.1` is already 0–25.5 dB in 0.1 dB steps, so 0 (noise) is
+ * palette 0 (near black) and 255 (25.5 dB) is the top of the LUT.
+ * Legacy max-normalised rows (no scale, or any other value) copy as stored.
  */
-export function btRowFromEngine(row: Pick<BearingEnergyRow, 'energy'>, out: Uint8Array): Uint8Array {
+export function btPaletteIndex(energy: number, scale?: string | null): number {
+  const v = energy & 255
+  if (scale === BT_DB_ABOVE_BG_SCALE) return v
+  return v
+}
+
+/**
+ * Copy a 360-bin engine energy row into `out` (length 360), mapping
+ * `scale: 'db-above-bg-0.1'` linearly onto the palette and leaving
+ * max-normalised rows (no scale) unchanged.
+ */
+export function btRowFromEngine(row: Pick<BearingEnergyRow, 'energy' | 'scale'>, out: Uint8Array): Uint8Array {
   const src = row.energy
   const n = Math.min(BT_BINS, out.length, src.length)
+  const scale = row.scale
+  if (scale === BT_DB_ABOVE_BG_SCALE) {
+    for (let i = 0; i < n; i++) out[i] = btPaletteIndex(src[i] ?? 0, scale)
+    if (n < out.length) out.fill(0, n)
+    return out
+  }
   if (src.length >= n && out.length >= n) out.set(src.subarray(0, n), 0)
   else {
     for (let i = 0; i < n; i++) out[i] = src[i] ?? 0
@@ -242,7 +269,7 @@ export function applyBtSeekClear(ring: { clear(): void }, notice: { replace: boo
  */
 export function fillBtRingFromHistory(
   ring: BtRing,
-  rows: readonly Pick<BearingEnergyRow, 'energy' | 't'>[],
+  rows: readonly Pick<BearingEnergyRow, 'energy' | 't' | 'scale'>[],
   out: Uint8Array,
 ): void {
   ring.clear()

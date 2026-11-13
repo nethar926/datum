@@ -101,9 +101,14 @@ export interface DrainProgress {
   bearingDeg?: Float32Array
 }
 
-/** Engine 360-bin bearing-energy row (degrees true, already max-normalised uint8). */
+/** Engine 360-bin bearing-energy row (degrees true).
+ *  Without `scale` (legacy Cuts): uint8 is max-normalised.
+ *  `scale: 'db-above-bg-0.1'`: uint8 is dB above background at 0.1 dB/step (0–25.5 dB).
+ */
+export type BearingEnergyScale = 'db-above-bg-0.1'
 export interface BearingEnergyRow {
   t: number; buoyId: number; fLo: number; fHi: number; energy: Uint8Array
+  scale?: BearingEnergyScale
 }
 /** Engine per-line / per-band bearing-time entry (degrees true, compass bias included). */
 export interface BearingTimeEntry {
