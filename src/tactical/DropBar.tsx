@@ -1,11 +1,12 @@
 import { BuoyTypeSelector } from './BuoyTypeSelector'
+import { BuoyTypeGlyph } from './BuoyTypeGlyph'
 import { loadSequencePrefs, DESCENT_RATE_MPS } from './buoySequence'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { SimClient } from '../engine/client'
 import type { BuoysDropped, DropSpec, Tactical } from '../engine/contract'
 import type { OperatorLog } from '../log/operatorLog'
 import { crossFixes } from './fix'
-import { DEFAULT_COUNT, DROP_PATTERNS, PATTERN_LABEL, autoPlacement, planDrop, planReadout, type DropPattern, type DropPlan, type Pt } from './drop'
+import { DEFAULT_COUNT, DROP_PATTERNS, PATTERN_LABEL, autoPlacement, planDrop, planReadout, type DropKind, type DropPattern, type DropPlan, type Pt } from './drop'
 import type { DropController } from './dropController'
 import type { DetuneStore } from './detune'
 import { FIELD_MODES, FIELD_MODE_LABEL, MAX_BUOYS, autoShouldLay, dropHint, dropHintShort, type AutoMemo } from './fieldMode'
@@ -182,7 +183,7 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
             <button key={p} data-pattern={p} aria-pressed={s.pattern === p} aria-label={`${PATTERN_LABEL[p]} pattern`} disabled={!ready || full}
               title={`${PATTERN_LABEL[p]}: tap the plot to place${p === 'single' ? ' one buoy' : ', or drag to orient and size'}`}
               onClick={() => drop.dispatch({ type: 'arm', pattern: p })}>
-              <PatternIcon p={p} /><span className="drop-label">{PATTERN_LABEL[p]}</span>
+              <PatternIcon p={p} kind={s.buoyKind} /><span className="drop-label">{PATTERN_LABEL[p]}</span>
             </button>
           ))}
         </div>
@@ -191,8 +192,10 @@ export function DropBar({ client, drop, tactical, log, buoyLifeS, detune }: Prop
   )
 }
 
-/** 20 px glyphs: buoys as dots in each pattern's shape. */
-function PatternIcon({ p }: { p: DropPattern }) {
+/** 20 px glyphs: buoys as dots in each pattern's shape. The single-drop button
+ * uses the shared lettered-square type glyph (18 px in the 44 pt chip). */
+function PatternIcon({ p, kind }: { p: DropPattern; kind: DropKind }) {
+  if (p === 'single') return <BuoyTypeGlyph kind={kind} />
   const dots: [number, number][] = p === 'line' ? [[3, 10], [7.5, 10], [12, 10], [16.5, 10]]
     : p === 'circle' ? Array.from({ length: 6 }, (_, i) => [10 + 6.5 * Math.sin((i * Math.PI) / 3), 10 - 6.5 * Math.cos((i * Math.PI) / 3)] as [number, number])
     : p === 'field' ? [[4, 4], [10, 4], [16, 4], [4, 10], [10, 10], [16, 10], [4, 16], [10, 16], [16, 16]]
@@ -202,7 +205,7 @@ function PatternIcon({ p }: { p: DropPattern }) {
       {p === 'line' && <line x1="2" y1="10" x2="18" y2="10" />}
       {p === 'circle' && <circle cx="10" cy="10" r="6.5" fill="none" />}
       {p === 'wedge' && <polyline points="3,4 10,16 17,4" fill="none" />}
-      {p === 'single' ? <path d="M10 4 L16 15 L4 15 Z" /> : dots.map(([x, y], i) => <circle key={i} className="dot" cx={x} cy={y} r={p === 'field' ? 1.7 : 2} />)}
+      {dots.map(([x, y], i) => <circle key={i} className="dot" cx={x} cy={y} r={p === 'field' ? 1.7 : 2} />)}
     </svg>
   )
 }

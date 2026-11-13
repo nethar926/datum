@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { courseSpeed, formatDepth, formatRingScale, getDisplayUnits, mpsFromSpeed, rangeBearing, subscribeDisplayUnits } from '../displayUnits'
 import { BtProfileView } from './BtProfileView'
-import { BT_GLYPH, BT_GLYPH_RADIUS_PT, BT_HIT_RADIUS_PT, btGlyphLabel, hitBtDrop } from './btStyle'
+import { BT_GLYPH, BT_HIT_RADIUS_PT, btGlyphLabel, hitBtDrop } from './btStyle'
 import type { SimClient } from '../engine/client'
 import type { Bearing, TacticalBuoy } from '../engine/contract'
 import { LONG_PRESS_MS, capDpr, exceedsSlop } from '../touch/gestures'
@@ -11,6 +11,7 @@ import { bearingTo, distToRay, type FixSource, type ManualBearings } from './man
 import type { DropController } from './dropController'
 import { dropCapturesPlot } from './fieldMode'
 import { planReadout, type DropPlan } from './drop'
+import { BUOY_TYPE_MARK_SIZE, buoyTypeLetter, drawBuoyTypeGlyph } from './buoyTypeSymbol'
 import { canAim, isArmed, type BearingArm } from './bearingArm'
 import { placeRevealTagsInPlace, revealRangeBrg } from './reveal'
 import { aisDisplayTracks, aisEffective, isSubmarineContact, revealContacts, type PlotDifficulty } from './plotLayerPolicy'
@@ -277,7 +278,7 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       // Buoys (status colours: white working, green detuned/integrating, red dead, yellow error).
       const dt = props.current.detune
       for (const b of t.buoys) {
-        const sx = toScreenX(v, b.x), sy = toScreenY(v, b.y), r = 5 * dpr
+        const sx = toScreenX(v, b.x), sy = toScreenY(v, b.y)
         const fe = dt?.get(b.id)
         const health = paintHealth(fe, b.state)
         const colS = health === 'working' ? C.stWork : health === 'dead' ? C.stDead : health === 'error' ? C.stErr : C.stDet
@@ -288,11 +289,10 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
           ctx.save(); ctx.strokeStyle = C.sel || '#0a84ff'; ctx.fillStyle = C.selFill || 'rgba(10, 132, 255, 0.2)'; ctx.lineWidth = 3 * dpr
           ctx.beginPath(); ctx.arc(sx, sy, 11 * dpr, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore()
         }
-        ctx.strokeStyle = colS; ctx.fillStyle = colS; ctx.lineWidth = (selected ? 2.5 : 1.5) * dpr
-        ctx.beginPath()
-        if (b.kind === 'difar') { ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy + r); ctx.lineTo(sx - r, sy + r); ctx.closePath() } else ctx.arc(sx, sy, r, 0, Math.PI * 2)
-        if (b.state === 'falling' || health === 'integrating') ctx.setLineDash([2 * dpr, 2 * dpr])
-        ctx.stroke(); ctx.setLineDash([])
+        const dashed = b.state === 'falling' || health === 'integrating'
+        // Type symbol replaces only the base glyph; selected ring, health colour, dash and tag stay.
+        drawBuoyTypeGlyph(ctx, sx, sy, BUOY_TYPE_MARK_SIZE * dpr, buoyTypeLetter(b.kind), colS, C.bg || '#05080a', dashed, (selected ? 2.5 : 1.5) * dpr)
+        ctx.fillStyle = colS
         ctx.fillText(label, sx + 8 * dpr, sy + 4 * dpr)
         // Armed aim: ring the chosen DIFAR buoy.
         if (armSt?.phase === 'aim' && armSt.buoyId === b.id) {
@@ -303,15 +303,13 @@ export function TacticalPlot({ client, showReveal, showAis = false, difficulty =
       // BT drops are not in scenario.buoys — diamond glyph + BTid.
       const btCol = `rgb(${BT_GLYPH.r}, ${BT_GLYPH.g}, ${BT_GLYPH.b})`
       for (const d of t.btDrops ?? []) {
-        const sx = toScreenX(v, d.x), sy = toScreenY(v, d.y), r = BT_GLYPH_RADIUS_PT * dpr
-        ctx.strokeStyle = btCol; ctx.fillStyle = btCol; ctx.lineWidth = (d.id === selectedBtId ? 2.5 : 1.5) * dpr
-        ctx.beginPath()
-        ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r, sy); ctx.closePath()
-        ctx.stroke()
+        const sx = toScreenX(v, d.x), sy = toScreenY(v, d.y)
         if (d.id === selectedBtId) {
-          ctx.lineWidth = 2 * dpr
+          ctx.strokeStyle = btCol; ctx.lineWidth = 2 * dpr
           ctx.beginPath(); ctx.arc(sx, sy, 11 * dpr, 0, Math.PI * 2); ctx.stroke()
         }
+        drawBuoyTypeGlyph(ctx, sx, sy, BUOY_TYPE_MARK_SIZE * dpr, 'B', btCol, C.bg || '#05080a')
+        ctx.fillStyle = btCol
         ctx.fillText(btGlyphLabel(d.id), sx + 8 * dpr, sy + 4 * dpr)
       }
 
@@ -916,7 +914,7 @@ export function selectBearings(bearings: Bearing[], buoys: TacticalBuoy[], selCh
 
 /**
  * Ghost of a pattern about to be laid: the drag guide (anchor → finger, with bearing and extent), the pattern
- * outline, hollow dashed buoy symbols (DIFAR triangle, omni circle) and the plan readout. Reads the plan's typed
+ * outline, dashed lettered-square type glyphs and the plan readout. Reads the plan's typed
  * xy array; runs only when the ghost changes.
  */
 function drawGhost(ctx: CanvasRenderingContext2D, v: PlotView, g: DropPlan, dpr: number, col: string): void {
@@ -943,14 +941,12 @@ function drawGhost(ctx: CanvasRenderingContext2D, v: PlotView, g: DropPlan, dpr:
     ctx.moveTo(sx(0), sy(0)); for (let i = 2; i < n; i += 2) ctx.lineTo(sx(i), sy(i))
   }
   ctx.stroke(); ctx.setLineDash([])
-  // Buoys.
-  const r = 6 * dpr
+  // Buoys: same lettered square as the drop button / live markers, dashed as a ghost.
   for (let i = 0; i < n; i++) {
     const x = sx(i), y = sy(i)
-    ctx.beginPath()
-    if (g.kinds[i] === 'difar') { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r); ctx.lineTo(x - r, y + r); ctx.closePath() } else ctx.arc(x, y, r, 0, Math.PI * 2)
-    ctx.globalAlpha = 0.18; ctx.fill()
-    ctx.globalAlpha = 0.95; ctx.setLineDash([3 * dpr, 2 * dpr]); ctx.stroke(); ctx.setLineDash([])
+    const letter = buoyTypeLetter(g.kinds[i])
+    ctx.globalAlpha = 1
+    drawBuoyTypeGlyph(ctx, x, y, BUOY_TYPE_MARK_SIZE * dpr, letter, col, '#05080a', true, 1.25 * dpr)
   }
   // Readout above the pattern (phones show it in the confirm bar instead, which rides at the top of the plot).
   if (typeof document !== 'undefined' && (document.querySelector('.app') as HTMLElement | null)?.dataset.layout !== 'wide') { ctx.restore(); return }
