@@ -4,7 +4,33 @@
  * DEMON_STAGE_DUMP_PATH overrides the output file (default demon-stage-dump.json).
  * No-op when the env is unset — production values are unchanged.
  */
-import {writeFileSync} from 'node:fs';
+/** Node env / fs without @types/node: the FE app tsconfig only includes vite/client, and its node:fs shim has no writeFileSync. */
+type NodeProcess = {
+  env?: Record<string, string | undefined>;
+  getBuiltinModule?: (id: string) => unknown;
+};
+type NodeFs = {writeFileSync: (path: string, data: string) => void};
+
+function nodeProcess(): NodeProcess | undefined {
+  return (globalThis as typeof globalThis & {process?: NodeProcess}).process;
+}
+
+function envVar(name: string): string | undefined {
+  return nodeProcess()?.env?.[name];
+}
+
+function hasWriteFileSync(mod: unknown): mod is NodeFs {
+  return typeof mod === 'object' && mod !== null && 'writeFileSync' in mod
+    && typeof (mod as {writeFileSync: unknown}).writeFileSync === 'function';
+}
+
+function writeTextFileSync(path: string, data: string): void {
+  const mod = nodeProcess()?.getBuiltinModule?.('node:fs');
+  if (!hasWriteFileSync(mod)) {
+    throw new Error(`DEMON_STAGE_DUMP cannot write ${path}: Node fs is unavailable`);
+  }
+  mod.writeFileSync(path, data);
+}
 
 export const DEMON_STAGE_DUMP_DEFAULT = 'cut-cut-brindleflux-snork:804';
 
@@ -25,8 +51,8 @@ function parse(raw: string | undefined): {cut: string; row: number} | undefined 
   return {cut: s.slice(0, i), row};
 }
 
-const parsed = parse(process.env.DEMON_STAGE_DUMP);
-const outPath = process.env.DEMON_STAGE_DUMP_PATH ?? 'demon-stage-dump.json';
+const parsed = parse(envVar('DEMON_STAGE_DUMP'));
+const outPath = envVar('DEMON_STAGE_DUMP_PATH') ?? 'demon-stage-dump.json';
 let emitted = false;
 
 export const demonStageDumpEnabled = !!parsed;
@@ -131,7 +157,7 @@ export function emitDemonStageDump(row: number, stages: StageDump[], extras: Rec
     stages: Object.fromEntries(stages.map((s) => [s.name, {hash: s.hash, n: s.n, sum: s.sum, head: s.head, tail: s.tail}])),
     extras,
   };
-  writeFileSync(outPath, JSON.stringify(body, (k, v) => {
+  writeTextFileSync(outPath, JSON.stringify(body, (_key, v) => {
     if (typeof v === 'number' && !Number.isFinite(v)) return v > 0 ? 1e999 : v < 0 ? -1e999 : null;
     return v;
   }, 2) + '\n');
